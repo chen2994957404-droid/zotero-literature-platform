@@ -13,58 +13,9 @@ VECTOR_DB = os.path.join(ROOT, 'workflow_data', 'vector_db')
 os.makedirs(VECTOR_DB, exist_ok=True)
 REBUILD = '--rebuild' in sys.argv
 
-OLLAMA = 'http://localhost:11434/api/embed'
-EMBED_MODEL = 'bge-m3'
-
-def embed(texts):
-    """批量取 embedding"""
-    body = json.dumps({'model': EMBED_MODEL, 'input': texts}).encode()
-    req = urllib.request.Request(OLLAMA, data=body, headers={'Content-Type': 'application/json'})
-    r = json.loads(urllib.request.urlopen(req, timeout=300).read())
-    return r['embeddings']
-
-def strip_references(md):
-    """截掉参考文献及之后的部分（References/Bibliography/参考文献/Supporting Information）。
-    只保留正文，让向量检索聚焦研究内容。"""
-    # 匹配作为标题或独立行出现的参考文献起始
-    pat = re.compile(r'(?im)^\s*#{0,4}\s*(references|reference|bibliography|参考文献|literature\s+cited)\s*$')
-    m = pat.search(md)
-    cut = m.start() if m else len(md)
-    # 也在正文里找 Supporting Information 标题（若更靠前也截）
-    sm = re.search(r'(?im)^\s*#{1,4}\s*supporting\s+information\s*$', md)
-    if sm and sm.start() < cut:
-        cut = sm.start()
-    body = md[:cut].strip()
-    # 兜底：如果截得太狠（正文<20%），说明匹配错了，退回原文
-    if len(body) < len(md) * 0.2:
-        return md
-    return body
-
-def chunk_markdown(md, max_chars=800):
-    """按段落切块，合并短段，控制在 max_chars 左右"""
-    # 先去掉参考文献部分
-    md = strip_references(md)
-    # 去掉图片标记
-    md = re.sub(r'!\[\]\(images/[^)]+\)', '', md)
-    paras = [p.strip() for p in re.split(r'\n\s*\n', md) if p.strip()]
-    chunks = []
-    cur = ''
-    for p in paras:
-        if len(cur) + len(p) < max_chars:
-            cur += ('\n' + p) if cur else p
-        else:
-            if cur:
-                chunks.append(cur)
-            # 超长段落再切
-            if len(p) > max_chars:
-                for i in range(0, len(p), max_chars):
-                    chunks.append(p[i:i+max_chars])
-                cur = ''
-            else:
-                cur = p
-    if cur:
-        chunks.append(cur)
-    return chunks
+# embedding/切块/去参考文献 已收敛到公理件 modules/embed
+sys.path.insert(0, ROOT)
+from modules.embed import embed, strip_references, chunk as chunk_markdown
 
 # 连接 Chroma（持久化到本地文件）
 client = chromadb.PersistentClient(path=VECTOR_DB)

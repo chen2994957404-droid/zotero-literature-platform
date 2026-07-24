@@ -13,48 +13,15 @@ LH = {'Zotero-Allowed-Request': 'true'}
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VECTOR_DB = os.path.join(ROOT, 'workflow_data', 'vector_db')
 os.makedirs(VECTOR_DB, exist_ok=True)
-OLLAMA = 'http://localhost:11434/api/embed'
-EMBED_MODEL = 'bge-m3'
 REBUILD = '--rebuild' in sys.argv
+
+# embedding/切块/去参考文献 + Zotero全文 已收敛到公理件
+sys.path.insert(0, ROOT)
+from modules.embed import embed, strip_references, chunk
+from modules.zotero_client import get_fulltext
 
 def lget(path):
     return json.loads(urllib.request.urlopen(urllib.request.Request(LOCAL + path, headers=LH), timeout=20).read())
-
-def get_fulltext(att_key):
-    try:
-        r = urllib.request.urlopen(urllib.request.Request(LOCAL + f'/items/{att_key}/fulltext', headers=LH), timeout=20).read()
-        return json.loads(r).get('content', '')
-    except Exception:
-        return ''
-
-def embed(texts):
-    body = json.dumps({'model': EMBED_MODEL, 'input': texts}).encode()
-    req = urllib.request.Request(OLLAMA, data=body, headers={'Content-Type': 'application/json'})
-    return json.loads(urllib.request.urlopen(req, timeout=300).read())['embeddings']
-
-def strip_references(txt):
-    pat = re.compile(r'(?im)^\s*#{0,4}\s*(references|reference|bibliography|参考文献|literature\s+cited)\s*$')
-    m = pat.search(txt)
-    cut = m.start() if m else len(txt)
-    body = txt[:cut].strip()
-    return body if len(body) > len(txt) * 0.2 else txt
-
-def chunk(txt, max_chars=800):
-    txt = strip_references(txt)
-    paras = [p.strip() for p in re.split(r'\n\s*\n', txt) if p.strip()]
-    chunks, cur = [], ''
-    for p in paras:
-        if len(cur) + len(p) < max_chars:
-            cur += ('\n' + p) if cur else p
-        else:
-            if cur: chunks.append(cur)
-            if len(p) > max_chars:
-                for i in range(0, len(p), max_chars): chunks.append(p[i:i+max_chars])
-                cur = ''
-            else:
-                cur = p
-    if cur: chunks.append(cur)
-    return chunks
 
 client = chromadb.PersistentClient(path=VECTOR_DB)
 coll = client.get_or_create_collection('literature', metadata={'hnsw:space': 'cosine'})
