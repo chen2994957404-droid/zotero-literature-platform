@@ -88,10 +88,14 @@ def chat_vision(system, user, image_b64, provider=None, model=None, key=None,
     云端走 OpenAI 兼容的 image_url 格式；本地 Ollama 走其 images 字段。
     """
     provider = provider or os.environ.get('VISION_PROVIDER', 'deepseek')
-    if model is None:
-        model = (os.environ.get('OLLAMA_VISION_MODEL', 'qwen2.5vl') if provider == 'ollama'
-                 else os.environ.get('DEEPSEEK_VISION_MODEL', 'deepseek-vl2'))
-    key = key or os.environ.get('DEEPSEEK_KEY', '')
+    # 各 provider 的 endpoint / 默认视觉模型 / key 来源
+    VISION_ENDPOINTS = {
+        'deepseek':    (DEEPSEEK_API, 'deepseek-vl2', 'DEEPSEEK_KEY'),
+        'siliconflow': ('https://api.siliconflow.cn/v1/chat/completions',
+                        'Qwen/Qwen2.5-VL-72B-Instruct', 'SILICONFLOW_KEY'),
+    }
+    if model is None and provider == 'ollama':
+        model = os.environ.get('OLLAMA_VISION_MODEL', 'qwen2.5vl:7b')
     # 规范化 base64（去掉 data:image 前缀取纯数据；同时保留完整 data uri 供云端用）
     raw_b64 = re.sub(r'^data:image/\w+;base64,', '', image_b64)
     data_uri = image_b64 if image_b64.startswith('data:') else f'data:image/png;base64,{raw_b64}'
@@ -109,8 +113,13 @@ def chat_vision(system, user, image_b64, provider=None, model=None, key=None,
             headers={'Content-Type': 'application/json'})
         return json.loads(urllib.request.urlopen(req, timeout=600).read())['message']['content']
     else:
+        # 云端 OpenAI 兼容（deepseek / siliconflow / 其他）
+        endpoint, default_model, key_env = VISION_ENDPOINTS.get(
+            provider, VISION_ENDPOINTS['deepseek'])
+        model = model or default_model
+        key = key or os.environ.get(key_env, '')
         if not key:
-            raise LLMError('未提供 DEEPSEEK_KEY')
+            raise LLMError(f'未提供 {key_env}')
         content = [{'type': 'text', 'text': user},
                    {'type': 'image_url', 'image_url': {'url': data_uri}}]
         body = {'model': model, 'temperature': temperature,
@@ -118,7 +127,7 @@ def chat_vision(system, user, image_b64, provider=None, model=None, key=None,
                              {'role': 'user', 'content': content}]}
         if json_mode:
             body['response_format'] = {'type': 'json_object'}
-        req = urllib.request.Request(DEEPSEEK_API,
+        req = urllib.request.Request(endpoint,
             data=json.dumps(body, ensure_ascii=False).encode(), method='POST',
             headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'})
         return json.loads(urllib.request.urlopen(req, timeout=300).read())['choices'][0]['message']['content']
