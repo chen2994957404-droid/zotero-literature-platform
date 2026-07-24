@@ -80,6 +80,50 @@ def chat(system, user, provider=None, model=None, key=None,
     return re.sub(r'<think>[\s\S]*?</think>', '', out).strip()  # 去掉推理模型的 think 段
 
 
+def chat_vision(system, user, image_b64, provider=None, model=None, key=None,
+                temperature=0.1, json_mode=False):
+    """看图输出。image_b64 是图片的 base64（可含或不含 data:image 前缀）。
+    用于图表数字化等视觉任务。默认 provider 用支持视觉的模型。
+
+    云端走 OpenAI 兼容的 image_url 格式；本地 Ollama 走其 images 字段。
+    """
+    provider = provider or os.environ.get('VISION_PROVIDER', 'deepseek')
+    if model is None:
+        model = (os.environ.get('OLLAMA_VISION_MODEL', 'qwen2.5vl') if provider == 'ollama'
+                 else os.environ.get('DEEPSEEK_VISION_MODEL', 'deepseek-vl2'))
+    key = key or os.environ.get('DEEPSEEK_KEY', '')
+    # 规范化 base64（去掉 data:image 前缀取纯数据；同时保留完整 data uri 供云端用）
+    raw_b64 = re.sub(r'^data:image/\w+;base64,', '', image_b64)
+    data_uri = image_b64 if image_b64.startswith('data:') else f'data:image/png;base64,{raw_b64}'
+
+    if provider == 'ollama':
+        host = os.environ.get('OLLAMA_HOST', 'http://localhost:11434')
+        body = {'model': model, 'stream': False,
+                'options': {'temperature': temperature},
+                'messages': [{'role': 'system', 'content': system},
+                             {'role': 'user', 'content': user, 'images': [raw_b64]}]}
+        if json_mode:
+            body['format'] = 'json'
+        req = urllib.request.Request(host + '/api/chat',
+            data=json.dumps(body).encode(), method='POST',
+            headers={'Content-Type': 'application/json'})
+        return json.loads(urllib.request.urlopen(req, timeout=600).read())['message']['content']
+    else:
+        if not key:
+            raise LLMError('未提供 DEEPSEEK_KEY')
+        content = [{'type': 'text', 'text': user},
+                   {'type': 'image_url', 'image_url': {'url': data_uri}}]
+        body = {'model': model, 'temperature': temperature,
+                'messages': [{'role': 'system', 'content': system},
+                             {'role': 'user', 'content': content}]}
+        if json_mode:
+            body['response_format'] = {'type': 'json_object'}
+        req = urllib.request.Request(DEEPSEEK_API,
+            data=json.dumps(body, ensure_ascii=False).encode(), method='POST',
+            headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'})
+        return json.loads(urllib.request.urlopen(req, timeout=300).read())['choices'][0]['message']['content']
+
+
 def _parse_json_lenient(txt):
     """容错解析：去代码围栏，失败则截第一个 {...}。"""
     txt = re.sub(r'^```(?:json)?|```$', '', txt.strip(), flags=re.M).strip()
