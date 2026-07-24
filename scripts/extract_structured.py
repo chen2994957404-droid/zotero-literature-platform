@@ -86,34 +86,20 @@ def hierarchical_body(md, budget=14000):
             kept.append(seg); used += len(seg)
     return "\n".join(kept)
 
-def deepseek_json(system, user):
-    body = json.dumps({
-        'model': DEEPSEEK_MODEL, 'temperature': 0.1,
-        'response_format': {'type': 'json_object'},
-        'messages': [{'role': 'system', 'content': system},
-                     {'role': 'user', 'content': user}]
-    }, ensure_ascii=False).encode()
-    req = urllib.request.Request('https://api.deepseek.com/chat/completions',
-        data=body, method='POST',
-        headers={'Authorization': f'Bearer {DEEPSEEK_KEY}', 'Content-Type': 'application/json'})
-    txt = json.loads(urllib.request.urlopen(req, timeout=240).read())['choices'][0]['message']['content']
-    return json.loads(txt)
+# LLM 调用已收敛到公理件 modules/llm_client（消除 6 处重复实现，见踩坑 #17）
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from modules.llm_client import chat_json as _chat_json
 
-def ollama_json(system, user):
-    """本地 Ollama 分支：走 localhost:11434，format=json 强制 JSON 输出。"""
-    body = json.dumps({
-        'model': OLLAMA_MODEL, 'stream': False, 'format': 'json',
-        'options': {'num_ctx': 16384, 'temperature': 0.1},
-        'messages': [{'role': 'system', 'content': system},
-                     {'role': 'user', 'content': user}]
-    }, ensure_ascii=False).encode()
-    req = urllib.request.Request('http://localhost:11434/api/chat',
-        data=body, method='POST', headers={'Content-Type': 'application/json'})
-    txt = json.loads(urllib.request.urlopen(req, timeout=600).read())['message']['content']
-    return json.loads(txt)
+def deepseek_json(system, user):
+    """保留名字供 extract_batch import；实际走公理件（云端）。"""
+    return _chat_json(system, user, provider='deepseek', model=DEEPSEEK_MODEL, key=DEEPSEEK_KEY)
 
 def llm_json(system, user):
-    return ollama_json(system, user) if PROVIDER == 'ollama' else deepseek_json(system, user)
+    """按 PROVIDER 分流到公理件（云/本地）。"""
+    if PROVIDER == 'ollama':
+        return _chat_json(system, user, provider='ollama', model=OLLAMA_MODEL)
+    return _chat_json(system, user, provider='deepseek', model=DEEPSEEK_MODEL, key=DEEPSEEK_KEY)
 
 def extract_one(key):
     d = os.path.join(LIBRARY, key)
