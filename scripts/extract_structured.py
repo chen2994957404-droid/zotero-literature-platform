@@ -104,6 +104,45 @@ def llm_json(system, user):
         return _chat_json(system, user, provider='ollama', model=OLLAMA_MODEL)
     return _chat_json(system, user, provider='deepseek', model=DEEPSEEK_MODEL, key=DEEPSEEK_KEY)
 
+# ── 自我评估循环（借鉴 KnowMat 骨架，用自己公理件实现，不依赖 LangGraph）──
+# 抽完对照原文自检：漏抽/幻觉 → 反馈重抽。默认开，EXTRACT_NO_EVAL=1 可关（省钱）。
+_EVAL_ENABLED = os.environ.get('EXTRACT_NO_EVAL', '') != '1'
+_EVAL_SYS = (
+    "You are a strict extraction QA checker. Given the source text, an extraction schema, "
+    "and an extracted JSON, check two things: (1) MISSED — fields marked N/A but whose data "
+    "actually appears in the source; (2) HALLUCINATED — values in the JSON that cannot be found "
+    "in the source. Output one JSON: {\"ok\": true/false, \"missed\": [\"field: what was missed\"], "
+    "\"hallucinated\": [\"field: the value not in source\"]}. If clean, ok=true and empty lists. "
+    "No explanation, no code fences."
+)
+
+def _evaluate(title, body, data):
+    """对照原文检查抽取结果，返回 {ok, missed, hallucinated}。"""
+    fields = "\n".join(f'  - "{k}": {v}' for k, v in SCHEMA.items())
+    user = (f"Schema:\n{fields}\n\nExtracted JSON:\n{json.dumps(data, ensure_ascii=False)}\n\n"
+            f"===== SOURCE TEXT =====\n{body}\n===== END =====")
+    try:
+        return _chat_json(_EVAL_SYS, user, provider='deepseek', model=DEEPSEEK_MODEL, key=DEEPSEEK_KEY)
+    except Exception as e:
+        return {'ok': True, 'missed': [], 'hallucinated': [], '_eval_error': str(e)}
+
+def extract_with_eval(title, body, max_cycles=2):
+    """抽取 + 自我评估重抽循环（借鉴 KnowMat）。返回 (data, eval_report)。"""
+    data = llm_json(SYS, build_user_prompt(title, body))
+    if not _EVAL_ENABLED or PROVIDER == 'ollama':   # 本地模型评估不可靠，跳过
+        return data, {'ok': None, 'note': 'eval skipped'}
+    for cycle in range(max_cycles):
+        report = _evaluate(title, body, data)
+        if report.get('ok') is True or (not report.get('missed') and not report.get('hallucinated')):
+            return data, report
+        # 有问题 → 带反馈重抽
+        fb = (f"Your previous extraction had issues. MISSED: {report.get('missed')}. "
+              f"HALLUCINATED (remove or fix these): {report.get('hallucinated')}. "
+              f"Re-extract correctly.")
+        print(f'  [自检第{cycle+1}轮] 漏抽{len(report.get("missed",[]))} 幻觉{len(report.get("hallucinated",[]))}，重抽')
+        data = llm_json(SYS, build_user_prompt(title, body) + "\n\n" + fb)
+    return data, report
+
 def extract_one(key):
     d = os.path.join(LIBRARY, key)
     md_path = os.path.join(d, 'parsed', 'full.md')
@@ -114,7 +153,7 @@ def extract_one(key):
     title = meta.get('title', key)
     body = hierarchical_body(open(md_path, encoding='utf-8').read())
     print(f'[抽取] {title[:50]} …')
-    data = llm_json(SYS, build_user_prompt(title, body))
+    data, _report = extract_with_eval(title, body)
     record = {'key': key, 'title': title, 'doi': meta.get('DOI', ''), **data}
     json.dump(record, open(os.path.join(OUT_DIR, f'{key}.json'), 'w', encoding='utf-8'),
               ensure_ascii=False, indent=2)
