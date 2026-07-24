@@ -19,25 +19,28 @@ import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from modules.llm_client import chat_vision, _parse_json_lenient, LLMError
 
+# All-English prompt (chart data is native machine data for downstream LLM/analysis).
 _SYS = (
-    "你是科研图表数字化引擎。给你一张论文里的图表（曲线图/散点图/柱状图等），"
-    "你要精确读出其中的数据。严格只依据图片可见内容，不编造。"
-    "先识别坐标轴（轴标签、单位、刻度范围、是否对数轴），再逐条读出每个数据系列的点。"
-    "只输出一个 JSON，不要解释、不要代码围栏。"
+    "You are a scientific chart digitization engine. Given a figure from a paper "
+    "(line/scatter/bar/box plot, etc.), read out its data precisely. Rely strictly on "
+    "what is visible in the image; do not fabricate. First identify the axes (labels, units, "
+    "tick range, whether log-scale), then read each data series point by point. "
+    "Output exactly one JSON, no explanation, no code fences."
 )
 
 _USER_TMPL = (
-    "请数字化这张图表，输出 JSON，结构：\n"
+    "Digitize this chart and output JSON with this structure:\n"
     "{{\n"
     '  "chart_type": "line/scatter/bar/box/...",\n'
-    '  "x_axis": {{"label": "", "unit": "", "min": 数值, "max": 数值, "log": false}},\n'
-    '  "y_axis": {{"label": "", "unit": "", "min": 数值, "max": 数值, "log": false}},\n'
-    '  "series": [{{"name": "系列名/图例", "points": [[x1,y1],[x2,y2],...]}}],\n'
+    '  "x_axis": {{"label": "", "unit": "", "min": number, "max": number, "log": false}},\n'
+    '  "y_axis": {{"label": "", "unit": "", "min": number, "max": number, "log": false}},\n'
+    '  "series": [{{"name": "series name/legend", "points": [[x1,y1],[x2,y2],...]}}],\n'
     '  "confidence": "high/medium/low",\n'
-    '  "note": "读数时的不确定性说明"\n'
+    '  "note": "uncertainty notes when reading"\n'
     "}}\n"
-    "要求：数值用图上真实坐标（不是像素）；找不到的轴信息填 null；"
-    "曲线密集时按合理间隔采样代表性点；无法读出数据则 series 为空并在 note 说明。\n{hint}"
+    "Requirements: values in real chart coordinates (not pixels); use null for axis info you "
+    "cannot find; for dense curves, sample representative points at reasonable intervals; if data "
+    "cannot be read, leave series empty and explain in note.\n{hint}"
 )
 
 

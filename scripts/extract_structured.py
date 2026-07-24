@@ -29,35 +29,38 @@ OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'qwen2.5:7b-instruct')
 REBUILD = '--rebuild' in sys.argv
 ONLY_KEY = next((a for a in sys.argv[1:] if not a.startswith('--')), None)
 
-# ── 领域定制 schema：软物质 / 动态键弹性体 / 自愈合 ─────────────────────
-# 每个字段的说明会直接进 prompt，指导模型抽什么。改方向 = 改这里。
+# ── Domain schema: soft matter / dynamic-bond elastomers / self-healing ──
+# Each field description goes into the prompt to guide extraction. Change domain = change here.
+# 输出全英文（原生，给 LLM/机器用；只有精读/问答给人看的才中文）。
 SCHEMA = {
-    "material_system":     "核心材料体系（如 PBS聚硼硅氧烷、PDMS基弹性体、动态相锁粘合剂等），一句话",
-    "dynamic_bond_type":   "提供可逆/动态交联的相互作用类型（氢键、硼氧键B-O-B、金属配位、相分离纳米畴等）",
-    "precursors":          "主要原料/前驱体及配比（如 PDMS:硼酸 = 10:1）",
-    "synthesis_conditions":"关键合成/加工条件，务必带数值（温度、时间、气氛等）",
-    "characterization":    "主要表征手段列表（如 GPC、FTIR、流变、SAXS）",
-    "key_properties":      "任何量化表征结果——不限于力学，涵盖力学（拉伸强度/韧性/模量）、分子量（Mn/Mw/PDI）、流变/黏度、热稳定性、电导率/离子电导率、传感灵敏度、自愈合效率等。每项写成 '性质名: 数值+单位'（如 '拉伸强度: 12 MPa'、'Mn: 3.2×10^4 g/mol'、'复数黏度: 1.5×10^3 Pa·s'、'离子电导率: 8.2×10^-5 S/cm'）。只要原文报了带单位的量化结果就抽，无数值才留 N/A",
-    "self_healing":        "是否具备自愈合/可逆性，及其机制一句话；没有则 N/A",
-    "structure_property":  "论文点明的结构-性能因果关系（什么结构特征导致什么性能变化）",
-    "key_finding":         "本文最核心的发现/创新点，一句话",
-    "limitation":          "论文自述的局限或未解决问题；没提则 N/A",
-    "doc_type":            "文献类型：研究论文填 research；综述/review/进展/perspective 填 review。综述不套单一体系的数值字段。",
+    "material_system":     "Core material system (e.g. polyborosiloxane PBS, PDMS-based elastomer, dynamic phase-locked adhesive), one sentence",
+    "dynamic_bond_type":   "Interaction providing reversible/dynamic crosslinking (hydrogen bond, boroxine B-O-B, metal coordination, phase-separated nanodomains, etc.)",
+    "precursors":          "Main precursors/raw materials and ratio (e.g. PDMS:boric acid = 10:1)",
+    "synthesis_conditions":"Key synthesis/processing conditions, always with numbers (temperature, time, atmosphere, etc.)",
+    "characterization":    "List of main characterization methods (e.g. GPC, FTIR, rheology, SAXS)",
+    "key_properties":      "Any quantitative results — not only mechanical; covers mechanical (tensile strength/toughness/modulus), molecular weight (Mn/Mw/PDI), rheology/viscosity, thermal stability, conductivity/ionic conductivity, sensing sensitivity, self-healing efficiency, etc. Write each as 'property: value+unit' (e.g. 'tensile strength: 12 MPa', 'Mn: 3.2×10^4 g/mol', 'complex viscosity: 1.5×10^3 Pa·s', 'ionic conductivity: 8.2×10^-5 S/cm'). Extract whenever the text reports a quantitative result with unit; only use N/A if none",
+    "self_healing":        "Whether it has self-healing/reversibility and its mechanism in one sentence; N/A if none",
+    "structure_property":  "The structure-property causal relationship stated in the paper (what structural feature causes what property change)",
+    "key_finding":         "The single most important finding/innovation, one sentence",
+    "limitation":          "Limitation or open problem the paper states itself; N/A if none",
+    "doc_type":            "Document type: 'research' for research articles; 'review' for reviews/surveys/perspectives. Reviews should not force single-system numeric fields.",
 }
 
 SYS = (
-    "你是材料科学文献结构化抽取引擎。只依据给定正文抽取信息，严禁编造或外推。"
-    "找不到的字段一律填 \"N/A\"。数值必须连同单位一起抽，保留原文有效数字，不要换算。"
-    "只输出一个 JSON 对象，不要任何解释、不要 markdown 代码围栏。"
+    "You are a materials-science literature structured-extraction engine. Extract information "
+    "only from the given text; never fabricate or extrapolate. Fill any field you cannot find "
+    "with \"N/A\". Always extract numbers together with their units, keep the original significant "
+    "figures, do not convert. Output exactly one JSON object, no explanation, no markdown code fences. "
+    "All values in English (native, machine-readable)."
 )
 
 def build_user_prompt(title, body):
     fields = "\n".join(f'  - "{k}": {v}' for k, v in SCHEMA.items())
     return (
-        f"论文标题：{title}\n\n"
-        f"请抽取以下字段，输出为 JSON（键用英文字段名，值用中文，数值保留原文单位）：\n"
+        f"Paper title: {title}\n\n"
+        f"Extract the following fields as JSON (keys are the English field names, values in English, keep original units):\n"
         f"{fields}\n\n"
-        f"===== 正文开始 =====\n{body}\n===== 正文结束 ====="
+        f"===== TEXT START =====\n{body}\n===== TEXT END ====="
     )
 
 def strip_refs(md):
