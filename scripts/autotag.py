@@ -15,6 +15,10 @@ WH = {'Zotero-API-Key': KEY, 'Zotero-API-Version': '3'}
 DEEPSEEK_KEY = os.environ.get('DEEPSEEK_KEY', '***REMOVED***')
 MODEL = os.environ.get('AUTOTAG_MODEL', 'deepseek-v4-flash')  # 打标签用flash：快、便宜、JSON稳
 
+# LLM 调用走公理件
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from modules.llm_client import chat_json as _chat_json
+
 TEST = '--test' in sys.argv
 APPLY = '--apply' in sys.argv
 LIMIT = None
@@ -38,13 +42,7 @@ def lget(p):
 
 def tag_llm(title, abstract):
     user = f'标题：{title}\n\n摘要：{abstract[:2000]}'
-    body = json.dumps({'model': MODEL, 'temperature': 0.1,
-        'response_format': {'type': 'json_object'},
-        'messages': [{'role':'system','content':SYSTEM},{'role':'user','content':user}]}, ensure_ascii=False).encode()
-    req = urllib.request.Request('https://api.deepseek.com/chat/completions', data=body, method='POST',
-        headers={'Authorization': f'Bearer {DEEPSEEK_KEY}', 'Content-Type':'application/json'})
-    r = json.loads(urllib.request.urlopen(req, timeout=60).read())
-    return json.loads(r['choices'][0]['message']['content'])
+    return _chat_json(SYSTEM, user, provider='deepseek', model=MODEL, key=DEEPSEEK_KEY)
 
 def to_tags(result):
     tags = []

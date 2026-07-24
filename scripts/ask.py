@@ -8,26 +8,23 @@ import chromadb
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VECTOR_DB = os.path.join(ROOT, 'workflow_data', 'vector_db')
-OLLAMA = 'http://localhost:11434/api/embed'
-EMBED_MODEL = 'bge-m3'
 DEEPSEEK_KEY = os.environ.get('DEEPSEEK_KEY', '***REMOVED***')
-DEEPSEEK_MODEL = 'deepseek-v4-flash'
+DEEPSEEK_MODEL = 'deepseek-v4-flash'   # 问答输出较长，用 flash 省钱
 TOP_K = 6
+
+# embedding 与 LLM 调用走公理件
+sys.path.insert(0, ROOT)
+from modules.embed import embed as _embed_batch
+from modules.llm_client import chat as _chat
 
 client = chromadb.PersistentClient(path=VECTOR_DB)
 coll = client.get_or_create_collection('literature', metadata={'hnsw:space': 'cosine'})
 
 def embed(text):
-    body = json.dumps({'model': EMBED_MODEL, 'input': text}).encode()
-    req = urllib.request.Request(OLLAMA, data=body, headers={'Content-Type': 'application/json'})
-    return json.loads(urllib.request.urlopen(req, timeout=120).read())['embeddings'][0]
+    return _embed_batch([text])[0]   # 公理件是批量接口，取第一个
 
 def deepseek(system, user):
-    body = json.dumps({'model': DEEPSEEK_MODEL, 'temperature': 0.3,
-        'messages': [{'role':'system','content':system},{'role':'user','content':user}]}, ensure_ascii=False).encode()
-    req = urllib.request.Request('https://api.deepseek.com/chat/completions', data=body, method='POST',
-        headers={'Authorization': f'Bearer {DEEPSEEK_KEY}', 'Content-Type': 'application/json'})
-    return json.loads(urllib.request.urlopen(req, timeout=180).read())['choices'][0]['message']['content']
+    return _chat(system, user, provider='deepseek', model=DEEPSEEK_MODEL, key=DEEPSEEK_KEY, temperature=0.3)
 
 def ask(question):
     # 1. 问题向量化，检索相关块
