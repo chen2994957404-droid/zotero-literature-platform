@@ -1,0 +1,429 @@
+﻿{
+    "updatedAt":  "2026-07-22T10:12:53.946Z",
+    "createdAt":  "2026-07-22T07:36:59.584Z",
+    "id":  "WBWAVVKw9PLAGmHw",
+    "name":  "Mineu MCP 对话流程展示",
+    "description":  null,
+    "active":  false,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+
+                                     },
+                      "type":  "n8n-nodes-base.manualTrigger",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -320,
+                                       -128
+                                   ],
+                      "id":  "9761c502-9850-4f1f-a1b6-09bbbbdab12f",
+                      "name":  "When clicking ‘Execute workflow’"
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://api.deepseek.com/chat/completions",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "Authorization",
+                                                                                         "value":  "Bearer ***REMOVED***"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/json"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={\n  \"model\": \"deepseek-v4-pro\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"{{$json.question}}\"\n    }\n  ]\n}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.4,
+                      "position":  [
+                                       -320,
+                                       736
+                                   ],
+                      "id":  "744bc7ad-2449-495a-bc13-1a24fa864aa9",
+                      "name":  "HTTP Request"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const response = $input.first().json;\n\nconst answer = response.choices[0].message.content;\n\nreturn [\n  {\n    json:{\n      title:\"动态交联聚脲中的氢键作用\",\n      answer:answer\n    }\n  }\n];"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -320,
+                                       512
+                                   ],
+                      "id":  "dac4641b-6ce0-4585-8437-7145ba1f123e",
+                      "name":  "Code in JavaScript"
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "write",
+                                         "fileName":  "/data/summary/test.txt",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.readWriteFile",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       352,
+                                       512
+                                   ],
+                      "id":  "d7089da0-0b1e-4adf-874b-5b90f503de48",
+                      "name":  "Read/Write Files from Disk"
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "toText",
+                                         "sourceProperty":  "answer",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.convertToFile",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       128,
+                                       512
+                                   ],
+                      "id":  "5a2ae21d-c7f1-49f7-8470-308947c540b6",
+                      "name":  "Convert to File"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const title = $json.title;\nconst answer = $json.answer;\n\nconst markdown = \n`# ${title}\n\n${answer}\n`;\n\nreturn [\n {\n  json:{\n   markdown:markdown\n  }\n }\n];"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -96,
+                                       512
+                                   ],
+                      "id":  "b8921e3e-916e-482e-bd67-0dcd9a265e0f",
+                      "name":  "Code in JavaScript1"
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "PUT",
+                                         "url":  "={{$node[\"MinerU HTTP Request1\"].json.data.file_urls[0]}}",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/pdf"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "contentType":  "binaryData",
+                                         "inputDataFieldName":  "data",
+                                         "options":  {
+                                                         "allowUnauthorizedCerts":  false,
+                                                         "response":  {
+                                                                          "response":  {
+                                                                                           "fullResponse":  true,
+                                                                                           "neverError":  true
+                                                                                       }
+                                                                      }
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.4,
+                      "position":  [
+                                       528,
+                                       -32
+                                   ],
+                      "id":  "4d79cbe4-fd80-4d80-bec6-493f304f591c",
+                      "name":  "MinerU Upload PDF"
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://mineru.net/api/v4/file-urls/batch",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "Authorization",
+                                                                                         "value":  "Bearer ***REMOVED***"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/json"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={\n  \"files\": [\n    {\n      \"name\": \"{{$binary.data.fileName}}\"\n    }\n  ],\n  \"model_version\": \"vlm\"\n}",
+                                         "options":  {
+                                                         "response":  {
+                                                                          "response":  {
+                                                                                           "neverError":  true
+                                                                                       }
+                                                                      }
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.4,
+                      "position":  [
+                                       128,
+                                       -128
+                                   ],
+                      "id":  "e41801f6-bdda-4de4-a356-260c5b3c2a17",
+                      "name":  "MinerU HTTP Request1"
+                  },
+                  {
+                      "parameters":  {
+                                         "fileSelector":  "/data/input_pdf/solvent-driven-biphasic-architectures-in-polymer-gels-via-polymerization-induced-solvent-phase-separation.pdf",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.readWriteFile",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       -96,
+                                       -128
+                                   ],
+                      "id":  "93f22516-b8db-4c3a-b914-9e373bdb63a5",
+                      "name":  "Read PDF A"
+                  },
+                  {
+                      "parameters":  {
+                                         "fileSelector":  "/data/input_pdf/solvent-driven-biphasic-architectures-in-polymer-gels-via-polymerization-induced-solvent-phase-separation.pdf",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.readWriteFile",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       128,
+                                       64
+                                   ],
+                      "id":  "f48d75a2-0e05-44dc-8c0a-577b4475684e",
+                      "name":  "Read PDF B"
+                  },
+                  {
+                      "parameters":  {
+                                         "mode":  "combine",
+                                         "combineBy":  "combineByPosition",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.merge",
+                      "typeVersion":  3.2,
+                      "position":  [
+                                       352,
+                                       -32
+                                   ],
+                      "id":  "c990199a-d18d-4500-9ca3-0266e9838e7c",
+                      "name":  "Merge"
+                  },
+                  {
+                      "parameters":  {
+                                         "langList":  "auto"
+                                     },
+                      "type":  "n8n-nodes-mineru.mineruCustom",
+                      "typeVersion":  1,
+                      "position":  [
+                                       288,
+                                       288
+                                   ],
+                      "id":  "5edcee03-eeff-432d-b838-5462d8b34ea8",
+                      "name":  "Mineru Custom Service"
+                  },
+                  {
+                      "parameters":  {
+                                         "modelVersion":  "v2"
+                                     },
+                      "type":  "n8n-nodes-mineru.mineru",
+                      "typeVersion":  1,
+                      "position":  [
+                                       496,
+                                       288
+                                   ],
+                      "id":  "874de4d8-6d4b-43d9-a51a-ce132c6b9d47",
+                      "name":  "Mineru",
+                      "credentials":  {
+                                          "mineruApi":  {
+                                                            "id":  "PDISgDRSkZkGPOUQ",
+                                                            "name":  "Mineru account"
+                                                        }
+                                      }
+                  }
+              ],
+    "connections":  {
+                        "When clicking ‘Execute workflow’":  {
+                                                                 "main":  [
+                                                                              [
+                                                                                  {
+                                                                                      "node":  "Read PDF A",
+                                                                                      "type":  "main",
+                                                                                      "index":  0
+                                                                                  },
+                                                                                  {
+                                                                                      "node":  "Read PDF B",
+                                                                                      "type":  "main",
+                                                                                      "index":  0
+                                                                                  }
+                                                                              ]
+                                                                          ]
+                                                             },
+                        "HTTP Request":  {
+                                             "main":  [
+                                                          [
+
+                                                          ]
+                                                      ]
+                                         },
+                        "Code in JavaScript":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Code in JavaScript1",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "Convert to File":  {
+                                                "main":  [
+                                                             [
+                                                                 {
+                                                                     "node":  "Read/Write Files from Disk",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 }
+                                                             ]
+                                                         ]
+                                            },
+                        "Code in JavaScript1":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Convert to File",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "MinerU HTTP Request1":  {
+                                                     "main":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "Merge",
+                                                                          "type":  "main",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                              ]
+                                                 },
+                        "Read PDF A":  {
+                                           "main":  [
+                                                        [
+                                                            {
+                                                                "node":  "MinerU HTTP Request1",
+                                                                "type":  "main",
+                                                                "index":  0
+                                                            }
+                                                        ]
+                                                    ]
+                                       },
+                        "Read PDF B":  {
+                                           "main":  [
+                                                        [
+                                                            {
+                                                                "node":  "Merge",
+                                                                "type":  "main",
+                                                                "index":  1
+                                                            }
+                                                        ]
+                                                    ]
+                                       },
+                        "Merge":  {
+                                      "main":  [
+                                                   [
+                                                       {
+                                                           "node":  "MinerU Upload PDF",
+                                                           "type":  "main",
+                                                           "index":  0
+                                                       }
+                                                   ]
+                                               ]
+                                  },
+                        "Mineru Custom Service":  {
+                                                      "main":  [
+                                                                   [
+                                                                       {
+                                                                           "node":  "Mineru",
+                                                                           "type":  "main",
+                                                                           "index":  0
+                                                                       }
+                                                                   ]
+                                                               ]
+                                                  }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1",
+                     "binaryMode":  "separate",
+                     "availableInMCP":  false
+                 },
+    "staticData":  null,
+    "meta":  {
+                 "templateCredsSetupCompleted":  true
+             },
+    "nodeGroups":  [
+
+                   ],
+    "pinData":  {
+
+                },
+    "versionId":  "68f43f84-6aa5-4c32-83e2-7a91de0b79a1",
+    "activeVersionId":  null,
+    "versionCounter":  130,
+    "triggerCount":  0,
+    "sourceWorkflowId":  null,
+    "shared":  [
+                   {
+                       "updatedAt":  "2026-07-22T07:36:59.588Z",
+                       "createdAt":  "2026-07-22T07:36:59.588Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "WBWAVVKw9PLAGmHw",
+                       "projectId":  "eWNZ9zC4EQ2627PY",
+                       "project":  {
+                                       "updatedAt":  "2026-07-22T04:04:37.316Z",
+                                       "createdAt":  "2026-07-22T04:01:50.143Z",
+                                       "id":  "eWNZ9zC4EQ2627PY",
+                                       "name":  "CHEN MINGYANG \u003cchen2994957404@gmail.com\u003e",
+                                       "type":  "personal",
+                                       "icon":  null,
+                                       "description":  null,
+                                       "customTelemetryTags":  [
+
+                                                               ],
+                                       "creatorId":  "07f56ca2-a708-4858-b302-5cab772697a3"
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  null
+}

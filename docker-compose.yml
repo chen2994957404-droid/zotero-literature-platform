@@ -1,0 +1,25 @@
+services:
+
+  n8n:
+    image: n8nio/n8n
+
+    container_name: n8n-literature
+
+    restart: always
+
+    ports:
+      - "5678:5678"
+
+    volumes:
+
+      - ./n8n_data:/home/node/.n8n
+
+      - ./workflow_data:/data
+
+    environment:
+
+      - TZ=Asia/Shanghai
+      - N8N_SECURE_COOKIE=false
+      - N8N_RESTRICT_FILE_ACCESS_TO=/data
+      - NODE_FUNCTION_ALLOW_BUILTIN=fs,path
+      - NODE_FUNCTION_ALLOW_EXTERNAL=*

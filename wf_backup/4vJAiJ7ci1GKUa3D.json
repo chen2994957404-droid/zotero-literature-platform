@@ -1,0 +1,586 @@
+﻿{
+    "updatedAt":  "2026-07-22T11:04:16.808Z",
+    "createdAt":  "2026-07-22T11:01:08.439Z",
+    "id":  "4vJAiJ7ci1GKUa3D",
+    "name":  "MinerU - 本地文件转 Markdown",
+    "description":  null,
+    "active":  false,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "formTitle":  "上传文档转 Markdown（MinerU）",
+                                         "formDescription":  "上传 PDF / Word / PPT / 图片，通过 MinerU API 解析为 Markdown",
+                                         "formFields":  {
+                                                            "values":  [
+                                                                           {
+                                                                               "fieldLabel":  "文档文件",
+                                                                               "fieldType":  "file",
+                                                                               "requiredField":  true
+                                                                           }
+                                                                       ]
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "163ce923-564e-4edf-8aa5-381b6306ad14",
+                      "name":  "1. 表单上传触发",
+                      "type":  "n8n-nodes-base.formTrigger",
+                      "typeVersion":  2.2,
+                      "position":  [
+                                       -2080,
+                                       -160
+                                   ],
+                      "webhookId":  "9ea3c31b-bc6a-49ac-aef4-5250712360fc"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// 从表单二进制数据里取出文件名，生成唯一 data_id，供后续步骤复用\nconst binaryKeys = Object.keys(items[0].binary || {});\nif (binaryKeys.length === 0) {\n  throw new Error(\u0027未检测到上传文件，请检查表单文件字段名称\u0027);\n}\nconst binaryKey = binaryKeys[0];\nconst fileName = items[0].binary[binaryKey].fileName || \u0027document.pdf\u0027;\nconst dataId = `file_${Date.now()}`;\n\nreturn [\n  {\n    json: {\n      fileName,\n      dataId,\n      binaryKey\n    },\n    binary: items[0].binary\n  }\n];"
+                                     },
+                      "id":  "aad312d4-d019-477d-87ab-faee326405ee",
+                      "name":  "2. 提取文件信息",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -1856,
+                                       -160
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://mineru.net/api/v4/file-urls/batch",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/json"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "Authorization",
+                                                                                         "value":  "={{ \u0027Bearer \u0027 + $(\u0027设置：MinerU Token\u0027).first().json.token }}"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={\n  \"enable_formula\": true,\n  \"enable_table\": true,\n  \"language\": \"ch\",\n  \"model_version\": \"vlm\",\n  \"files\": [\n    {\n      \"name\": \"{{ $json.fileName }}\",\n      \"is_ocr\": true,\n      \"data_id\": \"{{ $json.dataId }}\"\n    }\n  ]\n}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "9dc81316-69d2-4c98-a299-a4dcbd03c2a9",
+                      "name":  "3. 申请上传地址(file-urls批量)",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       -1616,
+                                       -160
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// 说明：官方文档未给出本节点响应体的完整字段结构。\n// 常见批量上传接口一般会返回类似：\n//   { \"code\":0, \"data\": { \"batch_id\": \"...\", \"file_urls\": [\"https://...\"] } }\n// 这里假设返回结构为 data.file_urls（数组，顺序对应提交的 files 数组）\n// 如果实际字段名不同，请打开 n8n 执行日志查看真实响应，并修改本节点对应字段。\n\nconst resp = items[0].json;\nconst data = resp.data || {};\n\nconst uploadUrl = (data.file_urls \u0026\u0026 data.file_urls[0]) || data.upload_url || null;\nconst batchId = data.batch_id || data.batchId || null;\n\nif (!uploadUrl) {\n  throw new Error(\u0027未能从响应中解析出上传地址，请检查 file-urls/batch 接口真实返回结构: \u0027 + JSON.stringify(resp));\n}\n\nconst prev = $(\u00272. 提取文件信息\u0027).first();\n\nreturn [\n  {\n    json: {\n      uploadUrl,\n      batchId,\n      fileName: prev.json.fileName,\n      dataId: prev.json.dataId\n    },\n    binary: prev.binary\n  }\n];"
+                                     },
+                      "id":  "5fecad34-0f35-453a-9a15-f6e9635cea3c",
+                      "name":  "4. 解析上传地址",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -1376,
+                                       -160
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "PUT",
+                                         "url":  "={{ $json.uploadUrl }}",
+                                         "sendBody":  true,
+                                         "contentType":  "binary",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "713079bf-d829-49c0-b445-2d5533c893db",
+                      "name":  "5. PUT上传文件到预签名地址",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       -1136,
+                                       -160
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "amount":  3
+                                     },
+                      "id":  "5f82ddc1-a5d7-464c-9d65-f75f16cb62ef",
+                      "name":  "6. 等待批量任务生成task_id",
+                      "type":  "n8n-nodes-base.wait",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       -896,
+                                       -160
+                                   ],
+                      "webhookId":  "1b5b62f2-b843-4a9b-aeb3-5e1f5005c6f0"
+                  },
+                  {
+                      "parameters":  {
+                                         "url":  "={{ \u0027https://mineru.net/api/v4/extract-results/batch/\u0027 + $(\u00274. 解析上传地址\u0027).first().json.batchId }}",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "Authorization",
+                                                                                         "value":  "={{ \u0027Bearer \u0027 + $(\u0027设置：MinerU Token\u0027).first().json.token }}"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "Accept",
+                                                                                         "value":  "*/*"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "0b00ffc1-df68-41cd-af72-290fb5afa3f4",
+                      "name":  "7. 按batch_id查询task_id",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       -656,
+                                       -160
+                                   ],
+                      "notes":  "MinerU 批量上传后一般走 extract-results/batch/{batch_id} 拿到对应 task_id 列表，具体字段以官方实际返回为准，必要时改成官方文档里的真实 endpoint"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// 从批量结果里取出第一个（本流程单文件场景）对应的 task_id\n// 同样：字段名以官方真实响应为准，这里给出一个合理假设并做兜底\nconst resp = items[0].json;\nconst data = resp.data || {};\nlet taskId = null;\n\nif (Array.isArray(data.extract_result) \u0026\u0026 data.extract_result.length \u003e 0) {\n  taskId = data.extract_result[0].task_id;\n} else if (data.task_id) {\n  taskId = data.task_id;\n}\n\nif (!taskId) {\n  throw new Error(\u0027未能取到 task_id，请检查 batch 查询接口真实返回结构: \u0027 + JSON.stringify(resp));\n}\n\nreturn [{ json: { taskId } }];"
+                                     },
+                      "id":  "af78407f-85bc-4d3d-86d1-04673096b3df",
+                      "name":  "8. 提取task_id",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -416,
+                                       -160
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "url":  "={{ \u0027https://mineru.net/api/v4/extract/task/\u0027 + $json.taskId }}",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/json"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "Authorization",
+                                                                                         "value":  "={{ \u0027Bearer \u0027 + $(\u0027设置：MinerU Token\u0027).first().json.token }}"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "714cd005-335a-4e57-a79a-45714f372893",
+                      "name":  "9. 查询任务状态",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       -176,
+                                       -160
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "strict",
+                                                                            "version":  1
+                                                                        },
+                                                            "conditions":  [
+                                                                               {
+                                                                                   "leftValue":  "={{ $json.data.state }}",
+                                                                                   "rightValue":  "done",
+                                                                                   "operator":  {
+                                                                                                    "type":  "string",
+                                                                                                    "operation":  "equals"
+                                                                                                }
+                                                                               }
+                                                                           ],
+                                                            "combinator":  "and"
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "2c735bf5-725b-4b9d-a253-33485165eb06",
+                      "name":  "10. 是否完成?",
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2.2,
+                      "position":  [
+                                       64,
+                                       -160
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "strict",
+                                                                            "version":  1
+                                                                        },
+                                                            "conditions":  [
+                                                                               {
+                                                                                   "leftValue":  "={{ $json.data.state }}",
+                                                                                   "rightValue":  "failed",
+                                                                                   "operator":  {
+                                                                                                    "type":  "string",
+                                                                                                    "operation":  "equals"
+                                                                                                }
+                                                                               }
+                                                                           ],
+                                                            "combinator":  "and"
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "a3d8ff8a-7a9f-4931-91e8-a066058da4be",
+                      "name":  "11. 是否失败?",
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2.2,
+                      "position":  [
+                                       64,
+                                       80
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "throw new Error(\u0027MinerU 解析失败: \u0027 + (items[0].json.data.err_msg || \u0027未知错误\u0027));"
+                                     },
+                      "id":  "dcd3784c-50e2-4d6b-8478-0be5c8528a91",
+                      "name":  "12. 抛出失败错误",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       304,
+                                       80
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+
+                                     },
+                      "id":  "3ab20c14-5764-4321-976e-14a096ba3a8b",
+                      "name":  "13. 等待5秒再查",
+                      "type":  "n8n-nodes-base.wait",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       304,
+                                       272
+                                   ],
+                      "webhookId":  "b9147790-23d3-48b9-b02f-08a29d934738"
+                  },
+                  {
+                      "parameters":  {
+                                         "url":  "={{ $json.data.full_zip_url }}",
+                                         "options":  {
+                                                         "response":  {
+                                                                          "response":  {
+                                                                                           "responseFormat":  "file"
+                                                                                       }
+                                                                      }
+                                                     }
+                                     },
+                      "id":  "c8fc233a-c7e3-41a2-a608-6fbe064214b6",
+                      "name":  "14. 下载解析结果zip",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       304,
+                                       -192
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+
+                                     },
+                      "id":  "4bdad3c4-0c1a-430f-bf60-e076ee215159",
+                      "name":  "15. 解压zip",
+                      "type":  "n8n-nodes-base.compression",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       544,
+                                       -192
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "689ab79a-48a4-4957-a674-7b5e4ab4f82e",
+                      "name":  "16. 写入本地磁盘",
+                      "type":  "n8n-nodes-base.readWriteFile",
+                      "typeVersion":  1,
+                      "position":  [
+                                       784,
+                                       -192
+                                   ],
+                      "notes":  "请把 /mnt/mineru-output 改成你实际想保存的本地路径"
+                  },
+                  {
+                      "parameters":  {
+                                         "assignments":  {
+                                                             "assignments":  [
+                                                                                 {
+                                                                                     "id":  "token-assign-1",
+                                                                                     "name":  "token",
+                                                                                     "type":  "string",
+                                                                                     "value":  "***REMOVED***"
+                                                                                 }
+                                                                             ]
+                                                         },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "ce893cc7-c8a7-4c63-b189-0078b6443e6c",
+                      "name":  "设置：MinerU Token",
+                      "type":  "n8n-nodes-base.set",
+                      "typeVersion":  3.4,
+                      "position":  [
+                                       -2080,
+                                       80
+                                   ],
+                      "notes":  "建议改用 n8n Credentials（HTTP Header Auth）存 Token，而不是明文写在这里。这里先用 Set 节点方便你快速跑通。"
+                  }
+              ],
+    "connections":  {
+                        "1. 表单上传触发":  {
+                                          "main":  [
+                                                       [
+                                                           {
+                                                               "node":  "2. 提取文件信息",
+                                                               "type":  "main",
+                                                               "index":  0
+                                                           }
+                                                       ]
+                                                   ]
+                                      },
+                        "2. 提取文件信息":  {
+                                          "main":  [
+                                                       [
+                                                           {
+                                                               "node":  "3. 申请上传地址(file-urls批量)",
+                                                               "type":  "main",
+                                                               "index":  0
+                                                           }
+                                                       ]
+                                                   ]
+                                      },
+                        "3. 申请上传地址(file-urls批量)":  {
+                                                       "main":  [
+                                                                    [
+                                                                        {
+                                                                            "node":  "4. 解析上传地址",
+                                                                            "type":  "main",
+                                                                            "index":  0
+                                                                        }
+                                                                    ]
+                                                                ]
+                                                   },
+                        "4. 解析上传地址":  {
+                                          "main":  [
+                                                       [
+                                                           {
+                                                               "node":  "5. PUT上传文件到预签名地址",
+                                                               "type":  "main",
+                                                               "index":  0
+                                                           }
+                                                       ]
+                                                   ]
+                                      },
+                        "5. PUT上传文件到预签名地址":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "6. 等待批量任务生成task_id",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "6. 等待批量任务生成task_id":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "7. 按batch_id查询task_id",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "7. 按batch_id查询task_id":  {
+                                                      "main":  [
+                                                                   [
+                                                                       {
+                                                                           "node":  "8. 提取task_id",
+                                                                           "type":  "main",
+                                                                           "index":  0
+                                                                       }
+                                                                   ]
+                                                               ]
+                                                  },
+                        "8. 提取task_id":  {
+                                             "main":  [
+                                                          [
+                                                              {
+                                                                  "node":  "9. 查询任务状态",
+                                                                  "type":  "main",
+                                                                  "index":  0
+                                                              }
+                                                          ]
+                                                      ]
+                                         },
+                        "9. 查询任务状态":  {
+                                          "main":  [
+                                                       [
+                                                           {
+                                                               "node":  "10. 是否完成?",
+                                                               "type":  "main",
+                                                               "index":  0
+                                                           }
+                                                       ]
+                                                   ]
+                                      },
+                        "10. 是否完成?":  {
+                                          "main":  [
+                                                       [
+                                                           {
+                                                               "node":  "14. 下载解析结果zip",
+                                                               "type":  "main",
+                                                               "index":  0
+                                                           }
+                                                       ],
+                                                       [
+                                                           {
+                                                               "node":  "11. 是否失败?",
+                                                               "type":  "main",
+                                                               "index":  0
+                                                           }
+                                                       ]
+                                                   ]
+                                      },
+                        "11. 是否失败?":  {
+                                          "main":  [
+                                                       [
+                                                           {
+                                                               "node":  "12. 抛出失败错误",
+                                                               "type":  "main",
+                                                               "index":  0
+                                                           }
+                                                       ],
+                                                       [
+                                                           {
+                                                               "node":  "13. 等待5秒再查",
+                                                               "type":  "main",
+                                                               "index":  0
+                                                           }
+                                                       ]
+                                                   ]
+                                      },
+                        "13. 等待5秒再查":  {
+                                           "main":  [
+                                                        [
+                                                            {
+                                                                "node":  "9. 查询任务状态",
+                                                                "type":  "main",
+                                                                "index":  0
+                                                            }
+                                                        ]
+                                                    ]
+                                       },
+                        "14. 下载解析结果zip":  {
+                                              "main":  [
+                                                           [
+                                                               {
+                                                                   "node":  "15. 解压zip",
+                                                                   "type":  "main",
+                                                                   "index":  0
+                                                               }
+                                                           ]
+                                                       ]
+                                          },
+                        "15. 解压zip":  {
+                                          "main":  [
+                                                       [
+                                                           {
+                                                               "node":  "16. 写入本地磁盘",
+                                                               "type":  "main",
+                                                               "index":  0
+                                                           }
+                                                       ]
+                                                   ]
+                                      }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1",
+                     "binaryMode":  "separate",
+                     "availableInMCP":  true
+                 },
+    "staticData":  null,
+    "meta":  null,
+    "nodeGroups":  [
+
+                   ],
+    "pinData":  {
+
+                },
+    "versionId":  "ea0ebc89-5cea-4163-ba9a-649da3f36a3f",
+    "activeVersionId":  null,
+    "versionCounter":  3,
+    "triggerCount":  0,
+    "sourceWorkflowId":  null,
+    "shared":  [
+                   {
+                       "updatedAt":  "2026-07-22T11:01:08.442Z",
+                       "createdAt":  "2026-07-22T11:01:08.442Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "4vJAiJ7ci1GKUa3D",
+                       "projectId":  "eWNZ9zC4EQ2627PY",
+                       "project":  {
+                                       "updatedAt":  "2026-07-22T04:04:37.316Z",
+                                       "createdAt":  "2026-07-22T04:01:50.143Z",
+                                       "id":  "eWNZ9zC4EQ2627PY",
+                                       "name":  "CHEN MINGYANG \u003cchen2994957404@gmail.com\u003e",
+                                       "type":  "personal",
+                                       "icon":  null,
+                                       "description":  null,
+                                       "customTelemetryTags":  [
+
+                                                               ],
+                                       "creatorId":  "07f56ca2-a708-4858-b302-5cab772697a3"
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  null
+}

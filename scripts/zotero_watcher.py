@@ -1,0 +1,258 @@
+# -*- coding: utf-8 -*-
+"""Zotero 闭环轮询器：
+检测带触发标签的文献 → 拉PDF → MineRU解析+精读 → 回写Zotero笔记 → 改标签。
+依赖 Zotero 桌面开着（本地API读）+ Zotero Web API key（写回）。
+运行: python zotero_watcher.py
+"""
+import os, time, json, re, subprocess, sys, urllib.request, traceback
+
+# ===== 运行日志 =====
+_LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'workflow_data', 'logs')
+os.makedirs(_LOG_DIR, exist_ok=True)
+_LOG_FILE = os.path.join(_LOG_DIR, 'zotero_watcher.log')
+_print = print
+def print(*args, **kwargs):
+    msg = ' '.join(str(a) for a in args)
+    line = f'[{time.strftime("%Y-%m-%d %H:%M:%S")}] {msg}'
+    _print(line, **kwargs)
+    try:
+        with open(_LOG_FILE, 'a', encoding='utf-8') as f:
+            f.write(line + '\n')
+    except Exception:
+        pass
+
+# ===== 配置 =====
+ZOTERO_LOCAL = 'http://localhost:23119/api'
+ZOTERO_HEADERS = {'Zotero-Allowed-Request': 'true'}
+USER_ID = '16078117'                      # 本地API里的库id
+STORAGE_DIR = r'D:\03_Software\Zetero\Zotero\storage'
+TRIGGER_TAG = '待精读'                     # 打这个标签就触发
+DONE_TAG = '已精读'                        # 完成后加这个标签
+WEB_API_KEY = os.environ.get('ZOTERO_API_KEY', '***REMOVED***')  # zotero.org 写权限key
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(SCRIPT_DIR)
+DEEPREAD = os.path.join(SCRIPT_DIR, 'deepread_v4.py')
+MINERU_SCRIPT = os.path.join(SCRIPT_DIR, 'mineru_parse.py')
+EXTRACT_SCRIPT = os.path.join(SCRIPT_DIR, 'extract_structured.py')  # 结构化抽取（粗层）
+# 新的以文献为单元的库结构：workflow_data/library/<key>/{parsed/, summary.html}
+LIBRARY = os.path.join(ROOT, 'workflow_data', 'library')
+os.makedirs(LIBRARY, exist_ok=True)
+
+# 引入附件上传能力
+sys.path.insert(0, SCRIPT_DIR)
+from zotero_upload_attachment import upload_attachment
+
+DEEPSEEK_KEY = os.environ.get('DEEPSEEK_KEY', '')
+PROVIDER = os.environ.get('DEEPREAD_PROVIDER', 'deepseek')
+MODEL = os.environ.get('DEEPREAD_MODEL', 'deepseek-v4-flash')  # 默认flash省钱；重要文献用 重跑精读_pro.bat 切pro
+
+def zget(path):
+    req = urllib.request.Request(ZOTERO_LOCAL + path, headers=ZOTERO_HEADERS)
+    return json.loads(urllib.request.urlopen(req, timeout=15).read())
+
+def find_pdf(item_key):
+    """查文献的正文PDF附件本地路径（智能排除补充材料，多个时选最大的）"""
+    children = zget(f'/users/{USER_ID}/items/{item_key}/children')
+    # 补充材料/附录 的常见特征：
+    #  - suppmat/supporting/supplement/appendix 等通用词
+    #  - -si-/_si_/si.pdf 及独立的 SI 命名
+    #  - MOESM/ESM = Springer/Nature 系 Electronic Supplementary Material 的标准命名（踩坑15）
+    SUPP_PAT = re.compile(
+        r'suppmat|supp\b|supporting|supplement|-si-|_si_|\bsi\.pdf|appendix|'
+        r'moesm|_esm\b|electronic.?supplementary', re.I)
+    candidates = []  # (path, att_key, size, is_supp, is_fulltext)
+    for c in children:
+        if c['data'].get('itemType') == 'attachment' and c['data'].get('contentType') == 'application/pdf':
+            att_key = c['key']
+            # 附件的 Zotero 标题（规范命名是最可靠信号，工单·find_pdf 优先信任命名）
+            att_title = (c['data'].get('title') or '').strip()
+            title_is_supp = bool(SUPP_PAT.search(att_title)) or att_title.upper() == 'SI'
+            is_fulltext = att_title.lower() == 'full text pdf'   # Zotero 规范化的正文命名
+            d = os.path.join(STORAGE_DIR, att_key)
+            if os.path.isdir(d):
+                for f in os.listdir(d):
+                    if f.lower().endswith('.pdf'):
+                        fp = os.path.join(d, f)
+                        try: size = os.path.getsize(fp)
+                        except: size = 0
+                        is_supp = bool(SUPP_PAT.search(f)) or title_is_supp
+                        candidates.append((fp, att_key, size, is_supp, is_fulltext))
+    if not candidates:
+        return None, None
+    # ① 最优先：title=="Full Text PDF" 的规范正文（不靠大小猜，最可靠）
+    ft = [c for c in candidates if c[4] and not c[3]]
+    if ft:
+        ft.sort(key=lambda c: c[2], reverse=True)
+        return ft[0][0], ft[0][1]
+    # ② 兜底：非补充材料里选最大的（未规范化命名时的退路）
+    main = [c for c in candidates if not c[3]]
+    pool = main if main else candidates
+    pool.sort(key=lambda c: c[2], reverse=True)
+    return pool[0][0], pool[0][1]
+
+def process_item(item):
+    key = item['key']
+    title = item['data'].get('title', key)[:50]
+    print(f'[发现] {title}')
+    pdf_path, att_key = find_pdf(key)
+    if not pdf_path:
+        print(f'  [跳过] 无PDF附件')
+        return
+    print(f'  PDF: {pdf_path}')
+    # 该文献的库文件夹
+    lib_dir = os.path.join(LIBRARY, key)
+    parsed_dir = os.path.join(lib_dir, 'parsed')
+    os.makedirs(parsed_dir, exist_ok=True)
+    # 1. MineRU 解析（若已解析过则复用，省MineRU）
+    if os.path.exists(os.path.join(parsed_dir, 'layout.json')):
+        print('  [复用] 已有解析结果')
+    else:
+        r = subprocess.run([sys.executable, MINERU_SCRIPT, pdf_path, parsed_dir],
+                           capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=600)
+        print(r.stdout[-500:] if r.stdout else '')
+        if r.returncode != 0:
+            print(f'  [解析失败] {r.stderr[-300:]}')
+            return
+    # 2. 精读 → library/<key>/summary.html
+    out_html = os.path.join(lib_dir, 'summary.html')
+    env = dict(os.environ, PYTHONIOENCODING='utf-8', DEEPSEEK_KEY=DEEPSEEK_KEY)
+    r = subprocess.run([sys.executable, DEEPREAD, parsed_dir, out_html, PROVIDER, MODEL, DEEPSEEK_KEY],
+                       capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=900, env=env)
+    print(r.stdout[-400:] if r.stdout else '')
+    if r.returncode != 0:
+        print(f'  [精读失败] {r.stderr[-300:]}')
+        return
+    print(f'  [精读完成] {out_html}')
+    # 存元数据供向量化用
+    try:
+        meta = {'key': key, 'title': item['data'].get('title', ''),
+                'DOI': item['data'].get('DOI', ''), 'date': item['data'].get('date', ''),
+                'model': MODEL, 'time': time.strftime('%Y-%m-%d %H:%M')}
+        json.dump(meta, open(os.path.join(lib_dir, 'meta.json'), 'w', encoding='utf-8'),
+                  ensure_ascii=False, indent=1)
+    except Exception:
+        pass
+    # 2.5 结构化抽取（粗层）：把这篇抽成对齐字段，自动并入 structured/ 对比表
+    try:
+        r = subprocess.run([sys.executable, EXTRACT_SCRIPT, key],
+                           capture_output=True, text=True, encoding='utf-8',
+                           errors='replace', timeout=300, env=env)
+        if r.returncode == 0:
+            print(f'  [结构化抽取完成] 已并入 structured/compare.md')
+        else:
+            print(f'  [结构化抽取失败] {r.stderr[-200:]}')
+    except Exception as e:
+        print(f'  [结构化抽取异常] {e}')
+    # 3. 回写 Zotero：先删旧summary附件，再导入新的，命名 summary；标签改已精读
+    if WEB_API_KEY:
+        try:
+            delete_old_summary(key)
+            att_key = upload_attachment(key, out_html, 'summary')
+            # 关键：同时直接写入本地Zotero storage，避免等云同步导致"找不到文件"
+            if att_key:
+                local_dir = os.path.join(STORAGE_DIR, att_key)
+                os.makedirs(local_dir, exist_ok=True)
+                import shutil
+                shutil.copy(out_html, os.path.join(local_dir, 'summary.html'))
+                print(f'  [附件已导入] summary（本地storage已就位，点开即图文精读）')
+            swap_tag(key, USER_ID)
+        except Exception as e:
+            print(f'  [附件导入失败] {e}')
+    else:
+        print('  [提示] 未配 ZOTERO_API_KEY，跳过回写。')
+
+def delete_old_summary(item_key):
+    """删除该文献下已有的 summary 附件，避免重复"""
+    try:
+        base = f'https://api.zotero.org/users/{USER_ID}'
+        wh = {'Zotero-API-Key': WEB_API_KEY, 'Zotero-API-Version': '3'}
+        req = urllib.request.Request(base + f'/items/{item_key}/children', headers=wh)
+        children = json.loads(urllib.request.urlopen(req, timeout=15).read())
+        for c in children:
+            if c['data'].get('itemType') == 'attachment' and c['data'].get('title') == 'summary':
+                dk = c['key']; dv = c['version']
+                dreq = urllib.request.Request(base + f'/items/{dk}', method='DELETE',
+                    headers={**wh, 'If-Unmodified-Since-Version': str(dv)})
+                urllib.request.urlopen(dreq, timeout=15)
+                time.sleep(0.3)
+    except Exception:
+        pass
+
+def extract_text_summary(html_path):
+    """从精读HTML里抽取纯文字部分（去图），作为笔记正文（图太大不塞进笔记）"""
+    import re as _re
+    html = open(html_path, encoding='utf-8').read()
+    body = html.split('<body>')[-1].split('</body>')[0] if '<body>' in html else html
+    # 去掉 img 标签（base64太大）
+    body = _re.sub(r'<img[^>]*>', '<p>【图见本地完整版】</p>', body)
+    return body
+
+def writeback(item_key, html_path, web_uid):
+    """通过 Zotero Web API 把精读作为笔记写回（纯文字版），并更新标签"""
+    try:
+        note_body = extract_text_summary(html_path)
+        head = f'<h1>📖 图文精读（自动生成 {time.strftime("%Y-%m-%d %H:%M")}）</h1>' \
+               f'<p><b>含图完整版</b>：workflow_data/summary/{os.path.basename(html_path)}</p><hr>'
+        note_html = head + note_body
+        base = f'https://api.zotero.org/users/{web_uid}/items'
+        payload = json.dumps([{"itemType":"note","parentItem":item_key,
+                               "note":note_html,"tags":[{"tag":"精读笔记"}]}]).encode('utf-8')
+        req = urllib.request.Request(base, data=payload, method='POST',
+            headers={'Zotero-API-Key': WEB_API_KEY, 'Content-Type':'application/json','Zotero-API-Version':'3'})
+        json.loads(urllib.request.urlopen(req, timeout=25).read())
+        print(f'  [回写成功] 精读笔记已写回 Zotero（同步后可见）')
+        swap_tag(item_key, web_uid)
+    except Exception as e:
+        print(f'  [回写失败] {e}')
+
+def swap_tag(item_key, web_uid):
+    """把触发标签 待精读 换成 已精读，避免重复处理"""
+    try:
+        req = urllib.request.Request(f'https://api.zotero.org/users/{web_uid}/items/{item_key}',
+            headers={'Zotero-API-Key': WEB_API_KEY, 'Zotero-API-Version':'3'})
+        cur = json.loads(urllib.request.urlopen(req, timeout=15).read())
+        ver = cur['version']
+        tags = [t for t in cur['data'].get('tags', []) if t.get('tag') != TRIGGER_TAG]
+        tags.append({'tag': DONE_TAG})
+        patch = json.dumps({'tags': tags}).encode('utf-8')
+        req2 = urllib.request.Request(f'https://api.zotero.org/users/{web_uid}/items/{item_key}',
+            data=patch, method='PATCH',
+            headers={'Zotero-API-Key': WEB_API_KEY, 'Zotero-API-Version':'3',
+                     'If-Unmodified-Since-Version': str(ver), 'Content-Type':'application/json'})
+        urllib.request.urlopen(req2, timeout=15)
+        print(f'  [标签更新] 待精读 → 已精读')
+    except Exception as e:
+        print(f'  [标签更新失败] {e}')
+
+def main():
+    print(f'Zotero闭环轮询器启动。触发标签: 「{TRIGGER_TAG}」')
+    print(f'回写: {"已配置Web API" if WEB_API_KEY else "未配key(仅生成本地精读)"}')
+    seen = set()
+    heartbeat = os.path.join(_LOG_DIR, 'watcher_heartbeat.txt')
+    while True:
+        # 心跳：每轮开始写时间戳，看门狗据此判断存活（工单·watcher 看门狗）
+        try:
+            with open(heartbeat, 'w', encoding='utf-8') as f:
+                f.write(str(int(time.time())))
+        except Exception:
+            pass
+        try:
+            items = zget(f'/users/{USER_ID}/items?tag={urllib.parse.quote(TRIGGER_TAG)}&limit=25')
+            print(f'[心跳] 轮询正常，待处理 {len(items)} 篇')
+            for it in items:
+                key = it['key']
+                if key in seen:
+                    continue
+                seen.add(key)
+                try:
+                    process_item(it)
+                except Exception:
+                    traceback.print_exc()
+        except Exception:
+            traceback.print_exc()
+        time.sleep(60)  # 每60秒检查一次，避免API限流
+
+if __name__ == '__main__':
+    import urllib.parse
+    main()

@@ -1,0 +1,40 @@
+# ===== 版本管理忽略清单 =====
+# 原则：只版本管理「代码 + 文档 + 配置」，不管理「数据 + 临时 + 密钥」。
+# 数据是可再生的（重跑脚本能生成），且体积大、变动频繁，不适合进 Git。
+
+# --- 临时备份 / 回收（我们手动做的快照，Git 接管后不再需要）---
+workflow_data/structured_bak_*/
+workflow_data/_orphan_trash/
+workflow_data/*_bak*/
+*_bak/
+*.bak
+
+# --- 可再生的数据产物（重跑脚本能生成，不进版本库）---
+workflow_data/library/
+workflow_data/vector_db/
+workflow_data/structured/
+workflow_data/logs/
+workflow_data/_incoming/
+workflow_data/*.txt
+
+# --- n8n 运行数据（数据库/日志，非源码）---
+n8n_data/
+zotero_backup_*/
+
+# --- Python 缓存 ---
+__pycache__/
+*.pyc
+scripts/__pycache__/
+scripts/_tmp*.py
+
+# --- 密钥 / 私密配置（绝不进版本库）---
+.env
+.env.*
+*_secret*
+*apikey*
+
+# --- 系统/编辑器杂项 ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
