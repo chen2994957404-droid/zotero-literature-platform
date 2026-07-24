@@ -29,9 +29,10 @@ STORAGE_DIR = r'D:\03_Software\Zetero\Zotero\storage'
 from extract_structured import (SYS, build_user_prompt, hierarchical_body,
                                 deepseek_json, DEEPSEEK_MODEL)
 
-# find_pdf 已收敛到基础件 modules/zotero_client（消除重复拷贝）
+# 公理件：Zotero 定位 + PDF 解析（定理编排公理，符合架构宪法）
 sys.path.insert(0, os.path.dirname(SCRIPT_DIR))
 from modules.zotero_client import find_pdf
+from modules.pdf_parse import parse_pdf, PDFParseError
 
 def ensure_fullmd(key):
     """确保 library/<key>/parsed/full.md 存在：有则复用，无则调 MineRU 解析。返回 full.md 路径或 None。"""
@@ -42,12 +43,13 @@ def ensure_fullmd(key):
     pdf = find_pdf(key)
     if not pdf:
         print(f'  [跳过] Zotero 里找不到正文 PDF'); return None
-    os.makedirs(parsed, exist_ok=True)
     print(f'  [MineRU] 解析 {os.path.basename(pdf)} ...')
-    r = subprocess.run([sys.executable, MINERU_SCRIPT, pdf, parsed],
-                       capture_output=True, text=True, encoding='utf-8', errors='replace')
+    try:
+        parse_pdf(pdf, parsed)   # 公理件：PDF→full.md（已解析则复用）
+    except PDFParseError as e:
+        print(f'  [MineRU失败] {e}'); return None
     if not os.path.exists(md):
-        print(f'  [MineRU失败] {r.stdout[-200:]} {r.stderr[-200:]}'); return None
+        print(f'  [MineRU失败] 未生成 full.md'); return None
     print(f'  [MineRU完成] full.md 已生成'); return md
 
 def extract_one(key):
