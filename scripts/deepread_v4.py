@@ -100,19 +100,13 @@ if len(llm_input)>40000: llm_input=llm_input[:40000]
 
 SYS=open(os.path.join(os.path.dirname(__file__),'_sys_prompt_v2.txt'),encoding='utf-8').read()
 
+# LLM 调用走公理件 modules/llm_client（精读输出重，用 flash 省钱由上游 MODEL 决定）
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from modules.llm_client import chat as _chat
+
 def call_llm(text):
-    if PROVIDER=='deepseek':
-        body=json.dumps({"model":MODEL,"temperature":0.3,"max_tokens":8000,
-            "messages":[{"role":"system","content":SYS},{"role":"user","content":text}]},ensure_ascii=False)
-        req=urllib.request.Request("https://api.deepseek.com/chat/completions",data=body.encode(),
-            method="POST",headers={"Authorization":f"Bearer {KEY}","Content-Type":"application/json"})
-        return json.loads(urllib.request.urlopen(req,timeout=400).read())['choices'][0]['message']['content']
-    else:
-        body=json.dumps({"model":MODEL,"stream":False,"options":{"num_ctx":16384,"num_predict":8000,"temperature":0.3},
-            "messages":[{"role":"system","content":SYS},{"role":"user","content":text}]},ensure_ascii=False)
-        req=urllib.request.Request("http://localhost:11434/api/chat",data=body.encode(),
-            method="POST",headers={"Content-Type":"application/json"})
-        return json.loads(urllib.request.urlopen(req,timeout=1200).read())['message']['content']
+    return _chat(SYS, text, provider=PROVIDER, model=MODEL, key=KEY,
+                 temperature=0.3, max_tokens=8000)
 
 t0=time.time(); content=call_llm(llm_input)
 content=re.sub(r'<think>[\s\S]*?</think>','',content).strip()
