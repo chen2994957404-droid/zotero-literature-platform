@@ -54,11 +54,14 @@ def restart_watcher():
     for pid in find_watcher_pids():
         subprocess.run(['taskkill', '/F', '/PID', pid], capture_output=True)
         log(f'杀掉卡死 watcher PID={pid}')
-    # 重启（继承当前环境变量，含 DEEPSEEK_KEY 等）
+    # 重启（继承当前环境变量，含 DEEPSEEK_KEY 等）；后台无窗口，不打扰用户
     env = dict(os.environ, PYTHONIOENCODING='utf-8')
-    subprocess.Popen([sys.executable, WATCHER], env=env,
-                     creationflags=subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0)
-    log('已重启 watcher')
+    flags = 0
+    if os.name == 'nt':
+        flags = subprocess.CREATE_NO_WINDOW    # 不弹黑窗口（原 CREATE_NEW_CONSOLE 会弹）
+    subprocess.Popen([sys.executable, WATCHER], env=env, creationflags=flags,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    log('已重启 watcher（后台无窗口）')
 
 def main():
     log(f'看门狗启动。心跳阈值 {STALE}s，检查间隔 {CHECK}s')
