@@ -45,9 +45,17 @@
 
 ## 运维现状（不用管，已自动化）
 
-精读服务后台静默自启：任务计划 `ZoteroLiteratureWatcher`（登录+每小时）→ 看门狗 → watcher，
-卡死自动重启、无窗口。用户打「待精读」标签即自动处理。
+两个自启任务（登录 + 每小时保活）：
+- `ZoteroLiteratureWatcher` → 看门狗 → watcher：用户打「待精读」标签即自动精读，卡死自动重启、无窗口。
+- `OllamaService` → 本地 Ollama（问答/向量化依赖它），带正确 `OLLAMA_MODELS` 路径。
+
 密钥已设为永久环境变量（DEEPSEEK_KEY / ZOTERO_API_KEY），无需手动传。
+
+**问答（ask.py）报错时先查这两条**：
+1. Ollama 在跑吗？`Invoke-RestMethod http://localhost:11434/api/tags` 应返回 4 个模型。
+   不通就 `Start-ScheduledTask -TaskName OllamaService`。
+2. 返回模型列表为空 = Ollama "失明"（踩坑#4）：启动时没拿到 `OLLAMA_MODELS`。
+   必须带 `set OLLAMA_MODELS=D:\02_AI\models\Ollama\models` 再启动（自启任务已固化这点）。
 
 ---
 
