@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
-"""自动打标签：本地qwen读文献摘要/全文，判断topic/material/mechanism/method/type标签。
-用法: python autotag.py --test        试打(只打印不写入，取前N篇)
-      python autotag.py --apply       全库打标签(写回Zotero)
-      python autotag.py --apply --limit 10   只处理前10篇
+"""【已弃用 · 2026-07-25】不要再运行本脚本。
+
+用户明确表示自动标签"没什么用还很多余"，已清理全部 690 种分类标签
+（type/ mechanism/ topic/ method/ material/ 前缀，共1500次标记）。
+Zotero 现在只保留「待精读」「已精读」两个工作流标签。
+
+如需重新启用，先与用户确认。备份见 workflow_data/backup/zotero_tags_backup.json
 """
+
 import os, json, sys, urllib.request, re, time
 
 USER_ID = '16078117'
