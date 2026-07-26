@@ -21,20 +21,23 @@ def main():
         else:
             print('  [FAIL] is_parsed 有layout.json应为 True')
 
-    # 2. 缺 MINERU_TOKEN 时，parse_pdf 对未解析目录应正确报错（而非崩溃）
-    old = os.environ.pop('MINERU_TOKEN', None)
+    # 2. token 获取链路正常（环境变量 或 .env 都能拿到）
+    #    注：安全化后 _token() 会回退到 modules.config 读 .env，这是期望行为，
+    #    所以测"能拿到 token"；真的没有时才验证报错（且错误信息要有修复指引）。
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    from modules.pdf_parse import _token
     try:
-        with tempfile.TemporaryDirectory() as d:
-            try:
-                parse_pdf('nonexistent.pdf', d, reuse=False)
-                print('  [FAIL] 缺 token 应报 PDFParseError')
-            except PDFParseError:
-                print('  [PASS] 缺 token 正确报 PDFParseError'); ok += 1
-            except Exception as e:
-                print(f'  [FAIL] 报了非预期异常: {type(e).__name__}')
-    finally:
-        if old:
-            os.environ['MINERU_TOKEN'] = old
+        t = _token()
+        if t:
+            print('  [PASS] MINERU_TOKEN 链路正常（环境变量或 .env）'); ok += 1
+        else:
+            print('  [FAIL] token 为空但未报错')
+    except PDFParseError as e:
+        # 没配 token 也算通过——只要报错信息给出可操作指引
+        if '.env' in str(e) or 'MINERU_TOKEN' in str(e):
+            print('  [PASS] 无 token 时报错并给出指引'); ok += 1
+        else:
+            print('  [FAIL] 报错缺少修复指引')
 
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)

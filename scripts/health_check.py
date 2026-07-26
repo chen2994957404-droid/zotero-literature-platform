@@ -104,6 +104,32 @@ def c_modules():
     return OK, msg
 
 
+def c_importable():
+    """运行时导入检查——语法检查发现不了 NameError/ImportError（踩坑 #24）。"""
+    import importlib.util
+    key_scripts = ['zotero_watcher', 'si_deepread', 'extract_structured', 'ask',
+                   'mineru_parse', 'deepread_batch', 'merge_summary']
+    bad = []
+    for name in key_scripts:
+        p = os.path.join('scripts', name + '.py')
+        if not os.path.exists(p):
+            continue
+        # 用子进程 import，避免脚本执行副作用影响本进程
+        r = subprocess.run(
+            [sys.executable, '-c',
+             f"import sys; sys.path.insert(0,'scripts'); sys.path.insert(0,'.'); "
+             f"import importlib.util as u; "
+             f"spec=u.spec_from_file_location('_m', r'{p}'); m=u.module_from_spec(spec); "
+             f"sys.argv=['x','a','b']; "
+             f"exec(compile(open(r'{p}',encoding='utf-8').read().split('if __name__')[0], r'{p}', 'exec'), m.__dict__)"],
+            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60)
+        err = r.stderr or ''
+        if 'NameError' in err or 'ImportError' in err or 'ModuleNotFoundError' in err:
+            first = [l for l in err.splitlines() if 'Error' in l]
+            bad.append(f'{name}({first[-1][:60] if first else "err"})')
+    return (OK, f'{len(key_scripts)} 个关键脚本可正常加载') if not bad else (FAIL, f'加载失败: {bad}')
+
+
 def c_no_selftest():
     """哪些公理件还缺自测（文档声称每个都有）。"""
     lack = [os.path.basename(os.path.dirname(f)) for f in glob.glob('modules/*/__init__.py')
@@ -138,6 +164,7 @@ if __name__ == '__main__':
     check('配置加载', c_config)
     check('Zotero 服务', c_zotero)
     check('Ollama 服务', c_ollama)
+    check('运行时导入', c_importable)
     check('公理件自测', c_modules)
     check('自测覆盖', c_no_selftest)
     check('数据资产', c_data)
