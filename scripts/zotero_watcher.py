@@ -235,7 +235,18 @@ def process_item(item):
             if att_key:
                 print(f'  [复用附件条目] {att_key}（不删不新建，避免同步冲突）')
             else:
-                att_key = upload_attachment(key, out_html, 'summary')
+                # 上传带重试：网络抖动（SSL EOF / 超时）不该让整篇精读白做
+                att_key = None
+                for attempt in range(3):
+                    try:
+                        att_key = upload_attachment(key, out_html, 'summary')
+                        break
+                    except Exception as ue:
+                        wait = 5 * (attempt + 1)
+                        print(f'  [上传失败 {attempt+1}/3] {str(ue)[:80]} → {wait}s 后重试')
+                        time.sleep(wait)
+                if not att_key:
+                    print('  [上传三次失败] 精读已生成在本地，下次打「待处理」会自动重传')
             # 直接写入本地Zotero storage，点开即最新精读
             if att_key:
                 local_dir = os.path.join(STORAGE_DIR, att_key)
