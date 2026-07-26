@@ -43,3 +43,7 @@ Thumbs.db
 _disc.*
 workflow_data/_import*
 workflow_data/_disc*
+
+# 密钥配置：.env 忽略，模板保留
+.env
+!.env.example

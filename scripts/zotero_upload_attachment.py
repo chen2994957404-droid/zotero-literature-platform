@@ -4,9 +4,15 @@ Zotero 上传流程：创建attachment条目 → 授权 → 上传 → 注册。
 用法(测试): python zotero_upload_attachment.py <parentItemKey> <文件路径> <附件显示名>
 """
 import urllib.request, urllib.parse, json, os, hashlib, sys, mimetypes
+try:
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
+    from modules.config import get_key as _cfg_get
+except Exception:
+    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
 
 USER_ID = '16078117'
-KEY = '***REMOVED***'
+KEY = _cfg_get('ZOTERO_API_KEY')
 WEB = 'https://api.zotero.org/users/' + USER_ID
 WH = {'Zotero-API-Key': KEY, 'Zotero-API-Version': '3'}
 

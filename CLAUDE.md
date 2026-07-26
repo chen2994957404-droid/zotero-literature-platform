@@ -30,13 +30,14 @@
 - `workflow_data/library/<KEY>/` — 精读过的文献（parsed/full.md 全文 + summary.html 中文精读）
 - `workflow_data/vector_db/` — 向量库（9105块，供 ask.py 检索）
 
-## 7 块公理件（modules/，可直接 import 复用）
+## 9 块公理件（modules/，可直接 import 复用）
 
-`zotero_client`（定位文献/正文PDF）· `pdf_parse`（PDF→文本）· `llm_client`（调LLM，含视觉）
-`embed`（文本→向量）· `figure_crop`（裁完整Figure）· `chart_digitize`（图表→数据点）
-`paper_discovery`（找文献补库）
+`config`（密钥统一加载）· `zotero_client`（定位文献/正文PDF）· `pdf_parse`（PDF→文本）
+`llm_client`（调LLM，含视觉）· `embed`（文本→向量）· `figure_crop`（裁完整Figure）
+`chart_digitize`（图表→数据点）· `paper_discovery`（找文献补库）· `si_filter`（SI噪声过滤）
 
-每块有 README + selftest。改动后跑 `python modules/<名>/selftest.py` 验证。
+改动后跑 `python modules/<名>/selftest.py` 验证单块；
+**改完务必跑一键体检**：`python scripts/health_check.py`（语法/密钥安全/配置/服务/自测/数据/后台一次过）。
 
 ## 语言约定（重要）
 
@@ -46,10 +47,13 @@
 ## 运维现状（不用管，已自动化）
 
 两个自启任务（登录 + 每小时保活）：
-- `ZoteroLiteratureWatcher` → 看门狗 → watcher：用户打「待精读」标签即自动精读，卡死自动重启、无窗口。
+- `ZoteroLiteratureWatcher` → 看门狗 → watcher：用户打「待处理」标签即自动精读，卡死自动重启、无窗口。
 - `OllamaService` → 本地 Ollama（问答/向量化依赖它），带正确 `OLLAMA_MODELS` 路径。
 
-密钥已设为永久环境变量（DEEPSEEK_KEY / ZOTERO_API_KEY），无需手动传。
+**密钥管理（2026-07-26 安全化后）**：源码内**不含任何明文密钥**。
+统一走 `modules/config` 的 `get_key()`，加载顺序：环境变量 → 项目根 `.env` 文件。
+`.env` 已在 .gitignore（不进版本库），模板见 `.env.example`。
+好处：不再受"setx 只对新进程生效"之苦（该坑曾致 401/SI解析失败三次）。
 
 **问答（ask.py）报错时先查这两条**：
 1. Ollama 在跑吗？`Invoke-RestMethod http://localhost:11434/api/tags` 应返回 4 个模型。

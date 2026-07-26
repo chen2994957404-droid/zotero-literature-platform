@@ -15,7 +15,8 @@ echo 提示：保持此窗口开启即可。上传PDF后精读会自动生成到
 echo 关闭窗口即停止服务。
 echo.
 
-set DEEPSEEK_KEY=***REMOVED***
+REM DEEPSEEK_KEY 从系统环境变量读取（已用 setx 永久化）
+if "%DEEPSEEK_KEY%"=="" echo [警告] 未设置 DEEPSEEK_KEY（DeepSeek），请先运行: setx DEEPSEEK_KEY "你的密钥"
 python "scripts\watcher.py"
 
 pause

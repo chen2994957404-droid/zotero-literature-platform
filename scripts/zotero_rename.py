@@ -5,9 +5,15 @@
   不带apply=只分析(dry-run)；带apply=真正改
 """
 import urllib.request, json, re, sys, time
+try:
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
+    from modules.config import get_key as _cfg_get
+except Exception:
+    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
 
 USER_ID = '16078117'
-WEB_KEY = '***REMOVED***'
+WEB_KEY = _cfg_get('ZOTERO_API_KEY')
 WEB = 'https://api.zotero.org/users/' + USER_ID
 WH = {'Zotero-API-Key': WEB_KEY, 'Zotero-API-Version': '3'}
 

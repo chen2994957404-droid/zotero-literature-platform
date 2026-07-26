@@ -11,11 +11,17 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)
 sys.path.insert(0, SCRIPT_DIR)
 from zotero_upload_attachment import upload_attachment
+try:
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
+    from modules.config import get_key as _cfg_get
+except Exception:
+    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
 
 LIBRARY = os.path.join(ROOT, 'workflow_data', 'library')
 USER_ID = '16078117'
 STORAGE_DIR = r'D:\03_Software\Zetero\Zotero\storage'
-WEB_API_KEY = os.environ.get('ZOTERO_API_KEY', '***REMOVED***')
+WEB_API_KEY = _cfg_get('ZOTERO_API_KEY')
 DONE_TAG = '已精读'
 BASE = f'https://api.zotero.org/users/{USER_ID}'
 WH = {'Zotero-API-Key': WEB_API_KEY, 'Zotero-API-Version': '3'}

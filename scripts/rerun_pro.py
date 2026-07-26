@@ -5,13 +5,19 @@
       python rerun_pro.py <序号>     用pro重跑该篇
 """
 import os, sys, subprocess, urllib.request, json
+try:
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
+    from modules.config import get_key as _cfg_get
+except Exception:
+    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)
 WORK = os.path.join(ROOT, 'workflow_data', 'zotero_work')
 SUMMARY = os.path.join(ROOT, 'workflow_data', 'summary')
 DEEPREAD = os.path.join(SCRIPT_DIR, 'deepread_v4.py')
-DEEPSEEK_KEY = os.environ.get('DEEPSEEK_KEY', '***REMOVED***')
+DEEPSEEK_KEY = _cfg_get('DEEPSEEK_KEY')
 
 # 从Zotero本地API取标题（美化显示）
 def get_title(key):

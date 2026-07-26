@@ -29,7 +29,7 @@
                                                                   "parameters":  [
                                                                                      {
                                                                                          "name":  "Authorization",
-                                                                                         "value":  "Bearer ***REMOVED***"
+                                                                                         "value":  "Bearer <DEEPSEEK_KEY_REDACTED>"
                                                                                      },
                                                                                      {
                                                                                          "name":  "Content-Type",
@@ -157,7 +157,7 @@
                                                                   "parameters":  [
                                                                                      {
                                                                                          "name":  "Authorization",
-                                                                                         "value":  "Bearer ***REMOVED***"
+                                                                                         "value":  "Bearer <MINERU_TOKEN_REDACTED>"
                                                                                      },
                                                                                      {
                                                                                          "name":  "Content-Type",

@@ -8,7 +8,7 @@ import chromadb
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VECTOR_DB = os.path.join(ROOT, 'workflow_data', 'vector_db')
-DEEPSEEK_KEY = os.environ.get('DEEPSEEK_KEY', '***REMOVED***')
+DEEPSEEK_KEY = _cfg_get('DEEPSEEK_KEY')
 DEEPSEEK_MODEL = 'deepseek-v4-flash'   # 问答输出较长，用 flash 省钱
 TOP_K = 6
 
@@ -16,6 +16,12 @@ TOP_K = 6
 sys.path.insert(0, ROOT)
 from modules.embed import embed as _embed_batch
 from modules.llm_client import chat as _chat
+try:
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
+    from modules.config import get_key as _cfg_get
+except Exception:
+    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
 
 client = chromadb.PersistentClient(path=VECTOR_DB)
 coll = client.get_or_create_collection('literature', metadata={'hnsw:space': 'cosine'})

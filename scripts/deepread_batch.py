@@ -8,6 +8,12 @@
   python deepread_batch.py --file keys.txt
 """
 import os, sys, subprocess
+try:
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
+    from modules.config import get_key as _cfg_get
+except Exception:
+    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)
@@ -16,7 +22,7 @@ DEEPREAD = os.path.join(SCRIPT_DIR, 'deepread_v4.py')
 
 PROVIDER = 'deepseek'
 MODEL = os.environ.get('DEEPREAD_MODEL', 'deepseek-v4-flash')  # 精读输出重→flash
-KEY = os.environ.get('DEEPSEEK_KEY', '')
+KEY = _cfg_get('DEEPSEEK_KEY')
 
 def read_one(key):
     parsed = os.path.join(LIBRARY, key, 'parsed')

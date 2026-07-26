@@ -9,7 +9,7 @@ import chromadb
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VECTOR_DB = os.path.join(ROOT, 'workflow_data', 'vector_db')
-DEEPSEEK_KEY = os.environ.get('DEEPSEEK_KEY', '***REMOVED***')
+DEEPSEEK_KEY = _cfg_get('DEEPSEEK_KEY')
 # 创意讨论用 pro（质量更重要），可改 flash
 CHAT_MODEL = os.environ.get('BRAINSTORM_MODEL', 'deepseek-v4-pro')
 TOP_K = 10  # 讨论要更多上下文
@@ -17,6 +17,12 @@ TOP_K = 10  # 讨论要更多上下文
 # embedding 走公理件（chat 是多轮 messages 形式，接口不同，暂保留原实现，见技术债）
 sys.path.insert(0, ROOT)
 from modules.embed import embed as _embed_batch
+try:
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
+    from modules.config import get_key as _cfg_get
+except Exception:
+    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
 
 client = chromadb.PersistentClient(path=VECTOR_DB)
 coll = client.get_or_create_collection('literature', metadata={'hnsw:space': 'cosine'})

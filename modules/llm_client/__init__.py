@@ -22,6 +22,12 @@
 模型选择原则（宪法·两把尺子的沉淀）：输出少的活用 pro（抽取），输出多的用 flash（精读）。
 """
 import os, json, re, urllib.request
+try:
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
+    from modules.config import get_key as _cfg_get
+except Exception:
+    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
 
 DEEPSEEK_API = 'https://api.deepseek.com/chat/completions'
 
@@ -32,7 +38,7 @@ class LLMError(Exception):
 
 def _cfg(provider, model, key):
     provider = provider or os.environ.get('LLM_PROVIDER', 'deepseek')
-    key = key or os.environ.get('DEEPSEEK_KEY', '')
+    key = key or _cfg_get('DEEPSEEK_KEY')
     if model is None:
         model = (os.environ.get('OLLAMA_MODEL', 'qwen2.5:7b-instruct') if provider == 'ollama'
                  else os.environ.get('DEEPSEEK_MODEL', 'deepseek-v4-pro'))

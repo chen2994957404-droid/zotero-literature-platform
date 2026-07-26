@@ -1,7 +1,8 @@
 @echo off
 chcp 65001 >nul
 cd /d "%~dp0"
-set DEEPSEEK_KEY=***REMOVED***
+REM DEEPSEEK_KEY 从系统环境变量读取（已用 setx 永久化）
+if "%DEEPSEEK_KEY%"=="" echo [警告] 未设置 DEEPSEEK_KEY（DeepSeek），请先运行: setx DEEPSEEK_KEY "你的密钥"
 set PYTHONIOENCODING=utf-8
 
 echo ============================================

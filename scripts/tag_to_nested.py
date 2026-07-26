@@ -4,8 +4,14 @@
 不带apply=预览；带apply=真改。
 """
 import urllib.request, json, sys, time
+try:
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
+    from modules.config import get_key as _cfg_get
+except Exception:
+    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
 
-USER_ID = '16078117'; KEY = '***REMOVED***'
+USER_ID = '16078117'; KEY = _cfg_get('ZOTERO_API_KEY')
 LOCAL = 'http://localhost:23119/api/users/' + USER_ID
 WEB = 'https://api.zotero.org/users/' + USER_ID
 LH = {'Zotero-Allowed-Request': 'true'}

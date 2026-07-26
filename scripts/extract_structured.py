@@ -15,13 +15,19 @@ schema，用 DeepSeek 抽成对齐的机器可读 JSON。这是"向量检索"之
   python extract_structured.py <KEY>        # 只抽某一篇
 """
 import os, json, re, sys, urllib.request
+try:
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
+    from modules.config import get_key as _cfg_get
+except Exception:
+    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LIBRARY = os.path.join(ROOT, 'workflow_data', 'library')
 OUT_DIR = os.path.join(ROOT, 'workflow_data', 'structured')
 os.makedirs(OUT_DIR, exist_ok=True)
 
-DEEPSEEK_KEY = os.environ.get('DEEPSEEK_KEY', '***REMOVED***')
+DEEPSEEK_KEY = _cfg_get('DEEPSEEK_KEY')
 DEEPSEEK_MODEL = 'deepseek-v4-pro'   # 抽取要准，用 pro；不追求快
 # provider 开关：默认 deepseek（云）；设 EXTRACT_PROVIDER=ollama 走本地大模型，省 API 费
 PROVIDER = os.environ.get('EXTRACT_PROVIDER', 'deepseek').lower()

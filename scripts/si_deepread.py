@@ -20,6 +20,12 @@ from modules.pdf_parse import parse_pdf, PDFParseError
 from modules.si_filter import filtered_text
 from modules.figure_crop import crop_figures
 from modules.llm_client import chat
+try:
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
+    from modules.config import get_key as _cfg_get
+except Exception:
+    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
 
 LIBRARY = os.path.join(ROOT, 'workflow_data', 'library')
 MODEL = os.environ.get('SI_MODEL', 'deepseek-v4-flash')   # 输出长 → flash 省钱
@@ -193,7 +199,7 @@ def main():
 
     user = f"补充材料共有 {len(figs)} 张图。\n\n正文:\n{body[:30000]}"
     content = chat(SYS, user, provider='deepseek', model=MODEL,
-                   key=os.environ.get('DEEPSEEK_KEY', ''), temperature=0.3, max_tokens=6000)
+                   key=_cfg_get('DEEPSEEK_KEY'), temperature=0.3, max_tokens=6000)
     os.makedirs(os.path.dirname(out_html), exist_ok=True)
     io.open(out_html, 'w', encoding='utf-8').write(render_html(content, figs))
     print(f'  [完成] {out_html}  {round(os.path.getsize(out_html)/1024)} KB')

@@ -33,19 +33,23 @@ def main():
     except Exception as e:
         print(f'  [FAIL] ollama chat_json 异常: {e}')
 
-    # 3. 缺 key 时 deepseek 正确报 LLMError
-    old = os.environ.pop('DEEPSEEK_KEY', None)
+    # 3. 密钥获取链路正常（环境变量 或 .env 都能拿到；拿不到时报明确错误）
+    #    注：安全改造后 key 从 modules.config 读，参数传空会自动回退到 .env——
+    #    这是期望行为（更健壮），所以这里测"能拿到密钥"而非"传空必报错"。
     try:
-        try:
-            chat('x', 'y', provider='deepseek', key='')
-            print('  [FAIL] 缺 key 应报 LLMError')
-        except LLMError:
-            print('  [PASS] 缺 key 正确报 LLMError'); ok += 1
-        except Exception as e:
-            print(f'  [FAIL] 报了非预期异常: {type(e).__name__}')
-    finally:
-        if old:
-            os.environ['DEEPSEEK_KEY'] = old
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        from modules.config import get_key
+        if get_key('DEEPSEEK_KEY'):
+            print('  [PASS] 密钥链路正常（config 能取到 DEEPSEEK_KEY）'); ok += 1
+        else:
+            # 真的没有密钥时，调用应报 LLMError 而非静默失败
+            try:
+                chat('x', 'y', provider='deepseek', key='')
+                print('  [FAIL] 无密钥时应报 LLMError')
+            except LLMError:
+                print('  [PASS] 无密钥时正确报 LLMError'); ok += 1
+    except Exception as e:
+        print(f'  [FAIL] 密钥链路异常: {type(e).__name__}: {e}')
 
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)

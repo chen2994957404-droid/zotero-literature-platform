@@ -1,0 +1,13 @@
+# 项目依赖（很少——刻意保持轻量，见架构宪法"少依赖"原则）
+# 装：pip install -r requirements.txt
+
+chromadb==1.5.9
+python-docx==1.2.0
+PyMuPDF==1.27.2
+
+# 说明：
+# - chromadb  : 向量库（问答检索）
+# - python-docx: 读 .docx 格式的 SI（Elsevier 常用）
+# - PyMuPDF   : 从 PDF 按坐标裁图（精读的完整 Figure）
+# 其余全部使用 Python 标准库。
+# 外部服务：Zotero（本地API+Web API）、MineRU（PDF解析）、DeepSeek（LLM）、Ollama（本地模型）

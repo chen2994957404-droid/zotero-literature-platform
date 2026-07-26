@@ -6,6 +6,12 @@ n8n 负责把每篇文献的解析结果（layout.json + origin.pdf + full.md + 
 运行: python watcher.py
 """
 import os, time, subprocess, shutil, sys, traceback
+try:
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
+    from modules.config import get_key as _cfg_get
+except Exception:
+    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)  # 项目根目录（scripts的上一级）
@@ -18,7 +24,7 @@ DEEPREAD = os.path.join(SCRIPT_DIR, 'deepread_v4.py')
 # 配置（可改）
 PROVIDER = os.environ.get('DEEPREAD_PROVIDER', 'deepseek')
 MODEL = os.environ.get('DEEPREAD_MODEL', 'deepseek-v4-pro')
-DEEPSEEK_KEY = os.environ.get('DEEPSEEK_KEY', '***REMOVED***')
+DEEPSEEK_KEY = _cfg_get('DEEPSEEK_KEY')
 
 for d in (TO_PROCESS, DONE, SUMMARY):
     os.makedirs(d, exist_ok=True)

@@ -5,6 +5,12 @@
 运行: python zotero_watcher.py
 """
 import os, time, json, re, subprocess, sys, urllib.request, traceback
+try:
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
+    from modules.config import get_key as _cfg_get
+except Exception:
+    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
 
 # ===== 运行日志 =====
 _LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'workflow_data', 'logs')
@@ -36,7 +42,7 @@ TAG_FULL = '全文精读'                      # 正文+SI 都精读了
 TAG_NOPDF = '无附件'                       # 没找到可精读的PDF（提示用户，而非静默跳过）
 ALL_STATE_TAGS = [TRIGGER_TAG, TAG_MAIN, TAG_SI, TAG_FULL, TAG_NOPDF, '待精读', '已精读']
 DONE_TAG = TAG_MAIN                        # 兼容旧代码引用
-WEB_API_KEY = os.environ.get('ZOTERO_API_KEY', '***REMOVED***')  # zotero.org 写权限key
+WEB_API_KEY = _cfg_get('ZOTERO_API_KEY')  # zotero.org 写权限key
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)
@@ -53,7 +59,7 @@ os.makedirs(LIBRARY, exist_ok=True)
 sys.path.insert(0, SCRIPT_DIR)
 from zotero_upload_attachment import upload_attachment
 
-DEEPSEEK_KEY = os.environ.get('DEEPSEEK_KEY', '')
+DEEPSEEK_KEY = _cfg_get('DEEPSEEK_KEY')
 PROVIDER = os.environ.get('DEEPREAD_PROVIDER', 'deepseek')
 MODEL = os.environ.get('DEEPREAD_MODEL', 'deepseek-v4-flash')  # 默认flash省钱；重要文献用 重跑精读_pro.bat 切pro
 

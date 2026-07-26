@@ -1,8 +1,14 @@
 # -*- coding: utf-8 -*-
 """删除清单里的无PDF残留条目（A组+B组）。带429退避。"""
 import urllib.request, json, os, time
+try:
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
+    from modules.config import get_key as _cfg_get
+except Exception:
+    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
 
-USER_ID = '16078117'; KEY = '***REMOVED***'
+USER_ID = '16078117'; KEY = _cfg_get('ZOTERO_API_KEY')
 WEB = 'https://api.zotero.org/users/' + USER_ID
 WH = {'Zotero-API-Key': KEY, 'Zotero-API-Version': '3'}
 

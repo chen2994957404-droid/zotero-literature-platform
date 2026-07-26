@@ -6,8 +6,14 @@
 用法：python scripts/import_by_doi.py
 """
 import io, json, os, sys, time, urllib.request, urllib.error
+try:
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
+    from modules.config import get_key as _cfg_get
+except Exception:
+    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
 
-API_KEY = os.environ.get("ZOTERO_API_KEY", "")
+API_KEY = _cfg_get('ZOTERO_API_KEY')
 UA = "n8n-literature-workflow/1.0 (mailto:research@example.com)"
 BASE = "https://api.zotero.org"
 
