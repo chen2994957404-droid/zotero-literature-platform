@@ -26,8 +26,16 @@ ZOTERO_LOCAL = 'http://localhost:23119/api'
 ZOTERO_HEADERS = {'Zotero-Allowed-Request': 'true'}
 USER_ID = '16078117'                      # 本地API里的库id
 STORAGE_DIR = r'D:\03_Software\Zetero\Zotero\storage'
-TRIGGER_TAG = '待精读'                     # 打这个标签就触发
-DONE_TAG = '已精读'                        # 完成后加这个标签
+# ── 标签状态机（用户定，2026-07-25）───────────────────────────────
+# 打「待处理」→ 自动检测有哪些附件、哪些还没精读 → 补做缺的 → 按结果换状态标签。
+# 状态互斥：一篇文献同一时间只有一个状态标签。
+TRIGGER_TAG = '待处理'                     # 打这个标签就触发（原「待精读」）
+TAG_MAIN = '正文精读'                      # 只有正文被精读
+TAG_SI   = 'SI精读'                        # 只有SI被精读（罕见，备用）
+TAG_FULL = '全文精读'                      # 正文+SI 都精读了
+TAG_NOPDF = '无附件'                       # 没找到可精读的PDF（提示用户，而非静默跳过）
+ALL_STATE_TAGS = [TRIGGER_TAG, TAG_MAIN, TAG_SI, TAG_FULL, TAG_NOPDF, '待精读', '已精读']
+DONE_TAG = TAG_MAIN                        # 兼容旧代码引用
 WEB_API_KEY = os.environ.get('ZOTERO_API_KEY', '***REMOVED***')  # zotero.org 写权限key
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -35,6 +43,8 @@ ROOT = os.path.dirname(SCRIPT_DIR)
 DEEPREAD = os.path.join(SCRIPT_DIR, 'deepread_v4.py')
 MINERU_SCRIPT = os.path.join(SCRIPT_DIR, 'mineru_parse.py')
 EXTRACT_SCRIPT = os.path.join(SCRIPT_DIR, 'extract_structured.py')  # 结构化抽取（粗层）
+SI_DEEPREAD = os.path.join(SCRIPT_DIR, 'si_deepread.py')            # SI 实验细节精读
+MERGE_SCRIPT = os.path.join(SCRIPT_DIR, 'merge_summary.py')         # 正文+SI 合并
 # 新的以文献为单元的库结构：workflow_data/library/<key>/{parsed/, summary.html}
 LIBRARY = os.path.join(ROOT, 'workflow_data', 'library')
 os.makedirs(LIBRARY, exist_ok=True)
@@ -91,39 +101,100 @@ def find_pdf(item_key):
     pool.sort(key=lambda c: c[2], reverse=True)
     return pool[0][0], pool[0][1]
 
+def has_si(item_key):
+    """该文献是否有 SI 附件（PDF）。"""
+    try:
+        children = zget(f'/users/{USER_ID}/items/{item_key}/children')
+    except Exception:
+        return False
+    for c in children:
+        d = c['data']
+        if d.get('itemType') != 'attachment' or d.get('contentType') != 'application/pdf':
+            continue
+        t = (d.get('title') or '').strip(); fn = (d.get('filename') or '')
+        SUPP = re.compile(r'suppmat|supp\b|supporting|supplement|-si-|_si_|\bsi\.pdf|'
+                          r'appendix|moesm|_esm\b|electronic.?supplementary', re.I)
+        if SUPP.search(t) or SUPP.search(fn) or t.upper() == 'SI':
+            return True
+    return False
+
+
 def process_item(item):
+    """状态机：检测有哪些附件、哪些还没精读 → 补做缺的 → 置对应状态标签。
+
+    正文有/SI有 → 全文精读 ；只正文 → 正文精读 ；只SI → SI精读 ；都没有 → 无附件
+    已有正文精读 + 有SI → 只补SI，标签升级为 全文精读（不重跑正文，省钱）
+    """
     key = item['key']
     title = item['data'].get('title', key)[:50]
     print(f'[发现] {title}')
-    pdf_path, att_key = find_pdf(key)
-    if not pdf_path:
-        print(f'  [跳过] 无PDF附件')
-        return
-    print(f'  PDF: {pdf_path}')
-    # 该文献的库文件夹
     lib_dir = os.path.join(LIBRARY, key)
     parsed_dir = os.path.join(lib_dir, 'parsed')
-    os.makedirs(parsed_dir, exist_ok=True)
-    # 1. MineRU 解析（若已解析过则复用，省MineRU）
-    if os.path.exists(os.path.join(parsed_dir, 'layout.json')):
-        print('  [复用] 已有解析结果')
-    else:
-        r = subprocess.run([sys.executable, MINERU_SCRIPT, pdf_path, parsed_dir],
-                           capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=600)
-        print(r.stdout[-500:] if r.stdout else '')
-        if r.returncode != 0:
-            print(f'  [解析失败] {r.stderr[-300:]}')
-            return
-    # 2. 精读 → library/<key>/summary.html
     out_html = os.path.join(lib_dir, 'summary.html')
+    si_html = os.path.join(lib_dir, 'si_summary.html')
     env = dict(os.environ, PYTHONIOENCODING='utf-8', DEEPSEEK_KEY=DEEPSEEK_KEY)
-    r = subprocess.run([sys.executable, DEEPREAD, parsed_dir, out_html, PROVIDER, MODEL, DEEPSEEK_KEY],
-                       capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=900, env=env)
-    print(r.stdout[-400:] if r.stdout else '')
-    if r.returncode != 0:
-        print(f'  [精读失败] {r.stderr[-300:]}')
+
+    pdf_path, att_key = find_pdf(key)
+    si_exists = has_si(key)
+    main_done = os.path.exists(out_html)
+    si_done = os.path.exists(si_html)
+    print(f'  正文PDF:{"有" if pdf_path else "无"} SI:{"有" if si_exists else "无"} '
+          f'| 已精读 正文:{"是" if main_done else "否"} SI:{"是" if si_done else "否"}')
+
+    if not pdf_path and not si_exists:
+        print('  [跳过] 无任何可精读的PDF附件')
+        if WEB_API_KEY:
+            set_state_tag(key, USER_ID, TAG_NOPDF)
         return
-    print(f'  [精读完成] {out_html}')
+
+    # ── A. 正文：有PDF且没精读过才做 ──
+    if pdf_path and not main_done:
+        os.makedirs(parsed_dir, exist_ok=True)
+        if os.path.exists(os.path.join(parsed_dir, 'layout.json')):
+            print('  [复用] 已有解析结果')
+        else:
+            r = subprocess.run([sys.executable, MINERU_SCRIPT, pdf_path, parsed_dir],
+                               capture_output=True, text=True, encoding='utf-8',
+                               errors='replace', timeout=600)
+            if r.returncode != 0:
+                print(f'  [正文解析失败] {r.stderr[-300:]}'); return
+        r = subprocess.run([sys.executable, DEEPREAD, parsed_dir, out_html, PROVIDER, MODEL, DEEPSEEK_KEY],
+                           capture_output=True, text=True, encoding='utf-8',
+                           errors='replace', timeout=900, env=env)
+        if r.returncode != 0:
+            print(f'  [正文精读失败] {r.stderr[-300:]}'); return
+        main_done = True
+        print(f'  [正文精读完成]')
+    elif main_done:
+        print('  [跳过正文] 已有精读，不重跑')
+
+    # ── B. SI：有SI且没精读过才做 ──
+    if si_exists and not si_done:
+        r = subprocess.run([sys.executable, SI_DEEPREAD, key],
+                           capture_output=True, text=True, encoding='utf-8',
+                           errors='replace', timeout=900, env=env)
+        print((r.stdout or '')[-300:])
+        si_done = os.path.exists(si_html)
+        print(f'  [SI精读{"完成" if si_done else "失败"}]')
+    elif si_done:
+        print('  [跳过SI] 已有精读，不重跑')
+
+    # ── C. 合并（两者都有时）──
+    final_html = out_html
+    if main_done and si_done:
+        r = subprocess.run([sys.executable, MERGE_SCRIPT, key, '--no-upload'],
+                           capture_output=True, text=True, encoding='utf-8',
+                           errors='replace', timeout=300, env=env)
+        merged = os.path.join(lib_dir, 'summary_full.html')
+        if os.path.exists(merged):
+            final_html = merged
+            print('  [已合并] 正文+SI')
+    elif si_done and not main_done:
+        final_html = si_html
+
+    if not os.path.exists(final_html):
+        print('  [失败] 没有产出任何精读'); return
+    out_html = final_html   # 供后续回写使用
     # 存元数据供向量化用
     try:
         meta = {'key': key, 'title': item['data'].get('title', ''),
@@ -156,7 +227,11 @@ def process_item(item):
                 import shutil
                 shutil.copy(out_html, os.path.join(local_dir, 'summary.html'))
                 print(f'  [附件已导入] summary（本地storage已就位，点开即图文精读）')
-            swap_tag(key, USER_ID)
+            # 按实际完成情况置状态标签
+            state = (TAG_FULL if (main_done and si_done)
+                     else TAG_SI if si_done
+                     else TAG_MAIN)
+            set_state_tag(key, USER_ID, state)
         except Exception as e:
             print(f'  [附件导入失败] {e}')
     else:
@@ -206,24 +281,30 @@ def writeback(item_key, html_path, web_uid):
     except Exception as e:
         print(f'  [回写失败] {e}')
 
-def swap_tag(item_key, web_uid):
-    """把触发标签 待精读 换成 已精读，避免重复处理"""
+def set_state_tag(item_key, web_uid, new_state):
+    """设置状态标签（互斥）：移除所有旧状态标签，只留 new_state。保留用户自己的其它标签。"""
     try:
         req = urllib.request.Request(f'https://api.zotero.org/users/{web_uid}/items/{item_key}',
             headers={'Zotero-API-Key': WEB_API_KEY, 'Zotero-API-Version':'3'})
         cur = json.loads(urllib.request.urlopen(req, timeout=15).read())
         ver = cur['version']
-        tags = [t for t in cur['data'].get('tags', []) if t.get('tag') != TRIGGER_TAG]
-        tags.append({'tag': DONE_TAG})
+        old = [t.get('tag') for t in cur['data'].get('tags', []) if t.get('tag') in ALL_STATE_TAGS]
+        tags = [t for t in cur['data'].get('tags', []) if t.get('tag') not in ALL_STATE_TAGS]
+        if new_state:
+            tags.append({'tag': new_state})
         patch = json.dumps({'tags': tags}).encode('utf-8')
         req2 = urllib.request.Request(f'https://api.zotero.org/users/{web_uid}/items/{item_key}',
             data=patch, method='PATCH',
             headers={'Zotero-API-Key': WEB_API_KEY, 'Zotero-API-Version':'3',
                      'If-Unmodified-Since-Version': str(ver), 'Content-Type':'application/json'})
         urllib.request.urlopen(req2, timeout=15)
-        print(f'  [标签更新] 待精读 → 已精读')
+        print(f'  [状态] {"/".join(old) or "无"} → {new_state}')
     except Exception as e:
         print(f'  [标签更新失败] {e}')
+
+def swap_tag(item_key, web_uid):
+    """兼容旧调用：默认置为「正文精读」。"""
+    set_state_tag(item_key, web_uid, TAG_MAIN)
 
 def main():
     print(f'Zotero闭环轮询器启动。触发标签: 「{TRIGGER_TAG}」')

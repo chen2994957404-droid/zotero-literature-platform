@@ -16,7 +16,7 @@
 | "我库里关于XX有什么？" "帮我查查XX" | `python scripts/ask.py "问题"`（RAG 问答，中文答+附来源）|
 | "帮我找XX方向的文献" "补充点XX的文献" | `modules/paper_discovery` 的 `search(query)`，返回文献列表并标记库里已有 |
 | "帮我横向比较XX" "这方向有什么规律/空白" | 读 `workflow_data/structured/compare.md`（研究论文横向对比表，148篇）；PBS 方向另有 `compare_PBS.md` |
-| "精读某篇文献" | 让他在 Zotero 给该文献打「待精读」标签即可，**服务已开机自启**，几分钟后自动生成中文图文精读并挂回 Zotero |
+| "精读某篇文献" | 让他在 Zotero 打「待处理」标签即可。**状态机自动判断**：只有正文→精读正文→标「正文精读」；有SI→连SI实验细节一起精读并合并→标「全文精读」；已精读过的只补缺的部分不重跑。服务已开机自启。 |
 | "把某批文献的数据抽出来" | `python scripts/extract_batch.py KEY1 KEY2`（自动 MineRU 解析+DeepSeek 精抽）|
 | "把论文图里的曲线变成数据" | `modules/chart_digitize` 的 `digitize()`，**必须用云端大模型**（硅基流动 Qwen3.5-397B/3.6-27B），本地7B会编假数据 |
 | "帮我想想研究方向/idea" | 读 compare 表做横向关联分析（找机理×性能的空白格），或 `python scripts/brainstorm.py` |
