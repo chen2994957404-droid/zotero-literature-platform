@@ -34,25 +34,57 @@ SYS = """你是材料科学文献助手。下面是一篇论文【补充材料(S
 讨论到某张补充图时用【图N】标记插图位置。用中文，专业准确，数值保留原文单位。"""
 
 
-def find_si_pdf(item_key):
-    """定位该文献的 SI 附件 PDF（与 find_pdf 相反：专找补充材料）。"""
+DOCX_CT = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
+
+def find_si_file(item_key):
+    """定位 SI 附件文件。支持 PDF 和 .docx（Elsevier 的 SI 常是 docx）。
+    返回 (路径, 类型)，类型 ∈ 'pdf'/'docx'；找不到返回 (None, None)。"""
     try:
         children = zget(f'/users/{USER_ID}/items/{item_key}/children')
     except Exception:
-        return None
+        return None, None
     for c in children:
         d = c['data']
-        if d.get('itemType') != 'attachment' or d.get('contentType') != 'application/pdf':
+        if d.get('itemType') != 'attachment':
+            continue
+        ct = d.get('contentType', '')
+        if ct not in ('application/pdf', DOCX_CT):
             continue
         title = (d.get('title') or '').strip()
         fn = (d.get('filename') or '')
-        if SUPP_PAT.search(title) or SUPP_PAT.search(fn) or title.upper() == 'SI':
-            dd = os.path.join(STORAGE_DIR, c['key'])
-            if os.path.isdir(dd):
-                for f in os.listdir(dd):
-                    if f.lower().endswith('.pdf'):
-                        return os.path.join(dd, f)
-    return None
+        if not (SUPP_PAT.search(title) or SUPP_PAT.search(fn) or title.upper() == 'SI'):
+            continue
+        dd = os.path.join(STORAGE_DIR, c['key'])
+        if os.path.isdir(dd):
+            for f in os.listdir(dd):
+                if f.lower().endswith('.pdf'):
+                    return os.path.join(dd, f), 'pdf'
+                if f.lower().endswith('.docx'):
+                    return os.path.join(dd, f), 'docx'
+    return None, None
+
+
+def read_docx_text(path):
+    """读 .docx 的文字（含表格）。SI 价值主要在文字（合成步骤/参数），图暂不取。"""
+    try:
+        import docx
+    except ImportError:
+        raise RuntimeError('需要 python-docx：pip install python-docx')
+    doc = docx.Document(path)
+    parts = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+    for tb in doc.tables:                    # 表格常含关键参数，务必取
+        for row in tb.rows:
+            cells = [c.text.strip() for c in row.cells]
+            if any(cells):
+                parts.append(' | '.join(cells))
+    return '\n\n'.join(parts)
+
+
+# 兼容旧名
+def find_si_pdf(item_key):
+    p, kind = find_si_file(item_key)
+    return p if kind == 'pdf' else None
 
 
 def render_html(content, figs, title=''):
@@ -102,24 +134,33 @@ def main():
     key = sys.argv[1]
     out_html = sys.argv[2] if len(sys.argv) > 2 else os.path.join(LIBRARY, key, 'si_summary.html')
 
-    si_pdf = find_si_pdf(key)
-    if not si_pdf:
+    si_file, kind = find_si_file(key)
+    if not si_file:
         print(f'[跳过] {key} 没有 SI 附件'); sys.exit(0)
-    print(f'[SI] {os.path.basename(si_pdf)}')
+    print(f'[SI] {os.path.basename(si_file)} ({kind})')
 
     parsed = os.path.join(LIBRARY, key, 'si_parsed')
-    try:
-        parse_pdf(si_pdf, parsed)      # 已解析则复用
-    except PDFParseError as e:
-        print(f'[解析失败] {e}'); sys.exit(1)
+    figs = []
+    if kind == 'pdf':
+        try:
+            parse_pdf(si_file, parsed)      # 已解析则复用
+        except PDFParseError as e:
+            print(f'[解析失败] {e}'); sys.exit(1)
+        md = os.path.join(parsed, 'full.md')
+        if not os.path.exists(md):
+            print('[失败] 未生成 full.md'); sys.exit(1)
+        raw = io.open(md, encoding='utf-8').read()
+        figs = crop_figures(parsed)
+    else:                                   # docx：直接读文字（含表格），无图
+        try:
+            raw = read_docx_text(si_file)
+        except Exception as e:
+            print(f'[docx读取失败] {e}'); sys.exit(1)
+        os.makedirs(parsed, exist_ok=True)
+        io.open(os.path.join(parsed, 'full.md'), 'w', encoding='utf-8').write(raw)
+        print(f'  docx 读出 {len(raw)} 字符（含表格；docx 不取图）')
 
-    md = os.path.join(parsed, 'full.md')
-    if not os.path.exists(md):
-        print('[失败] 未生成 full.md'); sys.exit(1)
-
-    raw = io.open(md, encoding='utf-8').read()
     body = filtered_text(raw)          # 过滤噪声（作者/单位/目录/参考文献）
-    figs = crop_figures(parsed)
     print(f'  过滤后 {len(body)} 字符（原 {len(raw)}），补充图 {len(figs)} 张')
 
     user = f"补充材料共有 {len(figs)} 张图。\n\n正文:\n{body[:30000]}"

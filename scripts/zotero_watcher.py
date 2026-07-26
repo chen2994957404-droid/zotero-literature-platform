@@ -101,15 +101,20 @@ def find_pdf(item_key):
     pool.sort(key=lambda c: c[2], reverse=True)
     return pool[0][0], pool[0][1]
 
+_DOCX_CT = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
+
 def has_si(item_key):
-    """该文献是否有 SI 附件（PDF）。"""
+    """该文献是否有 SI 附件。支持 PDF 和 .docx（Elsevier 的 SI 常是 docx）。"""
     try:
         children = zget(f'/users/{USER_ID}/items/{item_key}/children')
     except Exception:
         return False
     for c in children:
         d = c['data']
-        if d.get('itemType') != 'attachment' or d.get('contentType') != 'application/pdf':
+        if d.get('itemType') != 'attachment':
+            continue
+        if d.get('contentType') not in ('application/pdf', _DOCX_CT):
             continue
         t = (d.get('title') or '').strip(); fn = (d.get('filename') or '')
         SUPP = re.compile(r'suppmat|supp\b|supporting|supplement|-si-|_si_|\bsi\.pdf|'
