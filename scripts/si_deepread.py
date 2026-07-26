@@ -66,7 +66,7 @@ def find_si_file(item_key):
 
 
 def read_docx_text(path):
-    """读 .docx 的文字（含表格）。SI 价值主要在文字（合成步骤/参数），图暂不取。"""
+    """读 .docx 的文字（含表格）。"""
     try:
         import docx
     except ImportError:
@@ -79,6 +79,33 @@ def read_docx_text(path):
             if any(cells):
                 parts.append(' | '.join(cells))
     return '\n\n'.join(parts)
+
+
+def extract_docx_images(path, min_kb=15):
+    """取出 .docx 里内嵌的图片（docx 本质是 zip，图在 word/media/）。
+
+    返回 [{b64, caption, num}]，格式与 figure_crop 一致，可直接进渲染流程。
+    过滤掉小图标（<min_kb），只留有意义的补充图。
+    """
+    import zipfile, base64
+    figs = []
+    try:
+        with zipfile.ZipFile(path) as z:
+            media = sorted([n for n in z.namelist()
+                            if n.startswith('word/media/')
+                            and n.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp'))])
+            for i, name in enumerate(media, 1):
+                data = z.read(name)
+                if len(data) < min_kb * 1024:      # 滤掉小图标/装饰
+                    continue
+                ext = name.rsplit('.', 1)[-1].lower()
+                mime = 'jpeg' if ext in ('jpg', 'jpeg') else ext
+                figs.append({
+                    'b64': f'data:image/{mime};base64,' + base64.b64encode(data).decode(),
+                    'caption': '', 'num': len(figs) + 1})
+    except Exception as e:
+        print(f'  （docx 取图失败，跳过：{e}）')
+    return figs
 
 
 # 兼容旧名
@@ -151,14 +178,15 @@ def main():
             print('[失败] 未生成 full.md'); sys.exit(1)
         raw = io.open(md, encoding='utf-8').read()
         figs = crop_figures(parsed)
-    else:                                   # docx：直接读文字（含表格），无图
+    else:                                   # docx：读文字（含表格）+ 取内嵌图片
         try:
             raw = read_docx_text(si_file)
         except Exception as e:
             print(f'[docx读取失败] {e}'); sys.exit(1)
         os.makedirs(parsed, exist_ok=True)
         io.open(os.path.join(parsed, 'full.md'), 'w', encoding='utf-8').write(raw)
-        print(f'  docx 读出 {len(raw)} 字符（含表格；docx 不取图）')
+        figs = extract_docx_images(si_file)
+        print(f'  docx 读出 {len(raw)} 字符（含表格），取出内嵌图 {len(figs)} 张')
 
     body = filtered_text(raw)          # 过滤噪声（作者/单位/目录/参考文献）
     print(f'  过滤后 {len(body)} 字符（原 {len(raw)}），补充图 {len(figs)} 张')
