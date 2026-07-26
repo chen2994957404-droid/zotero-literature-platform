@@ -215,18 +215,23 @@ def process_item(item):
             print(f'  [结构化抽取失败] {r.stderr[-200:]}')
     except Exception as e:
         print(f'  [结构化抽取异常] {e}')
-    # 3. 回写 Zotero：先删旧summary附件，再导入新的，命名 summary；标签改已精读
+    # 3. 回写 Zotero：**复用已有 summary 附件、只更新文件内容**（不删条目）
+    #    踩坑：原先"先删旧附件再传新的"，删除动作进入同步链 → Zotero 每篇都弹"冲突解决"框。
+    #    改为复用同一附件条目，只覆盖本地 storage 文件，避免产生删除记录。
     if WEB_API_KEY:
         try:
-            delete_old_summary(key)
-            att_key = upload_attachment(key, out_html, 'summary')
-            # 关键：同时直接写入本地Zotero storage，避免等云同步导致"找不到文件"
+            att_key = find_existing_summary(key)
+            if att_key:
+                print(f'  [复用附件条目] {att_key}（不删不新建，避免同步冲突）')
+            else:
+                att_key = upload_attachment(key, out_html, 'summary')
+            # 直接写入本地Zotero storage，点开即最新精读
             if att_key:
                 local_dir = os.path.join(STORAGE_DIR, att_key)
                 os.makedirs(local_dir, exist_ok=True)
                 import shutil
                 shutil.copy(out_html, os.path.join(local_dir, 'summary.html'))
-                print(f'  [附件已导入] summary（本地storage已就位，点开即图文精读）')
+                print(f'  [附件已更新] summary（本地storage已就位，点开即图文精读）')
             # 按实际完成情况置状态标签
             state = (TAG_FULL if (main_done and si_done)
                      else TAG_SI if si_done
@@ -236,6 +241,19 @@ def process_item(item):
             print(f'  [附件导入失败] {e}')
     else:
         print('  [提示] 未配 ZOTERO_API_KEY，跳过回写。')
+
+def find_existing_summary(item_key):
+    """找该文献已有的 summary 附件 key（用于复用，避免删除→同步冲突）。"""
+    try:
+        children = zget(f'/users/{USER_ID}/items/{item_key}/children')
+        for c in children:
+            d = c['data']
+            if d.get('itemType') == 'attachment' and (d.get('title') or '').strip() == 'summary':
+                return c['key']
+    except Exception:
+        pass
+    return None
+
 
 def delete_old_summary(item_key):
     """删除该文献下已有的 summary 附件，避免重复"""
