@@ -1,0 +1,134 @@
+# -*- coding: utf-8 -*-
+"""SI（补充材料）精读：解析 SI → 过滤噪声 → 生成"实验细节精读"HTML。
+
+价值验证（CABSSMLA）：SI 含正文完全没有的可复现细节——精确投料量(5g/1.19mmol)、
+原料分子量(Mw=4200)、溶剂配比(DMSO/IPA 4:1)、各复合材料制备克数、对照组设计逻辑。
+
+与正文精读的关系：**独立一节**，可单独生成，也可由 watcher 追加到正文精读之后。
+定位不同：正文精读=理解这篇做了什么；SI精读=我要复现时查参数。
+
+用法：python si_deepread.py <ZoteroKey> [out.html]
+"""
+import os, sys, io, re, base64, subprocess
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(SCRIPT_DIR)
+sys.path.insert(0, ROOT)
+
+from modules.zotero_client import zget, USER_ID, STORAGE_DIR, SUPP_PAT
+from modules.pdf_parse import parse_pdf, PDFParseError
+from modules.si_filter import filtered_text
+from modules.figure_crop import crop_figures
+from modules.llm_client import chat
+
+LIBRARY = os.path.join(ROOT, 'workflow_data', 'library')
+MODEL = os.environ.get('SI_MODEL', 'deepseek-v4-flash')   # 输出长 → flash 省钱
+
+SYS = """你是材料科学文献助手。下面是一篇论文【补充材料(SI)】的正文。
+请生成中文的"实验细节精读"，服务于"我要复现这个实验"的读者。要求：
+1. 【原料与规格】所有试剂及关键规格（尤其分子量、纯度、供应商）
+2. 【合成步骤】逐步写清：投料量(克数/摩尔数)、配比、溶剂、温度、时间、后处理。最重要，务必精确
+3. 【对照组设计】多个样品时说明设计逻辑与差异
+4. 【表征方法】一句话列出手段即可，不展开仪器型号
+5. 【补充数据要点】SI 图表说明的关键结论，按【图N】顺序简述
+讨论到某张补充图时用【图N】标记插图位置。用中文，专业准确，数值保留原文单位。"""
+
+
+def find_si_pdf(item_key):
+    """定位该文献的 SI 附件 PDF（与 find_pdf 相反：专找补充材料）。"""
+    try:
+        children = zget(f'/users/{USER_ID}/items/{item_key}/children')
+    except Exception:
+        return None
+    for c in children:
+        d = c['data']
+        if d.get('itemType') != 'attachment' or d.get('contentType') != 'application/pdf':
+            continue
+        title = (d.get('title') or '').strip()
+        fn = (d.get('filename') or '')
+        if SUPP_PAT.search(title) or SUPP_PAT.search(fn) or title.upper() == 'SI':
+            dd = os.path.join(STORAGE_DIR, c['key'])
+            if os.path.isdir(dd):
+                for f in os.listdir(dd):
+                    if f.lower().endswith('.pdf'):
+                        return os.path.join(dd, f)
+    return None
+
+
+def render_html(content, figs, title=''):
+    """把 Markdown 式内容 + 图渲染成 HTML（复用精读线的确定性插图思路）。"""
+    used = set()
+
+    def repl(m):
+        n = int(m.group(1)); used.add(n)
+        return f'\n<img src="{figs[n-1]["b64"]}">\n' if 1 <= n <= len(figs) else ''
+    content = re.sub(r'【图(\d+)】', repl, content)
+    missing = [i for i in range(1, len(figs) + 1) if i not in used]
+    if missing:
+        content += '\n\n（其余补充图）\n' + ''.join(
+            f'\n<img src="{figs[i-1]["b64"]}">\n' for i in missing)
+    out = []
+    for ln in content.split('\n'):
+        s = ln.strip()
+        if s.startswith('<img'):
+            out.append(s); continue
+        s = re.sub(r'^#{4,6}\s*', '', s)
+        if s.startswith('### '):
+            out.append(f'<h3>{s[4:].strip()}</h3>'); continue
+        if s.startswith('## '):
+            out.append(f'<h2 class="section">{s[3:].strip()}</h2>'); continue
+        if s.startswith('# '):
+            out.append(f'<h2 class="section">{s[2:].strip()}</h2>'); continue
+        s = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', s)
+        s = re.sub(r'^[-*]\s+', '· ', s)
+        if s:
+            out.append(f'<p>{s}</p>')
+    css = ('body{max-width:820px;margin:0 auto;padding:24px;font-family:-apple-system,'
+           '"Microsoft YaHei",sans-serif;line-height:1.85;color:#222;background:#fafafa}'
+           'h2.section{background:linear-gradient(90deg,#e8934a,#d4703a);color:#fff;padding:8px 20px;'
+           'border-radius:20px;display:inline-block;font-size:19px;margin:34px 0 16px}'
+           'h3{color:#c26a35;font-size:16px;margin-top:22px}p{margin:12px 0;text-align:justify}'
+           'img{max-width:100%;display:block;margin:18px auto;border:1px solid #eee;'
+           'border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.06)}strong{color:#c0392b}')
+    return (f'<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">'
+            f'<title>SI实验细节精读</title><style>{css}</style></head><body>'
+            f'<h2 class="section">补充材料（SI）· 实验细节精读</h2>'
+            + '\n'.join(out) + '</body></html>')
+
+
+def main():
+    if len(sys.argv) < 2:
+        print('用法: python si_deepread.py <ZoteroKey> [out.html]'); sys.exit(1)
+    key = sys.argv[1]
+    out_html = sys.argv[2] if len(sys.argv) > 2 else os.path.join(LIBRARY, key, 'si_summary.html')
+
+    si_pdf = find_si_pdf(key)
+    if not si_pdf:
+        print(f'[跳过] {key} 没有 SI 附件'); sys.exit(0)
+    print(f'[SI] {os.path.basename(si_pdf)}')
+
+    parsed = os.path.join(LIBRARY, key, 'si_parsed')
+    try:
+        parse_pdf(si_pdf, parsed)      # 已解析则复用
+    except PDFParseError as e:
+        print(f'[解析失败] {e}'); sys.exit(1)
+
+    md = os.path.join(parsed, 'full.md')
+    if not os.path.exists(md):
+        print('[失败] 未生成 full.md'); sys.exit(1)
+
+    raw = io.open(md, encoding='utf-8').read()
+    body = filtered_text(raw)          # 过滤噪声（作者/单位/目录/参考文献）
+    figs = crop_figures(parsed)
+    print(f'  过滤后 {len(body)} 字符（原 {len(raw)}），补充图 {len(figs)} 张')
+
+    user = f"补充材料共有 {len(figs)} 张图。\n\n正文:\n{body[:30000]}"
+    content = chat(SYS, user, provider='deepseek', model=MODEL,
+                   key=os.environ.get('DEEPSEEK_KEY', ''), temperature=0.3, max_tokens=6000)
+    os.makedirs(os.path.dirname(out_html), exist_ok=True)
+    io.open(out_html, 'w', encoding='utf-8').write(render_html(content, figs))
+    print(f'  [完成] {out_html}  {round(os.path.getsize(out_html)/1024)} KB')
+
+
+if __name__ == '__main__':
+    main()
