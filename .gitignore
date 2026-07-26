@@ -38,3 +38,8 @@ scripts/_tmp*.py
 Thumbs.db
 .vscode/
 .idea/
+
+# 另一对话产生的临时产物
+_disc.*
+workflow_data/_import*
+workflow_data/_disc*
