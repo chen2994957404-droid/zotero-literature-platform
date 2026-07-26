@@ -4,6 +4,14 @@
       python ask.py            进入交互模式，连续提问
 """
 import os, json, sys, urllib.request
+
+# 密钥统一从 modules/config 读（环境变量 → .env），必须在使用前定义
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    from modules.config import get_key as _cfg_get
+except Exception:
+    _cfg_get = lambda n, **kw: os.environ.get(n, '')
+
 import chromadb
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -16,12 +24,6 @@ TOP_K = 6
 sys.path.insert(0, ROOT)
 from modules.embed import embed as _embed_batch
 from modules.llm_client import chat as _chat
-try:
-    import sys as _s, os as _o
-    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
-    from modules.config import get_key as _cfg_get
-except Exception:
-    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
 
 client = chromadb.PersistentClient(path=VECTOR_DB)
 coll = client.get_or_create_collection('literature', metadata={'hnsw:space': 'cosine'})

@@ -10,6 +10,14 @@ Zotero 现在只保留「待精读」「已精读」两个工作流标签。
 
 import os, json, sys, urllib.request, re, time
 
+# 密钥统一从 modules/config 读（环境变量 → .env），必须在使用前定义
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    from modules.config import get_key as _cfg_get
+except Exception:
+    _cfg_get = lambda n, **kw: os.environ.get(n, '')
+
+
 USER_ID = '16078117'
 KEY = _cfg_get('ZOTERO_API_KEY')
 LOCAL = 'http://localhost:23119/api/users/' + USER_ID
@@ -22,12 +30,6 @@ MODEL = os.environ.get('AUTOTAG_MODEL', 'deepseek-v4-flash')  # 打标签用flas
 # LLM 调用走公理件
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from modules.llm_client import chat_json as _chat_json
-try:
-    import sys as _s, os as _o
-    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
-    from modules.config import get_key as _cfg_get
-except Exception:
-    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
 
 TEST = '--test' in sys.argv
 APPLY = '--apply' in sys.argv

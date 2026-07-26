@@ -25,9 +25,20 @@ class PDFParseError(Exception):
 
 
 def _token():
+    """取 MineRU token：走 config 公理件（环境变量 → .env），避免子进程拿不到。"""
     t = os.environ.get('MINERU_TOKEN')
     if not t:
-        raise PDFParseError('未设置 MINERU_TOKEN 环境变量')
+        try:
+            import sys as _s
+            _s.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+            from modules.config import get_key
+            t = get_key('MINERU_TOKEN')
+        except Exception:
+            t = ''
+    if not t:
+        raise PDFParseError(
+            '未找到 MINERU_TOKEN。请在项目根 .env 写 MINERU_TOKEN=你的token，'
+            '或设环境变量后重启进程')
     return t
 
 

@@ -5,6 +5,13 @@
 """
 import sys, os, json, time, zipfile, io, urllib.request
 
+# 密钥统一从 modules/config 读（环境变量 → .env），必须在使用前定义
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    from modules.config import get_key as _cfg_get
+except Exception:
+    _cfg_get = lambda n, **kw: os.environ.get(n, '')
+
 PDF_PATH, OUT_DIR = sys.argv[1], sys.argv[2]
 TOKEN = _cfg_get('MINERU_TOKEN')
 BASE = 'https://mineru.net/api/v4'
@@ -31,12 +38,6 @@ with open(PDF_PATH, 'rb') as f:
     pdf_bytes = f.read()
 # 用 http.client 直连，完全控制请求头（不发 Content-Type，避免OSS签名不匹配）
 import urllib.parse as _up, http.client as _hc
-try:
-    import sys as _s, os as _o
-    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
-    from modules.config import get_key as _cfg_get
-except Exception:
-    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
 u = _up.urlparse(upload_url)
 conn = _hc.HTTPSConnection(u.netloc, timeout=180)
 conn.request('PUT', u.path + '?' + u.query, body=pdf_bytes, headers={})
