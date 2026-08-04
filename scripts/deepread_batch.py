@@ -24,13 +24,19 @@ PROVIDER = 'deepseek'
 MODEL = os.environ.get('DEEPREAD_MODEL', 'deepseek-v4-flash')  # 精读输出重→flash
 KEY = _cfg_get('DEEPSEEK_KEY')
 
-def read_one(key):
+def read_one(key, force=False):
     parsed = os.path.join(LIBRARY, key, 'parsed')
     if not os.path.exists(os.path.join(parsed, 'layout.json')):
         print(f'  [跳过] 无 parsed 解析结果（需先精抽/MineRU）'); return False
     out_html = os.path.join(LIBRARY, key, 'summary.html')
-    if os.path.exists(out_html):
-        print(f'  [复用] 已有 summary.html'); return True
+    if os.path.exists(out_html) and not force:
+        print(f'  [复用] 已有 summary.html（--force 可强制重跑）'); return True
+    if force and os.path.exists(out_html):
+        # 重跑前备份旧的，万一新的更差还能还原（可逆是自主执行的前提）
+        bak = out_html + '.bak'
+        if not os.path.exists(bak):
+            import shutil; shutil.copy2(out_html, bak)
+            print(f'  [备份] 旧版存为 summary.html.bak')
     # deepread_v4.py 的 DeepSeek key 靠命令行第5参传入，不读环境变量（应用侧变更记录·认知2）
     env = dict(os.environ, PYTHONIOENCODING='utf-8')
     r = subprocess.run([sys.executable, DEEPREAD, parsed, out_html, PROVIDER, MODEL, KEY],
@@ -46,12 +52,13 @@ def main():
         keys = [l.strip() for l in open(fp, encoding='utf-8') if l.strip()]
     else:
         keys = [a for a in sys.argv[1:] if not a.startswith('--')]
-    print(f'批量精读 {len(keys)} 篇（模型 {MODEL}）\n')
+    force = '--force' in sys.argv
+    print(f'批量精读 {len(keys)} 篇（模型 {MODEL}{"，强制重跑" if force else ""}）\n')
     ok = fail = 0
     for i, key in enumerate(keys, 1):
         print(f'[{i}/{len(keys)}] {key}')
         try:
-            if read_one(key): ok += 1
+            if read_one(key, force): ok += 1
             else: fail += 1
         except Exception as e:
             print(f'  [出错] {e}'); fail += 1
