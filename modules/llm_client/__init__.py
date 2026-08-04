@@ -21,7 +21,7 @@
 
 模型选择原则（宪法·两把尺子的沉淀）：输出少的活用 pro（抽取），输出多的用 flash（精读）。
 """
-import os, json, re, urllib.request
+import os, json, re, urllib.request, urllib.error
 try:
     import sys as _s, os as _o
     _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
@@ -64,7 +64,20 @@ def _deepseek(messages, model, key, temperature, json_mode, max_tokens, thinking
     req = urllib.request.Request(DEEPSEEK_API,
         data=json.dumps(body, ensure_ascii=False).encode(), method='POST',
         headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'})
-    r = json.loads(urllib.request.urlopen(req, timeout=600).read())
+    # 5xx / 429 是服务端抖动，退避重试；4xx 是我们自己的错，立刻抛不浪费时间
+    last = None
+    for attempt in range(4):
+        try:
+            r = json.loads(urllib.request.urlopen(req, timeout=600).read())
+            break
+        except urllib.error.HTTPError as e:
+            last = e
+            if e.code not in (429, 500, 502, 503, 504):
+                raise LLMError(f'HTTP {e.code}: {e.read()[:300].decode("utf8","replace")}')
+            if attempt < 3:
+                import time as _t; _t.sleep(5 * 2 ** attempt)   # 5s/10s/20s
+    else:
+        raise LLMError(f'DeepSeek 服务端异常，重试 4 次仍失败: {last}')
     ch = r['choices'][0]
     out = ch['message'].get('content') or ''
     # 输出被 max_tokens 截断时明确报错，避免静默产出半截/空结果
