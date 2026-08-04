@@ -34,25 +34,38 @@ def embed(text):
 def deepseek(system, user):
     return _chat(system, user, provider='deepseek', model=DEEPSEEK_MODEL, key=DEEPSEEK_KEY, temperature=0.3)
 
-def ask(question):
-    # 1. 问题向量化，检索相关块
+def ask_answer(question, top_k=TOP_K):
+    """RAG 问答，**返回**结果而不是打印 —— 供 MCP / 其他脚本复用。
+
+    返回 {'answer': str, 'sources': [{'title','doi'}], 'chunks': int}
+    找不到内容时 answer 为空串、chunks 为 0（调用方据此给提示）。
+    """
     qvec = embed(question)
-    res = coll.query(query_embeddings=[qvec], n_results=TOP_K, include=['documents','metadatas','distances'])
-    docs = res['documents'][0]
-    metas = res['metadatas'][0]
+    res = coll.query(query_embeddings=[qvec], n_results=top_k,
+                     include=['documents', 'metadatas', 'distances'])
+    docs, metas = res['documents'][0], res['metadatas'][0]
     if not docs:
-        print('向量库是空的，先跑 vectorize.py'); return
-    # 2. 组装上下文
+        return {'answer': '', 'sources': [], 'chunks': 0}
     context = ''
     sources = {}
     for i, (doc, m) in enumerate(zip(docs, metas)):
         context += f'\n【片段{i+1}·来自《{m["title"][:40]}》】\n{doc}\n'
         sources[m['title'][:50]] = m.get('doi', '')
-    # 3. DeepSeek 结合内容回答
     system = ('你是科研文献助手。请只根据下面提供的文献片段回答用户问题，用中文，准确专业。'
               '如果片段里没有相关信息，就说明文献库里没有找到。回答末尾不用列来源，我会另外附上。')
-    user = f'文献片段：\n{context}\n\n用户问题：{question}'
-    answer = deepseek(system, user)
+    answer = deepseek(system, f'文献片段：\n{context}\n\n用户问题：{question}')
+    return {'answer': answer,
+            'sources': [{'title': t, 'doi': d} for t, d in sources.items()],
+            'chunks': len(docs)}
+
+
+def ask(question):
+    """命令行用：调 ask_answer 并打印。"""
+    r = ask_answer(question)
+    if not r['chunks']:
+        print('向量库是空的，先跑 vectorize.py'); return
+    answer = r['answer']
+    sources = {s['title']: s['doi'] for s in r['sources']}
     print('\n' + '='*50)
     print(answer)
     print('='*50)
