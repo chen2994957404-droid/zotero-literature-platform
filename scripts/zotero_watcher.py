@@ -36,6 +36,9 @@ STORAGE_DIR = r'D:\03_Software\Zetero\Zotero\storage'
 # 打「待处理」→ 自动检测有哪些附件、哪些还没精读 → 补做缺的 → 按结果换状态标签。
 # 状态互斥：一篇文献同一时间只有一个状态标签。
 TRIGGER_TAG = '待处理'                     # 打这个标签就触发（原「待精读」）
+# 触发别名：用户不该被迫记住我们改过的词。任一个都算触发（踩坑 #29）。
+# Zotero API 的 tag 参数支持 "A || B" 表示或。
+TRIGGER_TAGS = ['待处理', '待精读']
 TAG_MAIN = '正文精读'                      # 只有正文被精读
 TAG_SI   = 'SI精读'                        # 只有SI被精读（罕见，备用）
 TAG_FULL = '全文精读'                      # 正文+SI 都精读了
@@ -359,7 +362,8 @@ def main():
         except Exception:
             pass
         try:
-            items = zget(f'/users/{USER_ID}/items?tag={urllib.parse.quote(TRIGGER_TAG)}&limit=25')
+            q = urllib.parse.quote(' || '.join(TRIGGER_TAGS))
+            items = zget(f'/users/{USER_ID}/items?tag={q}&limit=25')
             print(f'[心跳] 轮询正常，待处理 {len(items)} 篇')
             for it in items:
                 key = it['key']
