@@ -45,10 +45,18 @@ def _cfg(provider, model, key):
     return provider, model, key
 
 
-def _deepseek(messages, model, key, temperature, json_mode, max_tokens):
+def _deepseek(messages, model, key, temperature, json_mode, max_tokens, thinking=None):
+    """thinking: True=开推理链, False=关, None=随 API 默认（V4 默认开）。
+
+    ⚠ 踩坑：V4 思考模式默认开启，推理链 token **计入 max_tokens**。
+    max_tokens 给小了（如 8000），推理吃光额度 → 正文被截断甚至空输出。
+    长文生成（精读）应关掉 thinking 或把 max_tokens 放大。
+    """
     if not key:
         raise LLMError('未提供 DEEPSEEK_KEY')
     body = {'model': model, 'temperature': temperature, 'messages': messages}
+    if thinking is not None:
+        body['thinking'] = {'type': 'enabled' if thinking else 'disabled'}
     if json_mode:
         body['response_format'] = {'type': 'json_object'}
     if max_tokens:
@@ -56,8 +64,15 @@ def _deepseek(messages, model, key, temperature, json_mode, max_tokens):
     req = urllib.request.Request(DEEPSEEK_API,
         data=json.dumps(body, ensure_ascii=False).encode(), method='POST',
         headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'})
-    r = json.loads(urllib.request.urlopen(req, timeout=300).read())
-    return r['choices'][0]['message']['content']
+    r = json.loads(urllib.request.urlopen(req, timeout=600).read())
+    ch = r['choices'][0]
+    out = ch['message'].get('content') or ''
+    # 输出被 max_tokens 截断时明确报错，避免静默产出半截/空结果
+    if ch.get('finish_reason') == 'length' and len(out) < 200:
+        raise LLMError(
+            f'输出被 max_tokens={max_tokens} 截断且正文近乎为空'
+            f'（V4 推理链计入额度）。请调大 max_tokens 或关闭 thinking。')
+    return out
 
 
 def _ollama(messages, model, temperature, json_mode, num_ctx):
@@ -75,14 +90,17 @@ def _ollama(messages, model, temperature, json_mode, num_ctx):
 
 
 def chat(system, user, provider=None, model=None, key=None,
-         temperature=0.3, max_tokens=None, num_ctx=16384):
-    """纯文本输出。用于对话/精读/问答。"""
+         temperature=0.3, max_tokens=None, num_ctx=16384, thinking=None):
+    """纯文本输出。用于对话/精读/问答。
+
+    thinking=False 建议用于长文生成（精读）：省 token、省钱、避免正文被推理链挤掉。
+    """
     provider, model, key = _cfg(provider, model, key)
     messages = [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}]
     if provider == 'ollama':
         out = _ollama(messages, model, temperature, False, num_ctx)
     else:
-        out = _deepseek(messages, model, key, temperature, False, max_tokens)
+        out = _deepseek(messages, model, key, temperature, False, max_tokens, thinking)
     return re.sub(r'<think>[\s\S]*?</think>', '', out).strip()  # 去掉推理模型的 think 段
 
 

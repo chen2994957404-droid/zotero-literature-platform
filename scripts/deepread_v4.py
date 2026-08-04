@@ -96,7 +96,9 @@ llm_input=f"标题: {title_en}\n作者: {authors}\nDOI: {doi}\n\n本文共有 {l
 for i,fg in enumerate(figs,1):
     llm_input+=f"【图{i}】{fg['caption'][:120]}\n"
 llm_input+="\n请在讨论部分按顺序用【图N】标记每张图插入位置。\n\n正文:\n"+body_txt
-if len(llm_input)>40000: llm_input=llm_input[:40000]
+# V4 上下文 1M token，正文（约 3~6 万字符）完全放得下，不必粗暴截断。
+# 留 15 万字符上限只为防解析异常产出的巨型垃圾文本。
+if len(llm_input)>150000: llm_input=llm_input[:150000]
 
 SYS=open(os.path.join(os.path.dirname(__file__),'_sys_prompt_v2.txt'),encoding='utf-8').read()
 
@@ -104,13 +106,27 @@ SYS=open(os.path.join(os.path.dirname(__file__),'_sys_prompt_v2.txt'),encoding='
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from modules.llm_client import chat as _chat
 
-def call_llm(text):
-    return _chat(SYS, text, provider=PROVIDER, model=MODEL, key=KEY,
-                 temperature=0.3, max_tokens=8000)
+MIN_OK = 3000   # 精读正文低于这个字数就是废品，不许静默写盘
 
-t0=time.time(); content=call_llm(llm_input)
-content=re.sub(r'<think>[\s\S]*?</think>','',content).strip()
+def call_llm(text, max_tokens=32000, thinking=False):
+    return _chat(SYS, text, provider=PROVIDER, model=MODEL, key=KEY,
+                 temperature=0.3, max_tokens=max_tokens, thinking=thinking)
+
+t0=time.time()
+content=''
+# 两次尝试：先关思考+3.2万额度（快且省）；不够则开思考+6.4万额度（更强）
+for attempt,(mt,think) in enumerate([(32000,False),(64000,True)],1):
+    try:
+        content=re.sub(r'<think>[\s\S]*?</think>','',call_llm(llm_input,mt,think)).strip()
+    except Exception as e:
+        print(f"  第{attempt}次调用失败: {e}"); content=''
+    if len(content)>=MIN_OK:
+        break
+    print(f"  第{attempt}次输出仅 {len(content)} 字（<{MIN_OK}），重试更大额度…")
 print(f"LLM {round(time.time()-t0,1)}s 输出{len(content)}字")
+if len(content)<MIN_OK:
+    # 宁可不产出，也不产出「只有图没有字」的废品精读（否则会被标成已精读、不再重跑）
+    sys.exit(f"[FAIL] LLM 正文仅 {len(content)} 字，判定失败，不写盘。请检查模型/额度。")
 
 # ---------- 4. 确定性插图 ----------
 used=set()
