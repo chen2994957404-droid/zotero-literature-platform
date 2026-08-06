@@ -22,7 +22,16 @@ DEEPSEEK_KEY = _cfg_get('DEEPSEEK_KEY')
 # 从Zotero本地API取标题（美化显示）
 def get_title(key):
     try:
-        req = urllib.request.Request(f'http://localhost:23119/api/users/16078117/items/{key}',
+        # 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+        import os as _os, sys as _sys
+        _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+        try:
+            from modules.config import need_site as _site
+        except Exception:
+            _site = lambda n: _os.environ.get(n) or (_ for _ in ()).throw(RuntimeError(f'缺少本机设置 {n}，请在控制面板或 .env 中配置'))
+        _UID = _site('ZOTERO_USER_ID')
+        _STORAGE = _site('ZOTERO_STORAGE')
+        req = urllib.request.Request(f'http://localhost:23119/api/users/{_UID}/items/{key}',
             headers={'Zotero-Allowed-Request': 'true'})
         return json.loads(urllib.request.urlopen(req, timeout=8).read())['data'].get('title', key)
     except Exception:

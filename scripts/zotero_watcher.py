@@ -30,8 +30,17 @@ def print(*args, **kwargs):
 # ===== 配置 =====
 ZOTERO_LOCAL = 'http://localhost:23119/api'
 ZOTERO_HEADERS = {'Zotero-Allowed-Request': 'true'}
-USER_ID = '16078117'                      # 本地API里的库id
-STORAGE_DIR = r'D:\03_Software\Zetero\Zotero\storage'
+# 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+try:
+    from modules.config import need_site as _site
+except Exception:
+    _site = lambda n: _os.environ.get(n) or (_ for _ in ()).throw(RuntimeError(f'缺少本机设置 {n}，请在控制面板或 .env 中配置'))
+_UID = _site('ZOTERO_USER_ID')
+_STORAGE = _site('ZOTERO_STORAGE')
+USER_ID = _UID                      # 本地API里的库id
+STORAGE_DIR = _STORAGE
 # ── 标签状态机（用户定，2026-07-25）───────────────────────────────
 # 打「待处理」→ 自动检测有哪些附件、哪些还没精读 → 补做缺的 → 按结果换状态标签。
 # 状态互斥：一篇文献同一时间只有一个状态标签。

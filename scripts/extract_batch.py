@@ -22,8 +22,17 @@ MINERU_SCRIPT = os.path.join(SCRIPT_DIR, 'mineru_parse.py')
 # Zotero 本地读 + 存储路径（与 zotero_watcher.py 一致）
 ZOTERO_LOCAL = 'http://localhost:23119/api'
 ZH = {'Zotero-Allowed-Request': 'true'}
-USER_ID = '16078117'
-STORAGE_DIR = r'D:\03_Software\Zetero\Zotero\storage'
+# 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+try:
+    from modules.config import need_site as _site
+except Exception:
+    _site = lambda n: _os.environ.get(n) or (_ for _ in ()).throw(RuntimeError(f'缺少本机设置 {n}，请在控制面板或 .env 中配置'))
+_UID = _site('ZOTERO_USER_ID')
+_STORAGE = _site('ZOTERO_STORAGE')
+USER_ID = _UID
+STORAGE_DIR = _STORAGE
 
 # 复用精层抽取的核心
 from extract_structured import (SYS, build_user_prompt, hierarchical_body,

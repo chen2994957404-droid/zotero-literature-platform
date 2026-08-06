@@ -108,6 +108,24 @@ def get_site(name):
     raise KeyError(f'未知的本机设置项 {name}，可选：{[s[0] for s in SITE_SETTINGS]}')
 
 
+def need_site(name):
+    """取必填的本机设置，没配就**明确报错**并给出怎么配。
+
+    为什么不留「读不到就用默认值」的兜底：
+    那会把开发者本人的 Zotero 用户ID 留在源码里（传到 GitHub 就是泄露），
+    而且别人装上后会静默连到陌生人的库 —— 静默用错值比直接报错危险得多。
+    """
+    v = get_site(name)
+    if not v:
+        label = next((s[1] for s in SITE_SETTINGS if s[0] == name), name)
+        tip = next((s[3] for s in SITE_SETTINGS if s[0] == name), '')
+        raise RuntimeError(
+            f'缺少本机设置「{label}」（{name}）。{tip}\n'
+            f'  配置方法：双击「控制面板.bat」→ 在「本机设置」里填写；\n'
+            f'  或直接在项目根目录 .env 里写一行：{name}=你的值')
+    return v
+
+
 def site_missing():
     """哪些必填的本机设置还没配（装到新电脑时用来提示）。返回键名列表。"""
     must = ('ZOTERO_USER_ID', 'ZOTERO_STORAGE')

@@ -58,8 +58,13 @@ def c_config():
 
 def c_zotero():
     try:
+        from modules.config import get_site
+        uid = get_site('ZOTERO_USER_ID')
+        host = get_site('ZOTERO_API_HOST')
+        if not uid:
+            return WARN, '未配置 ZOTERO_USER_ID（控制面板里可填）'
         urllib.request.urlopen(urllib.request.Request(
-            'http://localhost:23119/api/users/16078117/items/top?limit=1',
+            f'{host}/api/users/{uid}/items/top?limit=1',
             headers={'Zotero-Allowed-Request': 'true'}), timeout=6)
         return OK, 'Zotero 本地 API 通'
     except Exception:

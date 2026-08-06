@@ -19,7 +19,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 try:
     from modules.zotero_client import zget, USER_ID
 except Exception:
-    zget = None; USER_ID = os.environ.get('ZOTERO_USER_ID', '16078117')
+    # 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+    import os as _os, sys as _sys
+    _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    try:
+        from modules.config import need_site as _site
+    except Exception:
+        _site = lambda n: _os.environ.get(n) or (_ for _ in ()).throw(RuntimeError(f'缺少本机设置 {n}，请在控制面板或 .env 中配置'))
+    _UID = _site('ZOTERO_USER_ID')
+    _STORAGE = _site('ZOTERO_STORAGE')
+    zget = None; USER_ID = os.environ.get('ZOTERO_USER_ID', _UID)
 
 OPENALEX = 'https://api.openalex.org/works'
 
