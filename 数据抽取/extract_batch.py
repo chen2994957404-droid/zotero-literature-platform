@@ -17,7 +17,7 @@ sys.path.insert(0, SCRIPT_DIR)
 
 LIBRARY = os.path.join(ROOT, 'workflow_data', 'library')
 OUT_DIR = os.path.join(ROOT, 'workflow_data', 'structured')
-MINERU_SCRIPT = os.path.join(SCRIPT_DIR, 'mineru_parse.py')
+MINERU_SCRIPT = os.path.join(os.path.dirname(SCRIPT_DIR), '文献精读', 'mineru_parse.py')
 
 # Zotero 本地读 + 存储路径（与 zotero_watcher.py 一致）
 ZOTERO_LOCAL = 'http://localhost:23119/api'

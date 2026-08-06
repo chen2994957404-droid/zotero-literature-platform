@@ -25,7 +25,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)
 sys.path.insert(0, ROOT)
-sys.path.insert(0, SCRIPT_DIR)
+sys.path.insert(0, SCRIPT_DIR)  # health_check 同在本文件夹
 
 from modules.config import (get_key, set_keys, get_model, mask,
                             MODEL_SETTINGS, ENV_FILE)

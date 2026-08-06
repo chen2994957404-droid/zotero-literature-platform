@@ -60,7 +60,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)
 DEEPREAD = os.path.join(SCRIPT_DIR, 'deepread_v4.py')
 MINERU_SCRIPT = os.path.join(SCRIPT_DIR, 'mineru_parse.py')
-EXTRACT_SCRIPT = os.path.join(SCRIPT_DIR, 'extract_structured.py')  # 结构化抽取（粗层）
+EXTRACT_SCRIPT = os.path.join(ROOT, '数据抽取', 'extract_structured.py')  # 结构化抽取（粗层）
 SI_DEEPREAD = os.path.join(SCRIPT_DIR, 'si_deepread.py')            # SI 实验细节精读
 MERGE_SCRIPT = os.path.join(SCRIPT_DIR, 'merge_summary.py')         # 正文+SI 合并
 # 新的以文献为单元的库结构：workflow_data/library/<key>/{parsed/, summary.html}

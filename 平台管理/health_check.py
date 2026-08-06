@@ -2,7 +2,7 @@
 """一键健康检查：验证平台各环节是否正常。改动后跑这个，比逐个手测可靠。
 
 覆盖：语法 → 配置 → 依赖服务 → 公理件自测 → 数据资产 → 后台服务
-用法: python scripts/health_check.py
+用法: python 平台管理/health_check.py
 """
 import os, sys, ast, glob, json, urllib.request, subprocess
 
@@ -12,6 +12,35 @@ sys.path.insert(0, ROOT)
 
 OK, WARN, FAIL = '[OK]  ', '[WARN]', '[FAIL]'
 results = []
+
+# 工作流文件夹 = 项目根下、含 .py 且不是积木层/数据/文档的目录。
+# 自动发现而非写死清单：以后新增一条工作流线，体检自动纳入，不用改这里。
+_SKIP_DIRS = {'modules', 'docs', 'workflow_data', 'n8n_data', 'wf_backup',
+              '__pycache__', '.git', 'b'}
+
+
+def workflow_dirs():
+    return sorted(d for d in os.listdir('.')
+                  if os.path.isdir(d) and d not in _SKIP_DIRS
+                  and not d.startswith(('.', 'zotero_backup'))
+                  and glob.glob(os.path.join(d, '*.py')))
+
+
+def code_files():
+    """所有需要检查的源码：各工作流文件夹 + 积木层。"""
+    files = glob.glob('modules/**/*.py', recursive=True)
+    for d in workflow_dirs():
+        files += glob.glob(os.path.join(d, '**', '*.py'), recursive=True)
+    return files
+
+
+def find_script(name):
+    """按文件名在工作流各文件夹里找脚本，返回路径或 None。"""
+    for d in workflow_dirs():
+        p = os.path.join(d, name + '.py')
+        if os.path.exists(p):
+            return p
+    return None
 
 
 def check(name, fn):
@@ -24,7 +53,7 @@ def check(name, fn):
 
 
 def c_syntax():
-    files = glob.glob('scripts/**/*.py', recursive=True) + glob.glob('modules/**/*.py', recursive=True)
+    files = code_files()
     bad = []
     for f in files:
         try:
@@ -39,8 +68,7 @@ def c_no_secrets():
     import re
     pat = re.compile(r"(sk-[a-zA-Z0-9]{24,}|['\"][A-Za-z0-9]{24}['\"]\s*#?\s*zotero)", re.I)
     hits = []
-    for f in glob.glob('scripts/**/*.py', recursive=True) + glob.glob('modules/**/*.py', recursive=True) \
-            + glob.glob('*.bat') + glob.glob('wf_backup/*.json'):
+    for f in code_files() + glob.glob('*.bat') + glob.glob('wf_backup/*.json'):
         try:
             s = open(f, encoding='utf-8', errors='replace').read()
         except Exception:
@@ -115,14 +143,16 @@ def c_importable():
     key_scripts = ['zotero_watcher', 'si_deepread', 'extract_structured', 'ask',
                    'mineru_parse', 'deepread_batch', 'merge_summary']
     bad = []
+    missing = []
     for name in key_scripts:
-        p = os.path.join('scripts', name + '.py')
-        if not os.path.exists(p):
+        p = find_script(name)
+        if not p:
+            missing.append(name)      # 关键脚本找不到 = 重组时漏搬了，必须报出来
             continue
         # 用子进程 import，避免脚本执行副作用影响本进程
         r = subprocess.run(
             [sys.executable, '-c',
-             f"import sys; sys.path.insert(0,'scripts'); sys.path.insert(0,'.'); "
+             f"import sys; sys.path.insert(0, r'{os.path.dirname(p)}'); sys.path.insert(0,'.'); "
              f"import importlib.util as u; "
              f"spec=u.spec_from_file_location('_m', r'{p}'); m=u.module_from_spec(spec); "
              f"sys.argv=['x','a','b']; "
@@ -132,6 +162,8 @@ def c_importable():
         if 'NameError' in err or 'ImportError' in err or 'ModuleNotFoundError' in err:
             first = [l for l in err.splitlines() if 'Error' in l]
             bad.append(f'{name}({first[-1][:60] if first else "err"})')
+    if missing:
+        return FAIL, f'关键脚本找不到（可能重组时漏搬）: {missing}'
     return (OK, f'{len(key_scripts)} 个关键脚本可正常加载') if not bad else (FAIL, f'加载失败: {bad}')
 
 
