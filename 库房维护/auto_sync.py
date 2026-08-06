@@ -12,6 +12,7 @@
 用法: python auto_sync.py        （由任务计划 LiteratureAutoSync 每小时调用）
 """
 import os, sys, subprocess, time, io, json, urllib.request
+_NOWIN = getattr(__import__('subprocess'), 'CREATE_NO_WINDOW', 0) if __import__('os').name == 'nt' else 0
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)
@@ -64,7 +65,7 @@ def run(script, name, timeout=3600):
     try:
         r = subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, script)],
                            capture_output=True, text=True, encoding='utf-8',
-                           errors='replace', env=env, timeout=timeout, cwd=ROOT)
+                           errors='replace', env=env, timeout=timeout, cwd=ROOT, creationflags=_NOWIN)
         tail = (r.stdout or '').strip().splitlines()
         summary = tail[-1] if tail else '(无输出)'
         log(f'{name}: {summary}')

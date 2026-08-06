@@ -4,6 +4,7 @@
 用法: python si_batch.py --file keys.txt    |    python si_batch.py KEY1 KEY2
 """
 import os, sys, io, subprocess, time
+_NOWIN = getattr(__import__('subprocess'), 'CREATE_NO_WINDOW', 0) if __import__('os').name == 'nt' else 0
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)
@@ -15,7 +16,7 @@ def run(script, args, timeout=900):
     env = dict(os.environ, PYTHONIOENCODING='utf-8')
     r = subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, script)] + args,
                        capture_output=True, text=True, encoding='utf-8',
-                       errors='replace', env=env, timeout=timeout, cwd=ROOT)
+                       errors='replace', env=env, timeout=timeout, cwd=ROOT, creationflags=_NOWIN)
     return r
 
 

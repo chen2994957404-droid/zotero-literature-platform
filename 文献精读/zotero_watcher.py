@@ -32,6 +32,7 @@ ZOTERO_LOCAL = 'http://localhost:23119/api'
 ZOTERO_HEADERS = {'Zotero-Allowed-Request': 'true'}
 # 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
 import os as _os, sys as _sys
+_NOWIN = getattr(__import__('subprocess'), 'CREATE_NO_WINDOW', 0) if __import__('os').name == 'nt' else 0
 _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
 try:
     from modules.config import need_site as _site
@@ -178,12 +179,12 @@ def process_item(item):
         else:
             r = subprocess.run([sys.executable, MINERU_SCRIPT, pdf_path, parsed_dir],
                                capture_output=True, text=True, encoding='utf-8',
-                               errors='replace', timeout=600)
+                               errors='replace', timeout=600, creationflags=_NOWIN)
             if r.returncode != 0:
                 print(f'  [正文解析失败] {r.stderr[-300:]}'); return
         r = subprocess.run([sys.executable, DEEPREAD, parsed_dir, out_html, PROVIDER, MODEL, DEEPSEEK_KEY],
                            capture_output=True, text=True, encoding='utf-8',
-                           errors='replace', timeout=900, env=env)
+                           errors='replace', timeout=900, env=env, creationflags=_NOWIN)
         if r.returncode != 0:
             print(f'  [正文精读失败] {r.stderr[-300:]}'); return
         main_done = True
@@ -195,7 +196,7 @@ def process_item(item):
     if si_exists and not si_done:
         r = subprocess.run([sys.executable, SI_DEEPREAD, key],
                            capture_output=True, text=True, encoding='utf-8',
-                           errors='replace', timeout=900, env=env)
+                           errors='replace', timeout=900, env=env, creationflags=_NOWIN)
         print((r.stdout or '')[-300:])
         si_done = os.path.exists(si_html)
         print(f'  [SI精读{"完成" if si_done else "失败"}]')
@@ -207,7 +208,7 @@ def process_item(item):
     if main_done and si_done:
         r = subprocess.run([sys.executable, MERGE_SCRIPT, key, '--no-upload'],
                            capture_output=True, text=True, encoding='utf-8',
-                           errors='replace', timeout=300, env=env)
+                           errors='replace', timeout=300, env=env, creationflags=_NOWIN)
         merged = os.path.join(lib_dir, 'summary_full.html')
         if os.path.exists(merged):
             final_html = merged
@@ -231,7 +232,7 @@ def process_item(item):
     try:
         r = subprocess.run([sys.executable, EXTRACT_SCRIPT, key],
                            capture_output=True, text=True, encoding='utf-8',
-                           errors='replace', timeout=300, env=env)
+                           errors='replace', timeout=300, env=env, creationflags=_NOWIN)
         if r.returncode == 0:
             print(f'  [结构化抽取完成] 已并入 structured/compare.md')
         else:

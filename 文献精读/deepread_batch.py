@@ -8,6 +8,7 @@
   python deepread_batch.py --file keys.txt
 """
 import os, sys, subprocess
+_NOWIN = getattr(__import__('subprocess'), 'CREATE_NO_WINDOW', 0) if __import__('os').name == 'nt' else 0
 try:
     import sys as _s, os as _o
     _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
@@ -44,7 +45,7 @@ def read_one(key, force=False):
     # deepread_v4.py 的 DeepSeek key 靠命令行第5参传入，不读环境变量（应用侧变更记录·认知2）
     env = dict(os.environ, PYTHONIOENCODING='utf-8')
     r = subprocess.run([sys.executable, DEEPREAD, parsed, out_html, PROVIDER, MODEL, KEY],
-                       capture_output=True, text=True, encoding='utf-8', errors='replace', env=env)
+                       capture_output=True, text=True, encoding='utf-8', errors='replace', env=env, creationflags=_NOWIN)
     if os.path.exists(out_html):
         sz = round(os.path.getsize(out_html) / 1024)
         print(f'  [完成] summary.html {sz} KB'); return True

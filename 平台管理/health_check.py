@@ -5,6 +5,7 @@
 用法: python 平台管理/health_check.py
 """
 import os, sys, ast, glob, json, urllib.request, subprocess
+_NOWIN = getattr(__import__('subprocess'), 'CREATE_NO_WINDOW', 0) if __import__('os').name == 'nt' else 0
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
@@ -78,6 +79,38 @@ def c_no_secrets():
     return (OK, '源码无明文密钥') if not hits else (FAIL, f'发现明文密钥: {hits}')
 
 
+def c_no_popup():
+    """揪出会弹控制台窗口的子进程调用（踩坑 #31）。
+
+    Windows 上 subprocess 默认会弹窗。面板每 15 秒、看门狗每 60 秒各查一次进程，
+    没加静默标志就会不停闪蓝色窗口打扰用户。
+    正确做法：走 modules.subproc，或显式带 creationflags。
+    **这一项是防复发的关键** —— 光修好现有的 17 处不够，得让以后写错立刻被发现。
+    """
+    import re
+    call = re.compile(r'subprocess\.(run|Popen)\s*\(')
+    bad = []
+    for f in code_files():
+        np = os.path.normpath(f)
+        if np.startswith('modules' + os.sep + 'subproc'):
+            continue                       # 积木自己就是正确实现，豁免
+        if np.startswith('归档'):
+            continue                       # 归档的旧代码不再运行，不必整改
+        try:
+            src = open(f, encoding='utf-8', errors='replace').read()
+        except Exception:
+            continue
+        for m in call.finditer(src):
+            # 取该调用之后的一小段，看有没有静默标志
+            seg = src[m.start():m.start() + 600]
+            if 'creationflags' not in seg:
+                line = src[:m.start()].count('\n') + 1
+                bad.append(f'{os.path.basename(f)}:{line}')
+    if bad:
+        return WARN, f'{len(bad)} 处子进程调用可能弹窗（改用 modules.subproc）: {bad[:6]}'
+    return OK, '所有子进程调用都不会弹窗'
+
+
 def c_config():
     from modules.config import get_key
     missing = [k for k in ('DEEPSEEK_KEY', 'ZOTERO_API_KEY', 'MINERU_TOKEN') if not get_key(k)]
@@ -124,7 +157,7 @@ def c_modules():
         try:
             r = subprocess.run([sys.executable, os.path.join(m, 'selftest.py')],
                                capture_output=True, text=True, encoding='utf-8',
-                               errors='replace', timeout=60)
+                               errors='replace', timeout=60, creationflags=_NOWIN)
             (passed if r.returncode == 0 else failed).append(name)
         except subprocess.TimeoutExpired:
             failed.append(f'{name}(超时)')
@@ -157,7 +190,8 @@ def c_importable():
              f"spec=u.spec_from_file_location('_m', r'{p}'); m=u.module_from_spec(spec); "
              f"sys.argv=['x','a','b']; "
              f"exec(compile(open(r'{p}',encoding='utf-8').read().split('if __name__')[0], r'{p}', 'exec'), m.__dict__)"],
-            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60)
+            capture_output=True, text=True, encoding='utf-8', errors='replace',
+            timeout=60, creationflags=_NOWIN)
         err = r.stderr or ''
         if 'NameError' in err or 'ImportError' in err or 'ModuleNotFoundError' in err:
             first = [l for l in err.splitlines() if 'Error' in l]
@@ -183,9 +217,11 @@ def c_data():
 
 def c_services():
     try:
-        out = subprocess.run(['powershell', '-Command',
-                              "Get-ScheduledTask | Where-Object {$_.TaskName -in @('ZoteroLiteratureWatcher','OllamaService','ZoteroApp','LiteratureAutoSync')} | Select-Object -ExpandProperty TaskName"],
-                             capture_output=True, text=True, timeout=30).stdout
+        from modules.subproc import powershell
+        out = powershell(
+            "Get-ScheduledTask | Where-Object {$_.TaskName -in "
+            "@('ZoteroLiteratureWatcher','OllamaService','ZoteroApp','LiteratureAutoSync')} "
+            "| Select-Object -ExpandProperty TaskName", timeout=30)
         tasks = [t.strip() for t in out.splitlines() if t.strip()]
         want = {'ZoteroLiteratureWatcher', 'OllamaService', 'ZoteroApp', 'LiteratureAutoSync'}
         miss = want - set(tasks)
@@ -198,6 +234,7 @@ if __name__ == '__main__':
     print('=== 平台健康检查 ===\n', flush=True)
     check('语法', c_syntax)
     check('密钥安全', c_no_secrets)
+    check('无弹窗', c_no_popup)
     check('配置加载', c_config)
     check('Zotero 服务', c_zotero)
     check('Ollama 服务', c_ollama)

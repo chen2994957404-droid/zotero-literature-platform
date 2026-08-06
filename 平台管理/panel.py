@@ -29,6 +29,7 @@ sys.path.insert(0, SCRIPT_DIR)  # health_check 同在本文件夹
 
 from modules.config import (get_key, set_keys, get_model, mask,
                             MODEL_SETTINGS, ENV_FILE)
+from modules.subproc import run as _run, powershell   # 统一走静默子进程调用
 
 PORT = int(os.environ.get('PANEL_PORT', '8777'))
 HOST = '127.0.0.1'          # 只监听本机，外部访问不到
@@ -76,10 +77,10 @@ def collect_processes():
           "Where-Object {$_.CommandLine -match 'zotero_watcher|watchdog|deepread|"
           "extract_|vectorize|auto_sync|panel'} | "
           "Select-Object ProcessId,CreationDate,CommandLine | ConvertTo-Json -Compress")
+    # 走 subproc 积木：面板每 15 秒刷新一次，裸调 powershell 会不停闪窗口（踩坑 #31）
     try:
-        out = subprocess.run(['powershell', '-NoProfile', '-Command', ps],
-                             capture_output=True, text=True, timeout=25).stdout.strip()
-        data = json.loads(out) if out else []
+        raw = powershell(ps, timeout=25).strip()
+        data = json.loads(raw) if raw else []
         if isinstance(data, dict):
             data = [data]
     except Exception:
@@ -179,9 +180,7 @@ def action_selftest(name):
     if not os.path.exists(p) or os.path.sep + '..' in name or '/' in name:
         return False, '没有这块积木或它没有自测'
     try:
-        r = subprocess.run([sys.executable, p], capture_output=True, text=True,
-                           encoding='utf-8', errors='replace', timeout=120,
-                           cwd=ROOT)
+        r = _run([sys.executable, p], timeout=120, cwd=ROOT)
         tail = (r.stdout or r.stderr or '').strip().split('\n')[-1][:120]
         return r.returncode == 0, f'{name}：{tail}'
     except subprocess.TimeoutExpired:
@@ -229,9 +228,8 @@ def action_restart(task_name):
     if task_name not in SERVICES:
         return False, '未知服务'
     try:
-        r = subprocess.run(['powershell', '-NoProfile', '-Command',
-                            f'Restart-ScheduledTask -TaskName {task_name}'],
-                           capture_output=True, text=True, timeout=40)
+        r = _run(['powershell', '-NoProfile', '-NonInteractive', '-Command',
+                  f'Restart-ScheduledTask -TaskName {task_name}'], timeout=40)
         if r.returncode == 0:
             return True, f'{SERVICES[task_name]} 已重启'
         return False, (r.stderr or '重启失败')[:200]

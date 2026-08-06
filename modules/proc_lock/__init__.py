@@ -36,11 +36,11 @@ def _pid_alive(pid):
     if pid <= 0:
         return False
     if os.name == 'nt':
-        import subprocess
         try:
-            out = subprocess.run(['tasklist', '/FI', f'PID eq {pid}', '/NH'],
-                                 capture_output=True, text=True, timeout=10).stdout
-            return str(pid) in out
+            # 走 subproc 积木：裸调 tasklist 会弹控制台窗口（踩坑 #31）
+            from modules.subproc import out as _out
+            return str(pid) in _out(['tasklist', '/FI', f'PID eq {pid}', '/NH'],
+                                    timeout=10, default='')
         except Exception:
             return True
     try:

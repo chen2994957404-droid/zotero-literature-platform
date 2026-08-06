@@ -11,6 +11,8 @@ import os, sys, time, subprocess, io
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)
+sys.path.insert(0, ROOT)
+from modules import subproc as _sp   # 统一走静默子进程调用，避免弹窗
 HEARTBEAT = os.path.join(ROOT, 'workflow_data', 'logs', 'watcher_heartbeat.txt')
 WATCHER = os.path.join(SCRIPT_DIR, 'zotero_watcher.py')
 WD_LOG = os.path.join(ROOT, 'workflow_data', 'logs', 'watchdog.log')
@@ -35,38 +37,32 @@ def heartbeat_age():
         return None   # 心跳文件不存在/读不了
 
 def find_watcher_pids():
-    """找正在跑的 zotero_watcher 进程（Windows）。"""
+    """找正在跑的 zotero_watcher 进程（Windows）。
+
+    走 subproc 积木：本函数每 60 秒被调一次，裸调 wmic 会不停弹控制台窗口（踩坑 #31）。
+    wmic 在新版 Windows 已弃用，改用 PowerShell 的 CIM 查询，更可靠。
+    """
     try:
-        out = subprocess.run(
-            ['wmic', 'process', 'where', "name='python.exe'", 'get', 'ProcessId,CommandLine'],
-            capture_output=True, text=True, encoding='utf-8', errors='replace').stdout
-        pids = []
-        for ln in out.splitlines():
-            if 'zotero_watcher' in ln:
-                for tok in ln.split():
-                    if tok.isdigit():
-                        pids.append(tok)
-        return pids
+        txt = _sp.powershell(
+            "Get-CimInstance Win32_Process -Filter \"Name like 'python%'\" | "
+            "Where-Object {$_.CommandLine -match 'zotero_watcher'} | "
+            "Select-Object -ExpandProperty ProcessId", timeout=25)
+        return [t.strip() for t in txt.splitlines() if t.strip().isdigit()]
     except Exception:
         return []
 
 def restart_watcher():
     for pid in find_watcher_pids():
-        subprocess.run(['taskkill', '/F', '/PID', pid], capture_output=True)
+        _sp.run(['taskkill', '/F', '/PID', pid], timeout=20)
         log(f'杀掉卡死 watcher PID={pid}')
-    # 重启（继承当前环境变量，含密钥）；强制无窗口，不打扰用户
+    # 注意：**不要在这里手动删锁文件**。
+    # proc_lock 已能识别「持有者已死」的僵尸锁并自动接管；
+    # 而如果 taskkill 失败（旧进程其实还活着），删锁会让新实例照样起来 →
+    # 又回到两份并存的老毛病。让锁自己判断，比我们猜更可靠。
+    # 重启（继承当前环境变量，含密钥）。spawn 内部已保证无窗口 + 自动换 pythonw
     env = dict(os.environ, PYTHONIOENCODING='utf-8')
-    flags = 0
-    exe = sys.executable
-    if os.name == 'nt':
-        flags = subprocess.CREATE_NO_WINDOW    # 不弹黑窗口（原 CREATE_NEW_CONSOLE 会弹）
-        # 双保险：即使看门狗自己是 python.exe 跑的，也用 pythonw.exe 启动 watcher
-        pyw = exe.replace('python.exe', 'pythonw.exe')
-        if pyw.endswith('pythonw.exe') and os.path.exists(pyw):
-            exe = pyw
-    subprocess.Popen([exe, WATCHER], env=env, creationflags=flags,
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    log(f'已重启 watcher（{os.path.basename(exe)}，后台无窗口）')
+    _sp.spawn([sys.executable, WATCHER], env=env)
+    log('已重启 watcher（后台无窗口）')
 
 def main():
     log(f'看门狗启动。心跳阈值 {STALE}s，检查间隔 {CHECK}s')

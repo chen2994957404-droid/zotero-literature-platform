@@ -5,6 +5,7 @@
       python rerun_pro.py <序号>     用pro重跑该篇
 """
 import os, sys, subprocess, urllib.request, json
+_NOWIN = getattr(__import__('subprocess'), 'CREATE_NO_WINDOW', 0) if __import__('os').name == 'nt' else 0
 try:
     import sys as _s, os as _o
     _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
@@ -60,5 +61,5 @@ print(f'用 deepseek-v4-pro 重跑：{title[:50]}')
 env = dict(os.environ, PYTHONIOENCODING='utf-8')
 r = subprocess.run([sys.executable, DEEPREAD, os.path.join(WORK, key), out,
                     'deepseek', 'deepseek-v4-pro', DEEPSEEK_KEY],
-                   encoding='utf-8', errors='replace', env=env)
+                   encoding='utf-8', errors='replace', env=env, creationflags=_NOWIN)
 print(f'\n完成，输出：{out}' if r.returncode == 0 else '失败')

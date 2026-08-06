@@ -2,10 +2,17 @@
 """proc_lock 自测：验证「同时只有一份」这个承诺真的成立。
 用法: python modules/proc_lock/selftest.py
 """
-import sys, os, subprocess
+import sys, os, io
+
+# 可能被无控制台的 pythonw 拉起，强制 UTF-8 输出，避免打印中文时崩（踩坑 #32）
+try:
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+except Exception:
+    pass
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from modules.proc_lock import single_instance, release, holder, _lock_path
+from modules.subproc import run as _run
 
 NAME = '_selftest_lock'
 
@@ -34,7 +41,7 @@ def main():
     code = (f"import sys; sys.path.insert(0, r'{os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))}');"
             f"from modules.proc_lock import single_instance;"
             f"print('GOT' if single_instance('{NAME}') else 'BLOCKED')")
-    r = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True, timeout=40)
+    r = _run([sys.executable, '-c', code], timeout=40)
     if 'BLOCKED' in r.stdout:
         print('  [PASS] 第二个进程被挡住（核心承诺成立）'); ok += 1
     else:
