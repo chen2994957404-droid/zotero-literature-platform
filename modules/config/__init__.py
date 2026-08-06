@@ -76,6 +76,45 @@ def all_keys():
 
 
 # ---------------------------------------------------------------------------
+# 本机设置：所有「换台电脑就得改」的东西集中在这里
+# ---------------------------------------------------------------------------
+# 原来这些散落在 19 个文件里 hardcode（Zotero 用户ID）、4 个文件里写死绝对路径，
+# 后果有二：① 换电脑/换人就全废；② 用户想改只能来找我改代码。
+# 收敛到此处后，既能一键换机，也能在控制面板上自助修改。
+# (键名, 显示名, 默认值, 说明)
+SITE_SETTINGS = [
+    ('ZOTERO_USER_ID', 'Zotero 用户 ID', '',
+     'Zotero 设置→账户里的 userID，纯数字'),
+    ('ZOTERO_STORAGE', 'Zotero 附件目录', '',
+     '形如 D:\\...\\Zotero\\storage，精读结果要写进去'),
+    ('ZOTERO_API_HOST', 'Zotero 本地服务地址', 'http://localhost:23119',
+     '一般不用改'),
+    ('OLLAMA_HOST', 'Ollama 地址', 'http://localhost:11434',
+     '一般不用改'),
+    ('OLLAMA_MODELS', 'Ollama 模型目录', '',
+     '形如 D:\\...\\Ollama\\models；留空则用 Ollama 默认位置'),
+]
+
+
+def get_site(name):
+    """取本机设置。环境变量 → .env → 内置默认。
+
+    未配置且无默认值时返回 ''，由调用方决定是报错还是降级 ——
+    本函数不替调用方做这个判断（公理件只负责取值）。
+    """
+    for k, _label, default, _help in SITE_SETTINGS:
+        if k == name:
+            return get_key(name, default=default)
+    raise KeyError(f'未知的本机设置项 {name}，可选：{[s[0] for s in SITE_SETTINGS]}')
+
+
+def site_missing():
+    """哪些必填的本机设置还没配（装到新电脑时用来提示）。返回键名列表。"""
+    must = ('ZOTERO_USER_ID', 'ZOTERO_STORAGE')
+    return [k for k in must if not get_site(k)]
+
+
+# ---------------------------------------------------------------------------
 # 模型设置：把散在各脚本里的模型名收敛到这里，控制面板才能统一切换
 # ---------------------------------------------------------------------------
 # 默认值即项目宪法的「两把尺子」：输出少的活上 pro（准），输出多的上 flash（省）

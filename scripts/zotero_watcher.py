@@ -350,6 +350,15 @@ def swap_tag(item_key, web_uid):
     set_state_tag(item_key, web_uid, TAG_MAIN)
 
 def main():
+    # 单实例锁：任务计划自启一份、看门狗又启一份时，第二份直接退出（踩坑 #30）。
+    # 两份同时轮询会抢同一篇文献，导致重复精读/重复上传。
+    try:
+        from modules.proc_lock import single_instance, holder
+        if not single_instance('zotero_watcher'):
+            print(f'已有一份 watcher 在跑（PID={holder("zotero_watcher")}），本次退出')
+            return
+    except Exception as e:
+        print(f'[提醒] 单实例锁不可用（{e}），继续运行')
     print(f'Zotero闭环轮询器启动。触发标签: 「{TRIGGER_TAG}」')
     print(f'回写: {"已配置Web API" if WEB_API_KEY else "未配key(仅生成本地精读)"}')
     seen = set()
