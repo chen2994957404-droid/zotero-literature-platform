@@ -17,7 +17,11 @@ import chromadb
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VECTOR_DB = os.path.join(ROOT, 'workflow_data', 'vector_db')
 DEEPSEEK_KEY = _cfg_get('DEEPSEEK_KEY')
-DEEPSEEK_MODEL = 'deepseek-v4-flash'   # 问答输出较长，用 flash 省钱
+try:
+    from modules.config import get_model as _get_model
+    DEEPSEEK_MODEL = _get_model('ASK_MODEL')      # 可在控制面板切换
+except Exception:
+    DEEPSEEK_MODEL = 'deepseek-v4-flash'          # 问答输出较长，用 flash 省钱
 TOP_K = 6
 
 # embedding 与 LLM 调用走公理件

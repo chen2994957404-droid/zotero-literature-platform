@@ -28,7 +28,11 @@ OUT_DIR = os.path.join(ROOT, 'workflow_data', 'structured')
 os.makedirs(OUT_DIR, exist_ok=True)
 
 DEEPSEEK_KEY = _cfg_get('DEEPSEEK_KEY')
-DEEPSEEK_MODEL = 'deepseek-v4-pro'   # 抽取要准，用 pro；不追求快
+try:
+    from modules.config import get_model as _get_model
+    DEEPSEEK_MODEL = _get_model('EXTRACT_MODEL')  # 抽取要准，用 pro；可在控制面板切换
+except Exception:
+    DEEPSEEK_MODEL = 'deepseek-v4-pro'
 # provider 开关：默认 deepseek（云）；设 EXTRACT_PROVIDER=ollama 走本地大模型，省 API 费
 PROVIDER = os.environ.get('EXTRACT_PROVIDER', 'deepseek').lower()
 OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'qwen2.5:7b-instruct')

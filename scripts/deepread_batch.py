@@ -21,7 +21,11 @@ LIBRARY = os.path.join(ROOT, 'workflow_data', 'library')
 DEEPREAD = os.path.join(SCRIPT_DIR, 'deepread_v4.py')
 
 PROVIDER = 'deepseek'
-MODEL = os.environ.get('DEEPREAD_MODEL', 'deepseek-v4-flash')  # 精读输出重→flash
+try:
+    from modules.config import get_model as _get_model
+    MODEL = _get_model('DEEPREAD_MODEL')   # 精读输出重→flash；可在控制面板切换
+except Exception:
+    MODEL = os.environ.get('DEEPREAD_MODEL', 'deepseek-v4-flash')
 KEY = _cfg_get('DEEPSEEK_KEY')
 
 def read_one(key, force=False):

@@ -73,3 +73,65 @@ def all_keys():
         if os.environ.get(n):
             names.add(n)
     return sorted(names)
+
+
+# ---------------------------------------------------------------------------
+# 模型设置：把散在各脚本里的模型名收敛到这里，控制面板才能统一切换
+# ---------------------------------------------------------------------------
+# 默认值即项目宪法的「两把尺子」：输出少的活上 pro（准），输出多的上 flash（省）
+MODEL_SETTINGS = {
+    'DEEPREAD_MODEL':   ('精读',       'deepseek-v4-flash'),
+    'EXTRACT_MODEL':    ('结构化抽取', 'deepseek-v4-pro'),
+    'ASK_MODEL':        ('问答',       'deepseek-v4-flash'),
+    'AUTOTAG_MODEL':    ('自动打标签', 'deepseek-v4-flash'),
+    'BRAINSTORM_MODEL': ('研究构想',   'deepseek-v4-pro'),
+}
+
+
+def get_model(name):
+    """取某个环节该用的模型名。环境变量 → .env → 内置默认，三级兜底。
+
+    这样任何脚本都写 get_model('DEEPREAD_MODEL')，不再各自 hardcode，
+    控制面板改一处即全局生效（原来 .env 的值进不了 os.environ，
+    用 os.environ.get 读模型的脚本改了也不生效 —— 本函数消除该陷阱）。
+    """
+    if name not in MODEL_SETTINGS:
+        raise KeyError(f'未知的模型设置项 {name}，可选：{list(MODEL_SETTINGS)}')
+    return get_key(name, default=MODEL_SETTINGS[name][1])
+
+
+def set_keys(updates):
+    """把 {键: 值} 写回 .env（原子替换 + 自动备份）。返回实际写入的键名列表。
+
+    值为 None 或 '' 的键会被跳过（避免面板留空时误清空已有密钥）。
+    **只写 .env，不动源码** —— 源码内不含明文密钥这条底线不能破。
+    """
+    global _cache
+    existing = _load_env_file()
+    written = []
+    for k, v in (updates or {}).items():
+        if v is None or str(v).strip() == '':
+            continue
+        existing[k] = str(v).strip()
+        written.append(k)
+    if not written:
+        return []
+    # 备份旧文件（可逆是修改配置的前提）
+    if os.path.exists(ENV_FILE):
+        import shutil, time
+        shutil.copy2(ENV_FILE, ENV_FILE + f'.bak{time.strftime("%m%d%H%M%S")}')
+    tmp = ENV_FILE + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        f.write('# 由控制面板/程序写入。本文件已在 .gitignore，不进版本库。\n')
+        for k in sorted(existing):
+            f.write(f'{k}={existing[k]}\n')
+    os.replace(tmp, ENV_FILE)   # 原子替换，避免写一半断电留下坏文件
+    _cache = None               # 让下次 get_key 重新读盘
+    return written
+
+
+def mask(value):
+    """脱敏显示密钥：只留后 4 位。面板展示用，避免密钥出现在截图/录屏里。"""
+    if not value:
+        return ''
+    return ('*' * max(4, len(value) - 4)) + value[-4:]

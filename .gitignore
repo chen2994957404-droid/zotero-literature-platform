@@ -47,3 +47,7 @@ workflow_data/_disc*
 # 密钥配置：.env 忽略，模板保留
 .env
 !.env.example
+
+# 配置备份含明文密钥，绝不进版本库
+.env.bak*
+.env.tmp
