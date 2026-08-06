@@ -3,6 +3,22 @@
 围绕 Zotero 的文献科研平台。用户是材料方向研究者（聚硼硅氧烷/动态键弹性体），**不懂编程**。
 本文件是**唯一入口**：想帮用户干活看【第一部分】，想改代码看【第二部分】。
 
+## ⚠ 先看目录结构（2026-08-06 重组）
+
+项目按功能分成若干文件夹，**每个文件夹里都有自己的 `CLAUDE.md`**：
+
+```
+文献精读/  库内问答/  数据抽取/  找新文献/  库房维护/  平台管理/  归档_旧版本/
+modules/   ← 10 块公理件，每块也有自己的 CLAUDE.md
+```
+
+**如果用户只选中了某一个文件夹跟你对话，那个文件夹的 CLAUDE.md 就是完整上下文。**
+在根目录（现在这里）时，你能看到全部，负责跨文件夹的改动与全局判断。
+
+用户的操作入口是根目录的 **控制面板.bat**（本地网页）：
+看服务状态/进程/日志、改密钥与模型、重启后台服务。
+人看的地图在 `项目导览.md`。
+
 ---
 
 # 第一部分 · 能力速查（用户提科研需求时看这里）
@@ -13,13 +29,13 @@
 
 | 用户说 | 你怎么做 |
 |--------|---------|
-| "我库里关于XX有什么？" "帮我查查XX" | `python scripts/ask.py "问题"`（RAG 问答，中文答+附来源）|
+| "我库里关于XX有什么？" "帮我查查XX" | `python 库内问答/ask.py "问题"`（RAG 问答，中文答+附来源）|
 | "帮我找XX方向的文献" "补充点XX的文献" | `modules/paper_discovery` 的 `search(query)`，返回文献列表并标记库里已有 |
 | "帮我横向比较XX" "这方向有什么规律/空白" | 读 `workflow_data/structured/compare.md`（研究论文横向对比表，148篇）；PBS 方向另有 `compare_PBS.md` |
 | "精读某篇文献" | 让他在 Zotero 打「待处理」标签即可。**状态机自动判断**：只有正文→精读正文→标「正文精读」；有SI→连SI实验细节一起精读并合并→标「全文精读」；已精读过的只补缺的部分不重跑。服务已开机自启。 |
-| "把某批文献的数据抽出来" | `python scripts/extract_batch.py KEY1 KEY2`（自动 MineRU 解析+DeepSeek 精抽）|
+| "把某批文献的数据抽出来" | `python 数据抽取/extract_batch.py KEY1 KEY2`（自动 MineRU 解析+DeepSeek 精抽）|
 | "把论文图里的曲线变成数据" | `modules/chart_digitize` 的 `digitize()`，**必须用云端大模型**（硅基流动 Qwen3.5-397B/3.6-27B），本地7B会编假数据 |
-| "帮我想想研究方向/idea" | 读 compare 表做横向关联分析（找机理×性能的空白格），或 `python scripts/brainstorm.py` |
+| "帮我想想研究方向/idea" | 读 compare 表做横向关联分析（找机理×性能的空白格），或 `python 找新文献/brainstorm.py` |
 
 ## 现成数据资产（在哪找什么）
 
@@ -28,16 +44,17 @@
 - `workflow_data/structured/compare_PBS.md` — 聚硼硅氧烷方向精层子表（10篇，含真实数值）
 - `workflow_data/structured/<KEY>.json` — 每篇的结构化字段
 - `workflow_data/library/<KEY>/` — 精读过的文献（parsed/full.md 全文 + summary.html 中文精读）
-- `workflow_data/vector_db/` — 向量库（9105块，供 ask.py 检索）
+- `workflow_data/vector_db/` — 向量库（9105块，供 库内问答/ask.py 检索）
 
-## 9 块公理件（modules/，可直接 import 复用）
+## 10 块公理件（modules/，可直接 import 复用）
 
 `config`（密钥统一加载）· `zotero_client`（定位文献/正文PDF）· `pdf_parse`（PDF→文本）
 `llm_client`（调LLM，含视觉）· `embed`（文本→向量）· `figure_crop`（裁完整Figure）
 `chart_digitize`（图表→数据点）· `paper_discovery`（找文献补库）· `si_filter`（SI噪声过滤）
+`proc_lock`（单实例锁，防同一服务跑两份）
 
 改动后跑 `python modules/<名>/selftest.py` 验证单块；
-**改完务必跑一键体检**：`python scripts/health_check.py`（语法/密钥安全/配置/服务/自测/数据/后台一次过）。
+**改完务必跑一键体检**：`python 平台管理/health_check.py`（语法/密钥安全/配置/服务/自测/数据/后台一次过）。
 
 ## 语言约定（重要）
 

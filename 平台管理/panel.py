@@ -122,6 +122,74 @@ def collect_config():
     }
 
 
+def collect_blocks():
+    """积木与工作流一览。说明取自各文件夹的 CLAUDE.md 首段，不另写一份。
+
+    这样面板上看到的介绍，永远等于 LLM 读到的介绍 —— 不会出现两套说法。
+    """
+    import glob, re, ast
+
+    def first_line(md_path, fallback=''):
+        if not os.path.exists(md_path):
+            return fallback
+        for ln in open(md_path, encoding='utf-8', errors='replace'):
+            ln = ln.strip()
+            if ln and not ln.startswith(('#', '>', '`', '|', '-')):
+                return ln[:80]
+        return fallback
+
+    blocks = []
+    for f in sorted(glob.glob(os.path.join(ROOT, 'modules', '*', '__init__.py'))):
+        d = os.path.dirname(f)
+        name = os.path.basename(d)
+        try:
+            tree = ast.parse(open(f, encoding='utf-8').read())
+            doc = (ast.get_docstring(tree) or '').split('\n')[0]
+            api = [n.name for n in tree.body
+                   if isinstance(n, ast.FunctionDef) and not n.name.startswith('_')]
+        except Exception:
+            doc, api = '', []
+        blocks.append({
+            'name': name,
+            'desc': doc.split('（')[0].replace(name + ' · ', '')[:40],
+            'api': api[:6],
+            'selftest': os.path.exists(os.path.join(d, 'selftest.py')),
+            'doc': os.path.exists(os.path.join(d, 'CLAUDE.md')),
+        })
+
+    flows = []
+    skip = {'modules', 'docs', 'workflow_data', 'n8n_data', 'wf_backup', 'b'}
+    for d in sorted(os.listdir(ROOT)):
+        p = os.path.join(ROOT, d)
+        if (not os.path.isdir(p) or d in skip or d.startswith(('.', 'zotero_backup'))
+                or not glob.glob(os.path.join(p, '*.py'))):
+            continue
+        flows.append({
+            'name': d,
+            'desc': first_line(os.path.join(p, 'CLAUDE.md'), '（还没写说明书）'),
+            'files': len(glob.glob(os.path.join(p, '*.py'))),
+            'doc': os.path.exists(os.path.join(p, 'CLAUDE.md')),
+        })
+    return {'blocks': blocks, 'flows': flows}
+
+
+def action_selftest(name):
+    """跑某块积木的自测。只读、可重复，是安全操作。"""
+    p = os.path.join(ROOT, 'modules', name, 'selftest.py')
+    if not os.path.exists(p) or os.path.sep + '..' in name or '/' in name:
+        return False, '没有这块积木或它没有自测'
+    try:
+        r = subprocess.run([sys.executable, p], capture_output=True, text=True,
+                           encoding='utf-8', errors='replace', timeout=120,
+                           cwd=ROOT)
+        tail = (r.stdout or r.stderr or '').strip().split('\n')[-1][:120]
+        return r.returncode == 0, f'{name}：{tail}'
+    except subprocess.TimeoutExpired:
+        return False, f'{name}：自测超时（超过 120 秒）'
+    except Exception as e:
+        return False, f'{name}：{e}'
+
+
 def collect_logs(name='zotero_watcher', lines=40):
     safe = {'zotero_watcher', 'watchdog', 'auto_sync'}      # 白名单，防路径穿越
     if name not in safe:
@@ -208,6 +276,7 @@ class Handler(BaseHTTPRequestHandler):
                 'config': collect_config(),
                 'services': SERVICES,
                 'recent': collect_recent_reads(),
+                'structure': collect_blocks(),
                 'time': time.strftime('%H:%M:%S'),
             })
         if p == '/api/logs':
@@ -224,6 +293,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send({'ok': False, 'msg': '请求格式错误'}, 400)
         if self.path == '/api/restart':
             ok, msg = action_restart(payload.get('task', ''))
+        elif self.path == '/api/selftest':
+            ok, msg = action_selftest(payload.get('name', ''))
         elif self.path == '/api/config':
             ok, msg = action_save_config(payload)
         else:
@@ -285,6 +356,18 @@ pre{background:#20232a;color:#c8d0dc;padding:12px;border-radius:8px;font-size:12
   <div style="margin-top:14px"><button onclick="saveCfg()">保存设置</button></div>
 </div>
 
+<div class="card"><h2>项目组成（想改哪块，就在新对话里单独选中那个文件夹）</h2>
+  <div class="hint" style="margin-bottom:10px">
+    每个文件夹里都有一份说明书（CLAUDE.md），单独选中时 AI 也能看懂那一块。</div>
+  <div id="flows"></div>
+</div>
+
+<div class="card"><h2>积木（底层能力，上面所有功能由它们搭成）</h2>
+  <div class="hint" style="margin-bottom:10px">
+    点「自测」可单独检验某块是否正常。只读操作，随便点。</div>
+  <div id="blocks"></div>
+</div>
+
 <div class="card"><h2>最近处理的文献</h2><div id="recent"></div></div>
 
 <div class="card"><h2>日志</h2>
@@ -344,6 +427,19 @@ async function load(){
        </select>
        <span class="hint">默认 ${esc(m.default)}</span></div>`).join('');
 
+  const st = d.structure || {flows:[],blocks:[]};
+  $('#flows').innerHTML = `<table><tr><th>文件夹</th><th>是什么</th><th>脚本数</th><th>说明书</th></tr>`
+    + st.flows.map(f=>`<tr><td><b>${esc(f.name)}</b></td><td>${esc(f.desc)}</td>
+        <td>${f.files}</td><td>${f.doc?'✓':'<span class="bad">缺</span>'}</td></tr>`).join('')
+    + `</table>`;
+
+  $('#blocks').innerHTML = `<table><tr><th>积木</th><th>能力</th><th>说明书</th><th></th></tr>`
+    + st.blocks.map(b=>`<tr><td><b>${esc(b.name)}</b></td><td>${esc(b.desc)}</td>
+        <td>${b.doc?'✓':'<span class="bad">缺</span>'}</td>
+        <td>${b.selftest?`<button class="ghost" onclick="selftest('${b.name}')">自测</button>`
+             :'<span class="hint">无自测</span>'}</td></tr>`).join('')
+    + `</table>`;
+
   $('#recent').innerHTML = d.recent.length
     ? `<table><tr><th>时间</th><th>文献</th><th>正文字数</th><th>图</th></tr>`
       + d.recent.map(r=>`<tr><td>${esc(r.when)}</td><td>${esc(r.key)}</td>
@@ -357,6 +453,13 @@ async function restart(task){
   const r=await (await fetch('/api/restart',{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify({task})})).json();
   toast(r.msg); setTimeout(load,2500);
+}
+
+async function selftest(name){
+  toast(name+' 自测中…');
+  const r=await (await fetch('/api/selftest',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({name})})).json();
+  toast((r.ok?'✓ ':'✗ ')+r.msg);
 }
 
 async function saveCfg(){
