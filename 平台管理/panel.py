@@ -101,6 +101,43 @@ def collect_processes():
     return rows
 
 
+def collect_alerts():
+    """从日志里挑出「还没恢复」的故障，直接摆到面板上。
+
+    为什么需要：心跳正常 ≠ 工作正常。曾出现 watcher 心跳照常写、
+    实际每轮都连不上 Zotero、静默停摆 19 分钟的情况（踩坑 #33）。
+    只看心跳会被骗，必须把失败本身暴露出来。
+    """
+    alerts = []
+    p = os.path.join(ROOT, 'workflow_data', 'logs', 'zotero_watcher.log')
+    try:
+        with open(p, encoding='utf-8', errors='replace') as f:
+            tail = f.readlines()[-200:]
+    except Exception:
+        tail = []
+    i_fail = i_ok = -1
+    for i, ln in enumerate(tail):
+        if '[轮询失败]' in ln or '[持续异常]' in ln:
+            i_fail = i
+        elif '[已恢复]' in ln or '[心跳]' in ln:
+            i_ok = i
+    # 最后一条失败**出现在**最后一条正常之后 = 现在仍然是坏的
+    if i_fail > i_ok:
+        alerts.append({'level': 'fail', 'text': tail[i_fail].strip()[-160:]})
+    # Zotero 没开是最常见的根因，单独探一次给出直白结论
+    try:
+        import urllib.request
+        from modules.config import get_site
+        uid = get_site('ZOTERO_USER_ID')
+        urllib.request.urlopen(urllib.request.Request(
+            f"{get_site('ZOTERO_API_HOST')}/api/users/{uid}/items/top?limit=1",
+            headers={'Zotero-Allowed-Request': 'true'}), timeout=5)
+    except Exception:
+        alerts.append({'level': 'fail',
+                       'text': 'Zotero 桌面程序没开 —— 精读功能现在无法工作。点下面「Zotero 主程序」的重启按钮即可。'})
+    return alerts
+
+
 def collect_heartbeat():
     """watcher 心跳距今多久（秒）。None 表示没有心跳文件。"""
     hb = os.path.join(ROOT, 'workflow_data', 'logs', 'watcher_heartbeat.txt')
@@ -271,6 +308,7 @@ class Handler(BaseHTTPRequestHandler):
                 'status': collect_status(),
                 'processes': collect_processes(),
                 'heartbeat': collect_heartbeat(),
+                'alerts': collect_alerts(),
                 'config': collect_config(),
                 'services': SERVICES,
                 'recent': collect_recent_reads(),
@@ -341,6 +379,8 @@ pre{background:#20232a;color:#c8d0dc;padding:12px;border-radius:8px;font-size:12
 <h1>文献平台 · 控制面板</h1>
 <div class="sub">每 15 秒自动刷新 · 上次刷新 <span id="t">—</span></div>
 
+<div id="alertbox"></div>
+
 <div class="card"><h2>运行状态</h2><div id="status"></div></div>
 
 <div class="card"><h2>正在运行的进程</h2><div id="procs"></div></div>
@@ -391,6 +431,14 @@ async function load(){
   let d; try{ d=await (await fetch('/api/all')).json(); }
   catch(e){ toast('面板连不上后台，可能已关闭'); return; }
   $('#t').textContent=d.time;
+
+  const al=d.alerts||[];
+  $('#alertbox').innerHTML = al.length
+    ? `<div class="card" style="border-left:4px solid #e2504a">
+         <h2 style="color:#e2504a">⚠ 需要处理</h2>`
+      + al.map(a=>`<div class="row"><span class="msg" style="color:#c0392b">${esc(a.text)}</span></div>`).join('')
+      + `</div>`
+    : '';
 
   $('#status').innerHTML=d.status.map(s=>
     `<div class="row"><span class="dot ${s.level}"></span>

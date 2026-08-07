@@ -38,6 +38,30 @@ def _alive(url, headers=None, timeout=6):
         return False
 
 
+def _revive(task_name, disp, probe_url, headers=None, wait=30):
+    """依赖服务没在跑 → 通过任务计划拉起来，再探活确认。返回是否活过来了。
+
+    只拉起、不杀进程，是可逆的安全操作，所以可以自动做，不必打扰用户。
+    """
+    log(f'{disp} 未响应，尝试拉起…')
+    try:
+        import sys as _s, os as _o
+        _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
+        from modules.subproc import run as _run
+        _run(['powershell', '-NoProfile', '-NonInteractive', '-Command',
+              f'Start-ScheduledTask -TaskName {task_name}'], timeout=40)
+    except Exception as e:
+        log(f'{disp} 拉起失败: {e}')
+        return False
+    for _ in range(wait // 5):          # 给它时间起来，别急着判死
+        time.sleep(5)
+        if _alive(probe_url, headers):
+            log(f'{disp} 已恢复')
+            return True
+    log(f'{disp} 拉起后仍未响应')
+    return False
+
+
 def check_deps():
     """检查依赖服务。缺了就跳过本轮（下轮再来），不报错刷屏。"""
     # 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
@@ -52,10 +76,21 @@ def check_deps():
     zot = _alive(f'http://localhost:23119/api/users/{_UID}/items/top?limit=1',
                  {'Zotero-Allowed-Request': 'true'})
     olla = _alive('http://localhost:11434/api/tags')
+
+    # 依赖挂了就尝试拉起来，而不是干等下一轮（踩坑 #33）。
+    # 之前只「跳过」，结果 Zotero 开机没起来后就一直没人管，
+    # 精读线静默停摆了 19 分钟用户才发现。**保活任务就该负责保活。**
     if not zot:
-        log('跳过本轮：Zotero 未开（取不到全文）'); return False
+        zot = _revive('ZoteroApp', 'Zotero',
+                      f'http://localhost:23119/api/users/{_UID}/items/top?limit=1',
+                      {'Zotero-Allowed-Request': 'true'})
     if not olla:
-        log('跳过本轮：Ollama 未跑（无法向量化）'); return False
+        olla = _revive('OllamaService', 'Ollama', 'http://localhost:11434/api/tags')
+
+    if not zot:
+        log('跳过本轮：Zotero 未开且拉起失败（取不到全文）'); return False
+    if not olla:
+        log('跳过本轮：Ollama 未跑且拉起失败（无法向量化）'); return False
     return True
 
 

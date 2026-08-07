@@ -372,6 +372,7 @@ def main():
     print(f'Zotero闭环轮询器启动。触发标签: 「{TRIGGER_TAG}」')
     print(f'回写: {"已配置Web API" if WEB_API_KEY else "未配key(仅生成本地精读)"}')
     seen = set()
+    fail_streak = [0]      # 连续失败轮数，用于「持续异常」提醒与「已恢复」提示
     heartbeat = os.path.join(_LOG_DIR, 'watcher_heartbeat.txt')
     while True:
         # 心跳：每轮开始写时间戳，看门狗据此判断存活（工单·watcher 看门狗）
@@ -391,10 +392,27 @@ def main():
                 seen.add(key)
                 try:
                     process_item(it)
-                except Exception:
-                    traceback.print_exc()
-        except Exception:
-            traceback.print_exc()
+                except Exception as e:
+                    # 单篇失败不能拖垮整个轮询；但必须记进日志，否则是静默失败
+                    print(f'  [处理失败] {key}: {type(e).__name__}: {e}')
+                    print('  ' + traceback.format_exc().replace('\n', '\n  ').rstrip())
+                    seen.discard(key)      # 允许下一轮重试（可能只是网络抖动）
+        except Exception as e:
+            # ⚠ 踩坑 #33：原来这里是 traceback.print_exc()，打到标准输出。
+            # 但服务是 pythonw 无窗口运行的，标准输出直接被丢弃 ——
+            # 于是 watcher 每轮都在失败，日志却一片空白，看起来「心跳正常」。
+            # 曾出现 Zotero 挂了 19 分钟、用户毫不知情的情况。**必须写进日志文件。**
+            hint = ''
+            if isinstance(e, (urllib.error.URLError, OSError)) or 'refused' in str(e).lower():
+                hint = '（多半是 Zotero 桌面程序没开 —— 本地 API 连不上）'
+            print(f'[轮询失败] {type(e).__name__}: {e} {hint}')
+            fail_streak[0] += 1
+            if fail_streak[0] in (5, 30, 120):    # 5分钟/半小时/两小时各提醒一次，不刷屏
+                print(f'[持续异常] 已连续失败 {fail_streak[0]} 轮{hint}，请检查后再试')
+        else:
+            if fail_streak[0]:
+                print(f'[已恢复] 之前连续失败 {fail_streak[0]} 轮，现已恢复正常')
+                fail_streak[0] = 0
         time.sleep(60)  # 每60秒检查一次，避免API限流
 
 if __name__ == '__main__':
