@@ -76,7 +76,8 @@ modules/   ← 10 块公理件，每块也有自己的 CLAUDE.md
 1. Ollama 在跑吗？`Invoke-RestMethod http://localhost:11434/api/tags` 应返回 4 个模型。
    不通就 `Start-ScheduledTask -TaskName OllamaService`。
 2. 返回模型列表为空 = Ollama "失明"（踩坑#4）：启动时没拿到 `OLLAMA_MODELS`。
-   必须带 `set OLLAMA_MODELS=D:\02_AI\models\Ollama\models` 再启动（自启任务已固化这点）。
+   必须带 `set OLLAMA_MODELS=<你的模型目录>` 再启动（自启任务已固化这点；
+   路径配在控制面板的「Ollama 模型目录」里，不要写死在代码或文档中）。
 
 ---
 

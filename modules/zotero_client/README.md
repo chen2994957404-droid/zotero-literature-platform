@@ -17,12 +17,16 @@ get_fulltext(att_key)                   # → Zotero 全文索引文本（粗层
 zget("/users/<id>/items/<key>/children")   # → 本地只读 API
 ```
 
-## 配置（环境变量，均有默认值）
-| 变量 | 默认 | 说明 |
+## 配置（走 `modules.config`，在控制面板里填，**不要写死在代码或文档里**）
+| 变量 | 示例 | 说明 |
 |------|------|------|
-| ZOTERO_USER_ID | 16078117 | 本地库 id |
-| ZOTERO_STORAGE | D:\03_Software\Zetero\Zotero\storage | 附件存储目录 |
-| ZOTERO_LOCAL_API | http://localhost:23119/api | 本地 API 根 |
+| ZOTERO_USER_ID | `12345678` | Zotero 设置→账户里的 userID，纯数字 |
+| ZOTERO_STORAGE | `D:\Zotero\storage` | 附件存储目录 |
+| ZOTERO_API_HOST | `http://localhost:23119` | 本地 API 地址，一般不用改 |
+
+必填项缺失时 `config.need_site()` 会明确报错并告知怎么配 ——
+**刻意不留「读不到就用默认值」的兜底**：那会把开发者本人的用户 ID 留在源码里，
+且别人装上后会静默连到陌生人的库。
 
 依赖：仅 Python 标准库（urllib/json/re/os）。需 Zotero 桌面开着。
 
