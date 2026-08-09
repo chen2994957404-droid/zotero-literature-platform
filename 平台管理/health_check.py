@@ -226,6 +226,17 @@ def c_importable():
             bad.append(f'{name}({first[-1][:60] if first else "err"})')
     if missing:
         return FAIL, f'关键脚本找不到（可能重组时漏搬）: {missing}'
+    # 检查工具不该有副作用：加载脚本时若在项目根凭空造出目录，说明该脚本
+    # 把有副作用的代码写在了模块顶层（踩坑 #34：曾每跑一次体检就生成一个 'b' 文件夹）
+    junk = [d for d in ('a', 'b', 'x') if os.path.isdir(d)]
+    for d in junk:
+        try:
+            os.rmdir(d)          # 只删空目录，非空不动
+        except OSError:
+            pass
+    if junk:
+        return WARN, (f'加载脚本时产生了垃圾目录 {junk}（已清理）。'
+                      f'说明有脚本把副作用写在模块顶层，应移进 main()')
     return (OK, f'{len(key_scripts)} 个关键脚本可正常加载') if not bad else (FAIL, f'加载失败: {bad}')
 
 
