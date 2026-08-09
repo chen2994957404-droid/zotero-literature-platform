@@ -91,6 +91,51 @@ def clean_chunk(text):
     return re.sub(r'\n{3,}', '\n\n', t).strip()
 
 
+# 补充材料的 DOI 特征：正文 DOI 后缀 .s001 / .s002 …（Figshare 上的 SI 存档）
+_SI_DOI = re.compile(r'\.s\d{3,}$', re.I)
+
+
+def is_supplementary(item):
+    """是否是补充材料记录，而非正文。
+
+    **实测发现（踩坑 #36）**：Sciverse 把 Figshare 上的补充材料当独立记录收录。
+    搜「polyborosiloxane dynamic bond」时，同一篇文章的 9 个 SI 文件
+    （.s001~.s009）全部作为独立结果返回，把真正有价值的文献挤到后面。
+    这些记录标题与正文相同、被引为 0、载体是 Figshare —— 对找文献毫无价值。
+    """
+    doi = (item.get('doi') or '').lower()
+    if _SI_DOI.search(doi):
+        return True
+    venue = (item.get('venue') or '').lower()
+    return venue in ('figshare', 'zenodo') and not item.get('citations')
+
+
+def _quality(it):
+    """记录质量：有真实期刊 > 被引多 > DOI 短（正文 DOI 比 SI 的 .sNNN 短）。"""
+    venue = (it.get('venue') or '').lower()
+    real_venue = bool(venue) and venue not in ('figshare', 'zenodo')
+    return (real_venue, it.get('citations') or 0, -len(it.get('doi') or ''))
+
+
+def dedupe(items):
+    """同一篇文章的多条记录只留最好的一条，保持原有顺序。"""
+    def norm(t):
+        return re.sub(r'[^a-z0-9]', '', (t or '').lower())[:120]
+
+    best, order = {}, []
+    for it in items:
+        k = norm(it.get('title'))
+        if not k:                      # 没标题的无法判重，原样保留
+            order.append(('_raw', it))
+            continue
+        if k not in best:
+            best[k] = it
+            order.append(('key', k))
+        elif _quality(it) > _quality(best[k]):
+            best[k] = it               # 用更好的那条替换，位置不变
+    return [it if tag == '_raw' else best[it] for tag, it in order]
+
+
 def looks_chinese(text):
     """是否含中文。用于提醒调用方：**中文检索式会显著降低召回质量**。
 
@@ -110,13 +155,16 @@ def _year(v):
 
 
 def search_papers(query, limit=25, year_from=None, year_to=None,
-                  prefer='relevance', fields=None):
+                  prefer='relevance', fields=None, keep_supplementary=False):
     """按主题检索全球文献元数据（不含正文片段）。
 
     prefer: 'relevance'(默认) / 'impact'(偏高被引) / 'fresh'(偏新) / 'citations'(按被引硬排)
     返回 list[dict]：title/doi/year/venue/citations/fwci/is_oa/oa_url/unique_id/doc_id/abstract
     """
-    body = {'query': query, 'page_size': max(1, min(int(limit), 200)),
+    # 要过滤补充材料与重复项，所以多取一些再截断，避免最终不足用户要的数量
+    want = max(1, min(int(limit), 200))
+    fetch_n = want if keep_supplementary else min(200, max(want, want * 2))
+    body = {'query': query, 'page_size': fetch_n,
             'fields': fields or ['title', 'doi', 'abstract', 'author',
                                  'publication_published_year',
                                  'publication_venue_name_unified',
@@ -157,7 +205,14 @@ def search_papers(query, limit=25, year_from=None, year_to=None,
             'doc_id': it.get('doc_id') or '',
             'abstract': (it.get('abstract') or '')[:600],
         })
-    return {'total': r.get('total_count', 0), 'items': out}
+    raw_n = len(out)
+    # 默认剔除补充材料记录并按标题去重 —— 否则同一篇文章的 9 个 SI 文件
+    # 会占满结果列表，把真正有价值的文献挤下去（踩坑 #36）
+    if not keep_supplementary:
+        out = [it for it in out if not is_supplementary(it)]
+    out = dedupe(out)[:want]
+    return {'total': r.get('total_count', 0), 'items': out,
+            'filtered': raw_n - len(out)}
 
 
 def ask_evidence(question, top_k=8, year_from=None, sub_queries=0):
