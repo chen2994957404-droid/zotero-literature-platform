@@ -38,7 +38,8 @@ _cache = None
 KEYRING_SERVICE = 'literature-platform'
 
 # 哪些是「密钥」（存凭据库），哪些是普通配置（留在 .env，需要可读可移植）
-SECRET_KEYS = ('DEEPSEEK_KEY', 'ZOTERO_API_KEY', 'MINERU_TOKEN', 'SILICONFLOW_KEY')
+SECRET_KEYS = ('DEEPSEEK_KEY', 'ZOTERO_API_KEY', 'MINERU_TOKEN', 'SILICONFLOW_KEY',
+               'SCIVERSE_KEY')
 
 
 def _keyring():

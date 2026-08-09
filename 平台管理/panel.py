@@ -41,6 +41,7 @@ KEY_NAMES = [
     ('ZOTERO_API_KEY',  'Zotero（回写附件与标签）',   True),
     ('MINERU_TOKEN',    'MineRU（PDF 解析）',         True),
     ('SILICONFLOW_KEY', '硅基流动（图表数字化，可空）', False),
+    ('SCIVERSE_KEY',    'Sciverse（全球文献检索，可空）', False),
 ]
 
 # 面板可重启的后台服务：任务计划名 → 显示名
