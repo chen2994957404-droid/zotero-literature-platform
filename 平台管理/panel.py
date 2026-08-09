@@ -28,7 +28,9 @@ sys.path.insert(0, ROOT)
 sys.path.insert(0, SCRIPT_DIR)  # health_check 同在本文件夹
 
 from modules.config import (get_key, set_keys, get_model, mask,
-                            MODEL_SETTINGS, ENV_FILE)
+                            MODEL_SETTINGS, ENV_FILE, SITE_SETTINGS, get_site,
+                            keyring_status, key_location,
+                            migrate_secrets_to_keyring)
 from modules.subproc import run as _run, powershell   # 统一走静默子进程调用
 
 PORT = int(os.environ.get('PANEL_PORT', '8777'))
@@ -149,13 +151,20 @@ def collect_heartbeat():
 
 def collect_config():
     """密钥（脱敏）与模型设置。**绝不返回密钥明文**。"""
+    kr_ok, kr_backend = keyring_status()
+    keys = [{'name': n, 'label': lb, 'required': rq,
+             'set': bool(get_key(n)), 'masked': mask(get_key(n)),
+             'where': key_location(n)}
+            for n, lb, rq in KEY_NAMES]
     return {
-        'keys': [{'name': n, 'label': lb, 'required': rq,
-                  'set': bool(get_key(n)), 'masked': mask(get_key(n))}
-                 for n, lb, rq in KEY_NAMES],
+        'keys': keys,
+        'plain_count': sum(1 for k in keys if k['where'] == '.env明文'),
+        'keyring': {'ok': kr_ok, 'backend': kr_backend},
         'models': [{'name': n, 'label': MODEL_SETTINGS[n][0],
                     'value': get_model(n), 'default': MODEL_SETTINGS[n][1]}
                    for n in MODEL_SETTINGS],
+        'sites': [{'name': n, 'label': lb, 'value': get_site(n), 'help': hp}
+                  for n, lb, _d, hp in SITE_SETTINGS],
         'env_file': ENV_FILE,
     }
 
@@ -331,6 +340,9 @@ class Handler(BaseHTTPRequestHandler):
             ok, msg = action_restart(payload.get('task', ''))
         elif self.path == '/api/selftest':
             ok, msg = action_selftest(payload.get('name', ''))
+        elif self.path == '/api/migrate_secrets':
+            moved, msg = migrate_secrets_to_keyring()
+            ok = bool(moved) or '没有需要迁移' in msg
         elif self.path == '/api/config':
             ok, msg = action_save_config(payload)
         else:
@@ -390,6 +402,7 @@ pre{background:#20232a;color:#c8d0dc;padding:12px;border-radius:8px;font-size:12
 <div class="card"><h2>密钥与模型</h2>
   <div class="hint" style="margin-bottom:10px">
     密钥只显示后 4 位。留空表示不改动，不会清空已有配置。保存前自动备份旧配置。</div>
+  <div id="krbar"></div>
   <div id="cfg"></div>
   <div style="margin-top:14px"><button onclick="saveCfg()">保存设置</button></div>
 </div>
@@ -460,10 +473,27 @@ async function load(){
     `<div class="row"><span class="nm" style="width:230px">${esc(v)}</span>
      <span class="msg"><button class="ghost" onclick="restart('${k}')">重启</button></span></div>`).join('');
 
+  const kr=d.config.keyring||{};
+  $('#krbar').innerHTML =
+    `<div class="hint" style="margin-bottom:8px">密钥存放：${kr.ok?'系统凭据库可用（'+esc(kr.backend)+'）':'<span class="bad">系统凭据库不可用，只能用明文文件</span>'}</div>`
+    + (d.config.plain_count>0
+        ? `<div class="row" style="background:#fff6f5;border-radius:8px;padding:10px">
+             <span class="msg bad">还有 ${d.config.plain_count} 个密钥以明文存在 .env 文件里</span>
+             <button onclick="migrate()">迁移到系统凭据库</button></div>`
+        : `<div class="row"><span class="msg" style="color:#35c15f">✓ 密钥都已存入系统凭据库，硬盘上没有明文</span></div>`);
+
   $('#cfg').innerHTML =
-    d.config.keys.map(k=>
-      `<div class="row"><span class="lbl">${esc(k.label)}</span>
+    d.config.keys.map(k=>{
+      const w = k.where==='系统凭据库' ? '<span style="color:#35c15f">🔒 凭据库</span>'
+              : k.where==='.env明文'  ? '<span class="bad">⚠ 明文</span>'
+              : k.where==='环境变量'   ? '<span class="hint">环境变量</span>'
+              : '<span class="hint">未配置</span>';
+      return `<div class="row"><span class="lbl">${esc(k.label)}</span>
        <input id="k_${k.name}" placeholder="${k.set?'已配置 '+esc(k.masked)+'，留空即不改':(k.required?'⚠ 未配置，必填':'未配置（可选）')}">
+       <span class="hint" style="margin-left:8px">${w}</span></div>`;}).join('')
+  + d.config.sites.map(s=>
+      `<div class="row"><span class="lbl">${esc(s.label)}</span>
+       <input id="k_${s.name}" value="${esc(s.value||'')}" placeholder="${esc(s.help)}">
        </div>`).join('')
   + d.config.models.map(m=>
       `<div class="row"><span class="lbl">${esc(m.label)} 用的模型</span>
@@ -499,6 +529,13 @@ async function restart(task){
   const r=await (await fetch('/api/restart',{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify({task})})).json();
   toast(r.msg); setTimeout(load,2500);
+}
+
+async function migrate(){
+  toast('正在迁移密钥到系统凭据库…');
+  const r=await (await fetch('/api/migrate_secrets',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:'{}'})).json();
+  toast(r.msg); load();
 }
 
 async function selftest(name){

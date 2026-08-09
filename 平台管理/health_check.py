@@ -111,6 +111,34 @@ def c_no_popup():
     return OK, '所有子进程调用都不会弹窗'
 
 
+def c_secret_storage():
+    """密钥存放方式：是否已进系统凭据库、硬盘上是否还有明文残留。
+
+    体检的既有一项只查「源码里有没有密钥」，但密钥也可能明文躺在
+    .env / .env.bak / 各种临时文件里 —— 那同样是泄露面。
+    """
+    from modules.config import keyring_status, key_location, SECRET_KEYS
+    ok, backend = keyring_status()
+    plain = [k for k in SECRET_KEYS if key_location(k) == '.env明文']
+    # 含明文密钥的残留文件（备份、临时文件）
+    import re
+    pat = re.compile(r'^(DEEPSEEK_KEY|ZOTERO_API_KEY|MINERU_TOKEN|SILICONFLOW_KEY)=(.{8,})$', re.M)
+    leftovers = []
+    for f in glob.glob('.env.bak*') + glob.glob('.env.tmp') + glob.glob('*.env'):
+        try:
+            if pat.search(open(f, encoding='utf-8', errors='replace').read()):
+                leftovers.append(os.path.basename(f))
+        except Exception:
+            continue
+    if not ok:
+        return WARN, f'系统凭据库{backend}；密钥只能明文存放'
+    if plain:
+        return WARN, f'{len(plain)} 个密钥仍是明文（控制面板可一键迁移）: {plain}'
+    if leftovers:
+        return WARN, f'有含明文密钥的残留文件，建议删除: {leftovers[:5]}'
+    return OK, f'密钥已存入系统凭据库（{backend}），硬盘无明文残留'
+
+
 def c_config():
     from modules.config import get_key
     missing = [k for k in ('DEEPSEEK_KEY', 'ZOTERO_API_KEY', 'MINERU_TOKEN') if not get_key(k)]
@@ -235,6 +263,7 @@ if __name__ == '__main__':
     check('语法', c_syntax)
     check('密钥安全', c_no_secrets)
     check('无弹窗', c_no_popup)
+    check('密钥存放', c_secret_storage)
     check('配置加载', c_config)
     check('Zotero 服务', c_zotero)
     check('Ollama 服务', c_ollama)

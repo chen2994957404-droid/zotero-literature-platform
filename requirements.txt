@@ -11,3 +11,4 @@ PyMuPDF==1.27.2
 # - PyMuPDF   : 从 PDF 按坐标裁图（精读的完整 Figure）
 # 其余全部使用 Python 标准库。
 # 外部服务：Zotero（本地API+Web API）、MineRU（PDF解析）、DeepSeek（LLM）、Ollama（本地模型）
+keyring==25.7.0
