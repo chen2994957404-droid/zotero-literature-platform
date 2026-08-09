@@ -5,8 +5,10 @@
 import sys, os, tempfile, io
 
 # 可能被无控制台的 pythonw 拉起，强制 UTF-8 输出（踩坑 #32）
+# 用 reconfigure 而非替换 sys.stdout：后者会让原对象被回收、底层缓冲被关闭，
+# 表现为程序跑到一半 print 抛「I/O operation on closed file」（踩坑 #37）
 try:
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
 

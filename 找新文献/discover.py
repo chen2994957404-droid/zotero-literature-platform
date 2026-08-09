@@ -19,8 +19,10 @@
 """
 import sys, os, io
 
+# 用 reconfigure 而非替换 sys.stdout：后者会让原对象被回收、底层缓冲被关闭，
+# 表现为程序跑到一半 print 抛「I/O operation on closed file」（踩坑 #37）
 try:
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
 
@@ -111,10 +113,27 @@ def main():
             print(f'    ↳ 与你库中《{m["nearest"]["title"]}》最接近')
         print()
 
+    # 把这次结果存下来，供 collect.py 按编号挑选 —— 用户不必手抄 DOI
+    import json
+    stash = os.path.join(ROOT, 'workflow_data', '_last_search.json')
+    try:
+        with open(stash, 'w', encoding='utf-8') as f:
+            json.dump({'query': query, 'time': __import__('time').strftime('%Y-%m-%d %H:%M'),
+                       'items': [{'n': i, 'title': p.get('title'), 'doi': p.get('doi'),
+                                  'year': p.get('year'), 'citations': p.get('citations'),
+                                  'relevance': m.get('relevance'), 'status': m.get('status')}
+                                 for i, (p, m, s) in enumerate(shown, 1)]},
+                      f, ensure_ascii=False, indent=1)
+    except Exception:
+        pass
+
     print('=' * 84)
-    print('相关度 = 这篇跟你库里已有内容的接近程度（不是质量分）。')
-    print('想收某篇：python 找新文献/import_by_doi.py <DOI>')
-    print('入库后在 Zotero 打「待处理」标签，会自动精读。')
+    print('相关度 = 这篇跟你库里已有内容的接近程度（不是质量分，是"离你多近"）。')
+    print()
+    print('决定收哪几篇（按上面的编号，不用抄 DOI）：')
+    print('  python 找新文献/collect.py 1,3,5-7          只收进库，先不精读')
+    print('  python 找新文献/collect.py 1,3 --精读        收进库并立刻精读')
+    print('  python 找新文献/collect.py --看              再看一遍刚才的列表')
 
 
 if __name__ == '__main__':

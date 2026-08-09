@@ -6,8 +6,10 @@ import sys, os, subprocess, time, io
 
 # 自测自己也可能被无控制台的 pythonw 拉起，此时 stdout 是 GBK，打印中文会崩。
 # 强制把自己的输出改成 UTF-8 —— 测试工具不该因为环境不同而假报错。
+# 用 reconfigure 而非替换 sys.stdout：后者会让原对象被回收、底层缓冲被关闭，
+# 表现为程序跑到一半 print 抛「I/O operation on closed file」（踩坑 #37）
 try:
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
 

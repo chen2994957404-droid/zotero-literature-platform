@@ -4,7 +4,12 @@
 """
 import urllib.request, json, urllib.parse, sys, io, re
 # 强制utf-8输出，避免gbk编码错
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+# 用 reconfigure 而非替换 sys.stdout：后者会让原对象被回收、底层缓冲被关闭，
+# 表现为程序跑到一半 print 抛「I/O operation on closed file」（踩坑 #37）
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
 
 query = sys.argv[1]
 limit = int(sys.argv[2]) if len(sys.argv) > 2 else 8
