@@ -88,7 +88,7 @@ def _text_of(paper):
     return f"{paper.get('title') or ''}. {(paper.get('abstract') or '')[:1500]}".strip()
 
 
-def match_many(papers, top_n=3):
+def match_many(papers, top_n=3, topic=None):
     """批量对照。返回与输入等长的列表，每项：
 
       status    : 'have'(库里已有) / 'likely'(极可能重复) / 'new'(新的)
@@ -118,9 +118,14 @@ def match_many(papers, top_n=3):
     try:
         from modules.embed import embed as embed_batch
         texts = [_text_of(papers[i]) for i in pending]
-        vecs = embed_batch(texts)
+        # topic 一并向量化：**只看「跟我的库像不像」是不够的**（踩坑 #38）。
+        # 关键词检索的结果天然贴题（是搜出来的），但雪球来的只保证「跟种子有引用关系」，
+        # 一篇文章的参考文献什么方向都有 —— 于是水凝胶综述、摩擦纳米发电机
+        # 也能因为跟库里某篇沾边而排到最前面。必须同时看「跟本次主题」的距离。
+        vecs = embed_batch(([topic] if topic else []) + texts)
     except Exception:
         return results          # Ollama 没跑 → 保留精确层结果，不报错
+    tvec = vecs.pop(0) if topic else None
 
     for idx, i in enumerate(pending):
         try:
@@ -130,10 +135,20 @@ def match_many(papers, top_n=3):
             metas = q['metadatas'][0]
             if not dists:
                 continue
-            sim = 1.0 - float(dists[0])          # cosine 距离 → 相似度
-            results[i]['relevance'] = round(max(0.0, min(1.0, sim)), 3)
+            sim = 1.0 - float(dists[0])          # cosine 距离 → 与我的库的相似度
+            lib_sim = round(max(0.0, min(1.0, sim)), 3)
+            results[i]['lib_sim'] = lib_sim
+            if tvec is not None:
+                ts = _cos(vecs[idx], tvec)
+                results[i]['topic_sim'] = round(ts, 3)
+                # 取两者的**几何平均**：任意一边低都会明显拉低总分。
+                # 用几何平均而非算术平均，是因为「跟主题无关但跟我的库沾边」
+                # 这种情况必须被压下去，算术平均压不动。
+                results[i]['relevance'] = round((lib_sim * max(ts, 0.0)) ** 0.5, 3)
+            else:
+                results[i]['relevance'] = lib_sim
             nt = (metas[0].get('title') or '') if metas else ''
-            results[i]['nearest'] = {'title': nt[:70], 'sim': results[i]['relevance']}
+            results[i]['nearest'] = {'title': nt[:70], 'sim': lib_sim}
             # 精确层没抓到、但语义极像且标题也像 → 很可能是同一篇换了写法
             if results[i]['status'] == 'new' and sim >= DUP_SIM:
                 a, b = norm_title(papers[i].get('title')), norm_title(nt)
@@ -142,6 +157,17 @@ def match_many(papers, top_n=3):
         except Exception:
             continue
     return results
+
+
+def _cos(a, b):
+    """余弦相似度。向量维度不一致或全零时返回 0，不抛异常。"""
+    try:
+        s = sum(x * y for x, y in zip(a, b))
+        na = sum(x * x for x in a) ** 0.5
+        nb = sum(y * y for y in b) ** 0.5
+        return s / (na * nb) if na and nb else 0.0
+    except Exception:
+        return 0.0
 
 
 def _overlap(a, b):
@@ -157,6 +183,41 @@ def _overlap(a, b):
 def match(paper):
     """单篇对照。内部走 match_many，避免两套逻辑。"""
     return match_many([paper])[0]
+
+
+def pick_seeds(topic, n=4):
+    """从本地库里挑出与 topic 最相关的 n 篇，作为雪球的种子集。
+
+    **为什么这一步是本平台独有的**：实证研究表明「雪球法的效果高度依赖种子集质量」。
+    别人做雪球得先花力气构造种子集（或让用户手工指定）；
+    我们有现成的 183 篇库 + 向量库，能自动挑出真正对口的几篇。
+    这是结构性优势 —— 不是我们算法更好，是只有我们有这份数据。
+
+    返回 [{'doi','title','sim'}]，Zotero/Ollama 不可用时返回空列表（调用方跳过雪球）。
+    """
+    coll = _collection()
+    if coll is None:
+        return []
+    try:
+        from modules.embed import embed as embed_batch
+        qv = embed_batch([topic])[0]
+        # 多取一些再按 DOI 去重 —— 向量库是按文本块存的，同一篇会命中多次
+        q = coll.query(query_embeddings=[qv], n_results=max(20, n * 6),
+                       include=['metadatas', 'distances'])
+    except Exception:
+        return []
+
+    seen, seeds = set(), []
+    for meta, dist in zip(q['metadatas'][0], q['distances'][0]):
+        doi = (meta.get('doi') or '').lower().strip()
+        if not doi or doi in seen:
+            continue
+        seen.add(doi)
+        seeds.append({'doi': doi, 'title': (meta.get('title') or '')[:70],
+                      'sim': round(1.0 - float(dist), 3)})
+        if len(seeds) >= n:
+            break
+    return seeds
 
 
 def rank(papers, matches, w_rel=0.6, w_cite=0.25, w_fresh=0.15, year_now=None):

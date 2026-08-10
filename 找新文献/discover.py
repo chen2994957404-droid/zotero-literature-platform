@@ -8,10 +8,17 @@
 排序刻意让「与我的方向相关」压过「被引数」：
 一篇 300 次引用的通用综述，往往不如一篇 5 次引用但正好做你那个体系的论文。
 
-**默认会把你的问题拆成 5 个互补的检索式再搜**，因为单一检索式是「搜不全」的
-根本原因 —— 材料领域同一个东西有太多叫法（polyborosiloxane / PBS /
-borosiloxane elastomer / shear stiffening gel / silly putty…），
-只搜一个词必然漏掉用别的词写的那批。
+**混合检索策略**（有实证支撑，不是拍脑袋）：
+
+    单个数据库检索              召回 13~35%
+    + 查询扩展（拆成多个检索式）  召回 50~95%
+    + 前后向雪球（引用网络）      召回 90~100%   ← 本工具默认全做
+
+两条腿缺一不可：
+- **查询扩展**解决「同一个东西有多种叫法」（polyborosiloxane / PBS /
+  borosiloxane elastomer / shear stiffening gel …），只搜一个词必漏。
+- **雪球**解决「术语完全不同但引用上挨着」—— 关键词永远搜不到那批，
+  而种子集用的是**你自己库里最相关的几篇**（这一步别人做不了）。
 
 用法:
   python 找新文献/discover.py "polyborosiloxane dynamic bond"
@@ -19,6 +26,8 @@ borosiloxane elastomer / shear stiffening gel / silly putty…），
   python 找新文献/discover.py "shear stiffening gel" 30 --since 2020
   python 找新文献/discover.py "..." --扩展 8      拆更多检索式（更全，更慢更费）
   python 找新文献/discover.py "..." --单查询      只用原话搜（快，但会漏）
+  python 找新文献/discover.py "..." --种子 5      雪球用几篇种子（默认 3）
+  python 找新文献/discover.py "..." --不雪球      跳过引用网络扩展（快，但召回明显下降）
   python 找新文献/discover.py "..." --all         同时显示库里已有的
   python 找新文献/discover.py "..." --openalex    改用免费的 OpenAlex（不需要密钥）
 
@@ -92,7 +101,8 @@ def fetch_multi(queries, limit, year_from, use_openalex, prefer):
             merged.append(it)
             new += 1
         contrib.append((q, len(items), new, ''))
-    return merged, total_hint, source, contrib
+    # 把 seen 一并返回：后续雪球扩展要接着用同一套去重键，否则会重复计入
+    return merged, total_hint, source, contrib, seen
 
 
 def main():
@@ -132,7 +142,7 @@ def main():
         print()
 
     try:
-        items, total, source, contrib = fetch_multi(
+        items, total, source, contrib, seen_keys = fetch_multi(
             queries, limit, year_from, '--openalex' in flags, prefer)
     except Exception as e:
         print(f'检索失败：{e}')
@@ -141,7 +151,37 @@ def main():
         print('没有检索到结果，换个说法试试。')
         return
 
-    print(f'来源 {source}，合并去重后 {len(items)} 篇')
+    # ── 雪球扩展：关键词检索必然漏掉「术语不同但引用上挨着」的文献 ──
+    # 实证：单库检索召回 13~35%，优化检索式 50~95%，**再加一轮前后向雪球才到 90~100%**。
+    snow_stats = []
+    if '--不雪球' not in flags:
+        from modules.lib_match import pick_seeds
+        from modules.snowball import expand as snowball
+        seeds = pick_seeds(queries[0], n=int(next(
+            (sys.argv[i + 1] for i, a in enumerate(sys.argv)
+             if a == '--种子' and i + 1 < len(sys.argv) and sys.argv[i + 1].isdigit()), 3)))
+        if seeds:
+            print(f'\n从你库里挑了 {len(seeds)} 篇最相关的做雪球种子：')
+            for s in seeds:
+                print(f'  相似{s["sim"]}  {s["title"][:62]}')
+            try:
+                sr = snowball([s['doi'] for s in seeds], direction='both', limit_per_seed=30)
+                snow_stats = sr['stats']
+                added = 0
+                for it in sr['items']:
+                    k = _key(it)
+                    if k in seen_keys:
+                        continue
+                    seen_keys.add(k)
+                    items.append(it)
+                    added += 1
+                print(f'  → 雪球带来 {added} 篇关键词没搜到的文献')
+            except Exception as e:
+                print(f'  （雪球失败，不影响其余结果：{str(e)[:60]}）')
+        else:
+            print('\n（库里没找到合适的种子，跳过雪球；Ollama 没跑时也会这样）')
+
+    print(f'\n来源 {source} + 引用网络，合并去重后 {len(items)} 篇')
     if len(queries) > 1:
         print('\n各检索式的新增贡献（判断搜得够不够）：')
         for q, got, new, err in contrib:
@@ -156,7 +196,24 @@ def main():
             print('  ↳ 后面的检索式还在大量带新文献，**可能还没搜全**，可加 --扩展 8 再试')
     print('\n正在与你的库对照…（首次会稍慢，要把摘要向量化）')
 
-    ms = match_many(items)
+    # 把本次主题传进去：雪球来的文献不保证贴题，只看「跟我的库像不像」会被带偏
+    ms = match_many(items, topic=queries[0])
+
+    # 贴题门槛：**高被引不能救一篇跑题的文献**。
+    # 实测（踩坑 #38）：不设门槛时，被引 1117 的水凝胶综述、被引 483 的高熵合金
+    # 会因为「跟我库里某篇沾边 + 被引高」而排到前面 —— 它们跟本次主题毫无关系。
+    floor = float(next((sys.argv[i + 1] for i, a in enumerate(sys.argv)
+                        if a == '--贴题门槛' and i + 1 < len(sys.argv)), 0.45))
+    if '--宽松' not in flags:
+        keep = [(p, m) for p, m in zip(items, ms)
+                if m.get('topic_sim') is None or m['topic_sim'] >= floor]
+        cut = len(items) - len(keep)
+        if cut:
+            print(f'（滤掉 {cut} 篇贴题度低于 {floor} 的 —— 多为雪球带来的跨方向文献，'
+                  f'加 --宽松 可看全部）')
+        items = [p for p, _ in keep]
+        ms = [m for _, m in keep]
+
     rows = rank(items, ms)
 
     n_have = sum(1 for m in ms if m['status'] in ('have', 'likely'))
@@ -172,8 +229,12 @@ def main():
         rel = m['relevance']
         bar = '█' * int((rel or 0) * 10) if rel is not None else '?'
         yr = p.get('year') or '????'
+        detail = ''
+        if m.get('topic_sim') is not None:
+            detail = f'（贴题{m["topic_sim"]} 近库{m.get("lib_sim")}）'
+        src = {'backward': ' [引用源头]', 'forward': ' [跟进工作]'}.get(p.get('from'), '')
         print(f'{i:2d}. {tag}[{yr}] 相关度 {rel if rel is not None else "?"} {bar:<10} '
-              f'被引{p.get("citations", 0)}')
+              f'被引{p.get("citations", 0)}{detail}{src}')
         print(f'    {(p.get("title") or "")[:76]}')
         meta = []
         if p.get('venue'):
