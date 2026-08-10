@@ -28,10 +28,20 @@ def workflow_dirs():
 
 
 def code_files():
-    """所有需要检查的源码：各工作流文件夹 + 积木层。"""
-    files = glob.glob('modules/**/*.py', recursive=True)
+    """所有需要检查的源码：各工作流文件夹 + 积木层。
+
+    排除 `_tmp*` / `_t.py` 这类一次性临时脚本 —— 它们常由 PowerShell 生成（带 BOM），
+    会让体检报语法错，制造与真实代码无关的噪声。
+    **注意不能简单排除下划线开头**：`__init__.py` 正是积木的入口，必须检查。
+    """
+    def keep(f):
+        b = os.path.basename(f)
+        return not (b.startswith('_tmp') or b in ('_t.py', '_h.py', '_c.py', '_f.py'))
+
+    files = [f for f in glob.glob('modules/**/*.py', recursive=True) if keep(f)]
     for d in workflow_dirs():
-        files += glob.glob(os.path.join(d, '**', '*.py'), recursive=True)
+        files += [f for f in glob.glob(os.path.join(d, '**', '*.py'), recursive=True)
+                  if keep(f)]
     return files
 
 

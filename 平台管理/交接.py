@@ -57,6 +57,77 @@ def health():
     return {'summary': m.group(0) if m else '（体检没跑起来）', 'problems': problems}
 
 
+def tree():
+    """画一棵目录树，只含代码与文档。
+
+    **为什么必须有这个（实测得出）**：让一个全新会话接手项目时，它的第一个动作
+    通常是 glob 根目录 —— 结果返回 3318 个文件，前 100 个全是
+    `workflow_data/library/<KEY>/parsed/images/*.jpg`，**完全看不出项目长什么样**。
+    在交接文件里直接给出目录树，新会话就不必去 glob，也就不会被数据淹没。
+    """
+    skip_dir = {'workflow_data', 'n8n_data', 'wf_backup', '__pycache__', '.git'}
+    lines = []
+    for d in sorted(os.listdir(ROOT)):
+        p = os.path.join(ROOT, d)
+        if d.startswith('.') or d in skip_dir or d.startswith('zotero_backup'):
+            continue
+        if os.path.isdir(p):
+            if d == 'modules':
+                subs = sorted(x for x in os.listdir(p) if os.path.isdir(os.path.join(p, x)))
+                lines.append(f'{d}/                 ← 积木层（{len(subs)} 块）')
+                lines.append('    ' + '、'.join(subs))
+            elif d == 'docs':
+                n = len(glob.glob(os.path.join(p, '*.md')))
+                lines.append(f'{d}/                    ← 文档（{n} 份）')
+            else:
+                pys = sorted(os.path.basename(f) for f in glob.glob(os.path.join(p, '*.py')))
+                lines.append(f'{d}/ （{len(pys)} 个脚本）')
+                if pys:
+                    lines.append('    ' + '、'.join(pys[:8])
+                                 + ('…' if len(pys) > 8 else ''))
+    files = sorted(f for f in os.listdir(ROOT)
+                   if os.path.isfile(os.path.join(ROOT, f))
+                   and not f.startswith(('.', '_'))     # 下划线开头的是临时脚本
+                   and f != 'HANDOVER.md')
+    lines.append('')
+    lines.append('根目录文件：' + '、'.join(files))
+    lines.append('')
+    lines.append('（workflow_data/ 是数据目录，3000+ 文件，**不要去 glob 它**）')
+    return lines
+
+
+def next_step():
+    """推断「下一步该做什么」。
+
+    **不手写** —— 手写的下一步和待办一样会过时（实测：待办里还挂着早已被
+    proc_lock 解决的 watcher 重复实例）。这里全部依据系统的真实状态推断。
+    """
+    steps = []
+    h = _HEALTH_CACHE.get('data') or {}
+    if h.get('problems'):
+        steps.append('**先修体检报的问题**（见上一节），其余都往后放')
+    try:
+        from modules import evalset as E
+        s = E.stats()
+        if not s['ready']:
+            need_g, need_b = max(0, 3 - s['good']), max(0, 3 - s['bad'])
+            steps.append(
+                f'**攒精读评测集**：还差「好」{need_g} 篇、「差」{need_b} 篇。'
+                f'用户在 Zotero 打「读完」标签 → 控制面板「精读评价」里评。'
+                f'评够后即可做「自动质量分」校准，让系统自己发现精读退化。')
+        else:
+            steps.append('**做自动质量分校准**：评测集样本已够，'
+                         '分析好/差两组的客观指标差异，做成能自动算的质量分。')
+    except Exception:
+        pass
+    if not steps:
+        steps.append('没有明确的进行中任务 —— 问用户想做什么。')
+    return steps
+
+
+_HEALTH_CACHE = {}
+
+
 def blocks():
     rows = []
     for f in sorted(glob.glob(os.path.join(ROOT, 'modules', '*', '__init__.py'))):
@@ -73,7 +144,13 @@ def blocks():
 
 
 def flows():
-    skip = {'modules', 'docs', 'workflow_data', 'n8n_data', 'wf_backup'}
+    """工作流 = 项目根下、含 .py、且不是积木层/数据/文档/归档 的文件夹。
+
+    **归档_旧版本 不算工作流** —— 它是废弃代码，算进去会让「有几个工作流」这个数
+    自相矛盾（实测中新会话就被这一点绊住了）。
+    """
+    skip = {'modules', 'docs', 'workflow_data', 'n8n_data', 'wf_backup',
+            '归档_旧版本'}
     rows = []
     for d in sorted(os.listdir(ROOT)):
         p = os.path.join(ROOT, d)
@@ -130,14 +207,29 @@ def build():
     a('新对话请按这个顺序读：本文件 → `CLAUDE.md` → 需要动哪块就读那个文件夹的 `CLAUDE.md`。')
     a('')
 
+    a('## 目录结构（**不要去 glob 根目录**，数据目录有 3000+ 文件会淹掉你）')
+    a('')
+    a('```')
+    for ln in tree():
+        a(ln)
+    a('```')
+    a('')
+
     a('## 现在健康吗')
     a('')
     h = health()
+    _HEALTH_CACHE['data'] = h
     a(f'`{h["summary"]}`')
     if h['problems']:
         a('')
         for p in h['problems'][:6]:
             a(f'- {p}')
+    a('')
+
+    a('## 👉 下一步该做什么')
+    a('')
+    for s in next_step():
+        a(f'- {s}')
     a('')
 
     a('## 最近做了什么（git 提交，新到旧）')
@@ -193,6 +285,19 @@ def build():
             a(f'- {t}')
         a('')
 
+    a('## 想深入时读哪份（**这两份是时间正序的长文件，用 tail 读末尾，别从头读**）')
+    a('')
+    for f, why in (('docs/踩坑记录.md', '所有踩过的坑，含根因与解法'),
+                   ('docs/变更记录.md', '每次改动的来龙去脉'),
+                   ('docs/架构宪法_第一性原理.md', '最高纲领：三条铁律 + 零号/首要判据'),
+                   ('<某文件夹>/CLAUDE.md', '那一块的完整说明书，改哪块就读哪份')):
+        size = ''
+        p = os.path.join(ROOT, f)
+        if os.path.exists(p):
+            size = f'（{round(os.path.getsize(p) / 1024)} KB）'
+        a(f'- `{f}`{size} — {why}')
+    a('')
+
     a('## 铁律提醒')
     a('')
     a('- **【零号判据】先看真实世界，别用记忆代替调研。**'
@@ -203,13 +308,63 @@ def build():
     return '\n'.join(L)
 
 
+CLAUDE_MD = os.path.join(ROOT, 'CLAUDE.md')
+AUTO_BEGIN = '<!-- AUTO:结构 开始 · 由 平台管理/交接.py 生成，勿手改 -->'
+AUTO_END = '<!-- AUTO:结构 结束 -->'
+
+
+def sync_claude_md():
+    """把目录结构同步进 CLAUDE.md 的自动区块。
+
+    **为什么必须写进 CLAUDE.md 而不是只写在 HANDOVER（实测得出）**：
+    CLAUDE.md 是**唯一在任何工具调用之前**就进入上下文的文件。
+    新会话的第一个动作往往是 glob 根目录，然后被 3000+ 个数据文件淹没 ——
+    此时它还没读到 HANDOVER 里那句「不要 glob」。
+    一个只能保护「已经读过它的人」的警告是没用的，必须提前到 CLAUDE.md。
+
+    同时解决数字过时：手写的「10 块公理件」早已落后于实际的 16 块，
+    而新会话若只读 CLAUDE.md 就会**自信地答错**。自动生成即永不过时。
+    """
+    if not os.path.exists(CLAUDE_MD):
+        return False
+    body = ['', AUTO_BEGIN, '',
+            '## 项目结构（自动同步，**不要 glob 根目录**）', '',
+            '> `workflow_data/` 有 3000+ 个数据文件，glob 根目录会直接淹掉你的上下文。',
+            '> 下面这棵树就是全部结构，不必再去扫。', '', '```']
+    body += tree()
+    body += ['```', '']
+    fl = flows()
+    bl = blocks()
+    body += [f'**积木 {len(bl)} 块**（`modules/`，原子能力）· '
+             f'**工作流 {len(fl)} 个**（用积木搭出来的功能；'
+             f'`归档_旧版本` 是废弃代码，不计入）', '',
+             '进度、健康状况、下一步做什么 → 见 `HANDOVER.md`', '',
+             AUTO_END, '']
+    block = '\n'.join(body)
+
+    src = io.open(CLAUDE_MD, encoding='utf-8').read()
+    if AUTO_BEGIN in src and AUTO_END in src:
+        new = re.sub(re.escape(AUTO_BEGIN) + r'[\s\S]*?' + re.escape(AUTO_END),
+                     block.strip(), src)
+    else:
+        # 首次：插在第一个二级标题之前，确保足够靠前
+        m = re.search(r'^## ', src, re.M)
+        pos = m.start() if m else len(src)
+        new = src[:pos] + block.strip() + '\n\n' + src[pos:]
+    if new != src:
+        io.open(CLAUDE_MD, 'w', encoding='utf-8', newline='').write(new)
+    return True
+
+
 def main():
     txt = build()
     if '--print' in sys.argv:
         print(txt)
         return
     io.open(HANDOVER, 'w', encoding='utf-8', newline='').write(txt + '\n')
-    print(f'已生成 {HANDOVER}（{len(txt)} 字符）')
+    ok = sync_claude_md()
+    print(f'已生成 {HANDOVER}（{len(txt)} 字符）'
+          + ('；CLAUDE.md 的结构区块已同步' if ok else ''))
 
 
 if __name__ == '__main__':

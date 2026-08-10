@@ -3,7 +3,49 @@
 围绕 Zotero 的文献科研平台。用户是材料方向研究者（聚硼硅氧烷/动态键弹性体），**不懂编程**。
 本文件是**唯一入口**：想帮用户干活看【第一部分】，想改代码看【第二部分】。
 
-## 📌 新对话第一件事：读 `HANDOVER.md`
+<!-- AUTO:结构 开始 · 由 平台管理/交接.py 生成，勿手改 -->
+
+## 项目结构（自动同步，**不要 glob 根目录**）
+
+> `workflow_data/` 有 3000+ 个数据文件，glob 根目录会直接淹掉你的上下文。
+> 下面这棵树就是全部结构，不必再去扫。
+
+```
+docs/                    ← 文档（12 份）
+modules/                 ← 积木层（16 块）
+    chart_digitize、config、embed、evalset、figure_crop、lib_match、llm_client、paper_discovery、pdf_parse、proc_lock、query_expand、sciverse、si_filter、snowball、subproc、zotero_client
+平台管理/ （3 个脚本）
+    health_check.py、panel.py、交接.py
+库内问答/ （4 个脚本）
+    ask.py、ask_world.py、vectorize.py、vectorize_library.py
+库房维护/ （7 个脚本）
+    auto_sync.py、autotag.py、backfill_meta.py、delete_junk.py、list_junk.py、tag_to_nested.py、zotero_rename.py
+归档_旧版本/ （2 个脚本）
+    build_deepread_workflow.py、watcher.py
+找新文献/ （7 个脚本）
+    brainstorm.py、collect.py、discover.py、find_papers.py、import_by_doi.py、search_global.py、zotero_add_thesis.py
+数据抽取/ （4 个脚本）
+    extract_batch.py、extract_library.py、extract_structured.py、filter_domain.py
+文献精读/ （12 个脚本）
+    deepread_batch.py、deepread_v4.py、merge_summary.py、mineru_parse.py、refresh_summary_file.py、rerun_pro.py、si_batch.py、si_deepread.py…
+
+根目录文件：CLAUDE.md、LICENSE、README.md、requirements.txt、控制面板.bat
+
+（workflow_data/ 是数据目录，3000+ 文件，**不要去 glob 它**）
+```
+
+**积木 16 块**（`modules/`，原子能力）· **工作流 6 个**（用积木搭出来的功能；`归档_旧版本` 是废弃代码，不计入）
+
+进度、健康状况、下一步做什么 → 见 `HANDOVER.md`
+
+<!-- AUTO:结构 结束 -->
+
+## 📌 新对话第一件事：读 `HANDOVER.md`（**别先 glob 根目录**）
+
+> ⚠ **不要用 glob 扫根目录来了解结构** —— `workflow_data/` 里有 3000+ 个数据文件，
+> 会直接淹掉你的上下文（实测：前 100 个结果全是精读图片，完全看不出项目长什么样）。
+> **目录树、当前健康状况、下一步做什么，`HANDOVER.md` 里都有现成的。**
+
 
 那份**自动生成**的交接文件告诉你「我们上次停在哪」：当前健康状况、最近十次改动、
 评测集进展、待办、最近踩的坑。本文件（CLAUDE.md）说的是「这个项目是什么」，
@@ -18,7 +60,7 @@
 
 ```
 文献精读/  库内问答/  数据抽取/  找新文献/  库房维护/  平台管理/  归档_旧版本/
-modules/   ← 10 块公理件，每块也有自己的 CLAUDE.md
+modules/   ← 积木层（公理件），每块也有自己的 CLAUDE.md
 ```
 
 **如果用户只选中了某一个文件夹跟你对话，那个文件夹的 CLAUDE.md 就是完整上下文。**
@@ -55,15 +97,13 @@ modules/   ← 10 块公理件，每块也有自己的 CLAUDE.md
 - `workflow_data/library/<KEY>/` — 精读过的文献（parsed/full.md 全文 + summary.html 中文精读）
 - `workflow_data/vector_db/` — 向量库（9105块，供 库内问答/ask.py 检索）
 
-## 10 块公理件（modules/，可直接 import 复用）
+## 积木层（modules/，可直接 import 复用）
 
-`config`（密钥统一加载）· `zotero_client`（定位文献/正文PDF）· `pdf_parse`（PDF→文本）
-`llm_client`（调LLM，含视觉）· `embed`（文本→向量）· `figure_crop`（裁完整Figure）
-`chart_digitize`（图表→数据点）· `paper_discovery`（找文献补库）· `si_filter`（SI噪声过滤）
-`proc_lock`（单实例锁，防同一服务跑两份）
+**完整清单见本文件上方「项目结构」自动区块**（手写清单会过时，这里刻意不列）。
 
 改动后跑 `python modules/<名>/selftest.py` 验证单块；
-**改完务必跑一键体检**：`python 平台管理/health_check.py`（语法/密钥安全/配置/服务/自测/数据/后台一次过）。
+**改完务必跑一键体检**：`python 平台管理/health_check.py`。
+
 
 ## ⚠ 最高优先级：先看真实世界，别用记忆代替调研
 
