@@ -64,6 +64,44 @@ def c_syntax():
     return (OK, f'{len(files)} 个文件语法通过') if not bad else (FAIL, f'语法错误 {bad}')
 
 
+def c_undefined_names():
+    """揪出「用了但没导入」的模块（踩坑 #39）。
+
+    语法检查和运行时导入检查都发现不了这类问题：
+    `re.sub(...)` 写在函数体里，语法完全合法，模块也能正常 import，
+    **只有那个函数被真正调用时才炸** —— 用户在面板上点了检索才发现。
+
+    做法：用 ast 收集每个文件里「导入了什么」和「用了哪些 模块.属性」，
+    对常见标准库名做交叉核对。简单但足以覆盖这一整类事故。
+    """
+    COMMON = {'re', 'os', 'sys', 'json', 'io', 'time', 'math', 'glob', 'shutil',
+              'random', 'hashlib', 'base64', 'zipfile', 'sqlite3', 'threading',
+              'subprocess', 'datetime', 'itertools', 'collections', 'traceback',
+              'urllib', 'csv', 'tempfile', 'pathlib', 'textwrap'}
+    bad = []
+    for f in code_files():
+        try:
+            tree = ast.parse(open(f, encoding='utf-8').read())
+        except SyntaxError:
+            continue
+        imported, used = set(), {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for a in node.names:
+                    imported.add((a.asname or a.name).split('.')[0])
+            elif isinstance(node, ast.ImportFrom):
+                for a in node.names:
+                    imported.add(a.asname or a.name)
+                if node.module:
+                    imported.add(node.module.split('.')[0])
+            elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+                used.setdefault(node.value.id, node.lineno)
+        for name, line in used.items():
+            if name in COMMON and name not in imported:
+                bad.append(f'{os.path.basename(f)}:{line} 用了 {name} 但没导入')
+    return (OK, '没有「用了但没导入」的模块') if not bad else (FAIL, f'{bad[:5]}')
+
+
 def c_no_secrets():
     """确保源码里没有明文密钥（安全底线）。"""
     import re
@@ -272,6 +310,7 @@ def c_services():
 if __name__ == '__main__':
     print('=== 平台健康检查 ===\n', flush=True)
     check('语法', c_syntax)
+    check('未导入的模块', c_undefined_names)
     check('密钥安全', c_no_secrets)
     check('无弹窗', c_no_popup)
     check('密钥存放', c_secret_storage)

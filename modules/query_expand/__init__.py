@@ -66,16 +66,23 @@ def _llm(system, user, max_tokens=400):
                 max_tokens=max_tokens, thinking=False)
 
 
-def to_english(q):
+def to_english(q, context=None):
     """中文问题 → 英文检索式。已经是英文就原样返回。
 
     为什么必须转：Sciverse 等按 query 语言做亲和加权，中文问会召回中文文献，
     而材料领域的高质量文献绝大多数是英文（踩坑 #35 实测）。
+
+    context 同 expand()：给出领域，避免缩写被翻错。
     """
     if not looks_chinese(q):
         return q
     try:
-        return _llm(_SYS_EN, q, 200).strip().strip('"').strip() or q
+        user = q
+        if context:
+            sample = '\n'.join(f'- {t}' for t in list(context)[:5])
+            user = (f"Field context (papers from this researcher's library):\n{sample}\n\n"
+                    f"Translate this query into an English search query IN THAT FIELD:\n{q}")
+        return _llm(_SYS_EN, user, 200).replace('"', '').strip() or q
     except Exception:
         return q          # 翻译失败不阻断主流程
 
@@ -84,7 +91,10 @@ def _clean_lines(text, n):
     out = []
     for ln in (text or '').split('\n'):
         ln = ln.strip()
-        ln = re.sub(r'^[\-\*\d\.\)\s]+', '', ln).strip().strip('"').strip()
+        ln = re.sub(r'^[\-\*\d\.\)\s]+', '', ln)
+        # 引号可能出现在任意位置（LLM 偶尔吐出 `PBS" lead-free solder` 这种），
+        # 只 strip 两端不够，直接全删
+        ln = ln.replace('"', '').replace('“', '').replace('”', '').strip()
         if not ln or len(ln) < 4 or looks_chinese(ln):
             continue
         if ln.lower() not in (x.lower() for x in out):
@@ -94,19 +104,30 @@ def _clean_lines(text, n):
     return out
 
 
-def expand(query, mode='survey', n=5):
+def expand(query, mode='survey', n=5, context=None):
     """把一个研究问题扩展成 n 个互补的英文检索式。
+
+    context: 用户领域的样例文献标题列表。**缩写歧义必须靠它消解**（踩坑 #39）。
 
     返回 list[str]，**第一个永远是原式（转英文后）** —— 保证不会因为扩展跑偏
     而丢掉用户本来想搜的东西。LLM 不可用时只返回这一个，功能降级但不失效。
     """
-    base = to_english(query)
+    base = to_english(query, context=context)
     queries = [base]
     if n <= 1:
         return queries
     sysmsg = (_SYS_SURVEY if mode == 'survey' else _SYS_PROBLEM).format(n=n - 1)
+    user = query
+    if context:
+        # 把用户库里的真实文献标题作为领域上下文 ——
+        # 这是本平台独有的信息，API 层和通用工具都拿不到
+        sample = '\n'.join(f'- {t}' for t in list(context)[:6])
+        user = (f"This researcher works in the field represented by these papers "
+                f"from their own library:\n{sample}\n\n"
+                f"Interpret the query IN THAT FIELD (abbreviations must be resolved "
+                f"according to this field, not other disciplines).\n\nQuery: {query}")
     try:
-        extra = _clean_lines(_llm(sysmsg, query), n - 1)
+        extra = _clean_lines(_llm(sysmsg, user), n - 1)
     except Exception:
         extra = []
     for e in extra:

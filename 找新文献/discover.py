@@ -38,7 +38,7 @@
 看完想收哪篇：python 找新文献/import_by_doi.py <DOI>
 入库后在 Zotero 打「待处理」标签即自动精读。
 """
-import sys, os, io
+import sys, os, io, re
 
 # 用 reconfigure 而非替换 sys.stdout：后者会让原对象被回收、底层缓冲被关闭，
 # 表现为程序跑到一半 print 抛「I/O operation on closed file」（踩坑 #37）
@@ -120,12 +120,24 @@ def run_discovery(query, limit=25, n_queries=5, mode='survey', year_from=None,
     """
     say = log or (lambda s: None)
 
+    # 先从用户库里取「领域上下文」：缩写歧义只能靠它消解（踩坑 #39）。
+    # 「PBS」在材料界是聚硼硅氧烷、化工界是聚丁二酸丁二醇酯、生物界是磷酸盐缓冲液。
+    # **只有本平台知道这个用户属于哪一界** —— 因为只有我们有他的库。
+    ctx = []
+    try:
+        from modules.lib_match import pick_seeds
+        ctx = [s['title'] for s in pick_seeds(query, n=5) if s.get('title')]
+        if ctx:
+            say(f'（按你库里的方向理解：{ctx[0][:46]}…）')
+    except Exception:
+        pass
+
     queries = [query]
     if n_queries > 1:
         say(f'把问题拆成 {n_queries} 个互补检索式（{"解决问题" if mode == "problem" else "系统调研"}模式）…')
         try:
             from modules.query_expand import expand as qexpand
-            queries = qexpand(query, mode=mode, n=n_queries)
+            queries = qexpand(query, mode=mode, n=n_queries, context=ctx)
         except Exception as e:
             say(f'扩展失败，退回单查询：{str(e)[:50]}')
             queries = [query]
@@ -143,7 +155,8 @@ def run_discovery(query, limit=25, n_queries=5, mode='survey', year_from=None,
     if snowball_seeds > 0:
         from modules.lib_match import pick_seeds
         from modules.snowball import expand as snowball
-        seeds = pick_seeds(queries[0], n=snowball_seeds)
+        # 同样用扩展式集合挑种子：原始输入可能是「PBS」这种无语义的缩写
+        seeds = pick_seeds(' ; '.join(queries), n=snowball_seeds)
         if seeds:
             say(f'从你库里挑了 {len(seeds)} 篇做雪球种子，正在沿引用网络扩展…')
             try:
@@ -162,17 +175,33 @@ def run_discovery(query, limit=25, n_queries=5, mode='survey', year_from=None,
 
     total_pool = len(items)
     say(f'正在与你的库对照（共 {total_pool} 篇）…')
-    ms = match_many(items, topic=queries[0])
+    # 贴题度用**全部扩展式拼起来**作参照，而不是用户原始输入（踩坑 #39）。
+    # 用户可能只输入「PBS」这种三字母缩写 —— 它的向量没有语义，
+    # 拿它当基准会把所有候选都判成不贴题，最后一篇不剩。
+    # 扩展式集合才完整表达了「他到底想找什么」。
+    topic_text = ' ; '.join(queries)
+    ms = match_many(items, topic=topic_text)
 
     filtered = 0
     if topic_floor > 0:
-        keep = [(p, m) for p, m in zip(items, ms)
-                if m.get('topic_sim') is None or m['topic_sim'] >= topic_floor]
+        def _keep(floor):
+            return [(p, m) for p, m in zip(items, ms)
+                    if m.get('topic_sim') is None or m['topic_sim'] >= floor]
+        keep = _keep(topic_floor)
+        # 兜底：门槛把结果杀光时自动放宽。
+        # **内部阈值永远不该让用户看到「0 篇」** —— 那看起来像「这个方向没文献」，
+        # 实际是我们的参数不合适，是最容易误导人的失败方式。
+        if len(keep) < max(5, len(items) * 0.05):
+            for relaxed in (topic_floor - 0.1, topic_floor - 0.2, 0.0):
+                keep = _keep(max(relaxed, 0.0))
+                if len(keep) >= max(5, len(items) * 0.05):
+                    say(f'（贴题门槛 {topic_floor} 过严，自动放宽到 {max(relaxed, 0.0):.2f}）')
+                    break
         filtered = len(items) - len(keep)
         items = [p for p, _ in keep]
         ms = [m for _, m in keep]
         if filtered:
-            say(f'滤掉 {filtered} 篇贴题度低于 {topic_floor} 的跨方向文献')
+            say(f'滤掉 {filtered} 篇跨方向文献，留下 {len(items)} 篇')
 
     return {'queries': queries, 'contrib': contrib, 'seeds': seeds,
             'snow_added': snow_added, 'filtered': filtered,
