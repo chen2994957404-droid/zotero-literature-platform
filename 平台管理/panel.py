@@ -170,6 +170,104 @@ def collect_config():
     }
 
 
+# ───────────────────── 找文献（后台任务 + 轮询） ─────────────────────
+# 完整检索要 1~2 分钟（查询扩展 + 多式检索 + 雪球 + 向量对照），
+# 不能让浏览器干等。做成「发起 → 轮询进度 → 取结果」，这也是本项目处理长任务的一贯做法。
+_JOB = {'state': 'idle', 'log': [], 'result': None, 'query': '', 'started': 0}
+_JOB_LOCK = threading.Lock()
+
+
+def _job_log(msg):
+    with _JOB_LOCK:
+        _JOB['log'].append(msg)
+        if len(_JOB['log']) > 60:
+            del _JOB['log'][:-60]
+
+
+def _run_search(params):
+    try:
+        sys.path.insert(0, os.path.join(ROOT, '找新文献'))
+        from discover import run_discovery
+        r = run_discovery(
+            params['query'], limit=params.get('limit', 25),
+            n_queries=params.get('n_queries', 5), mode=params.get('mode', 'survey'),
+            year_from=params.get('year_from') or None,
+            snowball_seeds=params.get('seeds', 3),
+            topic_floor=params.get('floor', 0.45),
+            log=_job_log)
+        rows = []
+        for i, (p, m, score) in enumerate(r['rows'], 1):
+            rows.append({
+                'n': i, 'title': p.get('title') or '', 'doi': p.get('doi') or '',
+                'year': p.get('year'), 'venue': (p.get('venue') or '')[:40],
+                'citations': p.get('citations') or 0, 'is_oa': bool(p.get('is_oa')),
+                'status': m.get('status'), 'relevance': m.get('relevance'),
+                'topic_sim': m.get('topic_sim'), 'lib_sim': m.get('lib_sim'),
+                'from': p.get('from') or 'search',
+                'nearest': (m.get('nearest') or {}).get('title', ''),
+            })
+        with _JOB_LOCK:
+            _JOB['result'] = {
+                'rows': rows, 'queries': r['queries'], 'seeds': r['seeds'],
+                'snow_added': r['snow_added'], 'filtered': r['filtered'],
+                'total_pool': r['total_pool'],
+                'contrib': [{'q': c[0], 'got': c[1], 'new': c[2], 'err': c[3]}
+                            for c in r['contrib']],
+            }
+            _JOB['state'] = 'done'
+    except Exception as e:
+        import traceback
+        _job_log(f'检索失败：{type(e).__name__}: {str(e)[:200]}')
+        _job_log(traceback.format_exc()[-400:])
+        with _JOB_LOCK:
+            _JOB['state'] = 'error'
+
+
+def action_search(params):
+    """发起检索。同一时间只允许一个任务，避免并发烧额度。"""
+    q = (params.get('query') or '').strip()
+    if not q:
+        return False, '请输入要找什么'
+    with _JOB_LOCK:
+        if _JOB['state'] == 'running':
+            return False, '已有一个检索在跑，请等它结束'
+        _JOB.update({'state': 'running', 'log': [], 'result': None,
+                     'query': q, 'started': time.time()})
+    threading.Thread(target=_run_search, args=(params,), daemon=True).start()
+    return True, '检索已开始'
+
+
+def action_collect(payload):
+    """把选中的文献收进 Zotero。deep=True 时打「待处理」标签触发精读。
+
+    **两个决定分开**：收进库 与 是否精读。精读要花钱，不该被顺手触发。
+    """
+    dois = [d for d in (payload.get('dois') or []) if d]
+    if not dois:
+        return False, '没有选中任何文献'
+    deep = bool(payload.get('deep'))
+    try:
+        sys.path.insert(0, os.path.join(ROOT, '找新文献'))
+        from import_by_doi import import_dois
+        from modules.lib_match import build_index
+        _, have = build_index(force=True)
+        skipped = [d for d in dois if d.lower() in have]
+        todo = [d for d in dois if d.lower() not in have]
+        if not todo:
+            return True, f'选中的 {len(dois)} 篇库里都已经有了，没有导入'
+        r = import_dois(todo, ['待处理'] if deep else [], verbose=False)
+        msg = f'收下 {len(r["ok"])} 篇'
+        if skipped:
+            msg += f'（跳过 {len(skipped)} 篇库里已有的）'
+        if r['failed']:
+            msg += f'，{len(r["failed"])} 篇失败'
+        if deep and r['ok']:
+            msg += '；已打「待处理」标签，精读一分钟内自动开始'
+        return True, msg
+    except Exception as e:
+        return False, f'{type(e).__name__}: {str(e)[:150]}'
+
+
 def collect_blocks():
     """积木与工作流一览。说明取自各文件夹的 CLAUDE.md 首段，不另写一份。
 
@@ -325,6 +423,14 @@ class Handler(BaseHTTPRequestHandler):
                 'structure': collect_blocks(),
                 'time': time.strftime('%H:%M:%S'),
             })
+        if p == '/api/search_status':
+            with _JOB_LOCK:
+                return self._send({
+                    'state': _JOB['state'], 'query': _JOB['query'],
+                    'log': list(_JOB['log']),
+                    'elapsed': int(time.time() - _JOB['started']) if _JOB['started'] else 0,
+                    'result': _JOB['result'],
+                })
         if p == '/api/logs':
             import urllib.parse
             q = urllib.parse.parse_qs(self.path.partition('?')[2])
@@ -341,6 +447,10 @@ class Handler(BaseHTTPRequestHandler):
             ok, msg = action_restart(payload.get('task', ''))
         elif self.path == '/api/selftest':
             ok, msg = action_selftest(payload.get('name', ''))
+        elif self.path == '/api/search':
+            ok, msg = action_search(payload)
+        elif self.path == '/api/collect':
+            ok, msg = action_collect(payload)
         elif self.path == '/api/migrate_secrets':
             moved, msg = migrate_secrets_to_keyring()
             ok = bool(moved) or '没有需要迁移' in msg
@@ -393,6 +503,35 @@ pre{background:#20232a;color:#c8d0dc;padding:12px;border-radius:8px;font-size:12
 <div class="sub">每 15 秒自动刷新 · 上次刷新 <span id="t">—</span></div>
 
 <div id="alertbox"></div>
+
+<div class="card">
+  <h2>找文献</h2>
+  <div class="hint" style="margin-bottom:12px">
+    会自动拆成多个检索式 + 沿引用网络扩展 + 排除你库里已有的，按「跟你多相关」排序。
+    <b>英文关键词效果好很多</b>（材料领域好文献几乎都是英文）。</div>
+  <div class="row" style="border:0;padding-bottom:4px">
+    <input id="q" style="width:420px" placeholder="例：polyborosiloxane shear stiffening mechanism"
+           onkeydown="if(event.key==='Enter')doSearch()">
+    <select id="mode">
+      <option value="survey">系统调研（求全）</option>
+      <option value="problem">解决问题（求准）</option>
+    </select>
+    <select id="seeds">
+      <option value="3">雪球种子 3 篇</option>
+      <option value="5">雪球种子 5 篇</option>
+      <option value="0">不用雪球（快）</option>
+    </select>
+    <button onclick="doSearch()" id="btnSearch">开始找</button>
+  </div>
+  <pre id="searchlog" style="display:none;max-height:150px"></pre>
+  <div id="searchsum" class="hint" style="margin-top:8px"></div>
+  <div id="results"></div>
+  <div id="collectbar" style="display:none;margin-top:12px">
+    <button onclick="doCollect(false)">收下选中的（不精读）</button>
+    <button onclick="doCollect(true)" style="background:#c0392b">收下并立刻精读</button>
+    <span class="hint" style="margin-left:10px">精读会消耗解析与大模型额度</span>
+  </div>
+</div>
 
 <div class="card"><h2>运行状态</h2><div id="status"></div></div>
 
@@ -530,6 +669,73 @@ async function restart(task){
   const r=await (await fetch('/api/restart',{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify({task})})).json();
   toast(r.msg); setTimeout(load,2500);
+}
+
+let searchTimer=null;
+async function doSearch(){
+  const q=$('#q').value.trim();
+  if(!q){toast('请输入要找什么');return;}
+  $('#btnSearch').disabled=true; $('#btnSearch').textContent='检索中…';
+  $('#searchlog').style.display='block'; $('#searchlog').textContent='正在开始…';
+  $('#results').innerHTML=''; $('#collectbar').style.display='none'; $('#searchsum').textContent='';
+  const r=await (await fetch('/api/search',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({query:q, mode:$('#mode').value,
+      seeds:parseInt($('#seeds').value), limit:25, n_queries:5})})).json();
+  if(!r.ok){toast(r.msg); $('#btnSearch').disabled=false; $('#btnSearch').textContent='开始找'; return;}
+  clearInterval(searchTimer);
+  searchTimer=setInterval(pollSearch,2000);
+}
+
+async function pollSearch(){
+  const s=await (await fetch('/api/search_status')).json();
+  $('#searchlog').textContent=(s.log||[]).join('\n')+`\n（已用 ${s.elapsed} 秒）`;
+  $('#searchlog').scrollTop=$('#searchlog').scrollHeight;
+  if(s.state==='running') return;
+  clearInterval(searchTimer);
+  $('#btnSearch').disabled=false; $('#btnSearch').textContent='开始找';
+  if(s.state==='error'){toast('检索失败，详情见上面日志');return;}
+  renderResults(s.result);
+}
+
+function renderResults(res){
+  if(!res||!res.rows||!res.rows.length){$('#results').innerHTML='<div class="hint">没找到结果，换个说法试试</div>';return;}
+  const newOnes=res.rows.filter(r=>r.status==='new');
+  $('#searchsum').innerHTML=
+    `检索式 ${res.queries.length} 个 · 候选池 ${res.total_pool} 篇`
+    + (res.snow_added?` （其中雪球贡献 <b>${res.snow_added}</b> 篇关键词搜不到的）`:'')
+    + (res.filtered?` · 滤掉 ${res.filtered} 篇跨方向的`:'')
+    + ` · <b>新文献 ${newOnes.length} 篇</b>，库里已有 ${res.rows.length-newOnes.length} 篇`;
+  $('#results').innerHTML=
+    `<table><tr><th style="width:28px"></th><th>文献</th><th style="width:150px">相关度</th>
+     <th style="width:60px">被引</th></tr>`
+    + res.rows.map(r=>{
+        const have=r.status!=='new';
+        const bar='█'.repeat(Math.round((r.relevance||0)*10));
+        const src={backward:'引用源头',forward:'跟进工作'}[r.from]||'';
+        return `<tr style="${have?'opacity:.45':''}">
+          <td>${have?'':`<input type="checkbox" class="pick" data-doi="${esc(r.doi)}">`}</td>
+          <td><b>${esc(r.title.slice(0,88))}</b><br>
+            <span class="hint">${r.year||'????'} · ${esc(r.venue)}
+            ${r.is_oa?' · 开放获取':''}${src?' · '+src:''}
+            ${have?' · <b>库里已有</b>':''}
+            ${r.nearest&&!have?'<br>↳ 与你库中《'+esc(r.nearest.slice(0,54))+'》最接近':''}</span></td>
+          <td>${r.relevance} ${bar}<br><span class="hint">贴题${r.topic_sim} 近库${r.lib_sim}</span></td>
+          <td>${r.citations}</td></tr>`;}).join('')
+    + `</table>`;
+  $('#collectbar').style.display=newOnes.length?'block':'none';
+}
+
+async function doCollect(deep){
+  const dois=[...document.querySelectorAll('.pick:checked')].map(e=>e.dataset.doi).filter(Boolean);
+  if(!dois.length){toast('先勾选要收的文献');return;}
+  if(deep && !confirm(`确认收下 ${dois.length} 篇并立刻精读？\n精读会消耗解析与大模型额度。`))return;
+  toast('正在收下…');
+  const r=await (await fetch('/api/collect',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({dois,deep})})).json();
+  toast(r.msg);
+  if(r.ok) document.querySelectorAll('.pick:checked').forEach(e=>{
+    e.checked=false; e.closest('tr').style.opacity=.45;});
 }
 
 async function migrate(){

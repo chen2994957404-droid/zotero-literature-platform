@@ -105,6 +105,81 @@ def fetch_multi(queries, limit, year_from, use_openalex, prefer):
     return merged, total_hint, source, contrib, seen
 
 
+def run_discovery(query, limit=25, n_queries=5, mode='survey', year_from=None,
+                  prefer='relevance', snowball_seeds=3, topic_floor=0.45,
+                  use_openalex=False, log=None):
+    """完整的混合检索流程，返回结构化结果。
+
+    **命令行与控制面板共用本函数** —— 逻辑只有一份。
+    早先 import_by_doi 就是因为逻辑写死在脚本里、无法复用，
+    导致我在提示里给了一条根本无效的命令（踩坑：能被复用是脚本的基本素养）。
+
+    log: 可选的进度回调 log(str)，面板用它做实时进度显示。
+    返回 {'queries', 'contrib', 'seeds', 'snow_added', 'filtered',
+          'total_pool', 'rows'}；rows 为 [(paper, match, score)] 已排序。
+    """
+    say = log or (lambda s: None)
+
+    queries = [query]
+    if n_queries > 1:
+        say(f'把问题拆成 {n_queries} 个互补检索式（{"解决问题" if mode == "problem" else "系统调研"}模式）…')
+        try:
+            from modules.query_expand import expand as qexpand
+            queries = qexpand(query, mode=mode, n=n_queries)
+        except Exception as e:
+            say(f'扩展失败，退回单查询：{str(e)[:50]}')
+            queries = [query]
+        for i, q in enumerate(queries, 1):
+            say(f'  {i}. {q}')
+
+    items, total, source, contrib, seen_keys = fetch_multi(
+        queries, limit, year_from, use_openalex, prefer)
+    if not items:
+        return {'queries': queries, 'contrib': contrib, 'seeds': [], 'snow_added': 0,
+                'filtered': 0, 'total_pool': 0, 'rows': [], 'source': source}
+    say(f'关键词检索合并去重后 {len(items)} 篇')
+
+    seeds, snow_added = [], 0
+    if snowball_seeds > 0:
+        from modules.lib_match import pick_seeds
+        from modules.snowball import expand as snowball
+        seeds = pick_seeds(queries[0], n=snowball_seeds)
+        if seeds:
+            say(f'从你库里挑了 {len(seeds)} 篇做雪球种子，正在沿引用网络扩展…')
+            try:
+                sr = snowball([s['doi'] for s in seeds], direction='both', limit_per_seed=30)
+                for it in sr['items']:
+                    k = _key(it)
+                    if k not in seen_keys:
+                        seen_keys.add(k)
+                        items.append(it)
+                        snow_added += 1
+                say(f'雪球带来 {snow_added} 篇关键词没搜到的文献')
+            except Exception as e:
+                say(f'雪球失败（不影响其余结果）：{str(e)[:60]}')
+        else:
+            say('库里没找到合适的种子，跳过雪球')
+
+    total_pool = len(items)
+    say(f'正在与你的库对照（共 {total_pool} 篇）…')
+    ms = match_many(items, topic=queries[0])
+
+    filtered = 0
+    if topic_floor > 0:
+        keep = [(p, m) for p, m in zip(items, ms)
+                if m.get('topic_sim') is None or m['topic_sim'] >= topic_floor]
+        filtered = len(items) - len(keep)
+        items = [p for p, _ in keep]
+        ms = [m for _, m in keep]
+        if filtered:
+            say(f'滤掉 {filtered} 篇贴题度低于 {topic_floor} 的跨方向文献')
+
+    return {'queries': queries, 'contrib': contrib, 'seeds': seeds,
+            'snow_added': snow_added, 'filtered': filtered,
+            'total_pool': total_pool, 'source': source,
+            'rows': rank(items, ms)}
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     flags = [a for a in sys.argv[1:] if a.startswith('--')]
