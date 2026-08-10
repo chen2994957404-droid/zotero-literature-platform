@@ -1,95 +1,455 @@
 {
- "query": "boron nitrogen coordination self-healing elastomer",
- "time": "2026-08-09 17:03",
+ "query": "聚硼硅氧烷材料常温下会流动变形，怎么解决形状保持问题",
+ "time": "2026-08-10 11:48",
  "items": [
   {
    "n": 1,
-   "title": "Synergy between dynamic covalent boronic ester and boron–nitrogen coordination: strategy for self-healing polyurethane elastomers at room temperature with unprecedented mechanical properties",
-   "doi": "10.1039/d0mh01142h",
-   "year": 2021,
-   "citations": 317,
-   "relevance": 0.841,
+   "title": "High-Performance Liquid Metal/Polyborosiloxane Elastomer toward Thermally Conductive Applications",
+   "doi": "10.1021/acsami.2c04994",
+   "year": 2022,
+   "citations": 78,
+   "relevance": 0.725,
    "status": "new"
   },
   {
    "n": 2,
-   "title": "Self‐Healing Elastomers and Coatings via Metal Coordination Bonds",
-   "doi": "10.1002/chem.202404038",
-   "year": 2025,
-   "citations": 16,
-   "relevance": 0.764,
+   "title": "Recent Developments in Shape Memory Elastomers for Biotechnology Applications",
+   "doi": "10.3390/polym14163276",
+   "year": 2022,
+   "citations": 19,
+   "relevance": 0.745,
    "status": "new"
   },
   {
    "n": 3,
-   "title": "A Metal Coordination-Based Supramolecular Elastomer with Shape Memory-Assisted Self-Healing Effect",
-   "doi": "10.3390/polym14224879",
-   "year": 2022,
-   "citations": 13,
-   "relevance": 0.785,
+   "title": "Flow Unit Perspective on Room Temperature Homogeneous Plastic Deformation in Metallic Glasses",
+   "doi": "10.1103/physrevlett.113.045501",
+   "year": 2014,
+   "citations": 216,
+   "relevance": 0.654,
    "status": "new"
   },
   {
    "n": 4,
-   "title": "Self-Healing Waterborne Polyurethane Coatings Based on Dynamic Covalent Borate Esters with Boron–Nitrogen Internal Coordination",
-   "doi": "10.1021/acsapm.5c00626",
-   "year": 2025,
-   "citations": 4,
-   "relevance": 0.728,
+   "title": "Thermoreversible Siloxane Networks: Soft Biomaterials with Widely Tunable Viscoelasticity",
+   "doi": "10.1002/adfm.201903721",
+   "year": 2019,
+   "citations": 40,
+   "relevance": 0.726,
    "status": "new"
   },
   {
    "n": 5,
-   "title": "Self-healing elastomers",
-   "doi": "10.1016/b978-0-12-823472-3.00015-1",
-   "year": 2022,
-   "citations": 10,
-   "relevance": 0.728,
+   "title": "Enhancing the stability of Li2NiO2 cathode additive with polyborosiloxane coating for high-energy lithium-ion batteries",
+   "doi": "10.1016/j.apsusc.2024.160494",
+   "year": 2024,
+   "citations": 11,
+   "relevance": 0.691,
    "status": "new"
   },
   {
    "n": 6,
-   "title": "A stretchable and rapidly self-healable polysiloxane elastomer based on reversible aluminum–amino coordination",
-   "doi": "10.1039/c9nj03909k",
-   "year": 2019,
-   "citations": 35,
-   "relevance": 0.713,
+   "title": "Shape Memory Polymers from Blends of Elastomers and Small Molecule Additives",
+   "doi": "10.1002/masy.201500064",
+   "year": 2015,
+   "citations": 30,
+   "relevance": 0.778,
    "status": "new"
   },
   {
    "n": 7,
-   "title": "Strong and Tough Self‐Healing Elastomers via BTA‐Mediated Microstructure and Metal‐ligand Coordination",
-   "doi": "10.1002/marc.202400913",
-   "year": 2024,
-   "citations": 0,
-   "relevance": 0.753,
+   "title": "Boron filled siloxane polymers for radiation shielding",
+   "doi": "10.1016/j.radphyschem.2017.08.027",
+   "year": 2017,
+   "citations": 35,
+   "relevance": 0.733,
    "status": "new"
   },
   {
    "n": 8,
-   "title": "Self‐Healing of Elastomers",
-   "doi": "10.1002/9781119769354.ch4",
-   "year": 2021,
-   "citations": 1,
-   "relevance": 0.765,
+   "title": "Shape memory in elastomers",
+   "doi": "10.1016/b978-0-12-823826-4.00004-2",
+   "year": 2026,
+   "citations": 0,
+   "relevance": 0.704,
    "status": "new"
   },
   {
    "n": 9,
-   "title": "A readily self-healing and recyclable silicone elastomer <i>via</i> boron–nitrogen noncovalent crosslinking",
-   "doi": "10.1039/c8nj04258f",
-   "year": 2018,
-   "citations": 21,
-   "relevance": 0.71,
+   "title": "Fabrication of bisphenol-free boron-siloxane polymers",
+   "doi": "10.1016/j.matchemphys.2025.130567",
+   "year": 2025,
+   "citations": 1,
+   "relevance": 0.699,
    "status": "new"
   },
   {
    "n": 10,
-   "title": "Self‐Healable Elastomers",
-   "doi": "10.1002/9781119710219.ch3",
+   "title": "Magnetic Particle Reinforced Elastomer Composites for Additive Manufacturing",
+   "doi": "10.1109/tmag.2021.3084506",
    "year": 2021,
+   "citations": 12,
+   "relevance": 0.69,
+   "status": "new"
+  },
+  {
+   "n": 11,
+   "title": "Regulated strategies of cold-adapted microorganisms in response to cold: a review",
+   "doi": "10.1007/s11356-021-16843-6",
+   "year": 2021,
+   "citations": 33,
+   "relevance": 0.633,
+   "status": "new"
+  },
+  {
+   "n": 12,
+   "title": "Evaluation and Insulation Strategies of Heating Systems to Prevent Ice Formation in Cold Environments",
+   "doi": "10.1201/9781003546528-6",
+   "year": 2025,
+   "citations": 0,
+   "relevance": 0.663,
+   "status": "new"
+  },
+  {
+   "n": 13,
+   "title": "Shape memory of bcc structured high-entropy-alloy nanowires during room temperature deformation",
+   "doi": "10.20517/microstructures.2024.130",
+   "year": 2025,
+   "citations": 4,
+   "relevance": 0.599,
+   "status": "new"
+  },
+  {
+   "n": 14,
+   "title": "Mechanism of stochastic resonance in viscoelastic channel flow",
+   "doi": "10.1103/yv5x-261v",
+   "year": 2025,
+   "citations": 2,
+   "relevance": 0.607,
+   "status": "new"
+  },
+  {
+   "n": 15,
+   "title": "Numerical Study on Plug Flow Formation Mechanism in Viscoelastic Channel Flow",
+   "doi": "10.1299/jsmeyamanashi.2025.c33",
+   "year": 2025,
+   "citations": 0,
+   "relevance": 0.636,
+   "status": "new"
+  },
+  {
+   "n": 16,
+   "title": "Room temperature creep behavior of Ti–Nb–Mo–Sn based shape memory alloy for biomedical application",
+   "doi": "10.1016/j.smmf.2023.100019",
+   "year": 2023,
+   "citations": 6,
+   "relevance": 0.618,
+   "status": "new"
+  },
+  {
+   "n": 17,
+   "title": "Stress relaxation and dynamic viscoelastic properties of end‐linked poly(dimethyl siloxane) networks containing unattached poly(dimethyl siloxane)",
+   "doi": "10.1002/pol.1981.180191107",
+   "year": 1981,
+   "citations": 29,
+   "relevance": 0.752,
+   "status": "new"
+  },
+  {
+   "n": 18,
+   "title": "Simulation of transient flow in viscoelastic pipe networks",
+   "doi": "10.1080/00221686.2019.1581669",
+   "year": 2019,
+   "citations": 14,
+   "relevance": 0.65,
+   "status": "new"
+  },
+  {
+   "n": 19,
+   "title": "Room Temperature Deformation and Superelastic Behavior of TLM Titanium Alloy Under Different Solution Conditions",
+   "doi": "10.3389/fmats.2020.00114",
+   "year": 2020,
+   "citations": 9,
+   "relevance": 0.643,
+   "status": "new"
+  },
+  {
+   "n": 20,
+   "title": "Room temperature creep of high strength steels",
+   "doi": "10.1016/0956-7151(94)90360-3",
+   "year": 1994,
+   "citations": 79,
+   "relevance": 0.669,
+   "status": "new"
+  },
+  {
+   "n": 21,
+   "title": "Room temperature deformation mechanisms in Nimonic 80A",
+   "doi": "10.1016/0001-6160(85)90165-8",
+   "year": 1985,
+   "citations": 98,
+   "relevance": 0.642,
+   "status": "new"
+  },
+  {
+   "n": 22,
+   "title": "Modeling viscoelastic networks in Stokes flow",
+   "doi": "10.1063/1.4900941",
+   "year": 2014,
+   "citations": 36,
+   "relevance": 0.663,
+   "status": "new"
+  },
+  {
+   "n": 23,
+   "title": "A Novel Cryoprotective Strategy for Preventing Cold-Induced Skin Injury",
+   "doi": "10.21203/rs.3.rs-9610004/v1",
+   "year": 2026,
+   "citations": 0,
+   "relevance": 0.582,
+   "status": "new"
+  },
+  {
+   "n": 24,
+   "title": "Room-temperature deformation in a Laves phase",
+   "doi": "10.1557/jmr.1990.0005",
+   "year": 1990,
+   "citations": 96,
+   "relevance": 0.627,
+   "status": "new"
+  },
+  {
+   "n": 25,
+   "title": "Emerging Cold Plasma Strategies to Prevent or Treat Mycotoxins in Foods",
+   "doi": "10.1201/9781003543084-10",
+   "year": 2025,
    "citations": 1,
-   "relevance": 0.724,
+   "relevance": 0.557,
+   "status": "new"
+  },
+  {
+   "n": 26,
+   "title": "Plastic flow anisotropy of pure zirconium after severe plastic deformation at room temperature",
+   "doi": "10.1016/j.actamat.2009.06.050",
+   "year": 2009,
+   "citations": 83,
+   "relevance": 0.603,
+   "status": "new"
+  },
+  {
+   "n": 27,
+   "title": "Creep Behavior in Pure Magnesium at Room Temperature",
+   "doi": "10.2320/matertrans.m2018334",
+   "year": 2019,
+   "citations": 3,
+   "relevance": 0.616,
+   "status": "new"
+  },
+  {
+   "n": 28,
+   "title": "Room temperature nanoindentation creep of nanograined NiTiW shape memory alloy thin films",
+   "doi": "10.1016/j.surfcoat.2014.07.090",
+   "year": 2014,
+   "citations": 20,
+   "relevance": 0.642,
+   "status": "new"
+  },
+  {
+   "n": 29,
+   "title": "Training videos to prevent cold weather injuries",
+   "doi": "10.1080/22423982.2023.2195137",
+   "year": 2023,
+   "citations": 3,
+   "relevance": 0.549,
+   "status": "new"
+  },
+  {
+   "n": 30,
+   "title": "Room temperature creep in metals and alloys",
+   "doi": "10.2172/1323556",
+   "year": 2014,
+   "citations": 12,
+   "relevance": 0.66,
+   "status": "new"
+  },
+  {
+   "n": 31,
+   "title": "Shape-Morphing Dielectric Elastomer Devices",
+   "doi": "10.5555/aai29209980",
+   "year": null,
+   "citations": 0,
+   "relevance": 0.692,
+   "status": "new"
+  },
+  {
+   "n": 32,
+   "title": "Strategies for preventing illicit financial flows in developing countries",
+   "doi": "10.1108/jmlc-02-2020-0017",
+   "year": 2020,
+   "citations": 3,
+   "relevance": 0.572,
+   "status": "new"
+  },
+  {
+   "n": 33,
+   "title": "Creep of Polyethylene Above Room Temperature",
+   "doi": "10.1063/1.1658465",
+   "year": 1970,
+   "citations": 12,
+   "relevance": 0.675,
+   "status": "new"
+  },
+  {
+   "n": 34,
+   "title": "Some viscoelastic properties of siloxane polymers during irradiation",
+   "doi": "10.1002/pol.1966.160040104",
+   "year": 1966,
+   "citations": 8,
+   "relevance": 0.674,
+   "status": "new"
+  },
+  {
+   "n": 35,
+   "title": "Room temperature deformation of CoSi2 single crystals",
+   "doi": "10.1016/0921-5093(92)90061-5",
+   "year": 1992,
+   "citations": 17,
+   "relevance": 0.638,
+   "status": "new"
+  },
+  {
+   "n": 36,
+   "title": "Room-temperature deformation of PdIn",
+   "doi": "10.1007/bf00543642",
+   "year": 1991,
+   "citations": 4,
+   "relevance": 0.682,
+   "status": "new"
+  },
+  {
+   "n": 37,
+   "title": "New processes to prevent a flow defect in the combined forward–backward cold extrusion of a piston-pin",
+   "doi": "10.1016/s0924-0136(03)00515-6",
+   "year": 2003,
+   "citations": 35,
+   "relevance": 0.591,
+   "status": "new"
+  },
+  {
+   "n": 38,
+   "title": "Room-temperature post-yield creep",
+   "doi": "10.1007/bf02328539",
+   "year": 1982,
+   "citations": 14,
+   "relevance": 0.633,
+   "status": "new"
+  },
+  {
+   "n": 39,
+   "title": "Room Temperature Deformation Behavior of Inconel718",
+   "doi": "10.4028/www.scientific.net/msf.475-479.677",
+   "year": 2005,
+   "citations": 1,
+   "relevance": 0.69,
+   "status": "new"
+  },
+  {
+   "n": 40,
+   "title": "Room Temperature Deformation Process in Zirconium",
+   "doi": "10.2172/4332214",
+   "year": 1958,
+   "citations": 5,
+   "relevance": 0.636,
+   "status": "new"
+  },
+  {
+   "n": 41,
+   "title": "Room-temperature creep of nanoporous silica",
+   "doi": "10.1557/jmr.2010.68",
+   "year": 2011,
+   "citations": 5,
+   "relevance": 0.624,
+   "status": "new"
+  },
+  {
+   "n": 42,
+   "title": "A mechanism for oscillatory instability in viscoelastic cross-slot flow",
+   "doi": "10.48550/arxiv.physics/0703262",
+   "year": 2007,
+   "citations": 2,
+   "relevance": 0.639,
+   "status": "new"
+  },
+  {
+   "n": 43,
+   "title": "Preventable frostbite due to cold pack",
+   "doi": "10.1111/iwj.12105",
+   "year": 2015,
+   "citations": 1,
+   "relevance": 0.578,
+   "status": "new"
+  },
+  {
+   "n": 44,
+   "title": "PolyOne Performance Additives expands colour additives for elastomers",
+   "doi": "10.1016/s0306-3747(03)00507-4",
+   "year": 2003,
+   "citations": 0,
+   "relevance": 0.66,
+   "status": "new"
+  },
+  {
+   "n": 45,
+   "title": "The nature of room temperature creep",
+   "doi": "10.1111/j.1475-1305.1989.tb00710.x",
+   "year": 1989,
+   "citations": 1,
+   "relevance": 0.638,
+   "status": "new"
+  },
+  {
+   "n": 46,
+   "title": "Room-temperature creep of tantalum tritides",
+   "doi": "10.1063/1.345825",
+   "year": 1990,
+   "citations": 1,
+   "relevance": 0.625,
+   "status": "new"
+  },
+  {
+   "n": 47,
+   "title": "Cabot presents performance additive for silicone elastomers",
+   "doi": "10.1016/s0306-3747(13)70003-4",
+   "year": 2013,
+   "citations": 0,
+   "relevance": 0.58,
+   "status": "new"
+  },
+  {
+   "n": 48,
+   "title": "DSM Elastomers presents Keltan processing additive for rubber",
+   "doi": "10.1016/s0306-3747(09)70118-6",
+   "year": 2009,
+   "citations": 0,
+   "relevance": 0.588,
+   "status": "new"
+  },
+  {
+   "n": 49,
+   "title": "Strategies to Prevent Falls",
+   "doi": "10.1016/s1526-4114(06)60213-8",
+   "year": 2006,
+   "citations": 0,
+   "relevance": 0.577,
+   "status": "new"
+  },
+  {
+   "n": 50,
+   "title": "Inducing Interferon to Prevent Colds",
+   "doi": "10.2307/3959182",
+   "year": 1974,
+   "citations": 0,
+   "relevance": 0.559,
    "status": "new"
   }
  ]

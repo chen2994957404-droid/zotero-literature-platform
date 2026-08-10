@@ -38,25 +38,14 @@ MIN_SCORE = 0.60      # 相关度低于此值的片段基本是噪声，实测 0
 
 
 def to_english_query(q):
-    """把中文问题转成英文检索式。
+    """把中文问题转成英文检索式。逻辑在 modules.query_expand 里，此处不重复实现。
 
-    **为什么必须转（实测教训）**：Sciverse 会按提问语言偏向同语言文献。
-    中文提问「聚硼硅氧烷的剪切硬化机理」召回的是硼硅玻璃辐照、炉渣、LTCC 陶瓷 ——
-    含「硼」但方向完全无关；同一问题用英文问，5 条全部命中、相关度 0.97。
-    材料领域的高质量文献绝大多数是英文，检索必须用英文。
-    这也符合项目语言约定：**机器用的中间数据用英文，给用户看的用中文。**
+    **为什么必须转（踩坑 #35 实测）**：Sciverse 按提问语言偏向同语言文献。
+    中文提问「聚硼硅氧烷的剪切硬化机理」召回的是硼硅玻璃辐照、炉渣、LTCC 陶瓷；
+    同一问题用英文问，相关度 0.97 且全部对口。
     """
-    if not any('一' <= c <= '鿿' for c in q):
-        return q          # 本来就是英文，不折腾
-    try:
-        en = chat('You translate scientific questions into concise English search queries. '
-                  'Output ONLY the query, no quotes, no explanation.',
-                  q, provider='deepseek', model=get_model('ASK_MODEL'),
-                  key=get_key('DEEPSEEK_KEY'), temperature=0.1,
-                  max_tokens=200, thinking=False).strip()
-        return en or q
-    except Exception:
-        return q          # 翻译失败就用原文，不阻断主流程
+    from modules.query_expand import to_english
+    return to_english(q)
 
 
 def ask_world(question, top_k=8, year_from=None, min_score=MIN_SCORE):
