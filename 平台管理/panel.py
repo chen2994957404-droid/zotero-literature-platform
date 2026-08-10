@@ -527,6 +527,12 @@ class Handler(BaseHTTPRequestHandler):
             ok, msg = action_collect(payload)
         elif self.path == '/api/rate':
             ok, msg = action_rate(payload)
+        elif self.path == '/api/handover':
+            # 生成交接文件：换新对话时让 AI 知道「我们停在哪」
+            r = _run([sys.executable, os.path.join(SCRIPT_DIR, '交接.py')],
+                     timeout=400, cwd=ROOT)
+            ok = r.returncode == 0
+            msg = (r.stdout or r.stderr or '').strip().split('\n')[-1][:160] or '已生成'
         elif self.path == '/api/migrate_secrets':
             moved, msg = migrate_secrets_to_keyring()
             ok = bool(moved) or '没有需要迁移' in msg
@@ -617,6 +623,11 @@ pre{background:#20232a;color:#c8d0dc;padding:12px;border-radius:8px;font-size:12
     目的：把你的判断变成系统能自动算的标准 —— 以后精读质量退化，系统能自己发现。</div>
   <div id="reviewsum" class="hint"></div>
   <div id="review"></div>
+  <div style="margin-top:14px;padding-top:12px;border-top:1px solid #f0f0f0">
+    <button class="ghost" onclick="genHandover(this)">生成交接文件</button>
+    <span class="hint" style="margin-left:8px">
+      换新对话前点一下，新对话读 <code>HANDOVER.md</code> 就知道我们停在哪（约 40 秒）</span>
+  </div>
 </div>
 
 <div class="card"><h2>运行状态</h2><div id="status"></div></div>
@@ -802,6 +813,13 @@ async function loadReview(){
           <button onclick="rate('${x.key}','bad',this)">提交</button>
         </div>
       </div></div>`;}).join('');
+}
+
+async function genHandover(btn){
+  btn.disabled=true; const t=btn.textContent; btn.textContent='生成中（约40秒）…';
+  const r=await (await fetch('/api/handover',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:'{}'})).json();
+  toast(r.msg); btn.disabled=false; btn.textContent=t;
 }
 
 function showBad(key){
