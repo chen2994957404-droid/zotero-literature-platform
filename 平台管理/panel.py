@@ -268,6 +268,62 @@ def action_collect(payload):
         return False, f'{type(e).__name__}: {str(e)[:150]}'
 
 
+READ_TAG = '读完'
+READING_TAG = '在读'
+
+
+def collect_review():
+    """待评价队列：Zotero 里打了「读完」、但评测集里还没记录的。
+
+    **评价不回写 Zotero** —— 用户的标签栏永远只有「在读/读完」两个，
+    不会再堆积（他被 707 个自动标签坑过）。已评价与否记在本地评测集里。
+    """
+    from modules import evalset as E
+    out = {'pending': [], 'stats': E.stats(), 'reasons': E.REASONS,
+           'reading': 0, 'read': 0}
+    try:
+        from modules.zotero_client import zget, USER_ID
+        import urllib.parse
+        q = urllib.parse.quote(READ_TAG)
+        items = zget(f'/users/{USER_ID}/items?tag={q}&limit=100')
+        out['read'] = len(items)
+        done = E.load()
+        for it in items:
+            k = it['key']
+            if k in done:
+                continue
+            snap = E.snapshot(k)
+            out['pending'].append({
+                'key': k, 'title': (it['data'].get('title') or '')[:100],
+                'has_summary': snap is not None, 'snapshot': snap,
+            })
+        r = zget(f'/users/{USER_ID}/items?tag={urllib.parse.quote(READING_TAG)}&limit=100')
+        out['reading'] = len(r)
+    except Exception as e:
+        out['error'] = f'读不到 Zotero（是不是没开？）：{str(e)[:80]}'
+    return out
+
+
+def action_rate(payload):
+    """保存一条精读评价。"""
+    from modules import evalset as E
+    key = (payload.get('key') or '').strip()
+    verdict = payload.get('verdict')
+    if not key or verdict not in ('good', 'bad'):
+        return False, '参数不对'
+    try:
+        E.save(key, verdict, reasons=payload.get('reasons') or [],
+               note=payload.get('note') or '', title=payload.get('title') or '')
+        s = E.stats()
+        tip = ''
+        if s['ready']:
+            tip = '（好/差样本各已≥3篇，可以做自动质量分校准了）'
+        return True, f"已记录：{'好' if verdict == 'good' else '差'}。" \
+                     f"评测集共 {s['total']} 条{tip}"
+    except Exception as e:
+        return False, str(e)[:150]
+
+
 def collect_blocks():
     """积木与工作流一览。说明取自各文件夹的 CLAUDE.md 首段，不另写一份。
 
@@ -423,6 +479,24 @@ class Handler(BaseHTTPRequestHandler):
                 'structure': collect_blocks(),
                 'time': time.strftime('%H:%M:%S'),
             })
+        if p == '/summary':
+            # 直接在面板里打开精读，省得切到 Zotero 去找 —— 看完就地评价
+            import urllib.parse as _up
+            q = _up.parse_qs(self.path.partition('?')[2])
+            key = (q.get('key') or [''])[0]
+            # 只允许字母数字的 Zotero key，杜绝路径穿越
+            if not key or not key.isalnum():
+                # 中文不能写在 b'' 字节串里，要显式编码
+                return self._send('<h3>无效的文献编号</h3>'.encode('utf-8'),
+                                  400, 'text/html')
+            fp = os.path.join(ROOT, 'workflow_data', 'library', key, 'summary.html')
+            if not os.path.exists(fp):
+                return self._send('<h3>这篇还没有精读结果</h3>'.encode('utf-8'),
+                                  404, 'text/html')
+            with open(fp, 'rb') as f:
+                return self._send(f.read(), ctype='text/html')
+        if p == '/api/review':
+            return self._send(collect_review())
         if p == '/api/search_status':
             with _JOB_LOCK:
                 return self._send({
@@ -451,6 +525,8 @@ class Handler(BaseHTTPRequestHandler):
             ok, msg = action_search(payload)
         elif self.path == '/api/collect':
             ok, msg = action_collect(payload)
+        elif self.path == '/api/rate':
+            ok, msg = action_rate(payload)
         elif self.path == '/api/migrate_secrets':
             moved, msg = migrate_secrets_to_keyring()
             ok = bool(moved) or '没有需要迁移' in msg
@@ -531,6 +607,16 @@ pre{background:#20232a;color:#c8d0dc;padding:12px;border-radius:8px;font-size:12
     <button onclick="doCollect(true)" style="background:#c0392b">收下并立刻精读</button>
     <span class="hint" style="margin-left:10px">精读会消耗解析与大模型额度</span>
   </div>
+</div>
+
+<div class="card">
+  <h2>精读评价</h2>
+  <div class="hint" style="margin-bottom:10px">
+    在 Zotero 给看完的文献打「<b>读完</b>」标签，就会出现在这里。
+    评价只存在本平台，<b>不回写 Zotero</b>，你的标签栏永远只有「在读 / 读完」两个。<br>
+    目的：把你的判断变成系统能自动算的标准 —— 以后精读质量退化，系统能自己发现。</div>
+  <div id="reviewsum" class="hint"></div>
+  <div id="review"></div>
 </div>
 
 <div class="card"><h2>运行状态</h2><div id="status"></div></div>
@@ -671,6 +757,70 @@ async function restart(task){
   toast(r.msg); setTimeout(load,2500);
 }
 
+let REASONS=[];
+async function loadReview(){
+  let d; try{ d=await (await fetch('/api/review')).json(); }catch(e){ return; }
+  REASONS=d.reasons||[];
+  const s=d.stats||{};
+  let sum=`已评价 ${s.total||0} 篇（好 ${s.good||0} / 差 ${s.bad||0}）`;
+  if(d.reading!==undefined) sum+=` · Zotero 里在读 ${d.reading} 篇、读完 ${d.read} 篇`;
+  if(s.ready) sum+=' · <b style="color:#35c15f">样本已够，可做自动质量分校准</b>';
+  else if((s.total||0)>0) sum+=' · 好/差各满 3 篇后可做自动校准';
+  if(s.compare && (s.good||0)+(s.bad||0)>0){
+    const c=s.compare;
+    sum+=`<br><span class="hint">你说好的 vs 差的：字数 ${c.chars.good}/${c.chars.bad} ·
+      图 ${c.figures.good}/${c.figures.bad} · 数值 ${c.numbers.good}/${c.numbers.bad} ·
+      章节 ${c.sections.good}/${c.sections.bad}</span>`;
+  }
+  $('#reviewsum').innerHTML=sum;
+
+  if(d.error){ $('#review').innerHTML=`<div class="row"><span class="msg bad">${esc(d.error)}</span></div>`; return; }
+  const p=d.pending||[];
+  if(!p.length){
+    $('#review').innerHTML='<div class="hint" style="padding-top:8px">'
+      +'没有待评价的。去 Zotero 给看完的文献打「读完」标签即可。</div>';
+    return;
+  }
+  $('#review').innerHTML=p.map(x=>{
+    const sn=x.snapshot;
+    const meta=sn?`${sn.chars} 字 · ${sn.figures} 图 · ${sn.numbers} 处数值 · ${sn.sections} 个章节 · ${sn.mtime}`
+                 :'<span class="bad">没有精读结果</span>';
+    return `<div class="row" style="display:block;padding:12px 0">
+      <div><b>${esc(x.title)}</b></div>
+      <div class="hint" style="margin:4px 0 8px">${meta}</div>
+      <div style="margin-bottom:8px">
+        ${x.has_summary?`<a href="/summary?key=${x.key}" target="_blank"><button class="ghost">打开精读看看</button></a>`:''}
+        <button onclick="rate('${x.key}','good',this)">这篇精读得好</button>
+        <button onclick="showBad('${x.key}')" style="background:#c0392b">精读得差</button>
+      </div>
+      <div id="bad_${x.key}" style="display:none;padding:10px;background:#fff6f5;border-radius:8px">
+        <div class="hint" style="margin-bottom:6px">差在哪？（可多选，也可以不选直接提交）</div>
+        ${REASONS.map(r=>`<label style="margin-right:14px;font-size:13px">
+          <input type="checkbox" class="rs_${x.key}" value="${r[0]}"> ${esc(r[1])}</label>`).join('')}
+        <div style="margin-top:8px">
+          <input id="note_${x.key}" style="width:400px" placeholder="补充说明（可不填）">
+          <button onclick="rate('${x.key}','bad',this)">提交</button>
+        </div>
+      </div></div>`;}).join('');
+}
+
+function showBad(key){
+  const el=document.getElementById('bad_'+key);
+  el.style.display = el.style.display==='none' ? 'block' : 'none';
+}
+
+async function rate(key, verdict, btn){
+  btn.disabled=true;
+  const reasons=[...document.querySelectorAll('.rs_'+key+':checked')].map(e=>e.value);
+  const noteEl=document.getElementById('note_'+key);
+  const title=btn.closest('.row').querySelector('b').textContent;
+  const r=await (await fetch('/api/rate',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({key,verdict,reasons,note:noteEl?noteEl.value:'',title})})).json();
+  toast(r.msg);
+  if(r.ok) loadReview(); else btn.disabled=false;
+}
+
 let searchTimer=null;
 async function doSearch(){
   const q=$('#q').value.trim();
@@ -770,7 +920,7 @@ async function loadLog(){
   $('#log').scrollTop=$('#log').scrollHeight;
 }
 
-load(); loadLog(); setInterval(load,15000);
+load(); loadLog(); loadReview(); setInterval(load,15000);
 </script></html>"""
 
 
