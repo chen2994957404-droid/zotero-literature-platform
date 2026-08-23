@@ -3,51 +3,68 @@
 保证所有文献结构一致，符合数据契约。
 用法: python backfill_meta.py
 """
-import os, json, urllib.request
+import os, sys, json, urllib.request
+
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
+from modules.config import need_site
 
 # 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
-import os as _os, sys as _sys
-_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-try:
-    from modules.config import need_site as _site
-except Exception:
-    _site = lambda n: _os.environ.get(n) or (_ for _ in ()).throw(RuntimeError(f'缺少本机设置 {n}，请在控制面板或 .env 中配置'))
-_UID = _site('ZOTERO_USER_ID')
-_STORAGE = _site('ZOTERO_STORAGE')
+_UID = need_site('ZOTERO_USER_ID')
+_STORAGE = need_site('ZOTERO_STORAGE')
 USER_ID = _UID
 LOCAL = 'http://localhost:23119/api/users/' + USER_ID
 LH = {'Zotero-Allowed-Request': 'true'}
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LIBRARY = os.path.join(ROOT, 'workflow_data', 'library')
+LIBRARY = os.path.join(_ROOT, 'workflow_data', 'library')
+
 
 def zget_item(key):
     req = urllib.request.Request(f'{LOCAL}/items/{key}', headers=LH)
     return json.loads(urllib.request.urlopen(req, timeout=15).read())['data']
 
-done = skip = fail = 0
-for key in os.listdir(LIBRARY):
-    d = os.path.join(LIBRARY, key)
-    if not os.path.isdir(d):
-        continue
-    meta_path = os.path.join(d, 'meta.json')
-    if os.path.exists(meta_path):
-        skip += 1
-        continue
-    try:
-        data = zget_item(key)
-        meta = {
-            'key': key,
-            'title': data.get('title', ''),
-            'DOI': data.get('DOI', ''),
-            'date': data.get('date', ''),
-            'model': 'unknown(backfilled)',
-            'time': 'backfilled',
-        }
-        json.dump(meta, open(meta_path, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
-        print(f'补齐 {key}: {meta["title"][:40]}')
-        done += 1
-    except Exception as e:
-        print(f'失败 {key}: {e}')
-        fail += 1
 
-print(f'\n完成：补齐 {done}，已有跳过 {skip}，失败 {fail}')
+def main():
+    done = skip = fail = 0
+    for key in os.listdir(LIBRARY):
+        d = os.path.join(LIBRARY, key)
+        if not os.path.isdir(d):
+            continue
+        meta_path = os.path.join(d, 'meta.json')
+        if os.path.exists(meta_path):
+            skip += 1
+            continue
+        try:
+            data = zget_item(key)
+            meta = {
+                'key': key,
+                'title': data.get('title', ''),
+                'DOI': data.get('DOI', ''),
+                'date': data.get('date', ''),
+                'model': 'unknown(backfilled)',
+                'time': 'backfilled',
+            }
+            json.dump(meta, open(meta_path, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+            print(f'补齐 {key}: {meta["title"][:40]}')
+            done += 1
+        except Exception as e:
+            print(f'失败 {key}: {e}')   # 单篇失败已打印原因，继续下一篇
+            fail += 1
+
+    print(f'\n完成：补齐 {done}，已有跳过 {skip}，失败 {fail}')
+
+
+if __name__ == '__main__':
+    main()

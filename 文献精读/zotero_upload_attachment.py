@@ -3,27 +3,33 @@
 Zotero 上传流程：创建attachment条目 → 授权 → 上传 → 注册。
 用法(测试): python zotero_upload_attachment.py <parentItemKey> <文件路径> <附件显示名>
 """
-import urllib.request, urllib.parse, json, os, hashlib, sys, mimetypes
+import os, sys, re, json, hashlib, mimetypes, urllib.parse, urllib.request
+
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
 try:
-    import sys as _s, os as _o
-    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
-    from modules.config import get_key as _cfg_get
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
-    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
+    pass
+
+from modules.cli import pos
+from modules.config import get_key, need_site
 
 # 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
-import os as _os, sys as _sys
-_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-try:
-    from modules.config import need_site as _site
-except Exception:
-    _site = lambda n: _os.environ.get(n) or (_ for _ in ()).throw(RuntimeError(f'缺少本机设置 {n}，请在控制面板或 .env 中配置'))
-_UID = _site('ZOTERO_USER_ID')
-_STORAGE = _site('ZOTERO_STORAGE')
-USER_ID = _UID
-KEY = _cfg_get('ZOTERO_API_KEY')
+USER_ID = need_site('ZOTERO_USER_ID')
+_STORAGE = need_site('ZOTERO_STORAGE')   # 校验必填项存在（附件目录上传后落盘用）
+KEY = get_key('ZOTERO_API_KEY')
 WEB = 'https://api.zotero.org/users/' + USER_ID
 WH = {'Zotero-API-Key': KEY, 'Zotero-API-Version': '3'}
+
 
 def api(url, method='GET', data=None, headers=None, raw=False):
     h = dict(WH)
@@ -31,6 +37,7 @@ def api(url, method='GET', data=None, headers=None, raw=False):
     req = urllib.request.Request(url, data=data, method=method, headers=h)
     resp = urllib.request.urlopen(req, timeout=30)
     return resp.read() if raw else json.loads(resp.read())
+
 
 def upload_attachment(parent_key, filepath, display_name):
     fname = os.path.basename(filepath)
@@ -86,8 +93,16 @@ def upload_attachment(parent_key, filepath, display_name):
     print('  上传已注册完成')
     return att_key
 
-if __name__ == '__main__':
-    pk, fp, name = sys.argv[1], sys.argv[2], sys.argv[3]
+
+def main():
+    pk, fp, name = pos(0), pos(1), pos(2)
+    if not (pk and fp and name):
+        print(__doc__)
+        sys.exit(1)
     print(f'上传 {fp} -> 条目 {pk}')
     k = upload_attachment(pk, fp, name)
     print(f'完成，附件key={k}')
+
+
+if __name__ == '__main__':
+    main()

@@ -5,9 +5,26 @@
 用法: python 平台管理/health_check.py
 """
 import os, sys, ast, glob, json, urllib.request, subprocess
-_NOWIN = getattr(__import__('subprocess'), 'CREATE_NO_WINDOW', 0) if __import__('os').name == 'nt' else 0
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
+from modules.cli import flag
+
+_NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
+ROOT = _ROOT
 os.chdir(ROOT)
 sys.path.insert(0, ROOT)
 
@@ -223,7 +240,7 @@ SLOW_TESTS = {'chart_digitize'}
 
 def c_modules():
     """跑各公理件的 selftest（每个限时 60s，避免单个卡死整个检查）。"""
-    full = '--full' in sys.argv
+    full = flag('--full')
     mods = [d for d in glob.glob('modules/*/') if os.path.exists(os.path.join(d, 'selftest.py'))]
     passed, failed, skipped = [], [], []
     for m in mods:

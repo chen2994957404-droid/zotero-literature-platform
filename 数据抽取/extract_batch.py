@@ -9,39 +9,47 @@ MineRU 解析（find_pdf 定位本地 PDF → mineru_parse 落地到 library/<ke
   python extract_batch.py KEY1 KEY2 ...        # 抽指定 key
   python extract_batch.py --file keys.txt      # 从文件读 key（每行一个）
 """
-import os, sys, json, re, subprocess, urllib.request
+import os, sys, json
 
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
+from modules.cli import opt, positionals
+from modules.config import need_site, get_site
+
+# 同文件夹脚本互相 import（标准开头只把项目根加进 sys.path，兄弟脚本目录需自己加）
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(SCRIPT_DIR)
 sys.path.insert(0, SCRIPT_DIR)
 
-LIBRARY = os.path.join(ROOT, 'workflow_data', 'library')
-OUT_DIR = os.path.join(ROOT, 'workflow_data', 'structured')
-MINERU_SCRIPT = os.path.join(os.path.dirname(SCRIPT_DIR), '文献精读', 'mineru_parse.py')
-
-# Zotero 本地读 + 存储路径（与 zotero_watcher.py 一致）
-ZOTERO_LOCAL = 'http://localhost:23119/api'
-ZH = {'Zotero-Allowed-Request': 'true'}
-# 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
-import os as _os, sys as _sys
-_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-try:
-    from modules.config import need_site as _site
-except Exception:
-    _site = lambda n: _os.environ.get(n) or (_ for _ in ()).throw(RuntimeError(f'缺少本机设置 {n}，请在控制面板或 .env 中配置'))
-_UID = _site('ZOTERO_USER_ID')
-_STORAGE = _site('ZOTERO_STORAGE')
-USER_ID = _UID
-STORAGE_DIR = _STORAGE
-
-# 复用精层抽取的核心
+# 复用精层抽取的核心（同文件夹脚本互相 import，见上方 SCRIPT_DIR 说明）
 from extract_structured import (SYS, build_user_prompt, hierarchical_body,
                                 deepseek_json, DEEPSEEK_MODEL)
-
 # 公理件：Zotero 定位 + PDF 解析（定理编排公理，符合架构宪法）
-sys.path.insert(0, os.path.dirname(SCRIPT_DIR))
 from modules.zotero_client import find_pdf
 from modules.pdf_parse import parse_pdf, PDFParseError
+
+LIBRARY = os.path.join(_ROOT, 'workflow_data', 'library')
+OUT_DIR = os.path.join(_ROOT, 'workflow_data', 'structured')
+MINERU_SCRIPT = os.path.join(_ROOT, '文献精读', 'mineru_parse.py')
+
+# Zotero 本地读 + 存储路径（与 zotero_watcher.py 一致）
+ZOTERO_LOCAL = get_site('ZOTERO_API_HOST') + '/api'
+ZH = {'Zotero-Allowed-Request': 'true'}
+# 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+USER_ID = need_site('ZOTERO_USER_ID')
+STORAGE_DIR = need_site('ZOTERO_STORAGE')
 
 def ensure_fullmd(key):
     """确保 library/<key>/parsed/full.md 存在：有则复用，无则调 MineRU 解析。返回 full.md 路径或 None。"""
@@ -78,11 +86,11 @@ def extract_one(key):
     return True
 
 def main():
-    if '--file' in sys.argv:
-        fp = sys.argv[sys.argv.index('--file') + 1]
+    fp = opt('--file')
+    if fp:
         keys = [l.strip() for l in open(fp, encoding='utf-8') if l.strip()]
     else:
-        keys = [a for a in sys.argv[1:] if not a.startswith('--')]
+        keys = positionals()
     print(f'批量精层抽取 {len(keys)} 篇\n')
     ok = fail = 0
     for i, key in enumerate(keys, 1):
@@ -91,7 +99,7 @@ def main():
             if extract_one(key): ok += 1
             else: fail += 1
         except Exception as e:
-            print(f'  [出错] {e}'); fail += 1
+            print(f'  [出错] {e}'); fail += 1   # 单篇失败不中断整批，计入失败后继续下一篇
     print(f'\n完成：成功 {ok}，失败/跳过 {fail}')
 
 if __name__ == '__main__':

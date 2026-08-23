@@ -4,93 +4,140 @@
 用法: python vectorize_library.py            增量（只处理没入库的）
       python vectorize_library.py --rebuild  仅清空"全库轻量"来源的向量后重建
 """
-import os, json, re, sys, urllib.request, time
-import chromadb
+import os, sys, json, urllib.request, time
 
-# 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
-import os as _os, sys as _sys
-_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
 try:
-    from modules.config import need_site as _site
-except Exception:
-    _site = lambda n: _os.environ.get(n) or (_ for _ in ()).throw(RuntimeError(f'缺少本机设置 {n}，请在控制面板或 .env 中配置'))
-_UID = _site('ZOTERO_USER_ID')
-_STORAGE = _site('ZOTERO_STORAGE')
-USER_ID = _UID
-LOCAL = 'http://localhost:23119/api/users/' + USER_ID
-LH = {'Zotero-Allowed-Request': 'true'}
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VECTOR_DB = os.path.join(ROOT, 'workflow_data', 'vector_db')
-os.makedirs(VECTOR_DB, exist_ok=True)
-REBUILD = '--rebuild' in sys.argv
-
-# embedding/切块/去参考文献 + Zotero全文 已收敛到公理件
-sys.path.insert(0, ROOT)
-from modules.embed import embed, strip_references, chunk
-from modules.zotero_client import get_fulltext
-
-def lget(path):
-    return json.loads(urllib.request.urlopen(urllib.request.Request(LOCAL + path, headers=LH), timeout=20).read())
-
-client = chromadb.PersistentClient(path=VECTOR_DB)
-coll = client.get_or_create_collection('literature', metadata={'hnsw:space': 'cosine'})
-
-# 已入库的key（避免重复；精读的高质量版优先，若某key已有精读向量则跳过）
-existing = set()
-try:
-    got = coll.get(include=['metadatas'])
-    existing = {m['key'] for m in got['metadatas']}
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
 
-# 取所有顶层文献
-tops = []
-start = 0
-while True:
-    d = lget(f'/items/top?limit=100&start={start}')
-    if not d: break
-    tops += d; start += 100
-    if len(d) < 100: break
+import chromadb
+from modules.cli import flag
+from modules.config import need_site
+from modules.embed import embed, chunk
+from modules.zotero_client import get_fulltext
 
-arts = [x for x in tops if x['data'].get('itemType') in ('journalArticle', 'conferencePaper', 'thesis', 'bookSection', 'book')]
-print(f'Zotero顶层文献 {len(arts)} 篇，开始轻量向量化...\n')
+# 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+_USER_ID = need_site('ZOTERO_USER_ID')
+need_site('ZOTERO_STORAGE')        # 附件目录本脚本用不到，但按原行为仍要求已配置
+LOCAL = 'http://localhost:23119/api/users/' + _USER_ID
+LH = {'Zotero-Allowed-Request': 'true'}
+VECTOR_DB = os.path.join(_ROOT, 'workflow_data', 'vector_db')
 
-processed = skipped = nofull = total_chunks = 0
-for x in arts:
+
+def lget(path):
+    """调 Zotero 本地 API（带允许头 + 20s 超时），返回 JSON。"""
+    req = urllib.request.Request(LOCAL + path, headers=LH)
+    return json.loads(urllib.request.urlopen(req, timeout=20).read())
+
+
+def get_collection():
+    """连接 Chroma（持久化到本地文件），取 literature 集合。"""
+    client = chromadb.PersistentClient(path=VECTOR_DB)
+    return client.get_or_create_collection('literature', metadata={'hnsw:space': 'cosine'})
+
+
+def load_existing(coll):
+    """已入库的 key 集合（避免重复；精读的高质量版优先，若某 key 已有精读向量则跳过）。"""
+    existing = set()
+    try:
+        got = coll.get(include=['metadatas'])
+        existing = {m['key'] for m in got['metadatas']}
+    except Exception:
+        pass  # 向量库为空/元数据缺失：按没有已入库文献处理
+    return existing
+
+
+def fetch_top_items():
+    """取 Zotero 所有顶层文献（分页，每页 100 条）。"""
+    tops = []
+    start = 0
+    while True:
+        d = lget(f'/items/top?limit=100&start={start}')
+        if not d:
+            break
+        tops += d
+        start += 100
+        if len(d) < 100:
+            break
+    return tops
+
+
+def vectorize_light(x, coll, existing):
+    """轻量向量化单篇：找 PDF 附件 → 全文 → 切块 → 入库。
+
+    返回 (结果, 块数)，结果 ∈ ('skipped' 已入库 / 'nofull' 无全文 / 'empty' 无块 / 'processed' 新入库)；
+    取不到附件列表返回 (None, 0)（不计入任何统计）。
+    """
     key = x['key']
     title = x['data'].get('title', key)
     if key in existing:
-        skipped += 1
-        continue
-    # 找PDF附件
+        return 'skipped', 0
     try:
         children = lget(f'/items/{key}/children')
     except Exception:
-        continue
+        return None, 0    # 该篇取不到附件列表（孤儿条目/服务抖动）：跳过且不计入统计，不影响其他文献
     att = None
     for c in children:
         if c['data'].get('contentType') == 'application/pdf':
-            att = c['key']; break
+            att = c['key']
+            break
     if not att:
-        nofull += 1
-        continue
+        return 'nofull', 0
     txt = get_fulltext(att)
     if len(txt) < 500:
-        nofull += 1
-        continue
+        return 'nofull', 0
     chunks = chunk(txt)
     if not chunks:
-        continue
+        return 'empty', 0
     ids = [f'{key}_L{i}' for i in range(len(chunks))]
     metas = [{'key': key, 'title': title, 'doi': x['data'].get('DOI', ''),
               'source': 'library', 'chunk': i} for i in range(len(chunks))]
     embs = []
     for b in range(0, len(chunks), 16):
-        embs.extend(embed(chunks[b:b+16]))
+        embs.extend(embed(chunks[b:b + 16]))
     coll.add(ids=ids, documents=chunks, metadatas=metas, embeddings=embs)
-    processed += 1; total_chunks += len(chunks)
-    print(f'[{processed}] {title[:45]} — {len(chunks)}块')
-    time.sleep(0.2)
+    return 'processed', len(chunks)
 
-print(f'\n完成：新入库 {processed} 篇（{total_chunks}块），已有跳过 {skipped}，无全文 {nofull}')
-print(f'向量库总块数：{coll.count()}')
+
+def main():
+    """命令行入口：增量轻量全库向量化（--rebuild 参数原脚本即声明但从未生效，保持该语义）。"""
+    rebuild = flag('--rebuild')    # 原脚本只声明了该开关、从未使用（无清空逻辑），此处保持原行为不变
+    os.makedirs(VECTOR_DB, exist_ok=True)
+    coll = get_collection()
+    existing = load_existing(coll)
+
+    arts = [x for x in fetch_top_items()
+            if x['data'].get('itemType') in ('journalArticle', 'conferencePaper', 'thesis', 'bookSection', 'book')]
+    print(f'Zotero顶层文献 {len(arts)} 篇，开始轻量向量化...\n')
+
+    processed = skipped = nofull = total_chunks = 0
+    for x in arts:
+        status, n = vectorize_light(x, coll, existing)
+        if status == 'processed':
+            processed += 1
+            total_chunks += n
+            print(f'[{processed}] {x["data"].get("title", x["key"])[:45]} — {n}块')
+            time.sleep(0.2)
+        elif status == 'skipped':
+            skipped += 1
+        elif status == 'nofull':
+            nofull += 1
+        # status 为 None（取不到附件列表）或 'empty'（无块）不计数，与原行为一致
+
+    print(f'\n完成：新入库 {processed} 篇（{total_chunks}块），已有跳过 {skipped}，无全文 {nofull}')
+    print(f'向量库总块数：{coll.count()}')
+
+
+if __name__ == '__main__':
+    main()

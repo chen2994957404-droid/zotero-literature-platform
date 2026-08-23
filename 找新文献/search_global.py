@@ -11,17 +11,24 @@
   python 找新文献/search_global.py "dynamic boron ester elastomer" 20 --since 2021 --impact
   参数: <检索词> [数量] [--since 年份] [--impact 偏高被引 | --fresh 偏最新 | --cited 按被引排序]
 """
-import sys, os, io, re
+import os, sys, re
 
-# 用 reconfigure 而非替换 sys.stdout：后者会让原对象被回收、底层缓冲被关闭，
-# 表现为程序跑到一半 print 抛「I/O operation on closed file」（踩坑 #37）
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
+from modules.cli import pos, flag, opt
 from modules.sciverse import search_papers, available, looks_chinese, SciverseError
 
 
@@ -39,22 +46,17 @@ def norm(t):
 
 
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith('--')]
-    flags = [a for a in sys.argv[1:] if a.startswith('--')]
-    if not args:
+    query = pos(0)
+    if not query:
         print(__doc__)
         return
 
-    query = args[0]
-    limit = int(args[1]) if len(args) > 1 and args[1].isdigit() else 20
-    year_from = None
-    if '--since' in sys.argv:
-        i = sys.argv.index('--since')
-        if i + 1 < len(sys.argv):
-            year_from = sys.argv[i + 1]
-    prefer = ('citations' if '--cited' in flags else
-              'impact' if '--impact' in flags else
-              'fresh' if '--fresh' in flags else 'relevance')
+    p1 = pos(1)
+    limit = int(p1) if p1 and p1.isdigit() else 20
+    year_from = opt('--since')
+    prefer = ('citations' if flag('--cited') else
+              'impact' if flag('--impact') else
+              'fresh' if flag('--fresh') else 'relevance')
 
     if not available():
         print('未配置 SCIVERSE_KEY。请双击「控制面板.bat」，在 Sciverse 一栏填写。')

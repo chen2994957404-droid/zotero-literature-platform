@@ -13,10 +13,24 @@
 关键词集中在 KW，想放宽/收紧改这里即可。
 用法: python filter_domain.py
 """
-import os, json, re
+import os, sys, json, re
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DIR = os.path.join(ROOT, 'workflow_data', 'structured')
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
+DIR = os.path.join(_ROOT, 'workflow_data', 'structured')
 
 # 方向关键词（材料体系 / 动态键类型 命中任一即算本方向）
 KW = re.compile(
@@ -47,6 +61,7 @@ def main():
             try:
                 recs.append(json.load(open(os.path.join(DIR, f), encoding='utf-8')))
             except Exception:
+                # 单个结果文件损坏就跳过，不参与领域判定，不影响主流程
                 pass
     domain = [r for r in recs if is_domain(r)]
     domain.sort(key=lambda r: r.get('material_system', ''))

@@ -3,13 +3,30 @@
 
 用法: python si_batch.py --file keys.txt    |    python si_batch.py KEY1 KEY2
 """
-import os, sys, io, subprocess, time
-_NOWIN = getattr(__import__('subprocess'), 'CREATE_NO_WINDOW', 0) if __import__('os').name == 'nt' else 0
+import os, sys, io, time, shutil, json, subprocess, urllib.request
+
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
+from modules.cli import opt, positionals
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(SCRIPT_DIR)
-sys.path.insert(0, ROOT); sys.path.insert(0, SCRIPT_DIR)
+sys.path.insert(0, SCRIPT_DIR)     # 同文件夹脚本互相 import（zotero_watcher 等）
+ROOT = _ROOT
 LIBRARY = os.path.join(ROOT, 'workflow_data', 'library')
+_NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
 
 
 def run(script, args, timeout=900):
@@ -21,16 +38,15 @@ def run(script, args, timeout=900):
 
 
 def main():
-    if '--file' in sys.argv:
-        keys = [l.strip() for l in io.open(sys.argv[sys.argv.index('--file')+1],
-                                           encoding='utf-8') if l.strip()]
+    fp = opt('--file')
+    if fp:
+        keys = [l.strip() for l in io.open(fp, encoding='utf-8') if l.strip()]
     else:
-        keys = [a for a in sys.argv[1:] if not a.startswith('--')]
+        keys = positionals()
     print(f'批量补 SI 精读：{len(keys)} 篇\n', flush=True)
 
     from zotero_watcher import set_state_tag, TAG_FULL, USER_ID, upload_attachment, \
         find_existing_summary, STORAGE_DIR
-    import shutil
 
     ok = fail = 0
     for i, key in enumerate(keys, 1):
@@ -53,7 +69,6 @@ def main():
                 dd = os.path.join(STORAGE_DIR, att)
                 os.makedirs(dd, exist_ok=True)
                 # 按 Zotero 记录的文件名写，避免"找不到文件"
-                import json, urllib.request
                 LH = {'Zotero-Allowed-Request': 'true'}
                 info = json.loads(urllib.request.urlopen(urllib.request.Request(
                     f'http://localhost:23119/api/users/{USER_ID}/items/{att}',

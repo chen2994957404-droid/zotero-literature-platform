@@ -7,44 +7,43 @@ Zotero 现在只保留「待精读」「已精读」两个工作流标签。
 
 如需重新启用，先与用户确认。备份见 workflow_data/backup/zotero_tags_backup.json
 """
+import os, json, sys, urllib.request, urllib.error, re, time
 
-import os, json, sys, urllib.request, re, time
-
-# 密钥统一从 modules/config 读（环境变量 → .env），必须在使用前定义
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
 try:
-    from modules.config import get_key as _cfg_get
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
-    _cfg_get = lambda n, **kw: os.environ.get(n, '')
+    pass
 
+from modules.cli import flag, opt
+from modules.config import get_key, get_model, need_site
+from modules.llm_client import chat_json as _chat_json
 
 # 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
-import os as _os, sys as _sys
-_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-try:
-    from modules.config import need_site as _site
-except Exception:
-    _site = lambda n: _os.environ.get(n) or (_ for _ in ()).throw(RuntimeError(f'缺少本机设置 {n}，请在控制面板或 .env 中配置'))
-_UID = _site('ZOTERO_USER_ID')
-_STORAGE = _site('ZOTERO_STORAGE')
+_UID = need_site('ZOTERO_USER_ID')
+_STORAGE = need_site('ZOTERO_STORAGE')
 USER_ID = _UID
-KEY = _cfg_get('ZOTERO_API_KEY')
+KEY = get_key('ZOTERO_API_KEY')
 LOCAL = 'http://localhost:23119/api/users/' + USER_ID
 WEB = 'https://api.zotero.org/users/' + USER_ID
 LH = {'Zotero-Allowed-Request': 'true'}
 WH = {'Zotero-API-Key': KEY, 'Zotero-API-Version': '3'}
-DEEPSEEK_KEY = _cfg_get('DEEPSEEK_KEY')
-MODEL = os.environ.get('AUTOTAG_MODEL', 'deepseek-v4-flash')  # 打标签用flash：快、便宜、JSON稳
+DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')
+MODEL = get_model('AUTOTAG_MODEL')  # 打标签用flash：快、便宜、JSON稳
 
-# LLM 调用走公理件
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from modules.llm_client import chat_json as _chat_json
-
-TEST = '--test' in sys.argv
-APPLY = '--apply' in sys.argv
-LIMIT = None
-if '--limit' in sys.argv:
-    LIMIT = int(sys.argv[sys.argv.index('--limit')+1])
+TEST = flag('--test')
+APPLY = flag('--apply')
+_limit = opt('--limit')
+LIMIT = int(_limit) if _limit else None
 
 SYSTEM = """你是科研文献标注助手，专注高分子材料领域。根据文献的标题和摘要，给它打上分类标签。
 只输出一个JSON对象，格式：
@@ -75,55 +74,61 @@ def to_tags(result):
     if t: tags.append(f'type:{t.strip().lower()}')
     return tags
 
-# 取有摘要的文献
-tops = []; s = 0
-while True:
-    d = lget(f'/items/top?limit=100&start={s}')
-    if not d: break
-    tops += d; s += 100
-    if len(d) < 100: break
-arts = [x for x in tops if x['data'].get('itemType') in ('journalArticle','conferencePaper','thesis','bookSection')
-        and x['data'].get('abstractNote')]
-# 增量：apply模式跳过已有维度标签的（避免重复处理，支持中断续跑）
-if APPLY:
-    arts = [x for x in arts if not any(':' in t.get('tag','') for t in x['data'].get('tags',[]))]
-if LIMIT: arts = arts[:LIMIT]
-elif TEST: arts = arts[:6]
 
-print(f'处理 {len(arts)} 篇（{"试打" if TEST else "写入"}，模型 {MODEL}）\n')
-for x in arts:
-    key = x['key']; d = x['data']
-    title = d.get('title', ''); abstract = d.get('abstractNote', '')
-    try:
-        res = tag_llm(title, abstract)
-        tags = to_tags(res)
-    except Exception as e:
-        print(f'✗ {title[:35]} — 解析失败: {e}')
-        continue
-    print(f'《{title[:45]}》')
-    print('  ' + '  '.join(tags))
-    print()
+def main():
+    # 取有摘要的文献
+    tops = []; s = 0
+    while True:
+        d = lget(f'/items/top?limit=100&start={s}')
+        if not d: break
+        tops += d; s += 100
+        if len(d) < 100: break
+    arts = [x for x in tops if x['data'].get('itemType') in ('journalArticle','conferencePaper','thesis','bookSection')
+            and x['data'].get('abstractNote')]
+    # 增量：apply模式跳过已有维度标签的（避免重复处理，支持中断续跑）
     if APPLY:
-        # 保留原有非维度标签，加上新标签（去重）
-        old = [t for t in d.get('tags', []) if ':' not in t.get('tag','')]
-        newtags = old + [{'tag': t} for t in tags]
-        # 去重
-        seen = set(); uniq = []
-        for t in newtags:
-            if t['tag'] not in seen:
-                seen.add(t['tag']); uniq.append(t)
-        for attempt in range(3):
-            try:
-                ver = lget(f'/items/{key}')['version']
-                patch = json.dumps({'tags': uniq}).encode()
-                req = urllib.request.Request(WEB+f'/items/{key}', data=patch, method='PATCH',
-                    headers={**WH, 'If-Unmodified-Since-Version': str(ver), 'Content-Type':'application/json'})
-                urllib.request.urlopen(req, timeout=20)
-                break
-            except urllib.error.HTTPError as e:
-                if e.code == 429: time.sleep(10); continue
-                if e.code == 412: time.sleep(1); continue
-                break
-        time.sleep(0.3)
+        arts = [x for x in arts if not any(':' in t.get('tag','') for t in x['data'].get('tags',[]))]
+    if LIMIT: arts = arts[:LIMIT]
+    elif TEST: arts = arts[:6]
 
-print('完成')
+    print(f'处理 {len(arts)} 篇（{"试打" if TEST else "写入"}，模型 {MODEL}）\n')
+    for x in arts:
+        key = x['key']; d = x['data']
+        title = d.get('title', ''); abstract = d.get('abstractNote', '')
+        try:
+            res = tag_llm(title, abstract)
+            tags = to_tags(res)
+        except Exception as e:
+            print(f'✗ {title[:35]} — 解析失败: {e}')
+            continue
+        print(f'《{title[:45]}》')
+        print('  ' + '  '.join(tags))
+        print()
+        if APPLY:
+            # 保留原有非维度标签，加上新标签（去重）
+            old = [t for t in d.get('tags', []) if ':' not in t.get('tag','')]
+            newtags = old + [{'tag': t} for t in tags]
+            # 去重
+            seen = set(); uniq = []
+            for t in newtags:
+                if t['tag'] not in seen:
+                    seen.add(t['tag']); uniq.append(t)
+            for attempt in range(3):
+                try:
+                    ver = lget(f'/items/{key}')['version']
+                    patch = json.dumps({'tags': uniq}).encode()
+                    req = urllib.request.Request(WEB+f'/items/{key}', data=patch, method='PATCH',
+                        headers={**WH, 'If-Unmodified-Since-Version': str(ver), 'Content-Type':'application/json'})
+                    urllib.request.urlopen(req, timeout=20)
+                    break
+                except urllib.error.HTTPError as e:
+                    if e.code == 429: time.sleep(10); continue
+                    if e.code == 412: time.sleep(1); continue
+                    break
+            time.sleep(0.3)
+
+    print('完成')
+
+
+if __name__ == '__main__':
+    main()

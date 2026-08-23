@@ -9,14 +9,25 @@
 若副作用写在顶层，检查一跑就会真的建目录、甚至真的调用付费 API。
 **检查工具不该有副作用；能被安全 import，是脚本的基本素养。**
 """
-import sys, os, json, time, zipfile, io, urllib.request
+import os, sys, json, time, zipfile, io, urllib.request
 
-# 密钥统一从 modules/config 读（环境变量 → 系统凭据库 → .env）
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
 try:
-    from modules.config import get_key as _cfg_get
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
-    _cfg_get = lambda n, **kw: os.environ.get(n, '')
+    pass
+
+from modules.cli import pos
+from modules.config import get_key   # 密钥统一从 modules/config 读（环境变量 → 系统凭据库 → .env）
 
 BASE = 'https://mineru.net/api/v4'
 
@@ -31,7 +42,7 @@ def api(path, method='GET', body=None, token=None):
 
 def parse(pdf_path, out_dir, token=None):
     """把一个 PDF 送去 MineRU 解析，结果解压到 out_dir。"""
-    token = token or _cfg_get('MINERU_TOKEN')
+    token = token or get_key('MINERU_TOKEN')
     if not token:
         raise SystemExit('缺少 MINERU_TOKEN，请在控制面板里填写')
     os.makedirs(out_dir, exist_ok=True)
@@ -86,10 +97,11 @@ def parse(pdf_path, out_dir, token=None):
 
 
 def main():
-    if len(sys.argv) < 3:
+    pdf_path, out_dir = pos(0), pos(1)
+    if not (pdf_path and out_dir):
         print(__doc__)
         raise SystemExit(2)
-    parse(sys.argv[1], sys.argv[2])
+    parse(pdf_path, out_dir)
 
 
 if __name__ == '__main__':

@@ -9,24 +9,33 @@
 
 用法：python si_deepread.py <ZoteroKey> [out.html]
 """
-import os, sys, io, re, base64, subprocess
+import os, sys, io, re, base64, subprocess, zipfile
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(SCRIPT_DIR)
-sys.path.insert(0, ROOT)
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
 
+from modules.cli import pos
+from modules.config import get_key
 from modules.zotero_client import zget, USER_ID, STORAGE_DIR, SUPP_PAT
 from modules.pdf_parse import parse_pdf, PDFParseError
 from modules.si_filter import filtered_text
 from modules.figure_crop import crop_figures
 from modules.llm_client import chat
-try:
-    import sys as _s, os as _o
-    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
-    from modules.config import get_key as _cfg_get
-except Exception:
-    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT = _ROOT
 LIBRARY = os.path.join(ROOT, 'workflow_data', 'library')
 MODEL = os.environ.get('SI_MODEL', 'deepseek-v4-flash')   # 输出长 → flash 省钱
 
@@ -93,7 +102,6 @@ def extract_docx_images(path, min_kb=15):
     返回 [{b64, caption, num}]，格式与 figure_crop 一致，可直接进渲染流程。
     过滤掉小图标（<min_kb），只留有意义的补充图。
     """
-    import zipfile, base64
     figs = []
     try:
         with zipfile.ZipFile(path) as z:
@@ -162,10 +170,10 @@ def render_html(content, figs, title=''):
 
 
 def main():
-    if len(sys.argv) < 2:
+    key = pos(0)
+    if not key:
         print('用法: python si_deepread.py <ZoteroKey> [out.html]'); sys.exit(1)
-    key = sys.argv[1]
-    out_html = sys.argv[2] if len(sys.argv) > 2 else os.path.join(LIBRARY, key, 'si_summary.html')
+    out_html = pos(1) or os.path.join(LIBRARY, key, 'si_summary.html')
 
     si_file, kind = find_si_file(key)
     if not si_file:
@@ -199,7 +207,7 @@ def main():
 
     user = f"补充材料共有 {len(figs)} 张图。\n\n正文:\n{body[:30000]}"
     content = chat(SYS, user, provider='deepseek', model=MODEL,
-                   key=_cfg_get('DEEPSEEK_KEY'), temperature=0.3, max_tokens=6000)
+                   key=get_key('DEEPSEEK_KEY'), temperature=0.3, max_tokens=6000)
     os.makedirs(os.path.dirname(out_html), exist_ok=True)
     io.open(out_html, 'w', encoding='utf-8').write(render_html(content, figs))
     print(f'  [完成] {out_html}  {round(os.path.getsize(out_html)/1024)} KB')

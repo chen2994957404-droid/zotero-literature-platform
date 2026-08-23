@@ -11,12 +11,29 @@
 前提：Zotero 开着（取全文）+ Ollama 在跑（向量化/本地抽取）。两者都有保活任务。
 用法: python auto_sync.py        （由任务计划 LiteratureAutoSync 每小时调用）
 """
-import os, sys, subprocess, time, io, json, urllib.request
-_NOWIN = getattr(__import__('subprocess'), 'CREATE_NO_WINDOW', 0) if __import__('os').name == 'nt' else 0
+import os, sys, time, io, json, urllib.request
+from subprocess import TimeoutExpired
+
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
+from modules.config import need_site
+from modules.subproc import run as _sub_run   # 子进程统一走积木：不弹窗+超时+UTF-8
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(SCRIPT_DIR)
-LOG = os.path.join(ROOT, 'workflow_data', 'logs', 'auto_sync.log')
+LOG = os.path.join(_ROOT, 'workflow_data', 'logs', 'auto_sync.log')
 os.makedirs(os.path.dirname(LOG), exist_ok=True)
 
 
@@ -27,7 +44,7 @@ def log(msg):
         with io.open(LOG, 'a', encoding='utf-8') as f:
             f.write(line + '\n')
     except Exception:
-        pass
+        pass  # 日志落盘失败只丢这一条，print 已成功，不影响主流程
 
 
 def _alive(url, headers=None, timeout=6):
@@ -35,7 +52,7 @@ def _alive(url, headers=None, timeout=6):
         urllib.request.urlopen(urllib.request.Request(url, headers=headers or {}), timeout=timeout)
         return True
     except Exception:
-        return False
+        return False  # 探活失败=服务没开，属正常分支，由调用方决定拉起或跳过
 
 
 def _revive(task_name, disp, probe_url, headers=None, wait=30):
@@ -45,11 +62,8 @@ def _revive(task_name, disp, probe_url, headers=None, wait=30):
     """
     log(f'{disp} 未响应，尝试拉起…')
     try:
-        import sys as _s, os as _o
-        _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
-        from modules.subproc import run as _run
-        _run(['powershell', '-NoProfile', '-NonInteractive', '-Command',
-              f'Start-ScheduledTask -TaskName {task_name}'], timeout=40)
+        _sub_run(['powershell', '-NoProfile', '-NonInteractive', '-Command',
+                  f'Start-ScheduledTask -TaskName {task_name}'], timeout=40)
     except Exception as e:
         log(f'{disp} 拉起失败: {e}')
         return False
@@ -65,14 +79,8 @@ def _revive(task_name, disp, probe_url, headers=None, wait=30):
 def check_deps():
     """检查依赖服务。缺了就跳过本轮（下轮再来），不报错刷屏。"""
     # 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
-    import os as _os, sys as _sys
-    _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-    try:
-        from modules.config import need_site as _site
-    except Exception:
-        _site = lambda n: _os.environ.get(n) or (_ for _ in ()).throw(RuntimeError(f'缺少本机设置 {n}，请在控制面板或 .env 中配置'))
-    _UID = _site('ZOTERO_USER_ID')
-    _STORAGE = _site('ZOTERO_STORAGE')
+    _UID = need_site('ZOTERO_USER_ID')
+    _STORAGE = need_site('ZOTERO_STORAGE')
     zot = _alive(f'http://localhost:23119/api/users/{_UID}/items/top?limit=1',
                  {'Zotero-Allowed-Request': 'true'})
     olla = _alive('http://localhost:11434/api/tags')
@@ -96,16 +104,15 @@ def check_deps():
 
 def run(script, name, timeout=3600):
     """跑一个增量脚本，返回是否成功。"""
-    env = dict(os.environ, PYTHONIOENCODING='utf-8')
     try:
-        r = subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, script)],
-                           capture_output=True, text=True, encoding='utf-8',
-                           errors='replace', env=env, timeout=timeout, cwd=ROOT, creationflags=_NOWIN)
+        r = _sub_run([sys.executable, os.path.join(SCRIPT_DIR, script)],
+                     timeout=timeout, cwd=_ROOT,
+                     env=dict(os.environ, PYTHONIOENCODING='utf-8'))
         tail = (r.stdout or '').strip().splitlines()
         summary = tail[-1] if tail else '(无输出)'
         log(f'{name}: {summary}')
         return r.returncode == 0
-    except subprocess.TimeoutExpired:
+    except TimeoutExpired:
         log(f'{name}: 超时（{timeout}s），下轮继续'); return False
     except Exception as e:
         log(f'{name}: 出错 {e}'); return False

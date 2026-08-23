@@ -4,13 +4,24 @@
 依赖 Zotero 桌面开着（本地API读）+ Zotero Web API key（写回）。
 运行: python zotero_watcher.py
 """
-import os, time, json, re, subprocess, sys, urllib.request, traceback
+import os, sys, time, json, re, subprocess, urllib.request, urllib.parse, traceback
+
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
 try:
-    import sys as _s, os as _o
-    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
-    from modules.config import get_key as _cfg_get
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
-    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
+    pass
+
+from modules.config import get_key, need_site
 
 # ===== 运行日志 =====
 _LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'workflow_data', 'logs')
@@ -31,17 +42,9 @@ def print(*args, **kwargs):
 ZOTERO_LOCAL = 'http://localhost:23119/api'
 ZOTERO_HEADERS = {'Zotero-Allowed-Request': 'true'}
 # 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
-import os as _os, sys as _sys
-_NOWIN = getattr(__import__('subprocess'), 'CREATE_NO_WINDOW', 0) if __import__('os').name == 'nt' else 0
-_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-try:
-    from modules.config import need_site as _site
-except Exception:
-    _site = lambda n: _os.environ.get(n) or (_ for _ in ()).throw(RuntimeError(f'缺少本机设置 {n}，请在控制面板或 .env 中配置'))
-_UID = _site('ZOTERO_USER_ID')
-_STORAGE = _site('ZOTERO_STORAGE')
-USER_ID = _UID                      # 本地API里的库id
-STORAGE_DIR = _STORAGE
+_NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
+USER_ID = need_site('ZOTERO_USER_ID')       # 本地API里的库id
+STORAGE_DIR = need_site('ZOTERO_STORAGE')
 # ── 标签状态机（用户定，2026-07-25）───────────────────────────────
 # 打「待处理」→ 自动检测有哪些附件、哪些还没精读 → 补做缺的 → 按结果换状态标签。
 # 状态互斥：一篇文献同一时间只有一个状态标签。
@@ -55,7 +58,7 @@ TAG_FULL = '全文精读'                      # 正文+SI 都精读了
 TAG_NOPDF = '无附件'                       # 没找到可精读的PDF（提示用户，而非静默跳过）
 ALL_STATE_TAGS = [TRIGGER_TAG, TAG_MAIN, TAG_SI, TAG_FULL, TAG_NOPDF, '待精读', '已精读']
 DONE_TAG = TAG_MAIN                        # 兼容旧代码引用
-WEB_API_KEY = _cfg_get('ZOTERO_API_KEY')  # zotero.org 写权限key
+WEB_API_KEY = get_key('ZOTERO_API_KEY')  # zotero.org 写权限key
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)
@@ -72,7 +75,7 @@ os.makedirs(LIBRARY, exist_ok=True)
 sys.path.insert(0, SCRIPT_DIR)
 from zotero_upload_attachment import upload_attachment
 
-DEEPSEEK_KEY = _cfg_get('DEEPSEEK_KEY')
+DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')
 PROVIDER = os.environ.get('DEEPREAD_PROVIDER', 'deepseek')
 MODEL = os.environ.get('DEEPREAD_MODEL', 'deepseek-v4-flash')  # 默认flash省钱；重要文献用 重跑精读_pro.bat 切pro
 
@@ -416,5 +419,4 @@ def main():
         time.sleep(60)  # 每60秒检查一次，避免API限流
 
 if __name__ == '__main__':
-    import urllib.parse
     main()

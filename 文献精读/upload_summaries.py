@@ -7,33 +7,38 @@
 """
 import os, sys, json, shutil, urllib.request
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(SCRIPT_DIR)
-sys.path.insert(0, SCRIPT_DIR)
-from zotero_upload_attachment import upload_attachment
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
 try:
-    import sys as _s, os as _o
-    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
-    from modules.config import get_key as _cfg_get
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
-    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
+    pass
 
+from modules.cli import opt, positionals
+from modules.config import get_key, need_site
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)     # 同文件夹脚本互相 import（zotero_upload_attachment 等）
+from zotero_upload_attachment import upload_attachment
+
+ROOT = _ROOT
 LIBRARY = os.path.join(ROOT, 'workflow_data', 'library')
 # 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
-import os as _os, sys as _sys
-_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-try:
-    from modules.config import need_site as _site
-except Exception:
-    _site = lambda n: _os.environ.get(n) or (_ for _ in ()).throw(RuntimeError(f'缺少本机设置 {n}，请在控制面板或 .env 中配置'))
-_UID = _site('ZOTERO_USER_ID')
-_STORAGE = _site('ZOTERO_STORAGE')
-USER_ID = _UID
-STORAGE_DIR = _STORAGE
-WEB_API_KEY = _cfg_get('ZOTERO_API_KEY')
+USER_ID = need_site('ZOTERO_USER_ID')
+STORAGE_DIR = need_site('ZOTERO_STORAGE')
+WEB_API_KEY = get_key('ZOTERO_API_KEY')
 DONE_TAG = '已精读'
 BASE = f'https://api.zotero.org/users/{USER_ID}'
 WH = {'Zotero-API-Key': WEB_API_KEY, 'Zotero-API-Version': '3'}
+
 
 def delete_old_summary(key):
     try:
@@ -45,6 +50,7 @@ def delete_old_summary(key):
                 urllib.request.urlopen(dreq, timeout=15)
     except Exception as e:
         print(f'    (删旧summary跳过: {e})')
+
 
 def add_done_tag(key):
     """给文献加「已精读」标签（保留原有标签）。"""
@@ -63,6 +69,7 @@ def add_done_tag(key):
     except Exception as e:
         print(f'    (加标签失败: {e})')
 
+
 def do_one(key):
     html = os.path.join(LIBRARY, key, 'summary.html')
     if not os.path.exists(html):
@@ -76,17 +83,20 @@ def do_one(key):
         print(f'  [已上传] summary + 标签「已精读」'); return True
     print(f'  [上传失败]'); return False
 
+
 def main():
-    if '--file' in sys.argv:
-        keys = [l.strip() for l in open(sys.argv[sys.argv.index('--file')+1], encoding='utf-8') if l.strip()]
+    fp = opt('--file')
+    if fp:
+        keys = [l.strip() for l in open(fp, encoding='utf-8') if l.strip()]
     else:
-        keys = [a for a in sys.argv[1:] if not a.startswith('--')]
+        keys = positionals()
     print(f'回写 {len(keys)} 篇精读到 Zotero\n')
     ok = 0
     for i, k in enumerate(keys, 1):
         print(f'[{i}/{len(keys)}] {k}')
         if do_one(k): ok += 1
     print(f'\n完成：成功 {ok}/{len(keys)}')
+
 
 if __name__ == '__main__':
     main()

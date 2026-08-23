@@ -3,40 +3,48 @@
 用法: python ask.py "你的问题"
       python ask.py            进入交互模式，连续提问
 """
-import os, json, sys, urllib.request
+import os, sys
 
-# 密钥统一从 modules/config 读（环境变量 → .env），必须在使用前定义
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
 try:
-    from modules.config import get_key as _cfg_get
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
-    _cfg_get = lambda n, **kw: os.environ.get(n, '')
+    pass
 
 import chromadb
-
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VECTOR_DB = os.path.join(ROOT, 'workflow_data', 'vector_db')
-DEEPSEEK_KEY = _cfg_get('DEEPSEEK_KEY')
-try:
-    from modules.config import get_model as _get_model
-    DEEPSEEK_MODEL = _get_model('ASK_MODEL')      # 可在控制面板切换
-except Exception:
-    DEEPSEEK_MODEL = 'deepseek-v4-flash'          # 问答输出较长，用 flash 省钱
-TOP_K = 6
-
-# embedding 与 LLM 调用走公理件
-sys.path.insert(0, ROOT)
+from modules.cli import positionals
+from modules.config import get_key, get_model
 from modules.embed import embed as _embed_batch
 from modules.llm_client import chat as _chat
 
+VECTOR_DB = os.path.join(_ROOT, 'workflow_data', 'vector_db')
+DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')
+DEEPSEEK_MODEL = get_model('ASK_MODEL')      # 可在控制面板切换
+TOP_K = 6
+
+# embedding 与 LLM 调用走公理件
 client = chromadb.PersistentClient(path=VECTOR_DB)
 coll = client.get_or_create_collection('literature', metadata={'hnsw:space': 'cosine'})
 
+
 def embed(text):
-    return _embed_batch([text])[0]   # 公理件是批量接口，取第一个
+    """单条文本 → 向量（公理件是批量接口，取第一个）。"""
+    return _embed_batch([text])[0]
+
 
 def deepseek(system, user):
+    """调云端 DeepSeek 作答（问答输出较长，用 flash 省钱）。"""
     return _chat(system, user, provider='deepseek', model=DEEPSEEK_MODEL, key=DEEPSEEK_KEY, temperature=0.3)
+
 
 def ask_answer(question, top_k=TOP_K):
     """RAG 问答，**返回**结果而不是打印 —— 供 MCP / 其他脚本复用。
@@ -78,10 +86,13 @@ def ask(question):
         print(f'  - 《{t}》' + (f'  DOI:{doi}' if doi else ''))
     print()
 
-if __name__ == '__main__':
+
+def main():
+    """命令行入口：有参数直接提问，无参数进交互模式。"""
     print(f'向量库共 {coll.count()} 个文本块\n')
-    if len(sys.argv) > 1:
-        ask(' '.join(sys.argv[1:]))
+    args = positionals()
+    if args:
+        ask(' '.join(args))
     else:
         print('进入问答模式（输入问题，回车提问；输入 q 退出）')
         while True:
@@ -91,4 +102,9 @@ if __name__ == '__main__':
             try:
                 ask(q)
             except Exception as e:
+                # 单条问题失败只提示不退出：交互模式下用户可继续问下一条
                 print('出错：', e)
+
+
+if __name__ == '__main__':
+    main()

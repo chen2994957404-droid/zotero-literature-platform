@@ -38,17 +38,24 @@
 看完想收哪篇：python 找新文献/import_by_doi.py <DOI>
 入库后在 Zotero 打「待处理」标签即自动精读。
 """
-import sys, os, io, re
+import os, sys, re, json, time
 
-# 用 reconfigure 而非替换 sys.stdout：后者会让原对象被回收、底层缓冲被关闭，
-# 表现为程序跑到一半 print 抛「I/O operation on closed file」（踩坑 #37）
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
+from modules.cli import pos, flag, opt
 from modules.lib_match import match_many, rank
 from modules import sciverse
 
@@ -210,28 +217,22 @@ def run_discovery(query, limit=25, n_queries=5, mode='survey', year_from=None,
 
 
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith('--')]
-    flags = [a for a in sys.argv[1:] if a.startswith('--')]
-    if not args:
+    query = pos(0)
+    if not query:
         print(__doc__)
         return
-    query = args[0]
-    limit = int(args[1]) if len(args) > 1 and args[1].isdigit() else 25
-    year_from = None
-    if '--since' in sys.argv:
-        i = sys.argv.index('--since')
-        if i + 1 < len(sys.argv):
-            year_from = sys.argv[i + 1]
-    prefer = ('citations' if '--cited' in flags else
-              'fresh' if '--fresh' in flags else
-              'impact' if '--impact' in flags else 'relevance')
-    show_all = '--all' in flags
+    p1 = pos(1)
+    limit = int(p1) if p1 and p1.isdigit() else 25
+    year_from = opt('--since')
+    prefer = ('citations' if flag('--cited') else
+              'fresh' if flag('--fresh') else
+              'impact' if flag('--impact') else 'relevance')
+    show_all = flag('--all')
 
     # 查询扩展：单一检索式是「搜不全」的根本原因（材料领域同一个东西有多种叫法）
-    n_q = 1 if '--单查询' in flags else int(
-        next((sys.argv[i + 1] for i, a in enumerate(sys.argv)
-              if a == '--扩展' and i + 1 < len(sys.argv) and sys.argv[i + 1].isdigit()), 5))
-    mode = 'problem' if '--解决问题' in flags else 'survey'
+    nq_val = opt('--扩展')
+    n_q = 1 if flag('--单查询') else (int(nq_val) if nq_val and nq_val.isdigit() else 5)
+    mode = 'problem' if flag('--解决问题') else 'survey'
     queries = [query]
     if n_q > 1:
         print(f'正在把问题拆成 {n_q} 个互补的检索式（{"解决问题" if mode == "problem" else "系统调研"}模式）…')
@@ -247,7 +248,7 @@ def main():
 
     try:
         items, total, source, contrib, seen_keys = fetch_multi(
-            queries, limit, year_from, '--openalex' in flags, prefer)
+            queries, limit, year_from, flag('--openalex'), prefer)
     except Exception as e:
         print(f'检索失败：{e}')
         return
@@ -258,12 +259,11 @@ def main():
     # ── 雪球扩展：关键词检索必然漏掉「术语不同但引用上挨着」的文献 ──
     # 实证：单库检索召回 13~35%，优化检索式 50~95%，**再加一轮前后向雪球才到 90~100%**。
     snow_stats = []
-    if '--不雪球' not in flags:
+    if not flag('--不雪球'):
         from modules.lib_match import pick_seeds
         from modules.snowball import expand as snowball
-        seeds = pick_seeds(queries[0], n=int(next(
-            (sys.argv[i + 1] for i, a in enumerate(sys.argv)
-             if a == '--种子' and i + 1 < len(sys.argv) and sys.argv[i + 1].isdigit()), 3)))
+        seed_val = opt('--种子')
+        seeds = pick_seeds(queries[0], n=int(seed_val) if seed_val and seed_val.isdigit() else 3)
         if seeds:
             print(f'\n从你库里挑了 {len(seeds)} 篇最相关的做雪球种子：')
             for s in seeds:
@@ -306,9 +306,8 @@ def main():
     # 贴题门槛：**高被引不能救一篇跑题的文献**。
     # 实测（踩坑 #38）：不设门槛时，被引 1117 的水凝胶综述、被引 483 的高熵合金
     # 会因为「跟我库里某篇沾边 + 被引高」而排到前面 —— 它们跟本次主题毫无关系。
-    floor = float(next((sys.argv[i + 1] for i, a in enumerate(sys.argv)
-                        if a == '--贴题门槛' and i + 1 < len(sys.argv)), 0.45))
-    if '--宽松' not in flags:
+    floor = float(opt('--贴题门槛') or 0.45)
+    if not flag('--宽松'):
         keep = [(p, m) for p, m in zip(items, ms)
                 if m.get('topic_sim') is None or m['topic_sim'] >= floor]
         cut = len(items) - len(keep)
@@ -354,11 +353,10 @@ def main():
         print()
 
     # 把这次结果存下来，供 collect.py 按编号挑选 —— 用户不必手抄 DOI
-    import json
-    stash = os.path.join(ROOT, 'workflow_data', '_last_search.json')
+    stash = os.path.join(_ROOT, 'workflow_data', '_last_search.json')
     try:
         with open(stash, 'w', encoding='utf-8') as f:
-            json.dump({'query': query, 'time': __import__('time').strftime('%Y-%m-%d %H:%M'),
+            json.dump({'query': query, 'time': time.strftime('%Y-%m-%d %H:%M'),
                        'items': [{'n': i, 'title': p.get('title'), 'doi': p.get('doi'),
                                   'year': p.get('year'), 'citations': p.get('citations'),
                                   'relevance': m.get('relevance'), 'status': m.get('status')}

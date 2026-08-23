@@ -20,15 +20,26 @@ git 提交历史、体检结果、评测集进展、待办、最近踩的坑。
 """
 import os, sys, io, glob, re, json, time
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(SCRIPT_DIR)
-sys.path.insert(0, ROOT)
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
 
+from modules.cli import flag
 from modules.subproc import out as _out
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT = _ROOT
 
 HANDOVER = os.path.join(ROOT, 'HANDOVER.md')
 

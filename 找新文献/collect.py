@@ -13,19 +13,30 @@
 
 收进库但没精读的，以后随时可以在 Zotero 里补打「待处理」标签。
 """
-import sys, os, io, json
+import os, sys, json
 
-# 用 reconfigure 而非替换 sys.stdout：后者会让原对象被回收、底层缓冲被关闭，
-# 表现为程序跑到一半 print 抛「I/O operation on closed file」（踩坑 #37）
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-STASH = os.path.join(ROOT, 'workflow_data', '_last_search.json')
+# 同文件夹脚本互相 import（collect.py 要 from import_by_doi import import_dois）
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
+
+from modules.cli import flag, positionals
+
+STASH = os.path.join(_ROOT, 'workflow_data', '_last_search.json')
 
 
 def load():
@@ -90,15 +101,15 @@ def main():
     if not data:
         return
     items = data['items']
-    argv = sys.argv[1:]
+    args = positionals()
 
-    if not argv or '--看' in argv or '--list' in argv:
+    if not args or flag('--看') or flag('--list'):
         show(data)
         print('\n收哪几篇：python 找新文献/collect.py 1,3,5-7  [--精读]')
         return
 
-    deep = '--精读' in argv or '--deepread' in argv
-    expr = ' '.join(a for a in argv if not a.startswith('--'))
+    deep = flag('--精读') or flag('--deepread')
+    expr = ' '.join(args)
     picks = parse_picks(expr, len(items))
     if not picks:
         print('没有选中任何条目。')

@@ -14,30 +14,39 @@ schema，用 DeepSeek 抽成对齐的机器可读 JSON。这是"向量检索"之
   python extract_structured.py --rebuild    # 重抽全部
   python extract_structured.py <KEY>        # 只抽某一篇
 """
-import os, json, re, sys, urllib.request
-try:
-    import sys as _s, os as _o
-    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
-    from modules.config import get_key as _cfg_get
-except Exception:
-    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
+import os, sys, json, re
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LIBRARY = os.path.join(ROOT, 'workflow_data', 'library')
-OUT_DIR = os.path.join(ROOT, 'workflow_data', 'structured')
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
+from modules.cli import flag, pos
+from modules.config import get_key, get_model
+# LLM 调用已收敛到公理件 modules/llm_client（消除 6 处重复实现，见踩坑 #17）
+from modules.llm_client import chat_json as _chat_json
+
+LIBRARY = os.path.join(_ROOT, 'workflow_data', 'library')
+OUT_DIR = os.path.join(_ROOT, 'workflow_data', 'structured')
 os.makedirs(OUT_DIR, exist_ok=True)
 
-DEEPSEEK_KEY = _cfg_get('DEEPSEEK_KEY')
-try:
-    from modules.config import get_model as _get_model
-    DEEPSEEK_MODEL = _get_model('EXTRACT_MODEL')  # 抽取要准，用 pro；可在控制面板切换
-except Exception:
-    DEEPSEEK_MODEL = 'deepseek-v4-pro'
+DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')
+DEEPSEEK_MODEL = get_model('EXTRACT_MODEL')  # 抽取要准，用 pro；可在控制面板切换
 # provider 开关：默认 deepseek（云）；设 EXTRACT_PROVIDER=ollama 走本地大模型，省 API 费
 PROVIDER = os.environ.get('EXTRACT_PROVIDER', 'deepseek').lower()
-OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'qwen2.5:7b-instruct')
-REBUILD = '--rebuild' in sys.argv
-ONLY_KEY = next((a for a in sys.argv[1:] if not a.startswith('--')), None)
+OLLAMA_MODEL = get_key('OLLAMA_MODEL', default='qwen2.5:7b-instruct')
+REBUILD = flag('--rebuild')
+ONLY_KEY = pos(0)
 
 # ── Domain schema: soft matter / dynamic-bond elastomers / self-healing ──
 # Each field description goes into the prompt to guide extraction. Change domain = change here.
@@ -99,11 +108,6 @@ def hierarchical_body(md, budget=14000):
             kept.append(seg); used += len(seg)
     return "\n".join(kept)
 
-# LLM 调用已收敛到公理件 modules/llm_client（消除 6 处重复实现，见踩坑 #17）
-import sys as _sys
-_sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from modules.llm_client import chat_json as _chat_json
-
 def deepseek_json(system, user):
     """保留名字供 extract_batch import；实际走公理件（云端）。"""
     return _chat_json(system, user, provider='deepseek', model=DEEPSEEK_MODEL, key=DEEPSEEK_KEY)
@@ -134,6 +138,7 @@ def _evaluate(title, body, data):
     try:
         return _chat_json(_EVAL_SYS, user, provider='deepseek', model=DEEPSEEK_MODEL, key=DEEPSEEK_KEY)
     except Exception as e:
+        # 自检失败不算抽取失败：返回 ok 让主流程继续（评估只是质量增强，缺了不影响产出）
         return {'ok': True, 'missed': [], 'hallucinated': [], '_eval_error': str(e)}
 
 def extract_with_eval(title, body, max_cycles=2):
@@ -220,7 +225,7 @@ def main():
             rec = extract_one(key)
             if rec: records.append(rec)
         except Exception as e:
-            print(f'[出错] {key}: {e}')
+            print(f'[出错] {key}: {e}')   # 单篇失败报出来继续下一篇，不中断整批
     # 汇总所有已抽取的结果成对比表
     all_recs = [json.load(open(os.path.join(OUT_DIR, f), encoding='utf-8'))
                 for f in sorted(os.listdir(OUT_DIR)) if f.endswith('.json')]

@@ -7,14 +7,30 @@
 **只改文件内容、不动 Zotero 条目与版本号** —— 因此不会触发同步冲突（踩坑 #18 的教训：
 「先删附件再传新的」会把删除动作推进同步链，导致 Zotero 反复弹冲突框）。
 
-用法: python scripts/refresh_summary_file.py KEY1 KEY2 ...
+用法: python refresh_summary_file.py KEY1 KEY2 ...
 """
 import os, sys, shutil
 
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
+from modules.cli import positionals
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(SCRIPT_DIR)
-sys.path.insert(0, ROOT)
-sys.path.insert(0, SCRIPT_DIR)
+sys.path.insert(0, SCRIPT_DIR)     # 同文件夹脚本互相 import（zotero_watcher 等）
+ROOT = _ROOT
 import zotero_watcher as W
 
 
@@ -33,7 +49,7 @@ def refresh(key):
 
 
 def main():
-    keys = [a for a in sys.argv[1:] if not a.startswith('--')]
+    keys = positionals()
     if not keys:
         print(__doc__)
         return

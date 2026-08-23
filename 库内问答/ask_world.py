@@ -12,17 +12,24 @@
   python 库内问答/ask_world.py "聚硼硅氧烷的剪切硬化机理是什么"
   python 库内问答/ask_world.py "B-N配位键如何提升自修复效率" --since 2020 --top 10
 """
-import sys, os, io
+import os, sys
 
-# 用 reconfigure 而非替换 sys.stdout：后者会让原对象被回收、底层缓冲被关闭，
-# 表现为程序跑到一半 print 抛「I/O operation on closed file」（踩坑 #37）
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
+from modules.cli import positionals, opt
 from modules.sciverse import ask_evidence, available, SciverseError
 from modules.llm_client import chat
 from modules.config import get_key, get_model
@@ -69,21 +76,17 @@ def ask_world(question, top_k=8, year_from=None, min_score=MIN_SCORE):
 
 
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    """命令行入口：解析参数 → 检索 → 打印答案与证据来源。"""
+    args = positionals()
     if not args:
         print(__doc__)
         return
     question = ' '.join(args)
     top_k = 8
-    if '--top' in sys.argv:
-        i = sys.argv.index('--top')
-        if i + 1 < len(sys.argv) and sys.argv[i + 1].isdigit():
-            top_k = int(sys.argv[i + 1])
-    year_from = None
-    if '--since' in sys.argv:
-        i = sys.argv.index('--since')
-        if i + 1 < len(sys.argv):
-            year_from = sys.argv[i + 1]
+    _top = opt('--top')
+    if _top and _top.isdigit():
+        top_k = int(_top)          # 非数字的 --top 值按原行为忽略，保持默认 8
+    year_from = opt('--since')
 
     if not available():
         print('未配置 SCIVERSE_KEY。请双击「控制面板.bat」，在 Sciverse 一栏填写。')

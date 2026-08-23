@@ -9,10 +9,25 @@
 """
 import os, sys, time, subprocess, io
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(SCRIPT_DIR)
-sys.path.insert(0, ROOT)
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
 from modules import subproc as _sp   # 统一走静默子进程调用，避免弹窗
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT = _ROOT
 HEARTBEAT = os.path.join(ROOT, 'workflow_data', 'logs', 'watcher_heartbeat.txt')
 WATCHER = os.path.join(SCRIPT_DIR, 'zotero_watcher.py')
 WD_LOG = os.path.join(ROOT, 'workflow_data', 'logs', 'watchdog.log')
@@ -21,6 +36,7 @@ CHECK = 60      # 每 60 秒查一次
 STALE = 300     # 心跳超 300 秒（5分钟）没更新 = 卡死。watcher 轮询间隔60s，5分钟足够宽容
 GRACE = 180     # 重启后给 watcher 的启动宽限期，期间不判死
 
+
 def log(msg):
     line = f'[{time.strftime("%Y-%m-%d %H:%M:%S")}] {msg}'
     print(line)
@@ -28,13 +44,15 @@ def log(msg):
         with io.open(WD_LOG, 'a', encoding='utf-8') as f:
             f.write(line + '\n')
     except Exception:
-        pass
+        pass   # 日志写不进去不阻塞主流程（还有 stdout）
+
 
 def heartbeat_age():
     try:
         return time.time() - int(open(HEARTBEAT, encoding='utf-8').read().strip())
     except Exception:
         return None   # 心跳文件不存在/读不了
+
 
 def find_watcher_pids():
     """找正在跑的 zotero_watcher 进程（Windows）。
@@ -51,6 +69,7 @@ def find_watcher_pids():
     except Exception:
         return []
 
+
 def restart_watcher():
     for pid in find_watcher_pids():
         _sp.run(['taskkill', '/F', '/PID', pid], timeout=20)
@@ -63,6 +82,7 @@ def restart_watcher():
     env = dict(os.environ, PYTHONIOENCODING='utf-8')
     _sp.spawn([sys.executable, WATCHER], env=env)
     log('已重启 watcher（后台无窗口）')
+
 
 def main():
     log(f'看门狗启动。心跳阈值 {STALE}s，检查间隔 {CHECK}s')
@@ -79,6 +99,7 @@ def main():
             log(f'心跳已 {int(age)}s 未更新（>{STALE}）→ 判定卡死，重启')
             restart_watcher(); last_restart = now
         time.sleep(CHECK)
+
 
 if __name__ == '__main__':
     main()

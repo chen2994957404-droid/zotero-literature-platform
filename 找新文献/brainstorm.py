@@ -4,33 +4,39 @@
 用法: python brainstorm.py "我想在自修复材料方向找新点子"
       python brainstorm.py            进入连续讨论模式
 """
-import os, json, sys, urllib.request
+import os, sys, json, urllib.request
 
-# 密钥统一从 modules/config 读（环境变量 → .env），必须在使用前定义
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
 try:
-    from modules.config import get_key as _cfg_get
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
-    _cfg_get = lambda n, **kw: os.environ.get(n, '')
+    pass
 
 import chromadb
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VECTOR_DB = os.path.join(ROOT, 'workflow_data', 'vector_db')
-DEEPSEEK_KEY = _cfg_get('DEEPSEEK_KEY')
-# 创意讨论用 pro（质量更重要），可改 flash
-CHAT_MODEL = os.environ.get('BRAINSTORM_MODEL', 'deepseek-v4-pro')
-TOP_K = 10  # 讨论要更多上下文
-
-# embedding 走公理件（chat 是多轮 messages 形式，接口不同，暂保留原实现，见技术债）
-sys.path.insert(0, ROOT)
+from modules.cli import positionals
+from modules.config import get_key, get_model
 from modules.embed import embed as _embed_batch
 
-client = chromadb.PersistentClient(path=VECTOR_DB)
-coll = client.get_or_create_collection('literature', metadata={'hnsw:space': 'cosine'})
+VECTOR_DB = os.path.join(_ROOT, 'workflow_data', 'vector_db')
+DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')
+# 创意讨论用 pro（质量更重要）；模型名统一走 config，控制面板可切换
+CHAT_MODEL = get_model('BRAINSTORM_MODEL')
+TOP_K = 10  # 讨论要更多上下文
+
 
 def embed(text):
     return _embed_batch([text])[0]
+
 
 def chat(messages):
     body = json.dumps({'model': CHAT_MODEL, 'temperature': 0.7,  # 创意用高温度
@@ -38,6 +44,7 @@ def chat(messages):
     req = urllib.request.Request('https://api.deepseek.com/chat/completions', data=body, method='POST',
         headers={'Authorization': f'Bearer {DEEPSEEK_KEY}', 'Content-Type': 'application/json'})
     return json.loads(urllib.request.urlopen(req, timeout=200).read())['choices'][0]['message']['content']
+
 
 SYSTEM = """你是一位资深科研导师，正在和一位研究生讨论研究方向、激发新想法。
 你会拿到「用户想探讨的方向」和「从他自己文献库检索出的相关文献片段」。
@@ -48,10 +55,12 @@ SYSTEM = """你是一位资深科研导师，正在和一位研究生讨论研�
 4. 指出每个想法可能的难点和验证思路。
 用中文，专业、有启发性、敢于发散。基于文献但不局限于文献。"""
 
-def retrieve(query, k=TOP_K):
+
+def retrieve(coll, query, k=TOP_K):
     qvec = embed(query)
     res = coll.query(query_embeddings=[qvec], n_results=k, include=['documents', 'metadatas'])
     return res['documents'][0], res['metadatas'][0]
+
 
 def build_context(docs, metas):
     ctx = ''
@@ -61,14 +70,18 @@ def build_context(docs, metas):
         srcs[m['title'][:50]] = m.get('doi', '')
     return ctx, srcs
 
+
 def main():
+    coll = chromadb.PersistentClient(path=VECTOR_DB).get_or_create_collection(
+        'literature', metadata={'hnsw:space': 'cosine'})
     print(f'💡 创意讨论模式（基于你的 {coll.count()} 块文献 · {CHAT_MODEL}）')
     history = [{'role': 'system', 'content': SYSTEM}]
-    first = ' '.join(sys.argv[1:]) if len(sys.argv) > 1 else None
+    rest = positionals()
+    first = ' '.join(rest) if rest else None
 
     def turn(user_input):
         # 每轮都用当前输入检索最新相关文献
-        docs, metas = retrieve(user_input)
+        docs, metas = retrieve(coll, user_input)
         ctx, srcs = build_context(docs, metas)
         history.append({'role': 'user',
             'content': f'我想探讨的方向：{user_input}\n\n从我的文献库检索到的相关内容：\n{ctx}'})
@@ -96,6 +109,7 @@ def main():
             turn(u)
         except Exception as e:
             print('出错：', e)
+
 
 if __name__ == '__main__':
     main()

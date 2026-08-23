@@ -22,9 +22,25 @@
 import os, sys, json, time, subprocess, threading, webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
+from modules.cli import flag
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(SCRIPT_DIR)
-sys.path.insert(0, ROOT)
+ROOT = _ROOT
 sys.path.insert(0, SCRIPT_DIR)  # health_check 同在本文件夹
 
 from modules.config import (get_key, set_keys, get_model, mask,
@@ -946,7 +962,7 @@ def main():
     srv = HTTPServer((HOST, PORT), Handler)
     url = f'http://{HOST}:{PORT}/'
     print(f'控制面板已启动：{url}（按 Ctrl+C 关闭）')
-    if '--no-browser' not in sys.argv:
+    if not flag('--no-browser'):
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     try:
         srv.serve_forever()

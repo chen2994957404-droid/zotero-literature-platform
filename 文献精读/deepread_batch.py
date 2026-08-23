@@ -7,27 +7,36 @@
   python deepread_batch.py KEY1 KEY2 ...
   python deepread_batch.py --file keys.txt
 """
-import os, sys, subprocess
-_NOWIN = getattr(__import__('subprocess'), 'CREATE_NO_WINDOW', 0) if __import__('os').name == 'nt' else 0
-try:
-    import sys as _s, os as _o
-    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
-    from modules.config import get_key as _cfg_get
-except Exception:
-    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
+import os, sys, subprocess, shutil
 
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
+from modules.cli import opt, positionals, flag
+from modules.config import get_key, get_model
+
+_NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(SCRIPT_DIR)
+ROOT = _ROOT
 LIBRARY = os.path.join(ROOT, 'workflow_data', 'library')
 DEEPREAD = os.path.join(SCRIPT_DIR, 'deepread_v4.py')
 
 PROVIDER = 'deepseek'
-try:
-    from modules.config import get_model as _get_model
-    MODEL = _get_model('DEEPREAD_MODEL')   # 精读输出重→flash；可在控制面板切换
-except Exception:
-    MODEL = os.environ.get('DEEPREAD_MODEL', 'deepseek-v4-flash')
-KEY = _cfg_get('DEEPSEEK_KEY')
+MODEL = get_model('DEEPREAD_MODEL')   # 精读输出重→flash；可在控制面板切换
+KEY = get_key('DEEPSEEK_KEY')
+
 
 def read_one(key, force=False):
     parsed = os.path.join(LIBRARY, key, 'parsed')
@@ -40,7 +49,7 @@ def read_one(key, force=False):
         # 重跑前备份旧的，万一新的更差还能还原（可逆是自主执行的前提）
         bak = out_html + '.bak'
         if not os.path.exists(bak):
-            import shutil; shutil.copy2(out_html, bak)
+            shutil.copy2(out_html, bak)
             print(f'  [备份] 旧版存为 summary.html.bak')
     # deepread_v4.py 的 DeepSeek key 靠命令行第5参传入，不读环境变量（应用侧变更记录·认知2）
     env = dict(os.environ, PYTHONIOENCODING='utf-8')
@@ -51,13 +60,14 @@ def read_one(key, force=False):
         print(f'  [完成] summary.html {sz} KB'); return True
     print(f'  [失败] {r.stdout[-200:]} {r.stderr[-200:]}'); return False
 
+
 def main():
-    if '--file' in sys.argv:
-        fp = sys.argv[sys.argv.index('--file') + 1]
+    fp = opt('--file')
+    if fp:
         keys = [l.strip() for l in open(fp, encoding='utf-8') if l.strip()]
     else:
-        keys = [a for a in sys.argv[1:] if not a.startswith('--')]
-    force = '--force' in sys.argv
+        keys = positionals()
+    force = flag('--force')
     print(f'批量精读 {len(keys)} 篇（模型 {MODEL}{"，强制重跑" if force else ""}）\n')
     ok = fail = 0
     for i, key in enumerate(keys, 1):
@@ -68,6 +78,7 @@ def main():
         except Exception as e:
             print(f'  [出错] {e}'); fail += 1
     print(f'\n完成：成功 {ok}，失败/跳过 {fail}')
+
 
 if __name__ == '__main__':
     main()

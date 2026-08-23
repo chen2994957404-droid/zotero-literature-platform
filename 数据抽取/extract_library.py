@@ -15,33 +15,44 @@
   python extract_library.py            # 增量（只抽没抽过的）
   python extract_library.py --rebuild  # 重抽全部粗层
 """
-import os, json, re, sys, urllib.request, time
+import os, sys, json, re, urllib.request, time
 
+# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+while True:
+    if os.path.isdir(os.path.join(_ROOT, 'modules')):
+        break                      # 项目根特征：modules/ 目录只在根存在
+    parent = os.path.dirname(_ROOT)
+    if parent == _ROOT:
+        break                      # 到盘符根，兜底
+    _ROOT = parent
+sys.path.insert(0, _ROOT)
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
+from modules.cli import flag
+from modules.config import get_key, get_site, need_site
+
+# 同文件夹脚本互相 import（标准开头只把项目根加进 sys.path，兄弟脚本目录需自己加）
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
-# 复用精层的 schema 与提示词，保证字段一致
+
+# 复用精层的 schema 与提示词，保证字段一致（同文件夹脚本互相 import，见上方 SCRIPT_DIR 说明）
 from extract_structured import (SCHEMA, SYS, build_user_prompt,
                                 build_compare_table, hierarchical_body)
 
-ROOT = os.path.dirname(SCRIPT_DIR)
-OUT_DIR = os.path.join(ROOT, 'workflow_data', 'structured')
+OUT_DIR = os.path.join(_ROOT, 'workflow_data', 'structured')
 os.makedirs(OUT_DIR, exist_ok=True)
 
 # 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
-import os as _os, sys as _sys
-_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-try:
-    from modules.config import need_site as _site
-except Exception:
-    _site = lambda n: _os.environ.get(n) or (_ for _ in ()).throw(RuntimeError(f'缺少本机设置 {n}，请在控制面板或 .env 中配置'))
-_UID = _site('ZOTERO_USER_ID')
-_STORAGE = _site('ZOTERO_STORAGE')
-USER_ID = _UID
-LOCAL = 'http://localhost:23119/api/users/' + USER_ID
+USER_ID = need_site('ZOTERO_USER_ID')
+LOCAL = get_site('ZOTERO_API_HOST') + '/api/users/' + USER_ID
 LH = {'Zotero-Allowed-Request': 'true'}
-OLLAMA_CHAT = 'http://localhost:11434/api/chat'
-LOCAL_MODEL = 'qwen2.5:7b-instruct'   # 本地抽取模型；qwen3:8b 亦可
-REBUILD = '--rebuild' in sys.argv
+OLLAMA_CHAT = get_site('OLLAMA_HOST') + '/api/chat'
+LOCAL_MODEL = get_key('OLLAMA_MODEL', default='qwen2.5:7b-instruct')   # 本地抽取模型；qwen3:8b 亦可
+REBUILD = flag('--rebuild')
 
 def lget(path):
     return json.loads(urllib.request.urlopen(
@@ -53,6 +64,7 @@ def get_fulltext(att_key):
             LOCAL + f'/items/{att_key}/fulltext', headers=LH), timeout=20).read()
         return json.loads(r).get('content', '')
     except Exception:
+        # 该附件无全文索引是常态：降级为空串，主流程 len<500 会跳过，不影响其他篇
         return ''
 
 def _parse_json_lenient(txt):
@@ -65,7 +77,7 @@ def _parse_json_lenient(txt):
         m = re.search(r'\{.*\}', txt, re.S)   # 兜底：截第一个 {...}
         if m:
             return json.loads(m.group(0))
-        raise
+        raise   # 截取后仍无合法 JSON：本地模型输出损坏属意外，抛给上层报错，不静默
 
 def ollama_extract(title, body):
     payload = {
@@ -93,6 +105,7 @@ def main():
                 if json.load(open(os.path.join(OUT_DIR, f), encoding='utf-8')).get('source') != 'coarse':
                     protected.add(k)
             except Exception:
+                # 单个结果文件损坏就读不出 source：跳过精层保护判断，不影响主流程
                 pass
 
     # 取所有顶层文献
@@ -117,6 +130,7 @@ def main():
         try:
             children = lget(f'/items/{key}/children')
         except Exception:
+            # Zotero 读子条目失败就跳过该篇（如条目刚被删），不中断全库流程
             continue
         att = next((c['key'] for c in children
                     if c['data'].get('contentType') == 'application/pdf'), None)
@@ -129,7 +143,7 @@ def main():
         try:
             data = ollama_extract(title, body)
         except Exception as e:
-            print(f'[抽取失败] {title[:40]}: {e}'); failed += 1; continue
+            print(f'[抽取失败] {title[:40]}: {e}'); failed += 1; continue   # 单篇失败计入 failed 继续下一篇
         record = {'key': key, 'title': title, 'doi': x['data'].get('DOI', ''),
                   'source': 'coarse', **data}   # 标注来源=粗层，便于区分
         json.dump(record, open(os.path.join(OUT_DIR, f'{key}.json'), 'w', encoding='utf-8'),
