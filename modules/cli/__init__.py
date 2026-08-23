@@ -27,12 +27,22 @@ def _argv():
 
 
 def positionals():
-    """所有位置参数（不以 -- 开头的参数），按出现顺序。"""
-    return [a for a in _argv() if not a.startswith('--')]
+    """所有位置参数（在第一个 -- 选项之前的部分），按出现顺序。
+
+    约定：**位置参数必须在 -- 选项之前**（如 `script.py 主题 数量 --limit 20`）。
+    这是项目现有脚本的统一用法；把选项插在位置参数中间会造成歧义（无法判断
+    选项后面跟的是它的值还是位置参数），故不做支持。
+    """
+    out = []
+    for a in _argv():
+        if a.startswith('--'):
+            break
+        out.append(a)
+    return out
 
 
 def pos(index, default=None):
-    """第 index 个位置参数（从 0 开始，自动跳过 -- 开头的）。没有就返回 default。"""
+    """第 index 个位置参数（从 0 开始；位置参数必须在 -- 之前）。没有就返回 default。"""
     args = positionals()
     return args[index] if index < len(args) else default
 

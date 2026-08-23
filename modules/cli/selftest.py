@@ -39,11 +39,19 @@ def main():
         ('positionals', lambda: cli.positionals(), ['polyborosiloxane', '8']),
         ('flag 不存在', lambda: cli.flag('--rebuild'), False),
     ])
-    # 2. 选项 + 位置参数混用（位置参数在后面）
-    ok += _run(['--limit', '20', 'query'], [
-        ('pos 跳过选项', lambda: cli.pos(0), 'query'),
+    # 2. 位置参数在前 + 选项在后（标准用法）
+    ok += _run(['query', '8', '--limit', '20'], [
+        ('pos(0)', lambda: cli.pos(0), 'query'),
+        ('pos(1)', lambda: cli.pos(1), '8'),
         ('opt(--limit)', lambda: cli.opt('--limit'), '20'),
         ('flag(--limit)', lambda: cli.flag('--limit'), True),
+        ('positionals', lambda: cli.positionals(), ['query', '8']),
+    ])
+    # 2b. 选项在前时，位置参数视为不存在（约定：位置参数必须在 -- 之前）
+    ok += _run(['--limit', '20', 'query'], [
+        ('pos 在选项后', lambda: cli.pos(0), None),
+        ('positionals 为空', lambda: cli.positionals(), []),
+        ('opt(--limit)', lambda: cli.opt('--limit'), '20'),
     ])
     # 3. 可重复选项
     ok += _run(['--tag', 'a', '--tag', 'b'], [

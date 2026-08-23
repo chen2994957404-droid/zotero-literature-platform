@@ -15,11 +15,11 @@
 
 | 函数 | 用途 |
 |---|---|
-| `pos(i, default=None)` | 第 i 个位置参数（自动跳过 `--` 开头的） |
+| `pos(i, default=None)` | 第 i 个位置参数（**位置参数必须在 `--` 选项之前**） |
 | `flag(name, default=False)` | 开关：出现 `--名字` 即 True |
 | `opt(name, default=None)` | 带值选项：`--名字 值` |
 | `opts(name)` | 可重复选项：`--tag a --tag b` → `['a','b']` |
-| `positionals()` | 全部位置参数 |
+| `positionals()` | 全部位置参数（`--` 之前的部分） |
 
 ## 铁律
 
