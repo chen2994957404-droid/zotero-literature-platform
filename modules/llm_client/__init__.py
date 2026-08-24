@@ -40,8 +40,10 @@ def _cfg(provider, model, key):
     provider = provider or os.environ.get('LLM_PROVIDER', 'deepseek')
     key = key or _cfg_get('DEEPSEEK_KEY')
     if model is None:
-        model = (os.environ.get('OLLAMA_MODEL', 'qwen2.5:7b-instruct') if provider == 'ollama'
-                 else os.environ.get('DEEPSEEK_MODEL', 'deepseek-v4-pro'))
+        # 走 config（环境变量→.env 三级），不能用裸 os.environ：
+        # 否则 .env 里配的 OLLAMA_MODEL 对 llm_client 永远不生效（踩坑：404）
+        model = (_cfg_get('OLLAMA_MODEL') or 'qwen2.5:7b-instruct' if provider == 'ollama'
+                 else _cfg_get('DEEPSEEK_MODEL') or 'deepseek-v4-pro')
     return provider, model, key
 
 
@@ -91,7 +93,8 @@ def _deepseek(messages, model, key, temperature, json_mode, max_tokens, thinking
 def _ollama(messages, model, temperature, json_mode, num_ctx):
     host = os.environ.get('OLLAMA_HOST', 'http://localhost:11434')
     body = {'model': model, 'stream': False,
-            'options': {'temperature': temperature, 'num_ctx': num_ctx},
+            'options': {'temperature': temperature, 'num_ctx': num_ctx,
+                        'think': False},   # 实测：qwen3.5 思考模式+中文会卡几分钟（stream:false 静默等待），本地调用一律关
             'messages': messages}
     if json_mode:
         body['format'] = 'json'
@@ -132,7 +135,7 @@ def chat_vision(system, user, image_b64, provider=None, model=None, key=None,
                         'Qwen/Qwen2.5-VL-72B-Instruct', 'SILICONFLOW_KEY'),
     }
     if model is None and provider == 'ollama':
-        model = os.environ.get('OLLAMA_VISION_MODEL', 'qwen2.5vl:7b')
+        model = _cfg_get('OLLAMA_VISION_MODEL') or 'qwen2.5vl:7b'
     # 规范化 base64（去掉 data:image 前缀取纯数据；同时保留完整 data uri 供云端用）
     raw_b64 = re.sub(r'^data:image/\w+;base64,', '', image_b64)
     data_uri = image_b64 if image_b64.startswith('data:') else f'data:image/png;base64,{raw_b64}'

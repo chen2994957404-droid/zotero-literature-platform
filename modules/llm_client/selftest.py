@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """llm_client 自测：用本地 Ollama（零成本）验证 chat / chat_json；验证缺 key 报错。
 用法: python modules/llm_client/selftest.py
-需本地 Ollama 跑着 qwen2.5:7b-instruct。
+需本地 Ollama 跑着聊天模型（模型名配 OLLAMA_MODEL，默认 qwen2.5:7b-instruct）。
+⚠ 自测的 system 消息用英文：实测 qwen3.5 对中文 system 消息要算 40~90 秒
+（stream:false 下看起来像卡死），自测只验链路，不测翻译。
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -10,10 +12,10 @@ from modules.llm_client import chat, chat_json, LLMError
 def main():
     ok = 0; total = 3
 
-    # 1. 本地 chat 纯文本
+    # 1. 本地 chat 纯文本（英文 system，避免 qwen3.5 中文 system 卡 40s+）
     try:
-        out = chat('你是助手，只答一个字', '中国的首都是？简短回答',
-                   provider='ollama', temperature=0)
+        out = chat('You are a concise assistant. Answer in one word.',
+                   'What is the capital of China?', provider='ollama', temperature=0)
         if out and len(out) > 0:
             print(f'  [PASS] ollama chat 返回: {out[:20]}'); ok += 1
         else:
@@ -23,8 +25,8 @@ def main():
 
     # 2. 本地 chat_json 强制 JSON
     try:
-        d = chat_json('你是抽取引擎，只输出JSON',
-                      '把这句话抽成JSON，字段city：中国首都是北京',
+        d = chat_json('You are an extraction engine. Output JSON only.',
+                      'Extract the city from this sentence: The capital of China is Beijing. Fields: city',
                       provider='ollama')
         if isinstance(d, dict):
             print(f'  [PASS] ollama chat_json 返回 dict: {d}'); ok += 1
