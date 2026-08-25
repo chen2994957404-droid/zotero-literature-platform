@@ -60,6 +60,27 @@ args: [ <项目根>/MCP服务/zotero_server.py ]
 （改 `C:\Users\Administrator\.dsh\profiles\web\cordis.patch.yml`，serverName=zotero）。
 Claude Code / Cursor 等外部客户端也可按「启动方式」自行接入。
 
+### 其他 MCP 客户端接入（2026-08-25 查证，均用绝对路径、不依赖工作目录）
+
+服务端位置由 `__file__` 定位（标准开头向上找 `modules/`），配置读项目根 `.env`，
+**agent 在哪个文件夹跑都不影响**。服务为标准 MCP stdio，协议版本 `2024-11-05`。
+
+Claude Code（`--scope user` = 全局生效）：
+```
+claude mcp add zotero --scope user -- python "D:\02_AI\Projects\zotero-literature-platform\MCP服务\zotero_server.py"
+```
+或在项目根放 `.mcp.json`：`{"mcpServers": {"zotero": {"command": "python", "args": ["D:/02_AI/Projects/zotero-literature-platform/MCP服务/zotero_server.py"]}}}`
+
+Codex CLI（`~/.codex/config.toml`）：
+```toml
+[mcp_servers.zotero]
+command = "python"
+args = ["D:\\02_AI\\Projects\\zotero-literature-platform\\MCP服务\\zotero_server.py"]
+```
+
+若某客户端握手报协议版本不兼容：改 `mcp_stdio.py` 顶部 `PROTOCOL_VERSION` 一行。
+多客户端可同时连接（各起独立进程，v1 只读无冲突）。
+
 ## 改完必须做
 
 ```
