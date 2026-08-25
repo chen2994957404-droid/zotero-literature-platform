@@ -11,11 +11,13 @@
 > 下面这棵树就是全部结构，不必再去扫。
 
 ```
+MCP服务/ （3 个脚本）
+    mcp_stdio.py、selftest.py、zotero_server.py
 docs/                    ← 文档（13 份）
 modules/                 ← 积木层（17 块）
     chart_digitize、cli、config、embed、evalset、figure_crop、lib_match、llm_client、paper_discovery、pdf_parse、proc_lock、query_expand、sciverse、si_filter、snowball、subproc、zotero_client
-平台管理/ （3 个脚本）
-    health_check.py、panel.py、交接.py
+平台管理/ （4 个脚本）
+    health_check.py、panel.py、panel_launch.py、交接.py
 库内问答/ （4 个脚本）
     ask.py、ask_world.py、vectorize.py、vectorize_library.py
 库房维护/ （7 个脚本）
@@ -29,12 +31,12 @@ modules/                 ← 积木层（17 块）
 文献精读/ （12 个脚本）
     deepread_batch.py、deepread_v4.py、merge_summary.py、mineru_parse.py、refresh_summary_file.py、rerun_pro.py、si_batch.py、si_deepread.py…
 
-根目录文件：CLAUDE.md、LICENSE、README.md、requirements.txt、控制面板.bat
+根目录文件：CLAUDE.md、LICENSE、README.md、requirements.txt、控制面板.bat、精读监听.bat
 
 （workflow_data/ 是数据目录，3000+ 文件，**不要去 glob 它**）
 ```
 
-**积木 17 块**（`modules/`，原子能力）· **工作流 6 个**（用积木搭出来的功能；`归档_旧版本` 是废弃代码，不计入）
+**积木 17 块**（`modules/`，原子能力）· **工作流 7 个**（用积木搭出来的功能；`归档_旧版本` 是废弃代码，不计入）
 
 进度、健康状况、下一步做什么 → 见 `HANDOVER.md`
 
