@@ -55,8 +55,10 @@ args: [ <项目根>/MCP服务/zotero_server.py ]
 
 ## 谁在用它
 
-未来：DSH / Claude Code / Cursor 等 agent 通过 MCP 客户端连本服务查库。
-当前：selftest 与真实库连通验证（变更记录 2026-08-26）。
+**已接入 DSH（2026-08-25，HMR 热加载生效）**：DSH 所有 agent 会话可用
+`mcp__zotero__*` 只读工具查文献库。接入方式见 `docs/变更记录.md` 2026-08-25 续条目
+（改 `C:\Users\Administrator\.dsh\profiles\web\cordis.patch.yml`，serverName=zotero）。
+Claude Code / Cursor 等外部客户端也可按「启动方式」自行接入。
 
 ## 改完必须做
 
