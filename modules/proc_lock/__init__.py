@@ -39,8 +39,17 @@ def _pid_alive(pid):
         try:
             # 走 subproc 积木：裸调 tasklist 会弹控制台窗口（踩坑 #31）
             from modules.subproc import out as _out
-            return str(pid) in _out(['tasklist', '/FI', f'PID eq {pid}', '/NH'],
-                                    timeout=10, default='')
+            # ⚠ 默认值必须是 None 而不是 ''（踩坑 #44）：
+            # tasklist 超时/失败时 out() 返回默认值，若默认值是 '' 则 `pid in ''` == False，
+            # 于是「查不到」被当成「进程已死」→ 抢走锁 → 第二个 watcher 起来 → 回归踩坑 #30。
+            # 本函数的契约是「判断不了时保守返回 True」，默认值就得让这条路走到 True。
+            txt = _out(['tasklist', '/FI', f'PID eq {pid}', '/NH', '/FO', 'CSV'],
+                       timeout=10, default=None)
+            if txt is None:
+                return True                     # 查不到 ≠ 死了
+            # CSV 格式下 PID 是独立带引号的字段，如 "python.exe","12345","Console",...
+            # 不能用裸子串匹配：内存列形如 "45,678 K"，pid=678 会假匹配成「活着」。
+            return f'"{pid}"' in txt
         except Exception:
             return True
     try:
@@ -79,19 +88,31 @@ def single_instance(name):
         return False
     if alive == os.getpid():
         return True
-    try:
-        # O_EXCL 保证并发下只有一个进程能创建成功；僵尸锁先删再抢
-        if os.path.exists(p):
-            os.remove(p)
-        fd = os.open(p, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        os.write(fd, str(os.getpid()).encode())
-        os.close(fd)
-    except FileExistsError:
-        return False    # 极小概率的并发竞争，对方赢了
-    except Exception:
-        return True     # 锁机制本身故障时不阻断主功能（可用性优先于洁癖）
-    _held.append(p)
-    return True
+    # ⚠ 不能「先无条件删掉旧锁再 O_EXCL 创建」（踩坑 #44）：
+    # 那个 remove 到 create 之间的窗口里，另一个进程可能刚建好自己的锁而被我们删掉，
+    # 结果两份都以为自己是唯一实例 —— 计划任务与看门狗同时开机启动时正好撞上这个窗口。
+    # 改成：先抢建；撞到已存在的锁，确认是僵尸后用「原子改名」争夺接管权
+    # （os.rename 对同一个源文件只可能成功一次，输的那个拿到 FileNotFoundError）。
+    for _ in range(2):
+        try:
+            fd = os.open(p, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, str(os.getpid()).encode())
+            os.close(fd)
+        except FileExistsError:
+            if holder(name) is not None:
+                return False            # 锁的主人还活着，本次老实退出
+            try:
+                stale = f'{p}.stale{os.getpid()}'
+                os.rename(p, stale)     # 只有一个进程能改名成功 = 只有一个能接管
+                os.remove(stale)
+            except OSError:
+                pass                    # 接管权被别人抢走了，下一轮会看到它建的新锁
+            continue
+        except Exception:
+            return True     # 锁机制本身故障时不阻断主功能（可用性优先于洁癖）
+        _held.append(p)
+        return True
+    return False
 
 
 def release(name=None):

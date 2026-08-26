@@ -71,6 +71,15 @@ class MCPStdioServer:
 
     def serve(self):
         """阻塞读 stdin 逐行处理，直到 EOF（客户端断开即退出）。stdout 只写协议。"""
+        # ⚠ stdin 必须显式设成 UTF-8（踩坑 #43）。
+        # MCP 协议规定报文是 UTF-8，但 Windows 上 sys.stdin 默认跟随系统代码页（本机 gbk），
+        # 于是客户端发来的中文参数会被按 gbk 解码成乱码 ——
+        # 「聚硼硅氧烷」变成「鑱氱〖纭呮哀鐑」，拿去搜库自然一篇都搜不到。
+        # 标准开头只管了 stdout，读的那一头一直没人管；英文参数不受影响，所以一直没暴露。
+        try:
+            sys.stdin.reconfigure(encoding='utf-8', errors='replace')
+        except Exception:
+            pass
         for raw in sys.stdin:
             line = raw.strip()
             if not line:
