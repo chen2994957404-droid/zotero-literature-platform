@@ -46,7 +46,7 @@ def main():
     print(f'批量补 SI 精读：{len(keys)} 篇\n', flush=True)
 
     from zotero_watcher import set_state_tag, TAG_FULL, USER_ID, upload_attachment, \
-        find_existing_summary, STORAGE_DIR
+        find_existing_summary, STORAGE_DIR, ZOTERO_LOCAL
 
     ok = fail = 0
     for i, key in enumerate(keys, 1):
@@ -71,7 +71,7 @@ def main():
                 # 按 Zotero 记录的文件名写，避免"找不到文件"
                 LH = {'Zotero-Allowed-Request': 'true'}
                 info = json.loads(urllib.request.urlopen(urllib.request.Request(
-                    f'http://localhost:23119/api/users/{USER_ID}/items/{att}',
+                    ZOTERO_LOCAL + f'/users/{USER_ID}/items/{att}',
                     headers=LH), timeout=15).read())
                 fn = info['data'].get('filename') or 'summary.html'
                 shutil.copy(final, os.path.join(dd, fn))

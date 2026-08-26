@@ -18,14 +18,19 @@ import os, re, json, urllib.request
 import os as _os, sys as _sys
 _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
 try:
-    from modules.config import need_site as _site
+    from modules.config import need_site as _site, get_site as _gsite
 except Exception:
     _site = lambda n: _os.environ.get(n) or (_ for _ in ()).throw(RuntimeError(f'缺少本机设置 {n}，请在控制面板或 .env 中配置'))
+    _gsite = lambda n: _os.environ.get(n, '')
 _UID = _site('ZOTERO_USER_ID')
 _STORAGE = _site('ZOTERO_STORAGE')
 USER_ID = os.environ.get('ZOTERO_USER_ID', _UID)
 STORAGE_DIR = os.environ.get('ZOTERO_STORAGE', _STORAGE)
-LOCAL_API = os.environ.get('ZOTERO_LOCAL_API', 'http://localhost:23119/api')
+# ⚠ 地址必须走 config（踩坑 #46）：原来只读 ZOTERO_LOCAL_API 这个键，
+# 而控制面板存的是 ZOTERO_API_HOST —— 键名对不上，用户在面板里改地址永远不生效，
+# 建在本积木之上的 MCP 服务也跟着一起失效。ZOTERO_LOCAL_API 保留作旧配置兼容。
+LOCAL_API = (os.environ.get('ZOTERO_LOCAL_API')
+             or (_gsite('ZOTERO_API_HOST') or 'http://localhost:23119') + '/api')
 _H = {'Zotero-Allowed-Request': 'true'}
 
 # 补充材料/附录 命名特征（含踩坑#15 的 Springer MOESM/ESM 补丁）

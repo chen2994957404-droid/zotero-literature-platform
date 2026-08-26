@@ -23,14 +23,14 @@ except Exception:
 
 import chromadb
 from modules.cli import flag
-from modules.config import need_site
+from modules.config import need_site, get_site
 from modules.embed import embed, chunk
 from modules.zotero_client import get_fulltext
 
 # 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
 _USER_ID = need_site('ZOTERO_USER_ID')
 need_site('ZOTERO_STORAGE')        # 附件目录本脚本用不到，但按原行为仍要求已配置
-LOCAL = 'http://localhost:23119/api/users/' + _USER_ID
+LOCAL = get_site('ZOTERO_API_HOST') + '/api/users/' + _USER_ID
 LH = {'Zotero-Allowed-Request': 'true'}
 VECTOR_DB = os.path.join(_ROOT, 'workflow_data', 'vector_db')
 

@@ -25,9 +25,12 @@ import os, json, re, urllib.request, urllib.error
 try:
     import sys as _s, os as _o
     _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
-    from modules.config import get_key as _cfg_get
+    from modules.config import get_key as _cfg_get, get_site as _cfg_site
 except Exception:
     _cfg_get = lambda n, **kw: _o.environ.get(n, '')
+    _cfg_site = lambda n: _o.environ.get(n, '')
+
+_OLLAMA_DEFAULT = 'http://localhost:11434'      # 只在 config 取不到时兜底
 
 DEEPSEEK_API = 'https://api.deepseek.com/chat/completions'
 
@@ -91,7 +94,7 @@ def _deepseek(messages, model, key, temperature, json_mode, max_tokens, thinking
 
 
 def _ollama(messages, model, temperature, json_mode, num_ctx):
-    host = os.environ.get('OLLAMA_HOST', 'http://localhost:11434')
+    host = _cfg_site('OLLAMA_HOST') or _OLLAMA_DEFAULT
     body = {'model': model, 'stream': False,
             'options': {'temperature': temperature, 'num_ctx': num_ctx,
                         'think': False},   # 实测：qwen3.5 思考模式+中文会卡几分钟（stream:false 静默等待），本地调用一律关
@@ -141,7 +144,7 @@ def chat_vision(system, user, image_b64, provider=None, model=None, key=None,
     data_uri = image_b64 if image_b64.startswith('data:') else f'data:image/png;base64,{raw_b64}'
 
     if provider == 'ollama':
-        host = os.environ.get('OLLAMA_HOST', 'http://localhost:11434')
+        host = _cfg_site('OLLAMA_HOST') or _OLLAMA_DEFAULT
         body = {'model': model, 'stream': False,
                 'options': {'temperature': temperature},
                 'messages': [{'role': 'system', 'content': system},

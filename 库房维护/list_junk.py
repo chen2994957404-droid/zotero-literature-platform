@@ -17,12 +17,12 @@ try:
 except Exception:
     pass
 
-from modules.config import need_site
+from modules.config import need_site, get_site
 
 # 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
 _UID = need_site('ZOTERO_USER_ID')
 _STORAGE = need_site('ZOTERO_STORAGE')
-base = f'http://localhost:23119/api/users/{_UID}'
+base = get_site('ZOTERO_API_HOST') + f'/api/users/{_UID}'
 h = {'Zotero-Allowed-Request': 'true'}
 
 

@@ -25,7 +25,7 @@ except Exception:
     pass
 
 from modules.cli import flag, opt
-from modules.config import get_key, get_model, need_site
+from modules.config import get_key, get_model, need_site, get_site
 from modules.llm_client import chat_json as _chat_json
 
 # 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
@@ -33,7 +33,7 @@ _UID = need_site('ZOTERO_USER_ID')
 _STORAGE = need_site('ZOTERO_STORAGE')
 USER_ID = _UID
 KEY = get_key('ZOTERO_API_KEY')
-LOCAL = 'http://localhost:23119/api/users/' + USER_ID
+LOCAL = get_site('ZOTERO_API_HOST') + '/api/users/' + USER_ID
 WEB = 'https://api.zotero.org/users/' + USER_ID
 LH = {'Zotero-Allowed-Request': 'true'}
 WH = {'Zotero-API-Key': KEY, 'Zotero-API-Version': '3'}

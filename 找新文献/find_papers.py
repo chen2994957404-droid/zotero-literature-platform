@@ -21,7 +21,7 @@ except Exception:
     pass
 
 from modules.cli import pos
-from modules.config import need_site
+from modules.config import need_site, get_site
 
 
 def _norm(text):
@@ -37,7 +37,7 @@ def fetch_library_snapshot():
     have_titles, have_dois = set(), set()
     try:
         uid = need_site('ZOTERO_USER_ID')
-        base = f'http://localhost:23119/api/users/{uid}'
+        base = get_site('ZOTERO_API_HOST') + f'/api/users/{uid}'
         headers = {'Zotero-Allowed-Request': 'true'}
         start = 0
         while True:

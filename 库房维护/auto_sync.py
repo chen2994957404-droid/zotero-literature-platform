@@ -29,7 +29,7 @@ try:
 except Exception:
     pass
 
-from modules.config import need_site
+from modules.config import need_site, get_site
 from modules.subproc import run as _sub_run   # 子进程统一走积木：不弹窗+超时+UTF-8
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -81,19 +81,19 @@ def check_deps():
     # 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
     _UID = need_site('ZOTERO_USER_ID')
     _STORAGE = need_site('ZOTERO_STORAGE')
-    zot = _alive(f'http://localhost:23119/api/users/{_UID}/items/top?limit=1',
+    zot = _alive(get_site('ZOTERO_API_HOST') + f'/api/users/{_UID}/items/top?limit=1',
                  {'Zotero-Allowed-Request': 'true'})
-    olla = _alive('http://localhost:11434/api/tags')
+    olla = _alive(get_site('OLLAMA_HOST') + '/api/tags')
 
     # 依赖挂了就尝试拉起来，而不是干等下一轮（踩坑 #33）。
     # 之前只「跳过」，结果 Zotero 开机没起来后就一直没人管，
     # 精读线静默停摆了 19 分钟用户才发现。**保活任务就该负责保活。**
     if not zot:
         zot = _revive('ZoteroApp', 'Zotero',
-                      f'http://localhost:23119/api/users/{_UID}/items/top?limit=1',
+                      get_site('ZOTERO_API_HOST') + f'/api/users/{_UID}/items/top?limit=1',
                       {'Zotero-Allowed-Request': 'true'})
     if not olla:
-        olla = _revive('OllamaService', 'Ollama', 'http://localhost:11434/api/tags')
+        olla = _revive('OllamaService', 'Ollama', get_site('OLLAMA_HOST') + '/api/tags')
 
     if not zot:
         log('跳过本轮：Zotero 未开且拉起失败（取不到全文）'); return False

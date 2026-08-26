@@ -201,7 +201,51 @@ def c_secret_storage():
         return WARN, f'{len(plain)} 个密钥仍是明文（控制面板可一键迁移）: {plain}'
     if leftovers:
         return WARN, f'有含明文密钥的残留文件，建议删除: {leftovers[:5]}'
-    return OK, f'密钥已存入系统凭据库（{backend}），硬盘无明文残留'
+    # ⚠ 这里必须查「到底存进去了几个」（踩坑 #45）。
+    # 原来只查了「凭据库可用」+「硬盘无明文」，一个密钥都没配时两条也都成立，
+    # 于是空仓库被报成「密钥已存入系统凭据库」——换机器时看到绿灯以为配好了。
+    # 没有密钥当然没有明文残留：这种「因为空所以合格」的结论必须挡掉。
+    stored = [k for k in SECRET_KEYS if key_location(k) == '系统凭据库']
+    unset = [k for k in SECRET_KEYS if key_location(k) == '未配置']
+    if not stored:
+        return WARN, (f'凭据库可用（{backend}），但一个密钥都没存 —— '
+                      f'{len(unset)} 个待填，请在控制面板里配置')
+    tail = f'；另有 {len(unset)} 个未配置 {unset}' if unset else ''
+    return OK, f'{len(stored)} 个密钥在系统凭据库（{backend}），硬盘无明文残留{tail}'
+
+
+def c_hardcoded():
+    """守住红线 #3：配置与地址一律走 modules/config，不许 hardcode。
+
+    为什么要有这一项：2026-08-23 的「36 个脚本框架化」漏了 5 个文件，
+    但体检全绿 —— 因为当时根本没有任何一项在查硬编码。
+    红线写在文档里而没有检查项守着，等于没写。
+    """
+    import re
+    # 这些值都已经在 modules/config 的 SITE_SETTINGS 里可配，源码里不该再出现
+    PATS = [(re.compile(r'localhost:23119'), 'ZOTERO_API_HOST'),
+            (re.compile(r'localhost:11434'), 'OLLAMA_HOST')]
+    bad = []
+    for f in code_files():
+        n = os.path.normpath(f)
+        # config 自己要写默认值；归档是废弃代码；本文件里就写着要查的模式串本身（自匹配）
+        if ('modules' + os.sep + 'config' in n or '归档_旧版本' in n
+                or os.path.basename(n) == 'health_check.py'):
+            continue
+        try:
+            src = open(f, encoding='utf-8', errors='replace').read()
+        except Exception:
+            continue
+        # 已经在向 config 要这个设置的文件就放过：它里面的字面量是
+        # 「config 取不到时的兜底默认值」或文档示例，那是积木能被单独拷走用的前提，
+        # 不是漏掉的硬编码。判据放在文件粒度 —— 宁可漏报也不要天天误报到没人看。
+        consults_config = ('get_site' in src or '_cfg_site' in src or '_gsite' in src)
+        if consults_config:
+            continue
+        for pat, setting in PATS:
+            if pat.search(src):
+                bad.append(f'{f} → 应走 get_site({setting!r})')
+    return (OK, '没有硬编码的地址，配置都走 modules/config') if not bad         else (FAIL, f'{len(bad)} 处硬编码: {bad[:4]}')
 
 
 def c_config():
@@ -342,6 +386,7 @@ if __name__ == '__main__':
     check('无弹窗', c_no_popup)
     check('密钥存放', c_secret_storage)
     check('配置加载', c_config)
+    check('配置硬编码', c_hardcoded)
     check('Zotero 服务', c_zotero)
     check('Ollama 服务', c_ollama)
     check('运行时导入', c_importable)

@@ -19,9 +19,18 @@ strip_references / chunk 是可复用的文本预处理原子操作。
 """
 import os, re, json, urllib.request
 
+_DEFAULTS = {'OLLAMA_HOST': 'http://localhost:11434'}
+try:
+    import sys as _s2, os as _o2
+    _s2.path.insert(0, _o2.path.dirname(_o2.path.dirname(_o2.path.abspath(__file__))))
+    from modules.config import get_site as _cfg_site
+except Exception:                      # 积木要能被单独拷走用，取不到 config 就退回环境变量
+    _cfg_site = lambda n: __import__('os').environ.get(n) or _DEFAULTS.get(n, '')
+
 
 def _embed_url():
-    host = os.environ.get('OLLAMA_HOST', 'http://localhost:11434')
+    # 地址走 config（控制面板「Ollama 地址」可改），不再写死（红线 #3）
+    host = _cfg_site('OLLAMA_HOST') or _DEFAULTS['OLLAMA_HOST']
     return host + '/api/embed'
 
 

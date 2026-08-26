@@ -22,7 +22,7 @@ except Exception:
     pass
 
 from modules.cli import pos
-from modules.config import get_key, need_site
+from modules.config import get_key, need_site, get_site
 
 _NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -37,7 +37,7 @@ def get_title(key):
     """从 Zotero 本地 API 取标题（美化显示）；取不到返回 key。"""
     try:
         uid = need_site('ZOTERO_USER_ID')
-        req = urllib.request.Request(f'http://localhost:23119/api/users/{uid}/items/{key}',
+        req = urllib.request.Request(get_site('ZOTERO_API_HOST') + f'/api/users/{uid}/items/{key}',
             headers={'Zotero-Allowed-Request': 'true'})
         return json.loads(urllib.request.urlopen(req, timeout=8).read())['data'].get('title', key)
     except Exception:
