@@ -21,7 +21,7 @@ try:
 except Exception:
     pass
 
-from modules.config import get_key, need_site
+from modules.config import get_key, need_site, get_site
 
 # ===== 运行日志 =====
 _LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'workflow_data', 'logs')
@@ -39,7 +39,7 @@ def print(*args, **kwargs):
         pass
 
 # ===== 配置 =====
-ZOTERO_LOCAL = 'http://localhost:23119/api'
+ZOTERO_LOCAL = get_site('ZOTERO_API_HOST') + '/api'
 ZOTERO_HEADERS = {'Zotero-Allowed-Request': 'true'}
 # 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
 _NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
@@ -292,51 +292,10 @@ def find_existing_summary(item_key):
         pass
     return None
 
-
-def delete_old_summary(item_key):
-    """删除该文献下已有的 summary 附件，避免重复"""
-    try:
-        base = f'https://api.zotero.org/users/{USER_ID}'
-        wh = {'Zotero-API-Key': WEB_API_KEY, 'Zotero-API-Version': '3'}
-        req = urllib.request.Request(base + f'/items/{item_key}/children', headers=wh)
-        children = json.loads(urllib.request.urlopen(req, timeout=15).read())
-        for c in children:
-            if c['data'].get('itemType') == 'attachment' and c['data'].get('title') == 'summary':
-                dk = c['key']; dv = c['version']
-                dreq = urllib.request.Request(base + f'/items/{dk}', method='DELETE',
-                    headers={**wh, 'If-Unmodified-Since-Version': str(dv)})
-                urllib.request.urlopen(dreq, timeout=15)
-                time.sleep(0.3)
-    except Exception:
-        pass
-
-def extract_text_summary(html_path):
-    """从精读HTML里抽取纯文字部分（去图），作为笔记正文（图太大不塞进笔记）"""
-    import re as _re
-    html = open(html_path, encoding='utf-8').read()
-    body = html.split('<body>')[-1].split('</body>')[0] if '<body>' in html else html
-    # 去掉 img 标签（base64太大）
-    body = _re.sub(r'<img[^>]*>', '<p>【图见本地完整版】</p>', body)
-    return body
-
-def writeback(item_key, html_path, web_uid):
-    """通过 Zotero Web API 把精读作为笔记写回（纯文字版），并更新标签"""
-    try:
-        note_body = extract_text_summary(html_path)
-        head = f'<h1>📖 图文精读（自动生成 {time.strftime("%Y-%m-%d %H:%M")}）</h1>' \
-               f'<p><b>含图完整版</b>：workflow_data/summary/{os.path.basename(html_path)}</p><hr>'
-        note_html = head + note_body
-        base = f'https://api.zotero.org/users/{web_uid}/items'
-        payload = json.dumps([{"itemType":"note","parentItem":item_key,
-                               "note":note_html,"tags":[{"tag":"精读笔记"}]}]).encode('utf-8')
-        req = urllib.request.Request(base, data=payload, method='POST',
-            headers={'Zotero-API-Key': WEB_API_KEY, 'Content-Type':'application/json','Zotero-API-Version':'3'})
-        json.loads(urllib.request.urlopen(req, timeout=25).read())
-        print(f'  [回写成功] 精读笔记已写回 Zotero（同步后可见）')
-        swap_tag(item_key, web_uid)
-    except Exception as e:
-        print(f'  [回写失败] {e}')
-
+# 注：回写「精读笔记」的旧方案（writeback / extract_text_summary / swap_tag /
+# delete_old_summary）已于本次清理删除。它早被「复用 summary 附件」取代，
+# 其中 delete_old_summary 的「先删后传」正是踩坑 #28 反复弹同步冲突框的根因，
+# 留着只会让人以为还能用。要回写请用 set_state_tag + upload_attachment。
 def set_state_tag(item_key, web_uid, new_state):
     """设置状态标签（互斥）：移除所有旧状态标签，只留 new_state。保留用户自己的其它标签。"""
     try:
@@ -357,10 +316,6 @@ def set_state_tag(item_key, web_uid, new_state):
         print(f'  [状态] {"/".join(old) or "无"} → {new_state}')
     except Exception as e:
         print(f'  [标签更新失败] {e}')
-
-def swap_tag(item_key, web_uid):
-    """兼容旧调用：默认置为「正文精读」。"""
-    set_state_tag(item_key, web_uid, TAG_MAIN)
 
 def main():
     # 单实例锁：任务计划自启一份、看门狗又启一份时，第二份直接退出（踩坑 #30）。

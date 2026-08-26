@@ -30,9 +30,24 @@ def main():
     MO_DIR, OUT_HTML, PROVIDER, MODEL = pos(0), pos(1), pos(2), pos(3)
     KEY = pos(4) or ""
 
-    mdf = [f for f in os.listdir(MO_DIR) if f.endswith('.md')][0]
+    # 解析结果不全时要报清楚缺什么。原来直接取 [0]，缺文件就抛裸 IndexError，
+    # 调用方（watcher）只能把「list index out of range」写进日志，看不出是 MineRU 没出全。
+    def pick(suffix, what):
+        try:
+            names = sorted(f for f in os.listdir(MO_DIR) if f.endswith(suffix))
+        except OSError as e:
+            raise SystemExit(f'读不到解析目录 {MO_DIR}：{e}')
+        if not names:
+            raise SystemExit(f'解析结果不完整：{MO_DIR} 里没有{what}（*{suffix}）'
+                             f'—— 多半是 MineRU 解析失败或没解析完，删掉该目录重跑即可')
+        return names[0]
+
+    mdf = pick('.md', 'Markdown 正文')
     layf = os.path.join(MO_DIR, 'layout.json')
-    pdff = [f for f in os.listdir(MO_DIR) if f.endswith('origin.pdf')][0]
+    if not os.path.exists(layf):
+        raise SystemExit(f'解析结果不完整：{MO_DIR} 里没有 layout.json（版面数据）'
+                         f'—— 多半是 MineRU 解析失败或没解析完，删掉该目录重跑即可')
+    pdff = pick('origin.pdf', '原始 PDF')
 
     md = open(os.path.join(MO_DIR, mdf), encoding='utf-8').read()
     lay = json.load(open(layf, encoding='utf-8'))

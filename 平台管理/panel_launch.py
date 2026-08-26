@@ -5,7 +5,7 @@
 pythonw 静默退出，错误无处可见。本启动器捕获 import 期与 main() 期的一切异常，
 把 traceback 落盘，下次打不开时直接看日志就能定位。
 
-用法: pythonw 平台管理\panel_launch.py（由 控制面板.bat 调用）
+用法: pythonw 平台管理/panel_launch.py（由 控制面板.bat 调用）
 """
 import os, sys, io, time, traceback
 

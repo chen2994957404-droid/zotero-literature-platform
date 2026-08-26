@@ -466,9 +466,41 @@ def action_save_config(payload):
 
 # ───────────────────────────── HTTP 服务 ─────────────────────────────
 
+# 面板允许的访问来源：只有本机、且只有本面板自己的端口。
+# 「只绑 127.0.0.1」挡得住别的机器，挡不住**你自己浏览器里打开的任何网页** ——
+# 那些页面同样跑在你本机，照样能往 127.0.0.1:8777 发请求（踩坑 #47）。
+_ALLOWED_HOSTS = {f'127.0.0.1:{PORT}', f'localhost:{PORT}', f'[::1]:{PORT}'}
+_ALLOWED_ORIGINS = {f'http://{h}' for h in _ALLOWED_HOSTS}
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass    # 不往 stdout 刷日志
+
+    def _guard(self, need_json):
+        """挡住来自其它网页的跨站请求（CSRF）与 DNS 重绑定。
+
+        面板能改密钥、重启服务、发起烧钱的检索 —— 这些都不该被一个
+        你随手打开的网页悄悄触发。三道判据，任一不过就拒绝：
+
+        1. Host 必须是本机+本端口 —— 挡 DNS 重绑定（把恶意域名解析到 127.0.0.1）。
+        2. 有 Origin 时必须是面板自己 —— 挡跨站脚本发起的请求。
+        3. 写操作必须是 application/json —— HTML 表单发不出这个 Content-Type，
+           跨站 fetch 想发它会先触发 CORS 预检，而本服务不应答预检。
+           面板自己的 JS 本来就带着它，所以这条对正常使用零影响。
+
+        返回 None 表示放行，否则返回要回给对方的 (码, 说明)。
+        """
+        if (self.headers.get('Host') or '').lower() not in _ALLOWED_HOSTS:
+            return 403, '只允许本机访问'
+        origin = self.headers.get('Origin')
+        if origin and origin.lower() not in _ALLOWED_ORIGINS:
+            return 403, '拒绝跨站请求'
+        if need_json:
+            ctype = (self.headers.get('Content-Type') or '').split(';')[0].strip().lower()
+            if ctype != 'application/json':
+                return 415, '写操作必须用 application/json'
+        return None
 
     def _send(self, obj, code=200, ctype='application/json'):
         body = (obj if isinstance(obj, bytes)
@@ -480,6 +512,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        bad = self._guard(need_json=False)
+        if bad:
+            return self._send({'error': bad[1]}, bad[0])
         p = self.path.split('?')[0]
         if p == '/':
             return self._send(PAGE.encode('utf-8'), ctype='text/html')
@@ -528,6 +563,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._send({'error': 'not found'}, 404)
 
     def do_POST(self):
+        bad = self._guard(need_json=True)
+        if bad:
+            return self._send({'ok': False, 'msg': bad[1]}, bad[0])
         try:
             n = int(self.headers.get('Content-Length', 0))
             payload = json.loads(self.rfile.read(n) or b'{}')
