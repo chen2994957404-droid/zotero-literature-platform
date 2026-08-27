@@ -24,8 +24,20 @@ try:
 except Exception:
     pass
 
-from core import paths, role
-from core.cli import opt
+# ⚠ 诊断报告是「出问题时才用」的工具，所以它**必须在环境坏掉时也能跑**。
+#   包没装好（主力机就发生过）时不能直接 ModuleNotFoundError 死掉 ——
+#   那等于「体温计要求你先退烧」。读不到就降级，并把这件事本身写进报告。
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+try:
+    from core import paths, role
+    from core.cli import opt
+    CORE_OK, CORE_ERR = True, ''
+except Exception as _e:                       # noqa: BLE001 —— 什么原因都要能出报告
+    paths = role = None
+    CORE_OK, CORE_ERR = False, f'{type(_e).__name__}: {_e}'
+
+    def opt(_name, default=None):
+        return default
 
 _NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
 SEP = '=' * 72
@@ -36,7 +48,7 @@ def _run(cmd, timeout=600):
     诊断报告的价值就在于「哪怕系统坏了也能出报告」。"""
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8',
-                           errors='replace', timeout=timeout, cwd=paths.ROOT,
+                           errors='replace', timeout=timeout, cwd=ROOT,
                            creationflags=_NOWIN)
         return (r.stdout or '') + (('\n[stderr]\n' + r.stderr) if r.stderr.strip() else '')
     except subprocess.TimeoutExpired:
@@ -63,9 +75,14 @@ def _section(title, body):
 def collect():
     out = []
     out.append(f'诊断报告 · 生成于 {time.strftime("%Y-%m-%d %H:%M:%S")}')
-    out.append(f'机器角色：{role.current()}（{role.label()}）'
-               f'{"" if role.is_configured() else "  ⚠ 未显式设置，按默认 dev 处理"}')
-    out.append(f'项目路径：{paths.ROOT}')
+    if CORE_OK:
+        out.append(f'机器角色：{role.current()}（{role.label()}）'
+                   f'{"" if role.is_configured() else "  ⚠ 未显式设置，按默认 dev 处理"}')
+    else:
+        out.append('⚠⚠ 项目包没装好，读不到本机配置：' + CORE_ERR)
+        out.append('    修法：在项目文件夹里跑一次  python -m pip install -e . --no-deps')
+        out.append('    （或双击「更新平台.bat」，它的第 2 步就是装包）')
+    out.append(f'项目路径：{ROOT}')
     out.append(f'Python：{sys.version.split()[0]}  {sys.executable}')
 
     # ── 代码版本（判断这台机器有没有拿到最新改动）──
@@ -80,6 +97,8 @@ def collect():
 
     # ── 数据资产 ──
     try:
+        if not CORE_OK:
+            raise RuntimeError('包没装好，读不到数据契约')
         keys = paths.all_keys()
         import glob
         n_struct = len(glob.glob(os.path.join(paths.STRUCTURED, '*.json')))
@@ -117,10 +136,16 @@ def collect():
         timeout=120)))
 
     # ── 日志尾巴 ──
-    out.append(_section('watcher 日志（尾部）', _tail(paths.log('zotero_watcher'), 150)))
-    out.append(_section('看门狗日志（尾部）', _tail(paths.log('watchdog'), 60)))
-    out.append(_section('定时同步日志（尾部）', _tail(paths.log('auto_sync'), 60)))
-    hb = paths.runtime('watcher_heartbeat.txt')
+    # 包没装好时读不到数据契约，退回到契约里写死的默认位置 ——
+    # 这时候日志恰恰最该看，不能因为「读不到路径」就整段放弃。
+    logdir = paths.LOGS if CORE_OK else os.path.join(ROOT, 'workflow_data', 'logs')  # paths-exempt: 兜底
+    def _log(name):
+        return (paths.log(name) if CORE_OK else os.path.join(logdir, name + '.log'))
+    out.append(_section('watcher 日志（尾部）', _tail(_log('zotero_watcher'), 150)))
+    out.append(_section('看门狗日志（尾部）', _tail(_log('watchdog'), 60)))
+    out.append(_section('定时同步日志（尾部）', _tail(_log('auto_sync'), 60)))
+    hb = (paths.runtime('watcher_heartbeat.txt') if CORE_OK
+          else os.path.join(logdir, 'watcher_heartbeat.txt'))
     if os.path.exists(hb):
         try:
             age = time.time() - int(io.open(hb, encoding='utf-8').read().strip())
@@ -136,7 +161,13 @@ def collect():
 
 
 def main():
-    dest = opt('--out') or paths.log('诊断报告', create_dir=True).replace('.log', '.txt')
+    if CORE_OK:
+        dest = opt('--out') or paths.log('诊断报告', create_dir=True).replace('.log', '.txt')
+    else:
+        # 包没装好时也得把报告落盘，否则用户没东西可发给 Claude
+        d = os.path.join(ROOT, 'workflow_data', 'logs')   # paths-exempt: 包没装好时的兜底
+        os.makedirs(d, exist_ok=True)
+        dest = opt('--out') or os.path.join(d, '诊断报告.txt')
     print('正在收集…（完整体检要跑一会儿，请稍候）\n', flush=True)
     text = collect()
     io.open(dest, 'w', encoding='utf-8', newline='').write(text)

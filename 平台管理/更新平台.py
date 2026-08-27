@@ -33,8 +33,14 @@ try:
 except Exception:
     pass
 
-from core import paths, role
-from core.cli import flag
+# ⚠ 这是**引导脚本**：它必须能在「包还没装好」的机器上跑起来，
+#   因为「装包」正是它要做的事之一（2026-08-26 踩坑：主力机从没装过包，
+#   而本脚本顶上 `from core import paths, role` 直接 ModuleNotFoundError，
+#   于是「用来修好环境的工具」自己先被环境卡死了）。
+#
+#   所以第 2 步装包之前，这里**只用标准库**，ROOT 自己算。
+#   这是全项目唯一允许自己算 ROOT 的地方 —— 别处一律用 core.paths.ROOT。
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 _NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
 PANEL_PORT = int(os.environ.get('PANEL_PORT', '8777'))
@@ -46,7 +52,7 @@ RESTART_TASKS = ['ZoteroLiteratureWatcher']
 def run(cmd, timeout=900, quiet=False):
     """跑一条命令并把输出直接打给用户看。返回 (成功?, 输出)。"""
     try:
-        r = subprocess.run(cmd, cwd=paths.ROOT, capture_output=True, text=True,
+        r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True,
                            encoding='utf-8', errors='replace', timeout=timeout,
                            creationflags=_NOWIN)
     except Exception as e:
@@ -55,6 +61,23 @@ def run(cmd, timeout=900, quiet=False):
     if not quiet:
         print(out.rstrip())
     return r.returncode == 0, out
+
+
+def _role():
+    """装完包之后才能问「本机是什么角色」。装之前一律按最安全的 dev 处理。"""
+    try:
+        from core import role
+        return role
+    except Exception:
+        return None
+
+
+def _role_line():
+    r = _role()
+    if r is None:
+        return '（包还没装好，暂时读不到角色 —— 第 2 步装完就有了）'
+    return (f'{r.current()}（{r.label()}）'
+            + ('' if r.is_configured() else '   ⚠ 未显式设置'))
 
 
 def step(n, total, title):
@@ -100,8 +123,7 @@ def restart_tasks():
 def main():
     total = 6
     print('\n============ 更新平台 ============')
-    print(f'本机角色：{role.current()}（{role.label()}）'
-          f'{"" if role.is_configured() else "   ⚠ 未显式设置"}')
+    print('本机角色：' + _role_line())
 
     # ── 1. 拉代码 ──
     step(1, total, '拉取最新代码')
@@ -129,7 +151,10 @@ def main():
 
     # ── 4. 重启常驻服务 ──
     step(4, total, '重启常驻服务，让新代码生效')
-    if role.is_prod():
+    r = _role()
+    if r is None:
+        print('读不到本机角色（包没装好？），保守起见跳过重启')
+    elif r.is_prod():
         for m in restart_tasks():
             print(m)
     else:
@@ -150,8 +175,10 @@ def main():
     print('\n============ 更新完成 ============')
     if no_change:
         print('（代码本来就是最新的，但服务已按新代码重启过一遍）')
-    if not role.is_prod():
-        print('\n⚠ 本机角色是 ' + role.current() + '。如果这台是主力机，现在去改：')
+    r = _role()
+    if r is not None and not r.is_prod():
+        print('')
+        print('⚠ 本机角色是 ' + r.current() + '。如果这台是主力机，现在去改：')
         print('   双击「控制面板.bat」→ 本机设置 → 机器角色 → 填 prod → 保存')
         print('   不改的话，精读监听会拒绝启动（这是保护，不是故障）。')
     return 0

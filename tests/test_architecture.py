@@ -404,3 +404,50 @@ def test_用户不可重建的数据仍在版本库里():
     assert 'workflow_data/evalset.json' in tracked, (
         'evalset.json（用户人工精读评价）必须留在版本库里 —— 它不可重建，'
         '而且只有运行端会产生它，版本库是它唯一的备份。')
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 守卫六：引导脚本不许依赖「还没装好的包」
+# ══════════════════════════════════════════════════════════════════════
+# 「用来修好环境的工具」自己被环境卡死，是最难受的一类故障 ——
+# 用户拿不到任何有用信息，只有一行 ModuleNotFoundError。
+# 2026-08-26 真实发生：主力机从没装过包，而 更新平台.py 顶上写着
+# `from core import paths, role`，于是那个「第 2 步就是装包」的脚本自己起不来。
+
+# 这些脚本必须能在「包还没装好」的机器上跑起来
+BOOTSTRAP_SCRIPTS = [
+    '平台管理/更新平台.py',      # 它要做的事情之一就是装包
+    '平台管理/诊断报告.py',      # 出问题时才用，不能要求环境是好的
+]
+
+# 项目自己的顶层包
+_PROJECT_PKGS = {'core', 'domain', 'adapters', 'pipelines'}
+
+
+def test_引导脚本不许在模块顶层import项目包():
+    """判据：**体温计不能要求你先退烧。**
+
+    这两个脚本一个是「装包的」、一个是「坏了才用的」，
+    它们必须在环境不完整时也能起来。项目包只能在函数里延迟 import，
+    并且要为 import 失败准备好降级路径。
+    """
+    offenders = []
+    for rel in BOOTSTRAP_SCRIPTS:
+        f = os.path.join(ROOT, rel.replace('/', os.sep))
+        if not os.path.isfile(f):
+            continue
+        tree = ast.parse(open(f, encoding='utf-8', errors='replace').read(), f)
+        for node in tree.body:                      # 只看模块顶层
+            mods = []
+            if isinstance(node, ast.Import):
+                mods = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                mods = [node.module]
+            for m in mods:
+                if m.split('.')[0] in _PROJECT_PKGS:
+                    offenders.append(f'{rel}:{node.lineno}: 顶层 import 了 {m}')
+    assert not offenders, (
+        '引导脚本在模块顶层 import 了项目包，包没装好时它自己就起不来：' + _NL
+        + _NL.join(offenders)
+        + _NL + '做法：放进函数里延迟 import，并写好 import 失败时的降级路径'
+        + _NL + '（顶层写在 try/except 里也可以 —— 那不算模块顶层的裸 import）')
