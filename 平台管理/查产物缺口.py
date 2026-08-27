@@ -25,24 +25,13 @@ except Exception:
 from core import paths
 from core.cli import positionals
 
-# 精读一篇会依次产出这些东西。顺序就是流水线的顺序 ——
-# 看「从哪一个开始缺」，就知道它死在哪一步。
-STAGES = [
-    ('parsed/full.md', 'fulltext', 'MineRU 解析出的正文'),
-    ('parsed/layout.json', 'layout', '图片坐标（裁图要用）'),
-    ('meta.json', 'meta', '文献元数据'),
-    ('summary.html', 'summary', '中文精读报告'),
-]
-
-
 def inspect(key):
-    """看一篇文献的产物齐不齐。返回 (缺的阶段列表, 有的阶段列表, 目录大小MB)。"""
-    missing, present = [], []
-    for _rel, artifact, _desc in STAGES:
-        try:
-            (present if paths.has(key, artifact) else missing).append(artifact)
-        except Exception:
-            missing.append(artifact)
+    """看一篇文献的产物齐不齐。返回 (缺的, 有的, 目录大小MB)。
+
+    「缺哪些」是数据契约的问题，交给 `core.paths.missing_artifacts` 回答 ——
+    产物清单只该有一份。
+    """
+    missing, present = paths.missing_artifacts(key)
     size = 0
     d = paths.paper_dir(key)
     for dirpath, _dirs, files in os.walk(d):

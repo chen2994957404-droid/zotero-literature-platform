@@ -248,6 +248,26 @@ def block_dir(name):
     return None
 
 
+# 精读一篇会依次产出这些东西。**顺序就是流水线的顺序** ——
+# 看「从哪一个开始缺」，就知道它死在哪一步。这份清单即数据契约的一部分。
+PAPER_ARTIFACTS = ('fulltext', 'layout', 'meta', 'summary')
+
+
+def missing_artifacts(key, kinds=PAPER_ARTIFACTS):
+    """这篇文献缺哪些核心产物。返回 (缺的, 有的)。
+
+    半成品最常见的来源是精读中途被打断（踩坑 #61）。
+    契约在这里定义，「该怎么办」的建议属于工具层，不放这儿。
+    """
+    missing, present = [], []
+    for kind in kinds:
+        try:
+            (present if has(key, kind) else missing).append(kind)
+        except Exception:
+            missing.append(kind)
+    return missing, present
+
+
 def is_workflow_dir(name):
     """这个顶层目录名算不算一条「工作流线」（用于体检、面板、交接文件的自动发现）。"""
     return (name not in NON_WORKFLOW_DIRS

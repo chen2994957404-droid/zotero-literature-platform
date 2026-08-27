@@ -121,11 +121,33 @@ def collect():
             data.append(f'向量库块数：{vectordb.open_store().count()}')
         except Exception as e:
             data.append(f'向量库块数：读不到（{type(e).__name__}: {e}）')
-        # 产物完整性：按数据契约，每篇该有 full.md / summary.html / meta.json
-        miss = [k for k in keys[:400]
-                if not (paths.has(k, 'fulltext') and paths.has(k, 'meta'))]
-        data.append(f'缺核心产物的文献：{len(miss)} 篇' +
-                    (f'（前 10：{miss[:10]}）' if miss else ''))
+        # 产物完整性：半成品最常见的来源是精读中途被打断（踩坑 #61）。
+        # 直接把「停在哪一步、要不要重花钱」写进报告 —— 用户不必再单独跑一个脚本。
+        gaps = []
+        for k in keys:
+            miss, present = paths.missing_artifacts(k)
+            if miss:
+                gaps.append((k, miss, present))
+        data.append(f'产物不全的文献：{len(gaps)} 篇')
+        if gaps:
+            try:
+                import importlib.util
+                _sp = importlib.util.spec_from_file_location(
+                    'gapdiag', os.path.join(ROOT, '平台管理', '查产物缺口.py'))
+                _m = importlib.util.module_from_spec(_sp)
+                _sp.loader.exec_module(_m)
+                judge = _m.diagnose
+            except Exception:
+                judge = lambda miss, present: ('产物不齐', '')
+            for k, miss, present in gaps[:10]:
+                stage, advice = judge(miss, present)
+                data.append(f'  {k}  停在：{stage}')
+                data.append(f'      有：{"、".join(present) or "（什么都没有）"}')
+                data.append(f'      缺：{"、".join(miss)}')
+                if advice:
+                    data.append(f'      建议：{advice}')
+            if len(gaps) > 10:
+                data.append(f'  …还有 {len(gaps) - 10} 篇')
         out.append(_section('数据资产', '\n'.join(data)))
     except Exception as e:
         out.append(_section('数据资产', f'统计失败：{type(e).__name__}: {e}'))
