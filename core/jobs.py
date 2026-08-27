@@ -290,6 +290,11 @@ def summary(step=None):
     return out
 
 
+def recent(limit=20):
+    """最近的执行记录，新到旧（面板显示「刚刚发生了什么」用）。"""
+    return _rows('SELECT * FROM runs ORDER BY id DESC LIMIT ?', (limit,))
+
+
 def running(older_than=None):
     """还挂着 running 的执行（进程被杀、断电会留下这种记录）。
 

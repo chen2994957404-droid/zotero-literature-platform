@@ -451,6 +451,50 @@ def collect_logs(name='zotero_watcher', lines=40):
         return [f'(读取失败: {e})']
 
 
+def collect_jobs(recent=8):
+    """从任务状态库读**真进度**：哪一步在跑、谁失败了、谁该重跑。
+
+    在此之前，面板只能看日志尾巴 —— 日志回答不了「现在做到第几篇」，
+    更回答不了「上次是哪一步失败的」。状态库（core/jobs）建好之后这些都是一句查询。
+
+    刻意只读不写：面板是观察窗，不是执行者。
+    """
+    try:
+        from core import jobs
+        from domain import schema as _schema
+        from pipelines.deepread import main_text as _mt
+    except Exception as e:
+        return {'ok': False, 'msg': f'状态库读不到：{e}'}
+
+    zh = {'parse': '解析 PDF', 'main_summary': '正文精读', 'si_summary': 'SI 精读',
+          'merge': '合并', 'extract': '结构化抽取'}
+    try:
+        summary = jobs.summary()
+        steps = [{'step': k, 'label': zh.get(k, k),
+                  'ok': v.get(jobs.OK, 0), 'failed': v.get(jobs.FAILED, 0),
+                  'running': v.get(jobs.RUNNING, 0)}
+                 for k, v in sorted(summary.items(), key=lambda kv: list(zh).index(kv[0])
+                                    if kv[0] in zh else 99)]
+        # 卡了超过 30 分钟还挂着 running 的，多半是进程被杀/断电留下的
+        stuck = [{'key': r['item_key'], 'step': zh.get(r['step'], r['step'])}
+                 for r in jobs.running(older_than=1800)]
+        rows = jobs.recent(recent)
+        recent_rows = [{
+            'key': r['item_key'], 'step': zh.get(r['step'], r['step']),
+            'status': r['status'], 'model': r['model'] or '',
+            'when': time.strftime('%m-%d %H:%M', time.localtime(r['started_at'])),
+            'secs': round((r['finished_at'] or r['started_at']) - r['started_at']),
+            'error': (r['error'] or '')[:120]} for r in rows]
+        # 「该重跑的」：提示词/字段升级之后，旧产物自动进清单
+        todo = {'精读': jobs.stale('main_summary', prompt_ver=_mt.PROMPT_VER),
+                '抽取': jobs.stale('extract', schema_ver=_schema.SCHEMA_VER)}
+        return {'ok': True, 'steps': steps, 'stuck': stuck, 'recent': recent_rows,
+                'todo': {k: len(v) for k, v in todo.items() if v},
+                'prompt_ver': _mt.PROMPT_VER, 'schema_ver': _schema.SCHEMA_VER}
+    except Exception as e:
+        return {'ok': False, 'msg': f'读状态库出错：{e}'}
+
+
 def collect_recent_reads(n=8):
     """最近处理过的文献：按 summary.html 修改时间排序，附正文字数用于识别废品。"""
     import glob, re
@@ -568,6 +612,7 @@ class Handler(BaseHTTPRequestHandler):
                 'config': collect_config(),
                 'services': SERVICES,
                 'recent': collect_recent_reads(),
+                'jobs': collect_jobs(),
                 'structure': collect_blocks(),
                 'time': time.strftime('%H:%M:%S'),
             })
@@ -752,6 +797,7 @@ pre{background:#20232a;color:#c8d0dc;padding:12px;border-radius:8px;font-size:12
   <div id="blocks"></div>
 </div>
 
+<div class="card"><h2>精读进度</h2><div id="jobs"></div></div>
 <div class="card"><h2>最近处理的文献</h2><div id="recent"></div></div>
 
 <div class="card"><h2>日志</h2>
@@ -874,6 +920,35 @@ async function load(force){
         <td>${b.selftest?`<button class="ghost" onclick="selftest('${b.name}')">自测</button>`
              :'<span class="hint">无自测</span>'}</td></tr>`).join('')
     + `</table>`;
+
+  const jb = d.jobs || {ok:false, msg:'没有数据'};
+  if(!jb.ok){
+    $('#jobs').innerHTML = `<div class="hint">${esc(jb.msg||'读不到状态库')}</div>`;
+  } else if(!(jb.steps||[]).length){
+    $('#jobs').innerHTML = '<div class="hint">状态库还是空的 —— 打个「待处理」标签跑一篇就有了</div>';
+  } else {
+    const stuck = (jb.stuck||[]).length
+      ? `<div class="bad">⚠ 卡住超过 30 分钟：`
+        + jb.stuck.map(x=>`${esc(x.key)}（${esc(x.step)}）`).join('、')
+        + `（多半是进程被杀或断电，重新打一次「待处理」即可）</div>` : '';
+    const todo = Object.keys(jb.todo||{}).length
+      ? `<div class="hint">升级后该重跑：`
+        + Object.entries(jb.todo).map(([k,v])=>`${esc(k)} ${v} 篇`).join('、')
+        + `（提示词 v${jb.prompt_ver} / 字段 v${jb.schema_ver}）</div>` : '';
+    $('#jobs').innerHTML = stuck + todo
+      + `<table><tr><th>步骤</th><th>成功</th><th>失败</th><th>在跑</th></tr>`
+      + jb.steps.map(s=>`<tr><td>${esc(s.label)}</td><td>${s.ok}</td>
+          <td class="${s.failed?'bad':''}">${s.failed||''}</td>
+          <td>${s.running||''}</td></tr>`).join('')
+      + `</table>`
+      + `<table style="margin-top:10px"><tr><th>时间</th><th>文献</th><th>步骤</th><th>结果</th><th>用时</th></tr>`
+      + (jb.recent||[]).map(r=>`<tr><td>${esc(r.when)}</td><td>${esc(r.key)}</td>
+          <td>${esc(r.step)}</td>
+          <td class="${r.status==='failed'?'bad':''}">${r.status==='ok'?'成功'
+             :r.status==='failed'?'失败':'在跑'}${r.error?`<br><span class="hint">${esc(r.error)}</span>`:''}</td>
+          <td>${r.secs?r.secs+'s':''}</td></tr>`).join('')
+      + `</table>`;
+  }
 
   $('#recent').innerHTML = d.recent.length
     ? `<table><tr><th>时间</th><th>文献</th><th>正文字数</th><th>图</th></tr>`
