@@ -43,6 +43,17 @@ except Exception:
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 _NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
+
+# ⚠ 中文 Windows 上 PowerShell 写给管道的默认编码是 gb2312，而我们按 UTF-8 解码，
+#   中文会变成乱码（实测：'停掉旧面板' → 'ͣ�������'）。
+#   在脚本最前面把 PowerShell 的输出编码切成 UTF-8 就对上了。
+#   本脚本是引导脚本，不能依赖 core.subproc，所以这里内联一份。
+_PS_UTF8 = '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; '
+
+
+def ps(script):
+    """组一条编码正确的 PowerShell 命令行。"""
+    return ['powershell', '-NoProfile', '-NonInteractive', '-Command', _PS_UTF8 + script]
 PANEL_PORT = int(os.environ.get('PANEL_PORT', '8777'))
 
 # 更新后需要重启才能生效的计划任务（只在运行端有）
@@ -61,6 +72,37 @@ def run(cmd, timeout=900, quiet=False):
     if not quiet:
         print(out.rstrip())
     return r.returncode == 0, out
+
+
+def refresh_imports():
+    """让**本进程**立刻能 import 刚装好的包。
+
+    `pip install -e .` 是往 site-packages 写一个 .pth 文件，
+    而 .pth 只在解释器**启动时**读一次 —— 所以装完包之后，
+    当前这个已经跑起来的 Python 仍然 import 不到（2026-08-26 实测：
+    第 2 步刚装完，第 4 步问「本机角色」还是读不到，于是跳过了重启服务）。
+    """
+    import importlib
+    import site
+    importlib.invalidate_caches()
+    try:
+        site.main()          # 重新处理 site-packages 里的 .pth
+    except Exception:
+        pass
+    try:
+        import core          # noqa: F401 —— 只是试探能不能 import
+        return True
+    except Exception:
+        pass
+    if ROOT not in sys.path:
+        # 引导脚本专用：装包后让本进程立刻可用，效果等同于 .pth 干的事。
+        # 别处一律靠 pip install -e .，不许抄这一行（守卫会拦）。
+        sys.path.insert(0, ROOT)   # paths-exempt: 引导脚本装包后自救，见上方说明
+    try:
+        import core          # noqa: F401
+        return True
+    except Exception:
+        return False
 
 
 def _role():
@@ -88,21 +130,28 @@ def step(n, total, title):
 def stop_panel():
     """停掉正在跑的控制面板进程（它占着端口、跑着旧代码）。
 
-    只杀跑 panel 的 python，不碰别的 python 进程 —— 用命令行特征匹配。
+    只杀真正在跑面板的 python，不碰别的 python 进程。
+
+    ⚠ 匹配必须够窄：第一版写的是 `-like '*panel*'`，结果**把自己也杀了** ——
+    任何命令行里出现 "panel" 字样的 python 进程都会中招
+    （实测：一条包含 `stop_panel` 字样的测试命令把自身干掉，退出码 255）。
+    现在只认 `panel.py` / `panel_launch`，并且显式排除本进程。
     """
     if os.name != 'nt':
         return '（非 Windows，跳过）'
-    ps = (
+    me = os.getpid()
+    script = (
         "$hit = Get-CimInstance Win32_Process -Filter "
         "\"Name='python.exe' or Name='pythonw.exe'\" | "
-        "Where-Object { $_.CommandLine -like '*panel*' }; "
+        "Where-Object { ($_.CommandLine -like '*panel_launch*' -or "
+        "$_.CommandLine -like '*panel.py*') -and "
+        f"$_.ProcessId -ne {me} }}; "
         "if ($hit) { $hit | ForEach-Object { "
         "  Write-Output ('停掉旧面板 PID=' + $_.ProcessId); "
         "  Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } } "
         "else { Write-Output '没有面板在跑，无需停止' }"
     )
-    ok, out = run(['powershell', '-NoProfile', '-NonInteractive', '-Command', ps],
-                  timeout=120, quiet=True)
+    ok, out = run(ps(script), timeout=120, quiet=True)
     return out.strip() or '（无输出）'
 
 
@@ -110,12 +159,11 @@ def restart_tasks():
     """重启计划任务，让 watcher 加载新代码。只在运行端做。"""
     msgs = []
     for task in RESTART_TASKS:
-        ps = (f"try {{ Stop-ScheduledTask -TaskName '{task}' -ErrorAction SilentlyContinue; "
+        script = (f"try {{ Stop-ScheduledTask -TaskName '{task}' -ErrorAction SilentlyContinue; "
               f"Start-Sleep -Seconds 1; Start-ScheduledTask -TaskName '{task}' "
               f"-ErrorAction Stop; Write-Output '{task} 已重启' }} "
               f"catch {{ Write-Output '{task} 重启失败：' + $_.Exception.Message }}")
-        _ok, out = run(['powershell', '-NoProfile', '-NonInteractive', '-Command', ps],
-                       timeout=180, quiet=True)
+        _ok, out = run(ps(script), timeout=180, quiet=True)
         msgs.append(out.strip())
     return msgs
 

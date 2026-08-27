@@ -91,7 +91,18 @@ def spawn(cmd, cwd=None, env=None, use_pythonw=True):
         stdin=subprocess.DEVNULL)
 
 
+# ⚠ 中文 Windows 上，PowerShell 写给管道的默认编码是 **gb2312**，
+#   而我们按 UTF-8 解码 —— 中文输出会变成 'ͣ������� PID=7304' 这种乱码
+#   （2026-08-26 主力机实测复现）。
+#   在脚本最前面把 PowerShell 自己的输出编码切成 UTF-8，两边就对上了。
+_PS_UTF8 = '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; '
+
+
 def powershell(script, timeout=DEFAULT_TIMEOUT, default=''):
-    """跑一段 PowerShell 并返回输出。-NoProfile 避免加载用户配置（快且可预期）。"""
-    return out(['powershell', '-NoProfile', '-NonInteractive', '-Command', script],
+    """跑一段 PowerShell 并返回输出。-NoProfile 避免加载用户配置（快且可预期）。
+
+    输出统一按 UTF-8 取回 —— 见上面 `_PS_UTF8` 的说明。
+    """
+    return out(['powershell', '-NoProfile', '-NonInteractive', '-Command',
+                _PS_UTF8 + script],
                timeout=timeout, default=default)
