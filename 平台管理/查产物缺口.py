@@ -44,15 +44,27 @@ def inspect(key):
 
 
 def diagnose(missing, present):
-    """从「缺了什么」推断它停在哪一步，并给出建议。"""
+    """从「缺了什么」推断它停在哪一步，并给出建议。
+
+    ⚠ **建议必须区分「要花钱」和「不花钱」**。2026-08-27 我第一版把「只缺
+    meta.json」也判成「重新打待处理标签」—— 那会让 4 篇已经精读完的文献
+    整篇重跑一遍 MineRU + DeepSeek，白花钱补一个从 Zotero 读一下就有的字段。
+    """
     if not missing:
         return '完整', ''
+    # 精读全做完了，只是元数据没落盘 —— 最省事的一类，别当成半成品重跑
+    if missing == ['meta'] and 'summary' in present:
+        return ('精读已完成，只差元数据',
+                '跑 `python 库房维护/backfill_meta.py` 从 Zotero 补一下即可 —— '
+                '**不调大模型、不花钱**。千万别重新打「待处理」标签重跑整篇')
     if 'fulltext' not in present:
         return ('解析就没成功', '重新打「待处理」标签即可，整篇会从头做一遍')
-    if 'summary' in missing and 'fulltext' in present:
+    if 'summary' in missing:
         return ('正文解析好了，精读没做完',
                 '重新打「待处理」标签；解析结果还在，不会重复花 MineRU 的钱')
-    return ('产物不齐', '重新打「待处理」标签让它补做')
+    if 'meta' in missing:
+        return ('缺元数据', '跑 `python 库房维护/backfill_meta.py` 补，不花钱')
+    return ('产物不齐', '把这一行发给 Claude 判断，先别急着重跑（重跑要花钱）')
 
 
 def main():

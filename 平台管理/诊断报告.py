@@ -175,17 +175,34 @@ def collect():
     out.append(_section('watcher 日志（尾部）', _tail(_log('zotero_watcher'), 150)))
     out.append(_section('看门狗日志（尾部）', _tail(_log('watchdog'), 60)))
     out.append(_section('定时同步日志（尾部）', _tail(_log('auto_sync'), 60)))
-    hb = (paths.runtime('watcher_heartbeat.txt') if CORE_OK
-          else os.path.join(logdir, 'watcher_heartbeat.txt'))
-    if os.path.exists(hb):
+    # 两个信号分开看 —— 这样「watcher 到底换成新代码没有」是**看得见**的：
+    # 旧版只写心跳、不写进度，所以进度文件缺失就说明它还在跑旧代码。
+    # 2026-08-27 正是因为看不见这一点，才没发现重启计划任务换不掉 watcher 进程。
+    def _age(fname):
+        f = os.path.join(logdir, fname)
         try:
-            age = time.time() - int(io.open(hb, encoding='utf-8').read().strip())
-            out.append(_section('精读监听心跳', f'距上次心跳 {int(age)} 秒'
-                                              f'（正常应 < 180 秒）'))
-        except Exception as e:
-            out.append(_section('精读监听心跳', f'读不了：{e}'))
+            return time.time() - int(io.open(f, encoding='utf-8').read().strip())
+        except Exception:
+            return None
+    alive, prog = _age('watcher_heartbeat.txt'), _age('watcher_progress.txt')
+    beat = []
+    if alive is None:
+        beat.append('报活信号：缺失 —— watcher 没在跑，或刚被重启')
     else:
-        out.append(_section('精读监听心跳', '心跳文件不存在（watcher 没跑过？）'))
+        beat.append(f'报活信号：{int(alive)} 秒前（正常应 < 300 秒）')
+    if prog is None and alive is not None:
+        # 报活有、进展没有 = 进程在跑，但跑的是旧代码（旧版不写进展信号）
+        beat.append('进展信号：缺失')
+        beat.append('  ⚠ 新版 watcher 才写这个信号 —— 缺失说明它**还在跑旧代码**。')
+        beat.append('    旧代码在精读期间不报活，会被看门狗中途杀掉（踩坑 #61）。')
+        beat.append('    双击「更新平台.bat」会把它换成新代码。')
+    elif prog is None:
+        beat.append('进展信号：缺失（watcher 本来就没在跑）')
+    else:
+        beat.append(f'进展信号：{int(prog)} 秒前（超过 2700 秒才算异常；'
+                    f'正在精读一篇时这个数会一直涨，属正常）')
+        beat.append('  ✓ watcher 跑的是新代码（会分别报「活着」和「有进展」）')
+    out.append(_section('精读监听的两个信号', chr(10).join(beat)))
 
     out.append(f'\n{SEP}\n报告结束。把整份内容发给 Claude 即可。\n{SEP}')
     return '\n'.join(out)

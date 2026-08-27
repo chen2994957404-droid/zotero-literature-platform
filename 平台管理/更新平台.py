@@ -155,6 +155,45 @@ def stop_panel():
     return out.strip() or '（无输出）'
 
 
+def stop_watcher():
+    """停掉旧 watcher，并清掉它的信号文件，好让看门狗**立刻**用新代码把它拉起来。
+
+    **为什么光重启计划任务不够**（2026-08-27 实测）：计划任务拉起的是看门狗，
+    watcher 是看门狗**另外 spawn 的独立进程**。停任务只换掉看门狗，
+    老 watcher 照常活着 —— 对比两次诊断报告：看门狗 PID 变了，
+    watcher PID 一模一样，新代码根本没生效。
+
+    清信号文件是关键一步：只杀不清的话，刚被杀的 watcher 留下的是**新鲜**心跳，
+    新看门狗会认为「它还活着」，要等满 300 秒才发现没人干活。
+    清掉之后看门狗一上来就判「信号缺失」，当场拉起。
+    """
+    if os.name != 'nt':
+        return '（非 Windows，跳过）'
+    me = os.getpid()
+    script = (
+        "$hit = Get-CimInstance Win32_Process -Filter "
+        "\"Name='python.exe' or Name='pythonw.exe'\" | "
+        "Where-Object { $_.CommandLine -like '*zotero_watcher*' -and "
+        f"$_.ProcessId -ne {me} }}; "
+        "if ($hit) { $hit | ForEach-Object { "
+        "  Write-Output ('停掉旧 watcher PID=' + $_.ProcessId); "
+        "  Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } } "
+        "else { Write-Output '没有 watcher 在跑' }"
+    )
+    _ok, out = run(ps(script), timeout=120, quiet=True)
+    msgs = [out.strip() or '（无输出）']
+    try:
+        from core import heartbeat
+        for kind in (heartbeat.ALIVE, heartbeat.PROGRESS):
+            f = heartbeat.path('watcher', kind)
+            if os.path.exists(f):
+                os.remove(f)
+        msgs.append('已清掉心跳/进度信号，看门狗会立刻用新代码把 watcher 拉起来')
+    except Exception as e:
+        msgs.append(f'（信号文件没清掉：{e} —— 看门狗最多 5 分钟后也会发现）')
+    return chr(10).join(msgs)
+
+
 def restart_tasks():
     """重启计划任务，让 watcher 加载新代码。只在运行端做。"""
     msgs = []
@@ -260,6 +299,9 @@ def main():
     if r is None:
         print('读不到本机角色（包没装好？），保守起见跳过重启')
     elif r.is_prod():
+        # 先停 watcher（它是看门狗 spawn 出来的独立进程，重启任务换不掉它），
+        # 再重启任务，让看门狗自己也换成新代码。
+        print(stop_watcher())
         for m in restart_tasks():
             print(m)
     else:
