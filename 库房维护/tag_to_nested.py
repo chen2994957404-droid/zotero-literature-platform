@@ -14,6 +14,7 @@ except Exception:
 from core import role
 from core.cli import pos, flag
 from core.config import get_key, need_site, get_site
+from adapters import zotero_client as zotero
 
 # 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
 _UID = need_site('ZOTERO_USER_ID')
@@ -21,9 +22,7 @@ _STORAGE = need_site('ZOTERO_STORAGE')
 USER_ID = _UID
 KEY = get_key('ZOTERO_API_KEY')
 LOCAL = get_site('ZOTERO_API_HOST') + '/api/users/' + USER_ID
-WEB = 'https://api.zotero.org/users/' + USER_ID
 LH = {'Zotero-Allowed-Request': 'true'}
-WH = {'Zotero-API-Key': KEY, 'Zotero-API-Version': '3'}
 APPLY = pos(0) == 'apply'
 
 DIMS = ('topic', 'material', 'mechanism', 'method', 'type')
@@ -35,7 +34,8 @@ def lget(p):
 
 def main():
     # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
-    role.require_prod('标签改造（写回 Zotero）', force=flag('--force'))
+    forced = flag('--force')
+    role.require_prod('标签改造（写回 Zotero）', force=forced)
     # 取所有顶层文献
     tops = []; s = 0
     while True:
@@ -74,21 +74,12 @@ def main():
 
     ok = fail = 0
     for i, (key, newtags) in enumerate(todo):
-        for attempt in range(4):
-            try:
-                ver = lget(f'/items/{key}')['version']
-                patch = json.dumps({'tags': newtags}).encode()
-                req = urllib.request.Request(WEB+f'/items/{key}', data=patch, method='PATCH',
-                    headers={**WH, 'If-Unmodified-Since-Version': str(ver), 'Content-Type': 'application/json'})
-                urllib.request.urlopen(req, timeout=20)
-                ok += 1; break
-            except urllib.error.HTTPError as e:
-                if e.code == 429: time.sleep(int(e.headers.get('Retry-After', 10))); continue
-                if e.code == 412: time.sleep(1); continue
-                fail += 1; break
-            except Exception:
-                fail += 1  # 网络/解析等异常统一计失败，不中断整批转换
-                break
+        try:
+            zotero.replace_tags(key, newtags, action='标签改成嵌套写法', force=forced, log=print)
+            ok += 1
+        except Exception as e:
+            print(f'  [写回失败] {key}: {e}')
+            fail += 1      # 单篇失败不中断整批
         if (i+1) % 20 == 0:
             print(f'  {i+1}/{len(todo)} 成功{ok} 失败{fail}')
         time.sleep(0.3)

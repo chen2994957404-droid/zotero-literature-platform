@@ -21,6 +21,8 @@ import hashlib
 import json
 import mimetypes
 import os
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -70,20 +72,94 @@ def get_item(item_key):
     return _call(f'/items/{item_key}')
 
 
-def replace_tags(item_key, tags, action='更新 Zotero 标签', force=False):
+def _with_retry(do, tries=4, log=None):
+    """替「会变的外部世界」兜底：限流退避 + 版本冲突重取。
+
+    两种错值得重试，别的一律往上抛：
+      · **429 限流**：按 Retry-After 等一等（Zotero 会明说等多久）
+      · **412 版本冲突**：我们读到版本号之后、写之前，条目被别人（多半是
+        Zotero 桌面同步）改了。重取版本再来一次即可。
+
+    这段逻辑原来在 4 个脚本里各抄了一遍，而**最该有它的 watcher 改标签反而没有** ——
+    于是精读做完了、标签没换成，用户只看到「怎么还是待处理」。
+    收进适配层之后，谁写 Zotero 谁自动拥有它。
+    """
+    last = None
+    for attempt in range(tries):
+        try:
+            return do()
+        except urllib.error.HTTPError as e:
+            last = e
+            if e.code == 429:
+                wait = int(e.headers.get('Retry-After', 10) or 10)
+                if log:
+                    log(f'  Zotero 限流，{wait}s 后重试（{attempt + 1}/{tries}）')
+                time.sleep(wait)
+                continue
+            if e.code == 412:                 # 版本冲突：重取版本再来
+                time.sleep(1)
+                continue
+            raise
+    raise last
+
+
+def patch_item(item_key, data, action='修改 Zotero 条目', force=False, log=None):
+    """改条目的某些字段（只传要改的键）。带乐观锁，别人改过就失败而不是覆盖。
+
+    这是所有「改 Zotero 条目」的唯一实现：打标签、改附件名、改元数据都走它。
+    重构前这段 `GET 版本 → PATCH + If-Unmodified-Since-Version` 在 6 个脚本里
+    各抄了一遍，**每抄一遍就多一处可能漏掉机器角色守卫的地方**。
+    """
+    role.require_prod(action, force=force)
+
+    def once():
+        cur = _call(f'/items/{item_key}')      # 每次重试都重取版本
+        return _call(f'/items/{item_key}', 'PATCH',
+                     json.dumps(data, ensure_ascii=False).encode('utf-8'),
+                     {'Content-Type': 'application/json',
+                      'If-Unmodified-Since-Version': str(cur['version'])}, raw=True)
+    _with_retry(once, log=log)
+    return True
+
+
+def create_items(items, action='在 Zotero 里新建条目', force=False):
+    """新建条目（传 list）。返回 Zotero 的响应（含 successful/failed 明细）。"""
+    role.require_prod(action, force=force)
+    return _call('/items', 'POST',
+                 json.dumps(items, ensure_ascii=False).encode('utf-8'),
+                 {'Content-Type': 'application/json'})
+
+
+def delete_item(item_key, action='删除 Zotero 条目', force=False, log=None):
+    """删除条目。**只用于用户明确要求删除的东西**（如清理垃圾条目）。
+
+    ⚠ 绝不要拿它来「更新产物」——「先删旧附件再传新的」正是踩坑 #28 的根因：
+    删除动作会进 Zotero 同步链，于是每篇都弹一次「冲突解决」框。
+    更新附件请用 `find_child_attachment` 复用条目、只覆盖文件内容。
+    """
+    role.require_prod(action, force=force)
+
+    def once():
+        cur = _call(f'/items/{item_key}')
+        return _call(f'/items/{item_key}', 'DELETE', None,
+                     {'If-Unmodified-Since-Version': str(cur['version'])}, raw=True)
+    try:
+        _with_retry(once, log=log)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return True            # 已经不在了 = 目的达成，不算失败
+        raise
+    return True
+
+
+def replace_tags(item_key, tags, action='更新 Zotero 标签', force=False, log=None):
     """把某条目的标签整体换成 `tags`（形如 `[{'tag': '全文精读'}]`）。
 
     调用方负责决定「该有哪些标签」（那是业务策略，比如状态互斥）；
     这里只负责安全地写进去：带 `If-Unmodified-Since-Version`，
     条目在我们读到之后被别人改过就会失败，而不是悄悄覆盖别人的改动。
     """
-    role.require_prod(action, force=force)
-    cur = get_item(item_key)
-    _call(f'/items/{item_key}', 'PATCH',
-          json.dumps({'tags': tags}).encode('utf-8'),
-          {'Content-Type': 'application/json',
-           'If-Unmodified-Since-Version': str(cur['version'])})
-    return True
+    return patch_item(item_key, {'tags': tags}, action=action, force=force, log=log)
 
 
 def upload_attachment(parent_key, filepath, display_name,

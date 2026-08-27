@@ -18,6 +18,7 @@ except Exception:
 from core import role
 from core.cli import flag, opt
 from core.config import get_key, get_model, need_site, get_site
+from adapters import zotero_client as zotero
 from adapters.llm_client import chat_json as _chat_json
 
 # 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
@@ -26,9 +27,7 @@ _STORAGE = need_site('ZOTERO_STORAGE')
 USER_ID = _UID
 KEY = get_key('ZOTERO_API_KEY')
 LOCAL = get_site('ZOTERO_API_HOST') + '/api/users/' + USER_ID
-WEB = 'https://api.zotero.org/users/' + USER_ID
 LH = {'Zotero-Allowed-Request': 'true'}
-WH = {'Zotero-API-Key': KEY, 'Zotero-API-Version': '3'}
 DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')
 MODEL = get_model('AUTOTAG_MODEL')  # 打标签用flash：快、便宜、JSON稳
 
@@ -69,7 +68,8 @@ def to_tags(result):
 
 def main():
     # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
-    role.require_prod('自动打标签（写回 Zotero）', force=flag('--force'))
+    forced = flag('--force')
+    role.require_prod('自动打标签（写回 Zotero）', force=forced)
     # 取有摘要的文献
     tops = []; s = 0
     while True:
@@ -107,18 +107,11 @@ def main():
             for t in newtags:
                 if t['tag'] not in seen:
                     seen.add(t['tag']); uniq.append(t)
-            for attempt in range(3):
-                try:
-                    ver = lget(f'/items/{key}')['version']
-                    patch = json.dumps({'tags': uniq}).encode()
-                    req = urllib.request.Request(WEB+f'/items/{key}', data=patch, method='PATCH',
-                        headers={**WH, 'If-Unmodified-Since-Version': str(ver), 'Content-Type':'application/json'})
-                    urllib.request.urlopen(req, timeout=20)
-                    break
-                except urllib.error.HTTPError as e:
-                    if e.code == 429: time.sleep(10); continue
-                    if e.code == 412: time.sleep(1); continue
-                    break
+            # 写走适配层：限流退避、版本冲突重取、机器角色守卫都在那里
+            try:
+                zotero.replace_tags(key, uniq, action='自动打标签', force=forced, log=print)
+            except Exception as e:
+                print(f'  [写回失败] {key}: {e}')
             time.sleep(0.3)
 
     print('完成')

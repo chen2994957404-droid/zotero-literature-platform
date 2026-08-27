@@ -58,7 +58,8 @@ def zget(path):
 # ── zotero.org（云端）──────────────────────────────────────────────
 # 与云端打交道的实现全在 _web.py —— 它是全项目唯一出现那个域名的文件，
 # 写操作的机器角色守卫也都在那里。这里只做再导出。
-from adapters.zotero_client._web import (WEB_API, zweb, get_item,
+from adapters.zotero_client._web import (WEB_API, zweb, get_item, patch_item,
+                                         create_items, delete_item,
                                          replace_tags, upload_attachment)
 
 

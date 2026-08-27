@@ -22,8 +22,8 @@ except Exception:
 from core import role
 from core.cli import opts, positionals, flag
 from core.config import get_key, get_site
+from adapters import zotero_client as zotero
 
-BASE = 'https://api.zotero.org'
 UA = 'zotero-literature-platform/1.0'
 
 
@@ -67,22 +67,15 @@ def to_zotero_item(m, tags=None):
     }
 
 
-def post_items(uid, items, api_key):
-    req = urllib.request.Request(
-        f'{BASE}/users/{uid}/items',
-        data=json.dumps(items, ensure_ascii=False).encode('utf-8'), method='POST',
-        headers={'Zotero-API-Key': api_key, 'Zotero-API-Version': '3',
-                 'Content-Type': 'application/json', 'User-Agent': UA})
-    with urllib.request.urlopen(req, timeout=90) as r:
-        return json.loads(r.read().decode('utf-8'))
+def post_items(items, forced=False):
+    """新建条目走适配层（鉴权、用户 id、机器角色守卫都在那里）。"""
+    return zotero.create_items(items, action='按 DOI 导入文献', force=forced)
 
 
-def import_dois(dois, tags=None, verbose=True):
+def import_dois(dois, tags=None, verbose=True, forced=False):
     """导入一批 DOI。返回 {'ok':[(doi,title,key)], 'failed':[(doi,原因)]}。"""
-    api_key = get_key('ZOTERO_API_KEY')
-    if not api_key:
+    if not get_key('ZOTERO_API_KEY'):
         raise RuntimeError('缺少 ZOTERO_API_KEY，请在控制面板填写')
-    uid = get_site('ZOTERO_USER_ID')
 
     items, meta, failed = [], [], []
     for doi in dois:
@@ -105,7 +98,7 @@ def import_dois(dois, tags=None, verbose=True):
 
     ok = []
     if items:
-        res = post_items(uid, items, api_key)
+        res = post_items(items, forced=forced)
         for idx, v in (res.get('successful') or {}).items():
             i = int(idx)
             ok.append((meta[i][0], meta[i][1], v.get('key')))

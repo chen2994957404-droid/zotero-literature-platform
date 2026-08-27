@@ -11,13 +11,12 @@ except Exception:
 from core import role
 from core.cli import flag
 from core.config import get_key, need_site
+from adapters import zotero_client as zotero
 
 # 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
 USER_ID = need_site('ZOTERO_USER_ID')
 KEY = get_key('ZOTERO_API_KEY')
 STORAGE = need_site('ZOTERO_STORAGE')
-WEB = 'https://api.zotero.org/users/' + USER_ID
-WH = {'Zotero-API-Key': KEY, 'Zotero-API-Version': '3', 'Content-Type': 'application/json'}
 THESIS_COLLECTION = '8X73UY35'  # 毕业论文分类
 
 # 手动确认的元数据（从PDF首页读出）
@@ -29,16 +28,6 @@ THESES = [
    'title': '基于动态化学的糖响应高分子的制备研究',
    'author_last': '阿其他', 'author_first': '', 'year': '2021', 'univ': '四川大学', 'type': '博士学位论文'},
 ]
-
-
-def web(path, method='GET', body=None):
-    data = json.dumps(body).encode('utf-8') if body is not None else None
-    req = urllib.request.Request(WEB + path, data=data, method=method, headers=WH)
-    return json.loads(urllib.request.urlopen(req, timeout=20).read())
-
-
-def get_ver(key):
-    return web('/items/' + key)['version']
 
 
 def add_thesis(t):
@@ -56,24 +45,18 @@ def add_thesis(t):
         'date': t['year'],
         'collections': [THESIS_COLLECTION],
     }]
-    r = web('/items', 'POST', item)
+    r = zotero.create_items(item, action='新建学位论文条目')
     new_key = r['successful']['0']['key']
-    print(f"创建条目 {new_key}: {t['title'][:30]}")
+    print(f"新建条目 {new_key}: {t['title'][:30]}")
     time.sleep(1)
-    # 2. 把孤儿附件挂到新条目下（改 parentItem，同时归入分类）
+    # 2. 把孤儿附件挂到新条目下（改 parentItem），再把显示名规范成 Full Text PDF
     att_key = t['att_key']
-    ver = get_ver(att_key)
-    patch = {'parentItem': new_key}
-    req = urllib.request.Request(WEB + '/items/' + att_key, data=json.dumps(patch).encode(),
-        method='PATCH', headers={**WH, 'If-Unmodified-Since-Version': str(ver)})
-    urllib.request.urlopen(req, timeout=20)
-    print(f"  附件 {att_key} 已挂到 {new_key}，命名Full Text PDF")
-    # 附件改名为 Full Text PDF
+    zotero.patch_item(att_key, {'parentItem': new_key},
+                      action='把附件挂到新建的学位论文条目下', log=print)
+    print(f"  附件 {att_key} 已挂到 {new_key}")
     time.sleep(1)
-    ver = get_ver(att_key)
-    req = urllib.request.Request(WEB + '/items/' + att_key, data=json.dumps({'title': 'Full Text PDF'}).encode(),
-        method='PATCH', headers={**WH, 'If-Unmodified-Since-Version': str(ver)})
-    urllib.request.urlopen(req, timeout=20)
+    zotero.patch_item(att_key, {'title': 'Full Text PDF'},
+                      action='把附件改名为 Full Text PDF', log=print)
     time.sleep(1)
 
 

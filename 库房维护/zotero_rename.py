@@ -16,14 +16,13 @@ except Exception:
 from core import role
 from core.cli import pos, flag
 from core.config import get_key, need_site
+from adapters import zotero_client as zotero
 
 # 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
 _UID = need_site('ZOTERO_USER_ID')
 _STORAGE = need_site('ZOTERO_STORAGE')
 USER_ID = _UID
 WEB_KEY = get_key('ZOTERO_API_KEY')
-WEB = 'https://api.zotero.org/users/' + USER_ID
-WH = {'Zotero-API-Key': WEB_KEY, 'Zotero-API-Version': '3'}
 
 JSON_PATH = pos(0)
 APPLY = pos(1) == 'apply'
@@ -47,32 +46,23 @@ def classify(d):
 
 
 def get_current(att_key):
-    """实时取附件当前 version 和 title（避免用旧version冲突）"""
-    req = urllib.request.Request(WEB + '/items/' + att_key, headers=WH)
-    d = json.loads(urllib.request.urlopen(req, timeout=15).read())
+    """实时取附件当前 version 和 title（避免用旧 version 冲突）。"""
+    d = zotero.get_item(att_key)
     return d['version'], (d['data'].get('title') or d['data'].get('filename') or '')
 
 
-def rename(att_key, new_title):
-    """先取最新version再改，带429重试"""
-    for attempt in range(4):
-        try:
-            ver, cur = get_current(att_key)
-            if cur == new_title:
-                return 'skip'
-            patch = json.dumps({'title': new_title}).encode('utf-8')
-            req = urllib.request.Request(WEB + '/items/' + att_key, data=patch, method='PATCH',
-                headers={**WH, 'If-Unmodified-Since-Version': str(ver), 'Content-Type': 'application/json'})
-            urllib.request.urlopen(req, timeout=15)
-            return 'ok'
-        except urllib.error.HTTPError as e:
-            if e.code == 429:
-                wait = int(e.headers.get('Retry-After', 10))
-                time.sleep(min(wait, 30)); continue
-            if e.code == 412:  # version冲突，重取重试
-                time.sleep(1); continue
-            raise
-    return 'fail'
+def rename(att_key, new_title, forced=False):
+    """改附件显示名。重取版本、限流退避、版本冲突重试都在适配层里。"""
+    _ver, cur = get_current(att_key)
+    if cur == new_title:
+        return 'skip'
+    try:
+        zotero.patch_item(att_key, {'title': new_title},
+                          action=f'把附件改名为「{new_title}」', force=forced, log=print)
+        return 'ok'
+    except Exception as e:
+        print(f'  [改名失败] {att_key}: {e}')
+        return 'fail'
 
 
 def main():
