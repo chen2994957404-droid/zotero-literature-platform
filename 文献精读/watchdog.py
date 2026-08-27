@@ -7,7 +7,7 @@
 
 用法: python watchdog.py    # 前台常驻；建议放任务计划或开机自启
 """
-import os, sys, time, subprocess, io
+import os, sys, time, subprocess
 
 # 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
@@ -23,21 +23,14 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = _ROOT
 HEARTBEAT = paths.runtime('watcher_heartbeat.txt')
 WATCHER = os.path.join(SCRIPT_DIR, 'zotero_watcher.py')
-WD_LOG = paths.log('watchdog')
 
 CHECK = 60      # 每 60 秒查一次
 STALE = 300     # 心跳超 300 秒（5分钟）没更新 = 卡死。watcher 轮询间隔60s，5分钟足够宽容
 GRACE = 180     # 重启后给 watcher 的启动宽限期，期间不判死
 
 
-def log(msg):
-    line = f'[{time.strftime("%Y-%m-%d %H:%M:%S")}] {msg}'
-    print(line)
-    try:
-        with io.open(WD_LOG, 'a', encoding='utf-8') as f:
-            f.write(line + '\n')
-    except Exception:
-        pass   # 日志写不进去不阻塞主流程（还有 stdout）
+from core.log import get_logger
+log = get_logger('watchdog')   # 统一日志：时间戳 + 落盘 + 自动轮转
 
 
 def heartbeat_age():

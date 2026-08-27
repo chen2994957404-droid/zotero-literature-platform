@@ -27,6 +27,8 @@
 import os
 import re
 
+from core import errors
+
 # ── 项目根 ────────────────────────────────────────────────────────────
 # 本文件位于 <项目根>/core/paths.py，往上两级即项目根。
 # 靠 __file__ 定位，与「从哪个目录启动」无关 —— 这是它能取代
@@ -49,8 +51,12 @@ INCOMING = os.path.join(DATA, '_incoming')     # 临时处理区（可清空）
 KEY_RE = re.compile(r'^[A-Z0-9]{8}$')
 
 
-class BadKeyError(ValueError):
-    """传进来的东西不是合法的 Zotero item key。"""
+class BadKeyError(errors.BadInputError):
+    """传进来的东西不是合法的 Zotero item key。
+
+    归入 `core.errors.BadInputError`：调用方传错了，重试没有意义。
+    （它同时仍是 ValueError，旧代码里 `except ValueError` 照样接得住。）
+    """
 
 
 def check_key(key):

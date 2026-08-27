@@ -13,13 +13,13 @@
 ```
 MCP服务/ （3 个脚本）
     mcp_stdio.py、selftest.py、zotero_server.py
-core/ （2 个脚本）
-    __init__.py、paths.py
+core/ （4 个脚本）
+    __init__.py、errors.py、log.py、paths.py
 docs/                    ← 文档（14 份）
 modules/                 ← 积木层（17 块）
     chart_digitize、cli、config、embed、evalset、figure_crop、lib_match、llm_client、paper_discovery、pdf_parse、proc_lock、query_expand、sciverse、si_filter、snowball、subproc、zotero_client
-tests/ （2 个脚本）
-    test_architecture.py、test_core_paths.py
+tests/ （3 个脚本）
+    test_architecture.py、test_core_log_errors.py、test_core_paths.py
 平台管理/ （4 个脚本）
     health_check.py、panel.py、panel_launch.py、交接.py
 库内问答/ （4 个脚本）

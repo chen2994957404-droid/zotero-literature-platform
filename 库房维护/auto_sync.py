@@ -11,7 +11,7 @@
 前提：Zotero 开着（取全文）+ Ollama 在跑（向量化/本地抽取）。两者都有保活任务。
 用法: python auto_sync.py        （由任务计划 LiteratureAutoSync 每小时调用）
 """
-import os, sys, time, io, json, urllib.request
+import os, sys, time, json, urllib.request
 from subprocess import TimeoutExpired
 
 # 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
@@ -26,18 +26,10 @@ from modules.config import need_site, get_site
 from modules.subproc import run as _sub_run   # 子进程统一走积木：不弹窗+超时+UTF-8
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG = paths.log('auto_sync')
-os.makedirs(os.path.dirname(LOG), exist_ok=True)
 
 
-def log(msg):
-    line = f'[{time.strftime("%Y-%m-%d %H:%M:%S")}] {msg}'
-    print(line)
-    try:
-        with io.open(LOG, 'a', encoding='utf-8') as f:
-            f.write(line + '\n')
-    except Exception:
-        pass  # 日志落盘失败只丢这一条，print 已成功，不影响主流程
+from core.log import get_logger
+log = get_logger('auto_sync')   # 统一日志：时间戳 + 落盘 + 自动轮转
 
 
 def _alive(url, headers=None, timeout=6):

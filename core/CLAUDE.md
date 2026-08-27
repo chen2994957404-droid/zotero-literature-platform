@@ -22,9 +22,46 @@
 | 文件 | 是什么 |
 |---|---|
 | `paths.py` | **数据契约的唯一实现**。全系统只有它知道 `workflow_data` 里的目录长什么样 |
+| `log.py` | 统一日志：像 print 一样调用，带时间戳、落盘、自动轮转（5MB × 3 份）|
+| `errors.py` | 异常分类。分类维度是**「该拿它怎么办」**，不是「哪里出的错」|
 
-规划中（尚未建）：`log.py`（统一日志）、`errors.py`（异常分类）、
-`jobs.py`（SQLite 任务状态库，支撑续跑/重试/只补缺的）。见设计文档第三节。
+规划中（尚未建）：`jobs.py`（SQLite 任务状态库，支撑续跑 / 退避重试 /
+「只补缺的部分」/ 产物溯源）。见设计文档第三节 A —— 这是阶段 3 的核心。
+
+## log.py 怎么用
+
+```python
+from core.log import get_logger
+log = get_logger('zotero_watcher')
+
+log('开始处理', key)        # 像 print 一样用（老代码零成本迁移）
+log.warn('PDF 找不到')
+log.error('MineRU 失败')
+log.path                    # 写到哪个文件（面板展示日志时用）
+```
+
+**不要再自己写 `def log(msg)`，也绝不要劫持内置 `print`。**
+改造前这三种写法各存在一份，且都不会轮转 —— 常驻服务的日志只会一直长下去。
+
+⚠ 坑（踩坑 #48）：`logging.getLogger(名)` 是**进程级全局单例**。
+判断「要不要挂 handler」不能只看「有没有」，要看「指向的是不是同一个文件」——
+否则要么日志写两遍，要么换了目录不生效。
+
+## errors.py 怎么用
+
+```python
+from core import errors
+
+raise errors.ConfigError('MINERU_TOKEN 没配，去控制面板填')
+raise errors.RateLimited('MineRU 限流', service='mineru', retry_after=30)
+
+if errors.is_retryable(e):   ...退避重试...
+else:                        ...记下来，跳过...
+```
+
+分类维度是**「该拿它怎么办」**：`BadInputError` / `ConfigError` / `DataError` /
+`AuthError` 都不该重试；只有 `ExternalServiceError` 系列可以。
+不认识的异常一律不重试 —— 宁可让失败暴露，也不要对着永远不会成功的调用烧钱。
 
 ## paths.py 怎么用
 

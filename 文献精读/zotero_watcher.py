@@ -16,19 +16,11 @@ from core import paths
 from modules.config import get_key, need_site, get_site
 
 # ===== 运行日志 =====
-_LOG_DIR = paths.LOGS
-os.makedirs(_LOG_DIR, exist_ok=True)
-_LOG_FILE = os.path.join(_LOG_DIR, 'zotero_watcher.log')
-_print = print
-def print(*args, **kwargs):
-    msg = ' '.join(str(a) for a in args)
-    line = f'[{time.strftime("%Y-%m-%d %H:%M:%S")}] {msg}'
-    _print(line, **kwargs)
-    try:
-        with open(_LOG_FILE, 'a', encoding='utf-8') as f:
-            f.write(line + '\n')
-    except Exception:
-        pass
+# 走 core.log：带时间戳、同时打屏和落盘、超过 5MB 自动轮转。
+# （此前这里是「把内置 print 整个换掉」的 hack —— 读代码的人会以为只是打屏，
+#   实际在写文件；而且没有轮转，常驻服务的日志只会一直长下去。）
+from core.log import get_logger
+print = get_logger('zotero_watcher')       # 保留 print 这个名字，下方几十处调用不用改
 
 # ===== 配置 =====
 ZOTERO_LOCAL = get_site('ZOTERO_API_HOST') + '/api'
