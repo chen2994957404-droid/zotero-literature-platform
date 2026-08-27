@@ -191,3 +191,29 @@ def has(key, what='fulltext'):
         return os.path.exists(fn(key))
     except BadKeyError:
         return False
+
+
+# ── 仓库形状 ──────────────────────────────────────────────────────────
+# 「哪些顶层目录不是工作流」这份清单，此前在 交接.py / panel.py / health_check.py
+# 里各写了一遍（三份，且已经互相不一致）。收在这里，改一次全都生效。
+# ① 噪音目录：数据、缓存、构建产物。画目录树、扫源码时一律跳过，
+#    但它们**不是**「代码结构」的一部分。
+NOISE_DIRS = {
+    'workflow_data', 'n8n_data', 'wf_backup', 'b',
+    '__pycache__', '.git', '.venv', 'venv', 'build', 'dist', '.pytest_cache',
+    'zotero_literature_platform.egg-info',
+}
+
+# ② 非工作流目录 = 噪音 + 代码环 + 积木/文档/测试。
+#    用于「自动发现有哪几条工作流线」（体检、面板、交接文件都要这个判断）。
+NON_WORKFLOW_DIRS = NOISE_DIRS | {
+    'core', 'domain', 'adapters', 'apps',   # 四环里的非编排环
+    'modules', 'docs', 'tests', '归档_旧版本',
+}
+
+
+def is_workflow_dir(name):
+    """这个顶层目录名算不算一条「工作流线」（用于体检、面板、交接文件的自动发现）。"""
+    return (name not in NON_WORKFLOW_DIRS
+            and not name.startswith(('.', 'zotero_backup'))
+            and not name.endswith('.egg-info'))

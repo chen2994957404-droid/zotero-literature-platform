@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
 """一键健康检查：验证平台各环节是否正常。改动后跑这个，比逐个手测可靠。
 
-覆盖：语法 → 配置 → 依赖服务 → 公理件自测 → 数据资产 → 后台服务
-用法: python 平台管理/health_check.py
+覆盖分两档（见 docs/架构重构_v2总体设计.md 第五节）：
+  离线档：包安装 → 离线测试 → 语法 → 静态检查        ← 必须永远全绿
+  实测档：配置 → Zotero/Ollama → 公理件自测 → 数据 → 后台服务  ← 本机没配就会红，正常
+
+用法: python 平台管理/health_check.py            两档都跑
+      python 平台管理/health_check.py --offline  只跑离线档（改完代码先跑这个）
 """
 import os, sys, ast, glob, json, urllib.request, subprocess
 
@@ -25,8 +29,7 @@ results = []
 
 # 工作流文件夹 = 项目根下、含 .py 且不是积木层/数据/文档的目录。
 # 自动发现而非写死清单：以后新增一条工作流线，体检自动纳入，不用改这里。
-_SKIP_DIRS = {'modules', 'docs', 'workflow_data', 'n8n_data', 'wf_backup',
-              '__pycache__', '.git', 'b'}
+_SKIP_DIRS = paths.NON_WORKFLOW_DIRS
 
 
 def workflow_dirs():
@@ -370,22 +373,65 @@ def c_services():
         return WARN, f'无法查询任务计划: {e}'
 
 
+
+# ══════════════════════════════════════════════════════════════════════
+# 离线档：不依赖任何外部服务，永远应该全绿（见 docs/架构重构_v2总体设计.md 第五节）
+# ══════════════════════════════════════════════════════════════════════
+def c_installed():
+    """项目是否已装成 Python 包 —— 现在所有 import 都依赖这一步。"""
+    try:
+        import importlib.metadata as md
+        ver = md.version('zotero-literature-platform')
+    except Exception:
+        return FAIL, ('项目没装成包！所有脚本的 import 都会失败。'
+                      '修复：在项目根目录跑  pip install -e . --no-deps')
+    # 装了，但可能指向别的目录（换过盘符/复制过项目）
+    import core.paths as _cp
+    if os.path.normcase(_cp.ROOT) != os.path.normcase(ROOT):
+        return FAIL, f'装的是另一份代码：{_cp.ROOT}，当前在 {ROOT}。重跑 pip install -e . --no-deps'
+    return OK, f'已装成包 v{ver}，import 无需 sys.path 补丁'
+
+
+def c_offline_tests():
+    """离线测试必须全绿 —— 这是整个安全网的核心指标。"""
+    try:
+        import pytest  # noqa: F401
+    except ImportError:
+        return WARN, '没装 pytest，离线测试跑不了：pip install "pytest>=8.0"'
+    r = subprocess.run([sys.executable, '-m', 'pytest', '-q', '--no-header'],
+                       capture_output=True, text=True, encoding='utf-8',
+                       errors='replace', cwd=ROOT, timeout=300,
+                       creationflags=_NOWIN)
+    tail = [ln for ln in (r.stdout or '').strip().splitlines() if ln.strip()]
+    summary = tail[-1][:120] if tail else '(无输出)'
+    if r.returncode == 0:
+        return OK, f'离线测试全绿：{summary}'
+    return FAIL, f'离线测试有红的（结构被改坏了）：{summary}'
+
+
 if __name__ == '__main__':
-    print('=== 平台健康检查 ===\n', flush=True)
+    offline = flag('--offline')     # 只跑不依赖外部服务的检查
+    print('=== 平台健康检查%s ===\n' % ('（离线档）' if offline else ''), flush=True)
+    check('包安装', c_installed)
+    check('离线测试', c_offline_tests)
     check('语法', c_syntax)
     check('未导入的模块', c_undefined_names)
     check('密钥安全', c_no_secrets)
     check('无弹窗', c_no_popup)
-    check('密钥存放', c_secret_storage)
-    check('配置加载', c_config)
+    if not offline:
+        check('密钥存放', c_secret_storage)
     check('配置硬编码', c_hardcoded)
-    check('Zotero 服务', c_zotero)
-    check('Ollama 服务', c_ollama)
-    check('运行时导入', c_importable)
-    check('公理件自测', c_modules)
     check('自测覆盖', c_no_selftest)
-    check('数据资产', c_data)
-    check('后台服务', c_services)
+    check('运行时导入', c_importable)
+
+    # ── 实测档：需要真实服务/密钥/数据，本机没配就会红，属正常 ──
+    if not offline:
+        check('配置加载', c_config)
+        check('Zotero 服务', c_zotero)
+        check('Ollama 服务', c_ollama)
+        check('公理件自测', c_modules)
+        check('数据资产', c_data)
+        check('后台服务', c_services)
 
     nf = sum(1 for s, _, _ in results if s == FAIL)
     nw = sum(1 for s, _, _ in results if s == WARN)

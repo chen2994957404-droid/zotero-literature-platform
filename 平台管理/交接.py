@@ -25,6 +25,7 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+from core import paths
 from core.paths import ROOT as _ROOT
 
 from modules.cli import flag
@@ -68,7 +69,7 @@ def tree():
     `workflow_data/library/<KEY>/parsed/images/*.jpg`，**完全看不出项目长什么样**。
     在交接文件里直接给出目录树，新会话就不必去 glob，也就不会被数据淹没。
     """
-    skip_dir = {'workflow_data', 'n8n_data', 'wf_backup', '__pycache__', '.git'}
+    skip_dir = paths.NOISE_DIRS   # 树里要显示 core/ tests/，只跳数据与缓存
     lines = []
     for d in sorted(os.listdir(ROOT)):
         p = os.path.join(ROOT, d)
@@ -152,8 +153,7 @@ def flows():
     **归档_旧版本 不算工作流** —— 它是废弃代码，算进去会让「有几个工作流」这个数
     自相矛盾（实测中新会话就被这一点绊住了）。
     """
-    skip = {'modules', 'docs', 'workflow_data', 'n8n_data', 'wf_backup',
-            '归档_旧版本'}
+    skip = paths.NON_WORKFLOW_DIRS
     rows = []
     for d in sorted(os.listdir(ROOT)):
         p = os.path.join(ROOT, d)

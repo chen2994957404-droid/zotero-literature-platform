@@ -1,7 +1,7 @@
 # 交接文件 · 我们做到哪了
 
 > **本文件由 `平台管理/交接.py` 自动生成，不要手改** —— 手写的文档一定会过时。
-> 生成时间：2026-08-26 09:48
+> 生成时间：2026-08-26 17:58
 
 新对话请按这个顺序读：本文件 → `CLAUDE.md` → 需要动哪块就读那个文件夹的 `CLAUDE.md`。
 
@@ -10,9 +10,13 @@
 ```
 MCP服务/ （3 个脚本）
     mcp_stdio.py、selftest.py、zotero_server.py
-docs/                    ← 文档（13 份）
+core/ （2 个脚本）
+    __init__.py、paths.py
+docs/                    ← 文档（14 份）
 modules/                 ← 积木层（17 块）
     chart_digitize、cli、config、embed、evalset、figure_crop、lib_match、llm_client、paper_discovery、pdf_parse、proc_lock、query_expand、sciverse、si_filter、snowball、subproc、zotero_client
+tests/ （2 个脚本）
+    test_architecture.py、test_core_paths.py
 平台管理/ （4 个脚本）
     health_check.py、panel.py、panel_launch.py、交接.py
 库内问答/ （4 个脚本）
@@ -28,21 +32,21 @@ modules/                 ← 积木层（17 块）
 文献精读/ （12 个脚本）
     deepread_batch.py、deepread_v4.py、merge_summary.py、mineru_parse.py、refresh_summary_file.py、rerun_pro.py、si_batch.py、si_deepread.py…
 
-根目录文件：CLAUDE.md、LICENSE、README.md、requirements.txt、控制面板.bat、精读监听.bat
+根目录文件：CLAUDE.md、LICENSE、README.md、pyproject.toml、requirements.txt、控制面板.bat、精读监听.bat
 
 （workflow_data/ 是数据目录，3000+ 文件，**不要去 glob 它**）
 ```
 
 ## 现在健康吗
 
-`结果：8 通过，5 警告，1 失败`
+`结果：10 通过，5 警告，1 失败`
 
 - [WARN] 密钥存放: 凭据库可用（WinVaultKeyring），但一个密钥都没存 —— 5 个待填，请在控制面板里配置
 - [FAIL] 配置加载: 缺少: ['DEEPSEEK_KEY', 'ZOTERO_API_KEY', 'MINERU_TOKEN']
 - [WARN] Zotero 服务: Zotero 未开（精读/抽取/找文献会失败）
 - [WARN] Ollama 服务: Ollama 未跑（问答/向量化会失败）
 - [WARN] 公理件自测: 12/16 自测通过（共 17 个公理件）；跳过慢测试 ['chart_digitize']（--full 可跑）；失败: ['embed', 'llm_client', 'query_expand', 'zotero_client']
-- [WARN] 后台服务: 缺任务: {'LiteratureAutoSync', 'ZoteroApp', 'OllamaService', 'ZoteroLiteratureWatcher'}
+- [WARN] 后台服务: 缺任务: {'OllamaService', 'LiteratureAutoSync', 'ZoteroApp', 'ZoteroLiteratureWatcher'}
 
 ## 👉 下一步该做什么
 
@@ -51,16 +55,16 @@ modules/                 ← 积木层（17 块）
 
 ## 最近做了什么（git 提交，新到旧）
 
+- `08-26` 重构阶段0+1：项目装成 Python 包 + 数据契约收进 core/paths
+- `08-26` 记录本次排查：踩坑 #43~#47 + 变更记录 + 刷新交接文件
+- `08-26` 控制面板加 CSRF 防护；清掉 watcher 死代码；两处小修
+- `08-26` 打通配置管道：面板改地址终于生效；体检补上守红线#3的检查项
+- `08-26` 修两个后台服务的真 bug：MCP 中文乱码 + 单实例锁失效
 - `08-25` MCP服务/CLAUDE.md 补充 Codex/Claude Code 接入示例（查证官方文档，绝对路径不依赖工作目录）
 - `08-25` MCP 服务接入 DSH（HMR 热加载生效）：记录 mcp__zotero__* 工具上线与清理调研克隆
 - `08-25` 库房层 MCP 服务落地（MCP服务/）：手写 stdio 协议零依赖 + 10 个只读工具封装 zotero_client；记录调研结论与真实库验证
 - `08-25` 控制面板.bat 移除探针；记录计划任务实况更正+ControlPanel任务注册
 - `08-25` 面板改控制台python启动+新建精读监听.bat(看门狗)；记录误杀watcher教训(踩坑#42)
-- `08-25` 控制面板启动器：捕获pythonw静默报错到panel_launch.log，排查打不开问题
-- `08-25` 修 llm_client 本地聊天：模型名走config(.env OLLAMA_MODEL)+关qwen3.5思考，自测3/3过（踩坑#41）
-- `08-24` 记录：双机协作搭通（主仓库 chen2994957404-droid + 协作者推送）
-- `08-24` README 增加两机协作说明（主仓库 chen2994957404-droid + 协作者工作流）
-- `08-24` 记录：本机 Zotero 验证通过（zotero_client 3/3、体检 Zotero OK）
 
 ## 精读质量评测集
 
@@ -85,6 +89,7 @@ modules/                 ← 积木层（17 块）
 
 - 工单列表
 - watcher 重复实例（面板发现，2026-08-06）
+- 2026-08-26 · 架构重构 v2 的后续阶段
 
 ## 最近踩的坑（全文见 `docs/踩坑记录.md`）
 
@@ -97,7 +102,7 @@ modules/                 ← 积木层（17 块）
 ## 想深入时读哪份（**这两份是时间正序的长文件，用 tail 读末尾，别从头读**）
 
 - `docs/踩坑记录.md`（60 KB） — 所有踩过的坑，含根因与解法
-- `docs/变更记录.md`（98 KB） — 每次改动的来龙去脉
+- `docs/变更记录.md`（101 KB） — 每次改动的来龙去脉
 - `docs/架构宪法_第一性原理.md`（17 KB） — 最高纲领：三条铁律 + 零号/首要判据
 - `<某文件夹>/CLAUDE.md` — 那一块的完整说明书，改哪块就读哪份
 

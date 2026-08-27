@@ -13,9 +13,13 @@
 ```
 MCP服务/ （3 个脚本）
     mcp_stdio.py、selftest.py、zotero_server.py
-docs/                    ← 文档（13 份）
+core/ （2 个脚本）
+    __init__.py、paths.py
+docs/                    ← 文档（14 份）
 modules/                 ← 积木层（17 块）
     chart_digitize、cli、config、embed、evalset、figure_crop、lib_match、llm_client、paper_discovery、pdf_parse、proc_lock、query_expand、sciverse、si_filter、snowball、subproc、zotero_client
+tests/ （2 个脚本）
+    test_architecture.py、test_core_paths.py
 平台管理/ （4 个脚本）
     health_check.py、panel.py、panel_launch.py、交接.py
 库内问答/ （4 个脚本）
@@ -31,7 +35,7 @@ modules/                 ← 积木层（17 块）
 文献精读/ （12 个脚本）
     deepread_batch.py、deepread_v4.py、merge_summary.py、mineru_parse.py、refresh_summary_file.py、rerun_pro.py、si_batch.py、si_deepread.py…
 
-根目录文件：CLAUDE.md、LICENSE、README.md、requirements.txt、控制面板.bat、精读监听.bat
+根目录文件：CLAUDE.md、LICENSE、README.md、pyproject.toml、requirements.txt、控制面板.bat、精读监听.bat
 
 （workflow_data/ 是数据目录，3000+ 文件，**不要去 glob 它**）
 ```
@@ -104,7 +108,11 @@ modules/   ← 积木层（公理件），每块也有自己的 CLAUDE.md
 **完整清单见本文件上方「项目结构」自动区块**（手写清单会过时，这里刻意不列）。
 
 改动后跑 `python modules/<名>/selftest.py` 验证单块；
-**改完务必跑一键体检**：`python 平台管理/health_check.py`。
+
+**改完的验证顺序**（前两步是离线的，秒级，必须全绿）：
+1. `python -m pytest -q` —— 离线测试 + 架构守卫
+2. `python 平台管理/health_check.py --offline` —— 离线档体检（不依赖服务）
+3. `python 平台管理/health_check.py` —— 完整体检（要真实服务/密钥，本机没配会红，正常）
 
 
 ## ⚠ 最高优先级：先看真实世界，别用记忆代替调研
@@ -180,12 +188,29 @@ modules/   ← 积木层（公理件），每块也有自己的 CLAUDE.md
 `docs/变更记录.md`（改动流水账，最新状态）→ `docs/踩坑记录.md`（已知坑）→
 `docs/架构宪法_第一性原理.md` → `docs/数据契约.md`。别走到哪读到哪、靠猜（教训见踩坑#14）。
 
-## 代码规范（2026-08-11 框架化）
+## ⚠ 正在进行架构重构 v2（2026-08-26 起）
 
-**改任何 .py 之前，先读 `docs/代码规范_标准脚本模板.md`。** 三条红线：
-1. 每个脚本顶部用「标准开头」（塞路径 + UTF-8，9 行模板），**不要发明新写法**
+**先读 `docs/架构重构_v2总体设计.md`**，它规定项目正在往「四环」结构收敛：
+`core`（内核）→ `domain`（纯逻辑）/ `adapters`（外接口）→ `pipelines`（编排）→ `apps`（界面），
+依赖只能从上往下。已完成阶段 0（安全网）与阶段 1 的 `core/paths`。
+
+**装一次才能跑**（换电脑/重装后必做）：
+
+```
+pip install -e . --no-deps
+```
+
+项目现在是真正的 Python 包，`import modules.x` / `from core import paths` 在任何目录都能用。
+
+## 代码规范（红线，2026-08-26 更新）
+
+**改任何 .py 之前，先读 `docs/代码规范_标准脚本模板.md`。** 四条红线：
+1. 「标准开头」只剩 4 行（**只做 UTF-8，不再塞 sys.path**）。旧的 9 行走查根写法已全删，
+   **不要写回去**——架构守卫会让 pytest 变红
 2. 命令行参数一律走 `modules/cli`（pos / flag / opt / opts / positionals），**禁止手写 sys.argv**
 3. 配置与模型名一律走 `modules/config`（get_key / get_site / get_model），**禁止 hardcode**
+4. 数据路径一律走 `core.paths`（`paths.fulltext(key)` / `paths.LIBRARY` / `paths.log(名)`），
+   **禁止手写 `workflow_data` 路径**——同样有守卫拦截
 
 ## 验证自主性
 

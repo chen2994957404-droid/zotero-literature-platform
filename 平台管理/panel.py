@@ -369,7 +369,7 @@ def collect_blocks():
         })
 
     flows = []
-    skip = {'modules', 'docs', 'workflow_data', 'n8n_data', 'wf_backup', 'b'}
+    skip = paths.NON_WORKFLOW_DIRS
     for d in sorted(os.listdir(ROOT)):
         p = os.path.join(ROOT, d)
         if (not os.path.isdir(p) or d in skip or d.startswith(('.', 'zotero_backup'))
