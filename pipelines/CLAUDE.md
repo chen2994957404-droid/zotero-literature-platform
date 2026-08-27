@@ -20,6 +20,7 @@
 | `query_expand` | 问题 → LLM → 多个检索式 |
 | `paper_discovery` | `adapters.openalex` 检索 + 库内匹配标记 |
 | `lib_match` | `adapters.vectordb` 检索 + 排序判定 |
+| `deepread` | **阶段 3 搬进来的主线**：解析 + 正文精读 + SI + 合并（见它自己的 CLAUDE.md）|
 
 ## 依赖规矩
 
@@ -30,18 +31,19 @@
 守卫会拦（`python -m pytest`）—— 重构前 `paper_discovery` 正是反面教材：
 编排层里直接写着 OpenAlex 的 URL 和 `urlopen`。
 
-## 还没做的（阶段 3，收益最大的一步）
+## 阶段 3 做到哪了（2026-08-27）
 
-平台的主线工作流 —— 精读、SI 精读、合并、结构化抽取、向量化、问答 ——
-**现在还是靠 subprocess 互相拉起来的独立脚本**：
+**精读线已经搬进来了**（`pipelines/deepread`）：watcher 里那五个
+「脚本路径 + 参数顺序」的子进程调用，变成了一次 `deepread.run(key, ...)`。
+配套上线了 `core/jobs`（SQLite 状态库）：每一步谁产的、哪个模型、哪版提示词、
+失败原因都记账，于是「只补缺的部分」「提示词升级即重跑清单」变成一句查询。
 
-```python
-subprocess.run([sys.executable, ROOT/'数据抽取'/'extract_structured.py', key])
-```
+`文献精读/` 下的 `deepread_v4.py` / `si_deepread.py` / `merge_summary.py`
+现在只是**命令行薄壳**，逻辑都在这儿 —— 老的 .bat 和批量脚本一行没改照常能用。
 
-接口就是「文件路径 + 参数顺序」。改个文件夹名、调个参数次序，运行时才炸。
-而且没有类型、没有状态、失败了不能续跑、面板看不到进度。
+还没搬的（下一步）：
 
-阶段 3 要把它们变成这里的函数（`run(key, ctx) -> Result`，由 step 组成、幂等、
-可续跑），并配一个 `core/jobs` 的 SQLite 状态库支撑「只补缺的部分」。
-详见 `docs/架构重构_v2总体设计.md` 第三节 A 与第六节。
+- **结构化抽取** `数据抽取/extract_structured.py`：watcher 仍用子进程拉它
+- **向量化 / 问答**：`库内问答/` 三个脚本
+- **回写 Zotero**：`zotero_upload_attachment.py` 该收进 `adapters/zotero_client`，
+  watcher 才能瘦成「看标签 → 入队 → 完事」（设计文档阶段 4 第 19 项）

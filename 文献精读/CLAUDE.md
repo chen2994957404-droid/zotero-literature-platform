@@ -19,8 +19,14 @@
 
 ```
 打标签 → 找PDF → MineRU解析 → 精读正文 → (有SI就精读SI) → 合并 → 传回Zotero → 改标签
-        find_pdf  mineru_parse  deepread_v4  si_deepread   merge_summary  upload_*
+        find_pdf └──────── pipelines/deepread.run(key) ────────┘  upload_*
 ```
+
+⚠ **2026-08-27（重构阶段 3）：中间那四步的逻辑已经搬到 `pipelines/deepread/`。**
+watcher 不再用子进程拉四个脚本，而是调一次 `deepread.run(key, ...)`；
+每一步都记进 `core/jobs` 状态库（谁产的、哪个模型、哪版提示词、失败原因）。
+本文件夹下的 `deepread_v4.py` / `si_deepread.py` / `merge_summary.py`
+**现在只是命令行薄壳** —— 想改精读逻辑请改 `pipelines/deepread/`，别在这儿加。
 
 标签状态机（互斥，一篇文献同时只有一个状态）：
 - `待处理`/`待精读` → 触发
@@ -36,15 +42,15 @@
 |---|---|
 | `zotero_watcher.py` | 总指挥：轮询标签、调度下面所有步骤、回写 Zotero |
 | `watchdog.py` | 看门狗：watcher 卡死就重启（靠心跳文件判断） |
-| `deepread_v4.py` | 精读正文 → 中文 HTML（含确定性插图） |
-| `si_deepread.py` | 精读补充材料（SI），支持 PDF 与 .docx |
-| `merge_summary.py` | 把正文精读 + SI 精读合并成一份 |
+| `deepread_v4.py` | 命令行薄壳 → `pipelines/deepread/main_text.py`（正文精读）|
+| `si_deepread.py` | 命令行薄壳 → `pipelines/deepread/si.py`（SI 精读，支持 PDF 与 .docx）|
+| `merge_summary.py` | 命令行薄壳 → `pipelines/deepread/merge.py`，外加「要不要回写 Zotero」|
 | `mineru_parse.py` | PDF → Markdown + 版面 JSON（调 MineRU 云服务） |
 | `deepread_batch.py` | 批量精读，`--force` 可强制重跑（自动备份旧版 .bak） |
 | `refresh_summary_file.py` | 把新版精读刷进 Zotero 本地 storage（不动条目，避免同步冲突） |
 | `upload_summaries.py` / `zotero_upload_attachment.py` | 上传附件到 Zotero |
 | `rerun_pro.py` | 用 pro 模型重跑某篇（更贵更准） |
-| `_sys_prompt_v2.txt` | 精读的系统提示词，**改精读风格/结构就改这里** |
+| （提示词）| 已搬到 `pipelines/deepread/_sys_prompt_v2.txt`，**改精读风格/结构就改那里**；改完把 `main_text.PROMPT_VER` +1 |
 
 ## 依赖的积木（在 ../modules/，本文件夹看不到）
 

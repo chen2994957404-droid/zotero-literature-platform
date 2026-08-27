@@ -24,9 +24,32 @@
 | `paths.py` | **数据契约的唯一实现**。全系统只有它知道 `workflow_data` 里的目录长什么样 |
 | `log.py` | 统一日志：像 print 一样调用，带时间戳、落盘、自动轮转（5MB × 3 份）|
 | `errors.py` | 异常分类。分类维度是**「该拿它怎么办」**，不是「哪里出的错」|
+| `jobs.py` | **任务状态库**（SQLite）：谁做到哪一步、谁产的、失败在哪、该重跑谁 |
 
-规划中（尚未建）：`jobs.py`（SQLite 任务状态库，支撑续跑 / 退避重试 /
-「只补缺的部分」/ 产物溯源）。见设计文档第三节 A —— 这是阶段 3 的核心。
+## jobs.py 怎么用
+
+```python
+from core import jobs
+
+if jobs.is_done(key, 'main_summary', require='summary', prompt_ver=2):
+    ...跳过，省一次 MineRU + DeepSeek 的钱...
+
+with jobs.track(key, 'main_summary', model=MODEL, prompt_ver=2) as run:
+    do_the_work()
+    run.note(cost=0.12)        # 做完才知道的东西，补记进去
+
+jobs.last(key, 'main_summary')             # 最后一次执行（含 producer/model/error）
+jobs.stale('main_summary', prompt_ver=3)   # 提示词升到 v3 后，谁该重跑
+jobs.summary()                             # 按步骤统计，给面板显示进度
+```
+
+两条设计约定，改它之前必须先认同：
+
+1. **状态库是索引，不是真相。**真相永远是硬盘上的产物文件。
+   所以 `is_done()` 还要 `require=` 产物名；库删了能重建，产物没了才是真丢数据。
+   也因此：状态库里没记录但产物在（上线前做的老数据），一律**认它**，不重跑全库。
+2. **它坏了不许拖垮主流程。**所有读写都兜底，失败只打一行日志。
+   记不上账可以，正在跑的精读白做不行。
 
 ## log.py 怎么用
 

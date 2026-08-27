@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """批量精读：对给定 key 列表，复用已有的 MineRU 解析结果（library/<key>/parsed/）
-调 deepread_v4 生成中文图文精读 summary.html。解析结果与精抽共享，不重复解析。
+调 pipelines.deepread 的正文精读生成 summary.html。解析结果与精抽共享，不重复解析。
 
 模型：精读是「输出重」的活（9000字长文），默认用 deepseek-v4-flash 省钱。
 用法:
   python deepread_batch.py KEY1 KEY2 ...
   python deepread_batch.py --file keys.txt
 """
-import os, sys, subprocess, shutil
+import os, sys, shutil
 
 # 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
@@ -19,12 +19,13 @@ from core.paths import ROOT as _ROOT
 
 from core.cli import opt, positionals, flag
 from core.config import get_key, get_model
+from core import jobs
+from pipelines import deepread
+from pipelines.deepread import main_text
 
-_NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = _ROOT
 LIBRARY = paths.LIBRARY
-DEEPREAD = os.path.join(SCRIPT_DIR, 'deepread_v4.py')
 
 PROVIDER = 'deepseek'
 MODEL = get_model('DEEPREAD_MODEL')   # 精读输出重→flash；可在控制面板切换
@@ -44,14 +45,13 @@ def read_one(key, force=False):
         if not os.path.exists(bak):
             shutil.copy2(out_html, bak)
             print(f'  [备份] 旧版存为 summary.html.bak')
-    # deepread_v4.py 的 DeepSeek key 靠命令行第5参传入，不读环境变量（应用侧变更记录·认知2）
-    env = dict(os.environ, PYTHONIOENCODING='utf-8')
-    r = subprocess.run([sys.executable, DEEPREAD, parsed, out_html, PROVIDER, MODEL, KEY],
-                       capture_output=True, text=True, encoding='utf-8', errors='replace', env=env, creationflags=_NOWIN)
-    if os.path.exists(out_html):
-        sz = round(os.path.getsize(out_html) / 1024)
-        print(f'  [完成] summary.html {sz} KB'); return True
-    print(f'  [失败] {r.stdout[-200:]} {r.stderr[-200:]}'); return False
+    # 阶段 3 起直接调函数，不再拉子进程 —— 失败拿得到原因，不只是退出码。
+    # 每次执行都记进 core.jobs（哪个模型、哪版提示词、失败原因）。
+    with jobs.track(key, deepread.STEP_MAIN, producer=main_text.PRODUCER,
+                    model=MODEL, prompt_ver=main_text.PROMPT_VER):
+        main_text.read_main(parsed, out_html, provider=PROVIDER, model=MODEL, key=KEY)
+    sz = round(os.path.getsize(out_html) / 1024)
+    print(f'  [完成] summary.html {sz} KB'); return True
 
 
 def main():

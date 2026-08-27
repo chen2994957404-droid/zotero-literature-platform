@@ -47,14 +47,17 @@ WEB_API_KEY = get_key('ZOTERO_API_KEY')  # zotero.org 写权限key
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)
-DEEPREAD = os.path.join(SCRIPT_DIR, 'deepread_v4.py')
-MINERU_SCRIPT = os.path.join(SCRIPT_DIR, 'mineru_parse.py')
+# 精读流水线（解析→正文精读→SI→合并）现在是**一个函数**，不再是五个 subprocess。
+# 见 pipelines/deepread/__init__.py 开头「为什么」。
+from pipelines import deepread
 EXTRACT_SCRIPT = os.path.join(ROOT, '数据抽取', 'extract_structured.py')  # 结构化抽取（粗层）
-SI_DEEPREAD = os.path.join(SCRIPT_DIR, 'si_deepread.py')            # SI 实验细节精读
-MERGE_SCRIPT = os.path.join(SCRIPT_DIR, 'merge_summary.py')         # 正文+SI 合并
 # 新的以文献为单元的库结构：workflow_data/library/<key>/{parsed/, summary.html}
 LIBRARY = paths.LIBRARY
 os.makedirs(LIBRARY, exist_ok=True)
+
+# 「实际做成了什么」→ Zotero 状态标签。**这个映射只能在这一层**：
+# pipelines 不知道 Zotero 有什么标签，它只陈述事实（见 deepread.Result）。
+STATE_TAG = {'full': TAG_FULL, 'main': TAG_MAIN, 'si': TAG_SI, 'nopdf': TAG_NOPDF}
 
 # 引入附件上传能力
 sys.path.insert(0, SCRIPT_DIR)
@@ -72,91 +75,36 @@ def process_item(item):
     key = item['key']
     title = item['data'].get('title', key)[:50]
     print(f'[发现] {title}')
-    lib_dir = os.path.join(LIBRARY, key)
-    parsed_dir = os.path.join(lib_dir, 'parsed')
-    out_html = os.path.join(lib_dir, 'summary.html')
-    si_html = os.path.join(lib_dir, 'si_summary.html')
     env = dict(os.environ, PYTHONIOENCODING='utf-8', DEEPSEEK_KEY=DEEPSEEK_KEY)
 
-    pdf_path, att_key = _find_pdf(key, return_att_key=True)
+    pdf_path = _find_pdf(key)
     si_exists = has_si(key)
-    main_done = os.path.exists(out_html)
-    si_done = os.path.exists(si_html)
-    print(f'  正文PDF:{"有" if pdf_path else "无"} SI:{"有" if si_exists else "无"} '
-          f'| 已精读 正文:{"是" if main_done else "否"} SI:{"是" if si_done else "否"}')
 
-    if not pdf_path and not si_exists:
-        print('  [跳过] 无任何可精读的PDF附件')
+    # ── 精读流水线（原来是三段 subprocess，现在是一次函数调用）──
+    # 「哪些步骤该跳过、哪个失败了不该拖累别的」全在 pipelines/deepread 里，
+    # 并且每一步都记进 core.jobs（谁产的、哪个模型、哪版提示词、失败原因）。
+    r = deepread.run(key, item=item, pdf_path=pdf_path, si_exists=si_exists,
+                     provider=PROVIDER, model=MODEL, llm_key=DEEPSEEK_KEY, log=print)
+
+    if r.state == 'nopdf':
         if WEB_API_KEY:
             set_state_tag(key, USER_ID, TAG_NOPDF)
         return
+    if r.state == 'failed':
+        return          # 失败原因流水线已经打进日志了，这里不重复喊
 
-    # ── A. 正文：有PDF且没精读过才做 ──
-    if pdf_path and not main_done:
-        os.makedirs(parsed_dir, exist_ok=True)
-        if os.path.exists(os.path.join(parsed_dir, 'layout.json')):
-            print('  [复用] 已有解析结果')
-        else:
-            r = subprocess.run([sys.executable, MINERU_SCRIPT, pdf_path, parsed_dir],
-                               capture_output=True, text=True, encoding='utf-8',
-                               errors='replace', timeout=600, creationflags=_NOWIN)
-            if r.returncode != 0:
-                print(f'  [正文解析失败] {r.stderr[-300:]}'); return
-        r = subprocess.run([sys.executable, DEEPREAD, parsed_dir, out_html, PROVIDER, MODEL, DEEPSEEK_KEY],
-                           capture_output=True, text=True, encoding='utf-8',
-                           errors='replace', timeout=900, env=env, creationflags=_NOWIN)
-        if r.returncode != 0:
-            print(f'  [正文精读失败] {r.stderr[-300:]}'); return
-        main_done = True
-        print(f'  [正文精读完成]')
-    elif main_done:
-        print('  [跳过正文] 已有精读，不重跑')
-
-    # ── B. SI：有SI且没精读过才做 ──
-    if si_exists and not si_done:
-        r = subprocess.run([sys.executable, SI_DEEPREAD, key],
-                           capture_output=True, text=True, encoding='utf-8',
-                           errors='replace', timeout=900, env=env, creationflags=_NOWIN)
-        print((r.stdout or '')[-300:])
-        si_done = os.path.exists(si_html)
-        print(f'  [SI精读{"完成" if si_done else "失败"}]')
-    elif si_done:
-        print('  [跳过SI] 已有精读，不重跑')
-
-    # ── C. 合并（两者都有时）──
-    final_html = out_html
-    if main_done and si_done:
-        r = subprocess.run([sys.executable, MERGE_SCRIPT, key, '--no-upload'],
-                           capture_output=True, text=True, encoding='utf-8',
-                           errors='replace', timeout=300, env=env, creationflags=_NOWIN)
-        merged = os.path.join(lib_dir, 'summary_full.html')
-        if os.path.exists(merged):
-            final_html = merged
-            print('  [已合并] 正文+SI')
-    elif si_done and not main_done:
-        final_html = si_html
-
-    if not os.path.exists(final_html):
-        print('  [失败] 没有产出任何精读'); return
-    out_html = final_html   # 供后续回写使用
-    # 存元数据供向量化用
-    try:
-        meta = {'key': key, 'title': item['data'].get('title', ''),
-                'DOI': item['data'].get('DOI', ''), 'date': item['data'].get('date', ''),
-                'model': MODEL, 'time': time.strftime('%Y-%m-%d %H:%M')}
-        json.dump(meta, open(os.path.join(lib_dir, 'meta.json'), 'w', encoding='utf-8'),
-                  ensure_ascii=False, indent=1)
-    except Exception:
-        pass
+    out_html = r.final_html
+    state_tag = STATE_TAG[r.state]      # 事实 → 标签，映射只此一处
     # 2.5 结构化抽取（粗层）：把这篇抽成对齐字段，自动并入 structured/ 对比表
+    # （**这一步还是 subprocess** —— 抽取线尚未搬进 pipelines，见待办）
     try:
-        r = subprocess.run([sys.executable, EXTRACT_SCRIPT, key],
-                           capture_output=True, text=True, encoding='utf-8',
-                           errors='replace', timeout=300, env=env, creationflags=_NOWIN)
-        if r.returncode == 0:
+        ex = subprocess.run([sys.executable, EXTRACT_SCRIPT, key],
+                            capture_output=True, text=True, encoding='utf-8',
+                            errors='replace', timeout=300, env=env, creationflags=_NOWIN)
+        if ex.returncode == 0:
             print(f'  [结构化抽取完成] 已并入 structured/compare.md')
         else:
-            print(f'  [结构化抽取失败] {r.stderr[-200:]}')
+            print(f'  [结构化抽取失败] {ex.stderr[-200:]}')
     except Exception as e:
         print(f'  [结构化抽取异常] {e}')
     # 3. 回写 Zotero：**复用已有 summary 附件、只更新文件内容**（不删条目）
@@ -188,10 +136,7 @@ def process_item(item):
                 shutil.copy(out_html, os.path.join(local_dir, 'summary.html'))
                 print(f'  [附件已更新] summary（本地storage已就位，点开即图文精读）')
             # 按实际完成情况置状态标签
-            state = (TAG_FULL if (main_done and si_done)
-                     else TAG_SI if si_done
-                     else TAG_MAIN)
-            set_state_tag(key, USER_ID, state)
+            set_state_tag(key, USER_ID, state_tag)
         except Exception as e:
             print(f'  [附件导入失败] {e}')
     else:

@@ -156,6 +156,14 @@ def runtime(name):
     return os.path.join(LOGS, name)
 
 
+def state_db():
+    """workflow_data/state.db —— 任务状态库（谁做到哪一步，见 core/jobs.py）。
+
+    **可重建**：删掉只丢历史与溯源，产物文件才是真相。
+    """
+    return os.path.join(DATA, 'state.db')
+
+
 def evalset():
     """workflow_data/evalset.json —— 精读质量评测集（用户的人工评价，不可重建）。"""
     return os.path.join(DATA, 'evalset.json')

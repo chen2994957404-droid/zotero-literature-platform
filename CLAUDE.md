@@ -219,9 +219,12 @@ core/  domain/  adapters/  pipelines/   ← 代码四环（重构 v2），每块
 
 **先读 `docs/架构重构_v2总体设计.md`**，它规定项目正在往「四环」结构收敛：
 `core`（内核）→ `domain`（纯逻辑）/ `adapters`（外接口）→ `pipelines`（编排）→ `apps`（界面），
-依赖只能从上往下。**已完成阶段 0（安全网）、阶段 1（内核环）、阶段 2（拆开公理层）。**
-下一步是阶段 3：把靠 subprocess 互相拉起来的工作流做成 `pipelines/` 里的函数，
-并建 `core/jobs` 状态库（续跑 / 退避重试 / 只补缺的部分）。
+依赖只能从上往下。**已完成阶段 0（安全网）、阶段 1（内核环）、阶段 2（拆开公理层）、
+阶段 3 上半**：精读线搬进 `pipelines/deepread`（watcher 不再用五个 subprocess 串脚本），
+并建好 `core/jobs` 状态库（谁做到哪一步 / 只补缺的部分 / 提示词升级即重跑清单）。
+
+下一步是**阶段 3 下半**：结构化抽取、向量化与问答也搬进 `pipelines/`；
+回写 Zotero 收进 `adapters/zotero_client`。详见 `docs/待办与需求.md` 末尾。
 
 **装一次才能跑**（换电脑/重装后必做）：
 

@@ -92,6 +92,15 @@ class TestNoSideEffects:
         assert os.path.isdir(p)
 
 
+class TestStateDB:
+    def test_状态库在数据目录下且可重建(self):
+        assert paths.state_db() == os.path.join(paths.DATA, 'state.db')
+
+    def test_算路径不产生副作用(self):
+        # 只是算个路径，不该真的建库（core.jobs 用到时才建）
+        paths.state_db()
+
+
 class TestRoot:
     def test_ROOT指向项目根(self):
         # 项目根的特征：有 pyproject.toml 和 modules/
