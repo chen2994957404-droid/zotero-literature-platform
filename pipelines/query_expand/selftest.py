@@ -6,6 +6,7 @@ try:
 except Exception:
     pass
 from pipelines.query_expand import to_english, expand, looks_chinese, _clean_lines
+from core.config import get_key
 
 def main():
     ok = 0; total = 5
@@ -26,19 +27,28 @@ def main():
     else:
         print("  [FAIL] n=1 行为不对")
 
-    q = expand("polyborosiloxane shear stiffening", mode="survey", n=4)
-    if len(q) >= 2 and q[0] == "polyborosiloxane shear stiffening":
-        print(f"  [PASS] 系统调研模式产出 {len(q)} 个检索式，首个是原式"); ok += 1
-        for x in q[1:]:
-            print(f"         · {x}")
+    # ⚠ 下面两条要真调 LLM。**没配密钥 = 环境问题，不是功能坏了** ——
+    #   两种情况都报 FAIL 的话，体检会长期挂着一条查不出所以然的红，
+    #   久而久之没人再认真看它（这正是体检要分离线/实测两档的原因）。
+    if not get_key('DEEPSEEK_KEY'):
+        total -= 2
+        print('  [SKIP] 检索式扩展（要 DEEPSEEK_KEY，本机没配）')
+        print('         这两条只在配了密钥的机器上才有意义。')
     else:
-        print(f"  [FAIL] 扩展失败: {q}")
+        q = expand("polyborosiloxane shear stiffening", mode="survey", n=4)
+        if len(q) >= 2 and q[0] == "polyborosiloxane shear stiffening":
+            print(f'  [PASS] 系统调研模式产出 {len(q)} 个检索式，首个是原式'); ok += 1
+            for x in q[1:]:
+                print(f'         · {x}')
+        else:
+            print(f'  [FAIL] 扩展失败: {q}')
+            print('         上面日志里那行「检索式扩展失败」写了真正的原因。')
 
-    q2 = expand("my material creeps at room temperature", mode="problem", n=4)
-    if len(q2) >= 2 and not any(looks_chinese(x) for x in q2):
-        print(f"  [PASS] 解决问题模式产出 {len(q2)} 个检索式，全英文"); ok += 1
-    else:
-        print(f"  [FAIL] 问题模式异常: {q2}")
+        q2 = expand("my material creeps at room temperature", mode="problem", n=4)
+        if len(q2) >= 2 and not any(looks_chinese(x) for x in q2):
+            print(f'  [PASS] 解决问题模式产出 {len(q2)} 个检索式，全英文'); ok += 1
+        else:
+            print(f'  [FAIL] 问题模式异常: {q2}')
 
     print(f"\n{ok}/{total} 通过")
     sys.exit(0 if ok == total else 1)

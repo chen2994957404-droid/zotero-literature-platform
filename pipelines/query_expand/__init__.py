@@ -25,6 +25,9 @@ import os, sys, re
 
 from adapters.llm_client import chat
 from core.config import get_key, get_model
+from core.log import get_logger
+
+_log = get_logger('query_expand')     # 降级原因要落盘，否则没人查得出来
 
 
 def looks_chinese(text):
@@ -82,8 +85,11 @@ def to_english(q, context=None):
             user = (f"Field context (papers from this researcher's library):\n{sample}\n\n"
                     f"Translate this query into an English search query IN THAT FIELD:\n{q}")
         return _llm(_SYS_EN, user, 200).replace('"', '').strip() or q
-    except Exception:
-        return q          # 翻译失败不阻断主流程
+    except Exception as e:
+        # 降级不阻断主流程，但**必须说出原因** —— 静默降级会让人以为功能好着，
+        # 只是「效果差点」，实际上 LLM 一次都没调通（踩坑 #33 同一个病）
+        _log(f'翻译成英文失败，改用原文检索：{type(e).__name__}: {e}')
+        return q
 
 
 def _clean_lines(text, n):
@@ -127,7 +133,8 @@ def expand(query, mode='survey', n=5, context=None):
                 f"according to this field, not other disciplines).\n\nQuery: {query}")
     try:
         extra = _clean_lines(_llm(sysmsg, user), n - 1)
-    except Exception:
+    except Exception as e:
+        _log(f'检索式扩展失败，只用原始检索式：{type(e).__name__}: {e}')
         extra = []
     for e in extra:
         if e.lower() != base.lower():
