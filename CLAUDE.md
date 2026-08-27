@@ -17,12 +17,12 @@ adapters/  ← 外接口：唯一允许联网/用第三方库的一环（9 块�
     embed、evalset、llm_client、openalex、pdf_parse、sciverse、snowball、vectordb、zotero_client
 core/  ← 内核：谁都依赖它，它不依赖任何人（10 块）
     cli、config、proc_lock、subproc、errors.py、heartbeat.py、jobs.py、log.py、paths.py、role.py
-docs/                    ← 文档（15 份）
+docs/                    ← 文档（16 份）
 domain/  ← 纯逻辑：不联网、不知道文件放在哪（2 块）
     figure_crop、si_filter
 pipelines/  ← 编排：把上面三者按顺序组合成能力（5 块）
     chart_digitize、deepread、lib_match、paper_discovery、query_expand
-tests/ （11 个脚本）
+tests/ （12 个脚本）
     test_adapters_vectordb.py、test_architecture.py、test_artifact_gaps.py、test_core_heartbeat.py、test_core_jobs.py、test_core_log_errors.py、test_core_paths.py、test_core_role.py…
 平台管理/ （8 个脚本）
     health_check.py、panel.py、panel_launch.py、交接.py、打开面板.py、更新平台.py、查产物缺口.py、诊断报告.py
@@ -224,7 +224,11 @@ core/  domain/  adapters/  pipelines/   ← 代码四环（重构 v2），每块
 并建好 `core/jobs` 状态库（谁做到哪一步 / 只补缺的部分 / 提示词升级即重跑清单）。
 
 下一步是**阶段 3 下半**：结构化抽取、向量化与问答也搬进 `pipelines/`；
-回写 Zotero 收进 `adapters/zotero_client`。详见 `docs/待办与需求.md` 末尾。
+回写 Zotero 收进 `adapters/zotero_client`。
+
+**当前主线的完整路线（做到哪、下一步谁做什么）→ `docs/测试端与阶段3路线.md`。**
+2026-08-27 起编程端多了一个独立的 **Zotero 测试账号**（`ROLE=test`），
+终于能在编程端验证「写回 Zotero」那一半 —— 别再照着旧文档说「A 机一律不许写」。
 
 **装一次才能跑**（换电脑/重装后必做）：
 
