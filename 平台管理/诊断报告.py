@@ -40,6 +40,17 @@ except Exception as _e:                       # noqa: BLE001 —— 什么原因
         return default
 
 _NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
+
+# ⚠ 中文 Windows 上 PowerShell 写给管道的默认编码是 gb2312，而我们按 UTF-8 解码，
+#   中文会变成乱码（实测：'停掉旧面板' → 'ͣ�������'）。
+#   在脚本最前面把 PowerShell 的输出编码切成 UTF-8 就对上了。
+#   本脚本是引导脚本，不能依赖 core.subproc，所以这里内联一份。
+_PS_UTF8 = '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; '
+
+
+def ps(script):
+    """组一条编码正确的 PowerShell 命令行。"""
+    return ['powershell', '-NoProfile', '-NonInteractive', '-Command', _PS_UTF8 + script]
 SEP = '=' * 72
 
 
@@ -121,18 +132,16 @@ def collect():
 
     # ── 自启任务实况 ──
     out.append(_section('自启任务实况（运行端应有 4 个）', _run(
-        ['powershell', '-NoProfile', '-Command',
-         "Get-ScheduledTask | Where-Object {$_.TaskName -in "
-         "@('ZoteroLiteratureWatcher','OllamaService','ZoteroApp','LiteratureAutoSync')} "
-         "| Select-Object TaskName,State | Format-Table -AutoSize | Out-String"],
+        ps("Get-ScheduledTask | Where-Object {$_.TaskName -in "
+           "@('ZoteroLiteratureWatcher','OllamaService','ZoteroApp','LiteratureAutoSync')} "
+           "| Select-Object TaskName,State | Format-Table -AutoSize | Out-String"),
         timeout=120)))
 
     # ── 相关进程 ──
     out.append(_section('相关进程', _run(
-        ['powershell', '-NoProfile', '-Command',
-         "Get-CimInstance Win32_Process -Filter \"Name='python.exe' or Name='pythonw.exe' "
-         "or Name='ollama.exe' or Name='zotero.exe'\" "
-         "| Select-Object ProcessId,Name,CommandLine | Format-List | Out-String"],
+        ps("Get-CimInstance Win32_Process -Filter \"Name='python.exe' or Name='pythonw.exe' "
+           "or Name='ollama.exe' or Name='zotero.exe'\" "
+           "| Select-Object ProcessId,Name,CommandLine | Format-List | Out-String"),
         timeout=120)))
 
     # ── 日志尾巴 ──
