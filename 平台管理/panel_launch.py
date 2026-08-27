@@ -5,20 +5,11 @@
 pythonw 静默退出，错误无处可见。本启动器捕获 import 期与 main() 期的一切异常，
 把 traceback 落盘，下次打不开时直接看日志就能定位。
 
-用法: pythonw 平台管理\panel_launch.py（由 控制面板.bat 调用）
+用法: pythonw 平台管理/panel_launch.py（由 控制面板.bat 调用）
 """
 import os, sys, io, time, traceback
 
 # 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # 本文件夹，import panel 用
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')

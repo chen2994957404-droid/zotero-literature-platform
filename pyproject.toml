@@ -1,0 +1,49 @@
+# 项目打包配置 —— 让本项目成为一个真正的 Python 包
+#
+# 为什么需要它（见 docs/架构重构_v2总体设计.md 阶段 0）：
+#   以前每个 .py 文件顶部都要写 9 行「往上找项目根 + 塞进 sys.path」的补丁，
+#   全项目 40+ 处。根因就是项目不是一个可安装的包。
+#   装一次 `pip install -e .` 之后，`import modules.config` 在任何目录都能用。
+#
+# 安装（只需做一次，换电脑时重做）：
+#   pip install -e . --no-deps          ← 只注册本项目，不动你已装好的第三方库
+#   pip install -e ".[dev]" --no-deps   ← 顺带装开发用的 pytest
+#
+# 注意 --no-deps：第三方库（chromadb / PyMuPDF 等）你机器上已经装好了，
+# 加 --no-deps 可以避免 pip 去动它们。
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zotero-literature-platform"
+version = "2.0.0.dev0"
+description = "文献自动化科研平台（围绕 Zotero）"
+requires-python = ">=3.11"
+
+# 运行期依赖，与 requirements.txt 保持一致（刻意保持极少，见架构宪法「少依赖」）
+dependencies = [
+    "chromadb==1.5.9",   # 向量库（问答检索）
+    "python-docx==1.2.0", # 读 .docx 格式的 SI
+    "PyMuPDF==1.27.2",   # 从 PDF 按坐标裁图
+    "keyring==25.7.0",   # 密钥存进系统凭据库
+]
+
+[project.optional-dependencies]
+# 开发期依赖，用户日常运行不需要
+dev = ["pytest>=8.0"]
+
+[tool.setuptools.packages.find]
+# 只把「代码环」纳入包；中文文件夹是工作流脚本，阶段 3~4 才迁入 pipelines/
+# core / domain / adapters / pipelines 现在还不存在，写在这里是为了它们一出现就自动生效
+include = ["modules*", "core*", "domain*", "adapters*", "pipelines*"]
+namespaces = true
+
+[tool.pytest.ini_options]
+# 离线测试：不碰网络、不碰外部服务，必须永远全绿（见设计文档第五节）
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+    "live: 需要真实外部服务（Zotero / Ollama / 各云 API），默认不跑；用 -m live 单独跑",
+]

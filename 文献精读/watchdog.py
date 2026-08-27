@@ -7,44 +7,31 @@
 
 用法: python watchdog.py    # 前台常驻；建议放任务计划或开机自启
 """
-import os, sys, time, subprocess, io
+import os, sys, time, subprocess
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+from core import paths, role
+from core.cli import flag
+from core.paths import ROOT as _ROOT
 
-from modules import subproc as _sp   # 统一走静默子进程调用，避免弹窗
+from core import subproc as _sp   # 统一走静默子进程调用，避免弹窗
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = _ROOT
-HEARTBEAT = os.path.join(ROOT, 'workflow_data', 'logs', 'watcher_heartbeat.txt')
+HEARTBEAT = paths.runtime('watcher_heartbeat.txt')
 WATCHER = os.path.join(SCRIPT_DIR, 'zotero_watcher.py')
-WD_LOG = os.path.join(ROOT, 'workflow_data', 'logs', 'watchdog.log')
 
 CHECK = 60      # 每 60 秒查一次
 STALE = 300     # 心跳超 300 秒（5分钟）没更新 = 卡死。watcher 轮询间隔60s，5分钟足够宽容
 GRACE = 180     # 重启后给 watcher 的启动宽限期，期间不判死
 
 
-def log(msg):
-    line = f'[{time.strftime("%Y-%m-%d %H:%M:%S")}] {msg}'
-    print(line)
-    try:
-        with io.open(WD_LOG, 'a', encoding='utf-8') as f:
-            f.write(line + '\n')
-    except Exception:
-        pass   # 日志写不进去不阻塞主流程（还有 stdout）
+from core.log import get_logger
+log = get_logger('watchdog')   # 统一日志：时间戳 + 落盘 + 自动轮转
 
 
 def heartbeat_age():
@@ -85,6 +72,9 @@ def restart_watcher():
 
 
 def main():
+    # 机器角色守卫：常驻服务只能在运行端（主力机）跑。
+    # 两台都跑会重复精读同一篇、重复写回 Zotero、重复烧钱，标签状态机还会互相打架。
+    role.require_prod('看门狗（守护 watcher）', force=flag('--force'))
     log(f'看门狗启动。心跳阈值 {STALE}s，检查间隔 {CHECK}s')
     last_restart = 0
     while True:
@@ -102,4 +92,11 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    # 机器角色不对时给一句人话，而不是甩一坨 traceback 到日志里 ——
+    # 这个失败在主力机首次部署时必然发生一次（ROLE 默认是最安全的 dev）。
+    from core import errors as _err
+    try:
+        main()
+    except _err.WrongMachineError as _e:
+        print(str(_e))
+        sys.exit(2)

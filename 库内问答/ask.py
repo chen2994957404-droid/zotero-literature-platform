@@ -5,35 +5,26 @@
 """
 import os, sys
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+from core import paths
 
-import chromadb
-from modules.cli import positionals
-from modules.config import get_key, get_model
-from modules.embed import embed as _embed_batch
-from modules.llm_client import chat as _chat
+from core.cli import positionals
+from core.config import get_key, get_model
+from adapters.embed import embed as _embed_batch
+from adapters.llm_client import chat as _chat
+from adapters import vectordb
 
-VECTOR_DB = os.path.join(_ROOT, 'workflow_data', 'vector_db')
+VECTOR_DB = paths.VECTOR_DB
 DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')
 DEEPSEEK_MODEL = get_model('ASK_MODEL')      # 可在控制面板切换
 TOP_K = 6
 
 # embedding 与 LLM 调用走公理件
-client = chromadb.PersistentClient(path=VECTOR_DB)
-coll = client.get_or_create_collection('literature', metadata={'hnsw:space': 'cosine'})
+coll = vectordb.open_store()          # 向量库走适配层，换库只改 adapters/vectordb
 
 
 def embed(text):
@@ -53,9 +44,9 @@ def ask_answer(question, top_k=TOP_K):
     找不到内容时 answer 为空串、chunks 为 0（调用方据此给提示）。
     """
     qvec = embed(question)
-    res = coll.query(query_embeddings=[qvec], n_results=top_k,
-                     include=['documents', 'metadatas', 'distances'])
-    docs, metas = res['documents'][0], res['metadatas'][0]
+    hits = coll.query(qvec, n=top_k)
+    docs = [h['doc'] for h in hits]
+    metas = [h['meta'] for h in hits]
     if not docs:
         return {'answer': '', 'sources': [], 'chunks': 0}
     context = ''

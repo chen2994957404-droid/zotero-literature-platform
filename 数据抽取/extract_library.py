@@ -17,23 +17,15 @@
 """
 import os, sys, json, re, urllib.request, time
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+from core import paths, role
 
-from modules.cli import flag
-from modules.config import get_key, get_site, need_site
+from core.cli import flag
+from core.config import get_key, get_site, need_site
 
 # 同文件夹脚本互相 import（标准开头只把项目根加进 sys.path，兄弟脚本目录需自己加）
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -43,10 +35,10 @@ sys.path.insert(0, SCRIPT_DIR)
 from extract_structured import (SCHEMA, SYS, build_user_prompt,
                                 build_compare_table, hierarchical_body)
 
-OUT_DIR = os.path.join(_ROOT, 'workflow_data', 'structured')
+OUT_DIR = paths.STRUCTURED
 os.makedirs(OUT_DIR, exist_ok=True)
 
-# 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+# 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
 USER_ID = need_site('ZOTERO_USER_ID')
 LOCAL = get_site('ZOTERO_API_HOST') + '/api/users/' + USER_ID
 LH = {'Zotero-Allowed-Request': 'true'}
@@ -95,6 +87,8 @@ def ollama_extract(title, body):
     return _parse_json_lenient(r['message']['content'])
 
 def main():
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    role.require_prod('全库结构化抽取', force=flag('--force'))
     # 已抽过的 key（精层 or 粗层都算），增量跳过；精层结果绝不覆盖
     # protected：精层记录（source != 'coarse'），即使 --rebuild 也跳过，防止被粗层降级（踩坑 #16）
     done = set(); protected = set()

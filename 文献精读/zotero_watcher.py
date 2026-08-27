@@ -6,45 +6,30 @@
 """
 import os, sys, time, json, re, subprocess, urllib.request, urllib.parse, traceback
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+from core import paths, role
+from core.cli import flag
 
-from modules.config import get_key, need_site
+from core.config import get_key, need_site, get_site
 
 # ===== 运行日志 =====
-_LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'workflow_data', 'logs')
-os.makedirs(_LOG_DIR, exist_ok=True)
-_LOG_FILE = os.path.join(_LOG_DIR, 'zotero_watcher.log')
-_print = print
-def print(*args, **kwargs):
-    msg = ' '.join(str(a) for a in args)
-    line = f'[{time.strftime("%Y-%m-%d %H:%M:%S")}] {msg}'
-    _print(line, **kwargs)
-    try:
-        with open(_LOG_FILE, 'a', encoding='utf-8') as f:
-            f.write(line + '\n')
-    except Exception:
-        pass
+# 走 core.log：带时间戳、同时打屏和落盘、超过 5MB 自动轮转。
+# （此前这里是「把内置 print 整个换掉」的 hack —— 读代码的人会以为只是打屏，
+#   实际在写文件；而且没有轮转，常驻服务的日志只会一直长下去。）
+from core.log import get_logger
+print = get_logger('zotero_watcher')       # 保留 print 这个名字，下方几十处调用不用改
 
 # ===== 配置 =====
-ZOTERO_LOCAL = 'http://localhost:23119/api'
-ZOTERO_HEADERS = {'Zotero-Allowed-Request': 'true'}
-# 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+# Zotero 的读取能力全部走公理件 —— 重构前这里重复实现了 zget / find_pdf /
+# has_si / SUPP_PAT，与 adapters/zotero_client 里的同名实现并存（违反宪法铁律 1）。
+from adapters.zotero_client import (zget, find_pdf as _find_pdf, has_si,
+                                    USER_ID, STORAGE_DIR)
+# 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
 _NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
-USER_ID = need_site('ZOTERO_USER_ID')       # 本地API里的库id
-STORAGE_DIR = need_site('ZOTERO_STORAGE')
 # ── 标签状态机（用户定，2026-07-25）───────────────────────────────
 # 打「待处理」→ 自动检测有哪些附件、哪些还没精读 → 补做缺的 → 按结果换状态标签。
 # 状态互斥：一篇文献同一时间只有一个状态标签。
@@ -68,7 +53,7 @@ EXTRACT_SCRIPT = os.path.join(ROOT, '数据抽取', 'extract_structured.py')  # 
 SI_DEEPREAD = os.path.join(SCRIPT_DIR, 'si_deepread.py')            # SI 实验细节精读
 MERGE_SCRIPT = os.path.join(SCRIPT_DIR, 'merge_summary.py')         # 正文+SI 合并
 # 新的以文献为单元的库结构：workflow_data/library/<key>/{parsed/, summary.html}
-LIBRARY = os.path.join(ROOT, 'workflow_data', 'library')
+LIBRARY = paths.LIBRARY
 os.makedirs(LIBRARY, exist_ok=True)
 
 # 引入附件上传能力
@@ -78,74 +63,6 @@ from zotero_upload_attachment import upload_attachment
 DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')
 PROVIDER = os.environ.get('DEEPREAD_PROVIDER', 'deepseek')
 MODEL = os.environ.get('DEEPREAD_MODEL', 'deepseek-v4-flash')  # 默认flash省钱；重要文献用 重跑精读_pro.bat 切pro
-
-def zget(path):
-    req = urllib.request.Request(ZOTERO_LOCAL + path, headers=ZOTERO_HEADERS)
-    return json.loads(urllib.request.urlopen(req, timeout=15).read())
-
-def find_pdf(item_key):
-    """查文献的正文PDF附件本地路径（智能排除补充材料，多个时选最大的）"""
-    children = zget(f'/users/{USER_ID}/items/{item_key}/children')
-    # 补充材料/附录 的常见特征：
-    #  - suppmat/supporting/supplement/appendix 等通用词
-    #  - -si-/_si_/si.pdf 及独立的 SI 命名
-    #  - MOESM/ESM = Springer/Nature 系 Electronic Supplementary Material 的标准命名（踩坑15）
-    SUPP_PAT = re.compile(
-        r'suppmat|supp\b|supporting|supplement|-si-|_si_|\bsi\.pdf|appendix|'
-        r'moesm|_esm\b|electronic.?supplementary', re.I)
-    candidates = []  # (path, att_key, size, is_supp, is_fulltext)
-    for c in children:
-        if c['data'].get('itemType') == 'attachment' and c['data'].get('contentType') == 'application/pdf':
-            att_key = c['key']
-            # 附件的 Zotero 标题（规范命名是最可靠信号，工单·find_pdf 优先信任命名）
-            att_title = (c['data'].get('title') or '').strip()
-            title_is_supp = bool(SUPP_PAT.search(att_title)) or att_title.upper() == 'SI'
-            is_fulltext = att_title.lower() == 'full text pdf'   # Zotero 规范化的正文命名
-            d = os.path.join(STORAGE_DIR, att_key)
-            if os.path.isdir(d):
-                for f in os.listdir(d):
-                    if f.lower().endswith('.pdf'):
-                        fp = os.path.join(d, f)
-                        try: size = os.path.getsize(fp)
-                        except: size = 0
-                        is_supp = bool(SUPP_PAT.search(f)) or title_is_supp
-                        candidates.append((fp, att_key, size, is_supp, is_fulltext))
-    if not candidates:
-        return None, None
-    # ① 最优先：title=="Full Text PDF" 的规范正文（不靠大小猜，最可靠）
-    ft = [c for c in candidates if c[4] and not c[3]]
-    if ft:
-        ft.sort(key=lambda c: c[2], reverse=True)
-        return ft[0][0], ft[0][1]
-    # ② 兜底：非补充材料里选最大的（未规范化命名时的退路）
-    main = [c for c in candidates if not c[3]]
-    pool = main if main else candidates
-    pool.sort(key=lambda c: c[2], reverse=True)
-    return pool[0][0], pool[0][1]
-
-_DOCX_CT = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-
-
-def has_si(item_key):
-    """该文献是否有 SI 附件。支持 PDF 和 .docx（Elsevier 的 SI 常是 docx）。"""
-    try:
-        children = zget(f'/users/{USER_ID}/items/{item_key}/children')
-    except Exception:
-        return False
-    for c in children:
-        d = c['data']
-        if d.get('itemType') != 'attachment':
-            continue
-        if d.get('contentType') not in ('application/pdf', _DOCX_CT):
-            continue
-        t = (d.get('title') or '').strip(); fn = (d.get('filename') or '')
-        SUPP = re.compile(r'suppmat|supp\b|supporting|supplement|-si-|_si_|\bsi\.pdf|'
-                          r'appendix|moesm|_esm\b|electronic.?supplementary', re.I)
-        if SUPP.search(t) or SUPP.search(fn) or t.upper() == 'SI':
-            return True
-    return False
-
-
 def process_item(item):
     """状态机：检测有哪些附件、哪些还没精读 → 补做缺的 → 置对应状态标签。
 
@@ -161,7 +78,7 @@ def process_item(item):
     si_html = os.path.join(lib_dir, 'si_summary.html')
     env = dict(os.environ, PYTHONIOENCODING='utf-8', DEEPSEEK_KEY=DEEPSEEK_KEY)
 
-    pdf_path, att_key = find_pdf(key)
+    pdf_path, att_key = _find_pdf(key, return_att_key=True)
     si_exists = has_si(key)
     main_done = os.path.exists(out_html)
     si_done = os.path.exists(si_html)
@@ -292,51 +209,10 @@ def find_existing_summary(item_key):
         pass
     return None
 
-
-def delete_old_summary(item_key):
-    """删除该文献下已有的 summary 附件，避免重复"""
-    try:
-        base = f'https://api.zotero.org/users/{USER_ID}'
-        wh = {'Zotero-API-Key': WEB_API_KEY, 'Zotero-API-Version': '3'}
-        req = urllib.request.Request(base + f'/items/{item_key}/children', headers=wh)
-        children = json.loads(urllib.request.urlopen(req, timeout=15).read())
-        for c in children:
-            if c['data'].get('itemType') == 'attachment' and c['data'].get('title') == 'summary':
-                dk = c['key']; dv = c['version']
-                dreq = urllib.request.Request(base + f'/items/{dk}', method='DELETE',
-                    headers={**wh, 'If-Unmodified-Since-Version': str(dv)})
-                urllib.request.urlopen(dreq, timeout=15)
-                time.sleep(0.3)
-    except Exception:
-        pass
-
-def extract_text_summary(html_path):
-    """从精读HTML里抽取纯文字部分（去图），作为笔记正文（图太大不塞进笔记）"""
-    import re as _re
-    html = open(html_path, encoding='utf-8').read()
-    body = html.split('<body>')[-1].split('</body>')[0] if '<body>' in html else html
-    # 去掉 img 标签（base64太大）
-    body = _re.sub(r'<img[^>]*>', '<p>【图见本地完整版】</p>', body)
-    return body
-
-def writeback(item_key, html_path, web_uid):
-    """通过 Zotero Web API 把精读作为笔记写回（纯文字版），并更新标签"""
-    try:
-        note_body = extract_text_summary(html_path)
-        head = f'<h1>📖 图文精读（自动生成 {time.strftime("%Y-%m-%d %H:%M")}）</h1>' \
-               f'<p><b>含图完整版</b>：workflow_data/summary/{os.path.basename(html_path)}</p><hr>'
-        note_html = head + note_body
-        base = f'https://api.zotero.org/users/{web_uid}/items'
-        payload = json.dumps([{"itemType":"note","parentItem":item_key,
-                               "note":note_html,"tags":[{"tag":"精读笔记"}]}]).encode('utf-8')
-        req = urllib.request.Request(base, data=payload, method='POST',
-            headers={'Zotero-API-Key': WEB_API_KEY, 'Content-Type':'application/json','Zotero-API-Version':'3'})
-        json.loads(urllib.request.urlopen(req, timeout=25).read())
-        print(f'  [回写成功] 精读笔记已写回 Zotero（同步后可见）')
-        swap_tag(item_key, web_uid)
-    except Exception as e:
-        print(f'  [回写失败] {e}')
-
+# 注：回写「精读笔记」的旧方案（writeback / extract_text_summary / swap_tag /
+# delete_old_summary）已于本次清理删除。它早被「复用 summary 附件」取代，
+# 其中 delete_old_summary 的「先删后传」正是踩坑 #28 反复弹同步冲突框的根因，
+# 留着只会让人以为还能用。要回写请用 set_state_tag + upload_attachment。
 def set_state_tag(item_key, web_uid, new_state):
     """设置状态标签（互斥）：移除所有旧状态标签，只留 new_state。保留用户自己的其它标签。"""
     try:
@@ -358,15 +234,14 @@ def set_state_tag(item_key, web_uid, new_state):
     except Exception as e:
         print(f'  [标签更新失败] {e}')
 
-def swap_tag(item_key, web_uid):
-    """兼容旧调用：默认置为「正文精读」。"""
-    set_state_tag(item_key, web_uid, TAG_MAIN)
-
 def main():
+    # 机器角色守卫：常驻服务只能在运行端（主力机）跑。
+    # 两台都跑会重复精读同一篇、重复写回 Zotero、重复烧钱，标签状态机还会互相打架。
+    role.require_prod('常驻精读监听（watcher）', force=flag('--force'))
     # 单实例锁：任务计划自启一份、看门狗又启一份时，第二份直接退出（踩坑 #30）。
     # 两份同时轮询会抢同一篇文献，导致重复精读/重复上传。
     try:
-        from modules.proc_lock import single_instance, holder
+        from core.proc_lock import single_instance, holder
         if not single_instance('zotero_watcher'):
             print(f'已有一份 watcher 在跑（PID={holder("zotero_watcher")}），本次退出')
             return
@@ -376,7 +251,7 @@ def main():
     print(f'回写: {"已配置Web API" if WEB_API_KEY else "未配key(仅生成本地精读)"}')
     seen = set()
     fail_streak = [0]      # 连续失败轮数，用于「持续异常」提醒与「已恢复」提示
-    heartbeat = os.path.join(_LOG_DIR, 'watcher_heartbeat.txt')
+    heartbeat = paths.runtime('watcher_heartbeat.txt')
     while True:
         # 心跳：每轮开始写时间戳，看门狗据此判断存活（工单·watcher 看门狗）
         try:
@@ -419,4 +294,11 @@ def main():
         time.sleep(60)  # 每60秒检查一次，避免API限流
 
 if __name__ == '__main__':
-    main()
+    # 机器角色不对时给一句人话，而不是甩一坨 traceback 到日志里 ——
+    # 这个失败在主力机首次部署时必然发生一次（ROLE 默认是最安全的 dev）。
+    from core import errors as _err
+    try:
+        main()
+    except _err.WrongMachineError as _e:
+        print(str(_e))
+        sys.exit(2)

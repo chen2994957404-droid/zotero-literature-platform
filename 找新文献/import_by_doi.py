@@ -13,23 +13,15 @@
 """
 import os, sys, json, time, urllib.request, urllib.parse, urllib.error
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
 
-from modules.cli import opts, positionals
-from modules.config import get_key, get_site
+from core import role
+from core.cli import opts, positionals, flag
+from core.config import get_key, get_site
 
 BASE = 'https://api.zotero.org'
 UA = 'zotero-literature-platform/1.0'
@@ -124,6 +116,8 @@ def import_dois(dois, tags=None, verbose=True):
 
 
 def main():
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    role.require_prod('按 DOI 导入 Zotero', force=flag('--force'))
     args = positionals()
     tags = opts('--tag')
     if not args:

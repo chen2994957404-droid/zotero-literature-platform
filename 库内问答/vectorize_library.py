@@ -6,33 +6,25 @@
 """
 import os, sys, json, urllib.request, time
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+from core import paths, role
 
-import chromadb
-from modules.cli import flag
-from modules.config import need_site
-from modules.embed import embed, chunk
-from modules.zotero_client import get_fulltext
+from adapters import vectordb
+from core.cli import flag
+from core.config import need_site, get_site
+from adapters.embed import embed, chunk
+from adapters.zotero_client import get_fulltext
 
-# 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+# 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
 _USER_ID = need_site('ZOTERO_USER_ID')
 need_site('ZOTERO_STORAGE')        # 附件目录本脚本用不到，但按原行为仍要求已配置
-LOCAL = 'http://localhost:23119/api/users/' + _USER_ID
+LOCAL = get_site('ZOTERO_API_HOST') + '/api/users/' + _USER_ID
 LH = {'Zotero-Allowed-Request': 'true'}
-VECTOR_DB = os.path.join(_ROOT, 'workflow_data', 'vector_db')
+VECTOR_DB = paths.VECTOR_DB
 
 
 def lget(path):
@@ -42,20 +34,13 @@ def lget(path):
 
 
 def get_collection():
-    """连接 Chroma（持久化到本地文件），取 literature 集合。"""
-    client = chromadb.PersistentClient(path=VECTOR_DB)
-    return client.get_or_create_collection('literature', metadata={'hnsw:space': 'cosine'})
+    """打开向量库。具体用哪家由 adapters.vectordb 决定。"""
+    return vectordb.open_store()
 
 
 def load_existing(coll):
-    """已入库的 key 集合（避免重复；精读的高质量版优先，若某 key 已有精读向量则跳过）。"""
-    existing = set()
-    try:
-        got = coll.get(include=['metadatas'])
-        existing = {m['key'] for m in got['metadatas']}
-    except Exception:
-        pass  # 向量库为空/元数据缺失：按没有已入库文献处理
-    return existing
+    """已入库的 key 集合（避免重复；某 key 已有精读向量则跳过）。库为空返回空集合。"""
+    return coll.existing_keys()
 
 
 def fetch_top_items():
@@ -106,12 +91,14 @@ def vectorize_light(x, coll, existing):
     embs = []
     for b in range(0, len(chunks), 16):
         embs.extend(embed(chunks[b:b + 16]))
-    coll.add(ids=ids, documents=chunks, metadatas=metas, embeddings=embs)
+    coll.add(ids, chunks, metas, embs)
     return 'processed', len(chunks)
 
 
 def main():
     """命令行入口：增量轻量全库向量化（--rebuild 参数原脚本即声明但从未生效，保持该语义）。"""
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    role.require_prod('全库向量化', force=flag('--force'))
     rebuild = flag('--rebuild')    # 原脚本只声明了该开关、从未使用（无清空逻辑），此处保持原行为不变
     os.makedirs(VECTOR_DB, exist_ok=True)
     coll = get_collection()

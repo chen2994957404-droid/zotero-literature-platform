@@ -20,23 +20,16 @@ git 提交历史、体检结果、评测集进展、待办、最近踩的坑。
 """
 import os, sys, io, glob, re, json, time
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+from core import paths
+from core.paths import ROOT as _ROOT
 
-from modules.cli import flag
-from modules.subproc import out as _out
+from core.cli import flag
+from core.subproc import out as _out
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = _ROOT
@@ -76,17 +69,28 @@ def tree():
     `workflow_data/library/<KEY>/parsed/images/*.jpg`，**完全看不出项目长什么样**。
     在交接文件里直接给出目录树，新会话就不必去 glob，也就不会被数据淹没。
     """
-    skip_dir = {'workflow_data', 'n8n_data', 'wf_backup', '__pycache__', '.git'}
+    skip_dir = paths.NOISE_DIRS   # 树里要显示 core/ tests/，只跳数据与缓存
     lines = []
     for d in sorted(os.listdir(ROOT)):
         p = os.path.join(ROOT, d)
         if d.startswith('.') or d in skip_dir or d.startswith('zotero_backup'):
             continue
         if os.path.isdir(p):
-            if d == 'modules':
-                subs = sorted(x for x in os.listdir(p) if os.path.isdir(os.path.join(p, x)))
-                lines.append(f'{d}/                 ← 积木层（{len(subs)} 块）')
-                lines.append('    ' + '、'.join(subs))
+            if d in paths.CODE_RINGS:
+                # 四环（重构 v2）：依赖只能从上往下 apps → pipelines → domain/adapters → core
+                RING_DESC = {
+                    'core':      '内核：谁都依赖它，它不依赖任何人',
+                    'domain':    '纯逻辑：不联网、不知道文件放在哪',
+                    'adapters':  '外接口：唯一允许联网/用第三方库的一环',
+                    'pipelines': '编排：把上面三者按顺序组合成能力',
+                }
+                subs = sorted(x for x in os.listdir(p)
+                              if os.path.isdir(os.path.join(p, x))
+                              and x not in paths.NOISE_DIRS)
+                extra = sorted(os.path.basename(f) for f in glob.glob(os.path.join(p, '*.py'))
+                               if not os.path.basename(f).startswith('__'))
+                lines.append(f'{d}/  ← {RING_DESC.get(d, "")}（{len(subs) + len(extra)} 块）')
+                lines.append('    ' + '、'.join(subs + extra))
             elif d == 'docs':
                 n = len(glob.glob(os.path.join(p, '*.md')))
                 lines.append(f'{d}/                    ← 文档（{n} 份）')
@@ -103,7 +107,7 @@ def tree():
     lines.append('')
     lines.append('根目录文件：' + '、'.join(files))
     lines.append('')
-    lines.append('（workflow_data/ 是数据目录，3000+ 文件，**不要去 glob 它**）')
+    lines.append('（workflow_data/ 是数据目录，3000+ 文件，**不要去 glob 它**）')  # paths-exempt: 生成的文档正文
     return lines
 
 
@@ -118,7 +122,7 @@ def next_step():
     if h.get('problems'):
         steps.append('**先修体检报的问题**（见上一节），其余都往后放')
     try:
-        from modules import evalset as E
+        from adapters import evalset as E
         s = E.stats()
         if not s['ready']:
             need_g, need_b = max(0, 3 - s['good']), max(0, 3 - s['bad'])
@@ -141,8 +145,8 @@ _HEALTH_CACHE = {}
 
 def blocks():
     rows = []
-    for f in sorted(glob.glob(os.path.join(ROOT, 'modules', '*', '__init__.py'))):
-        name = os.path.basename(os.path.dirname(f))
+    for ring, name, d in paths.block_dirs():
+        f = os.path.join(d, '__init__.py')
         doc = ''
         try:
             import ast
@@ -160,8 +164,7 @@ def flows():
     **归档_旧版本 不算工作流** —— 它是废弃代码，算进去会让「有几个工作流」这个数
     自相矛盾（实测中新会话就被这一点绊住了）。
     """
-    skip = {'modules', 'docs', 'workflow_data', 'n8n_data', 'wf_backup',
-            '归档_旧版本'}
+    skip = paths.NON_WORKFLOW_DIRS
     rows = []
     for d in sorted(os.listdir(ROOT)):
         p = os.path.join(ROOT, d)
@@ -182,7 +185,7 @@ def flows():
 
 def evalset_state():
     try:
-        from modules import evalset as E
+        from adapters import evalset as E
         s = E.stats()
         return s
     except Exception:
@@ -340,7 +343,7 @@ def sync_claude_md():
         return False
     body = ['', AUTO_BEGIN, '',
             '## 项目结构（自动同步，**不要 glob 根目录**）', '',
-            '> `workflow_data/` 有 3000+ 个数据文件，glob 根目录会直接淹掉你的上下文。',
+            '> `workflow_data/` 有 3000+ 个数据文件，glob 根目录会直接淹掉你的上下文。',  # paths-exempt: 生成的文档正文
             '> 下面这棵树就是全部结构，不必再去扫。', '', '```']
     body += tree()
     body += ['```', '']

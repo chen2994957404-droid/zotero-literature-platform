@@ -2,27 +2,19 @@
 """列出无PDF的条目，分A组(重复残留)/B组(独一份)，导出清单供确认。"""
 import urllib.request, json, re, os, sys
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+from core import paths
 
-from modules.config import need_site
+from core.config import need_site, get_site
 
-# 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+# 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
 _UID = need_site('ZOTERO_USER_ID')
 _STORAGE = need_site('ZOTERO_STORAGE')
-base = f'http://localhost:23119/api/users/{_UID}'
+base = get_site('ZOTERO_API_HOST') + f'/api/users/{_UID}'
 h = {'Zotero-Allowed-Request': 'true'}
 
 
@@ -66,7 +58,7 @@ def main():
     for x in B:
         lines.append(f"[{x['key']}] ({x['data'].get('itemType')}) {(x['data'].get('title') or '')[:70]}")
 
-    out = os.path.join(_ROOT, 'workflow_data', '待删条目清单.txt')
+    out = paths.junk_list('txt')
     open(out, 'w', encoding='utf-8').write('\n'.join(lines))
     # 同时保存key列表供删除脚本用
     json.dump({'A': [x['key'] for x in A], 'B': [x['key'] for x in B]},

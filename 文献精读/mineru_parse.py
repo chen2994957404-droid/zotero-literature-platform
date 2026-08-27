@@ -11,23 +11,14 @@
 """
 import os, sys, json, time, zipfile, io, urllib.request
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
 
-from modules.cli import pos
-from modules.config import get_key   # 密钥统一从 modules/config 读（环境变量 → 系统凭据库 → .env）
+from core.cli import pos
+from core.config import get_key   # 密钥统一从 core/config 读（环境变量 → 系统凭据库 → .env）
 
 BASE = 'https://mineru.net/api/v4'
 

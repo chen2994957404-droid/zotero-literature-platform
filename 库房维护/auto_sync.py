@@ -11,40 +11,26 @@
 前提：Zotero 开着（取全文）+ Ollama 在跑（向量化/本地抽取）。两者都有保活任务。
 用法: python auto_sync.py        （由任务计划 LiteratureAutoSync 每小时调用）
 """
-import os, sys, time, io, json, urllib.request
+import os, sys, time, json, urllib.request
 from subprocess import TimeoutExpired
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+from core import paths, role
+from core.cli import flag
+from core.paths import ROOT as _ROOT
 
-from modules.config import need_site
-from modules.subproc import run as _sub_run   # 子进程统一走积木：不弹窗+超时+UTF-8
+from core.config import need_site, get_site
+from core.subproc import run as _sub_run   # 子进程统一走积木：不弹窗+超时+UTF-8
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG = os.path.join(_ROOT, 'workflow_data', 'logs', 'auto_sync.log')
-os.makedirs(os.path.dirname(LOG), exist_ok=True)
 
 
-def log(msg):
-    line = f'[{time.strftime("%Y-%m-%d %H:%M:%S")}] {msg}'
-    print(line)
-    try:
-        with io.open(LOG, 'a', encoding='utf-8') as f:
-            f.write(line + '\n')
-    except Exception:
-        pass  # 日志落盘失败只丢这一条，print 已成功，不影响主流程
+from core.log import get_logger
+log = get_logger('auto_sync')   # 统一日志：时间戳 + 落盘 + 自动轮转
 
 
 def _alive(url, headers=None, timeout=6):
@@ -78,22 +64,22 @@ def _revive(task_name, disp, probe_url, headers=None, wait=30):
 
 def check_deps():
     """检查依赖服务。缺了就跳过本轮（下轮再来），不报错刷屏。"""
-    # 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+    # 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
     _UID = need_site('ZOTERO_USER_ID')
     _STORAGE = need_site('ZOTERO_STORAGE')
-    zot = _alive(f'http://localhost:23119/api/users/{_UID}/items/top?limit=1',
+    zot = _alive(get_site('ZOTERO_API_HOST') + f'/api/users/{_UID}/items/top?limit=1',
                  {'Zotero-Allowed-Request': 'true'})
-    olla = _alive('http://localhost:11434/api/tags')
+    olla = _alive(get_site('OLLAMA_HOST') + '/api/tags')
 
     # 依赖挂了就尝试拉起来，而不是干等下一轮（踩坑 #33）。
     # 之前只「跳过」，结果 Zotero 开机没起来后就一直没人管，
     # 精读线静默停摆了 19 分钟用户才发现。**保活任务就该负责保活。**
     if not zot:
         zot = _revive('ZoteroApp', 'Zotero',
-                      f'http://localhost:23119/api/users/{_UID}/items/top?limit=1',
+                      get_site('ZOTERO_API_HOST') + f'/api/users/{_UID}/items/top?limit=1',
                       {'Zotero-Allowed-Request': 'true'})
     if not olla:
-        olla = _revive('OllamaService', 'Ollama', 'http://localhost:11434/api/tags')
+        olla = _revive('OllamaService', 'Ollama', get_site('OLLAMA_HOST') + '/api/tags')
 
     if not zot:
         log('跳过本轮：Zotero 未开且拉起失败（取不到全文）'); return False
@@ -119,6 +105,8 @@ def run(script, name, timeout=3600):
 
 
 def main():
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    role.require_prod('定时增量同步', force=flag('--force'))
     log('=== 自动同步开始 ===')
     if not check_deps():
         return

@@ -52,3 +52,10 @@ workflow_data/_disc*
 .env.bak*
 .env.tmp
 workflow_data/_qwen_compare/
+
+# --- 打包 / 测试产物（阶段 0 重构引入）---
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+平台管理/*.log

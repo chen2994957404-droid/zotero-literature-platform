@@ -1,27 +1,18 @@
 # -*- coding: utf-8 -*-
 """精读 v4：用 layout.json 的 page_size 精确裁完整Figure（通用所有文献）+ 脚本管元数据/图位置 + LLM只翻译解读。
 用法: python deepread_v4.py <mineru_output_dir> <out.html> <provider> <model> [key]
-（2026-08-11 框架化：流水线移入 main()，参数走 modules/cli，行为不变）
+（2026-08-11 框架化：流水线移入 main()，参数走 core/cli，行为不变）
 """
 import os, sys, re, json, base64, time, fitz
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
 
-from modules.cli import pos
-from modules.llm_client import chat as _chat   # LLM 调用走公理件（精读输出重，用 flash 省钱由上游 MODEL 决定）
+from core.cli import pos
+from adapters.llm_client import chat as _chat   # LLM 调用走公理件（精读输出重，用 flash 省钱由上游 MODEL 决定）
 
 MIN_OK = 3000   # 精读正文低于这个字数就是废品，不许静默写盘
 
@@ -30,9 +21,24 @@ def main():
     MO_DIR, OUT_HTML, PROVIDER, MODEL = pos(0), pos(1), pos(2), pos(3)
     KEY = pos(4) or ""
 
-    mdf = [f for f in os.listdir(MO_DIR) if f.endswith('.md')][0]
+    # 解析结果不全时要报清楚缺什么。原来直接取 [0]，缺文件就抛裸 IndexError，
+    # 调用方（watcher）只能把「list index out of range」写进日志，看不出是 MineRU 没出全。
+    def pick(suffix, what):
+        try:
+            names = sorted(f for f in os.listdir(MO_DIR) if f.endswith(suffix))
+        except OSError as e:
+            raise SystemExit(f'读不到解析目录 {MO_DIR}：{e}')
+        if not names:
+            raise SystemExit(f'解析结果不完整：{MO_DIR} 里没有{what}（*{suffix}）'
+                             f'—— 多半是 MineRU 解析失败或没解析完，删掉该目录重跑即可')
+        return names[0]
+
+    mdf = pick('.md', 'Markdown 正文')
     layf = os.path.join(MO_DIR, 'layout.json')
-    pdff = [f for f in os.listdir(MO_DIR) if f.endswith('origin.pdf')][0]
+    if not os.path.exists(layf):
+        raise SystemExit(f'解析结果不完整：{MO_DIR} 里没有 layout.json（版面数据）'
+                         f'—— 多半是 MineRU 解析失败或没解析完，删掉该目录重跑即可')
+    pdff = pick('origin.pdf', '原始 PDF')
 
     md = open(os.path.join(MO_DIR, mdf), encoding='utf-8').read()
     lay = json.load(open(layf, encoding='utf-8'))

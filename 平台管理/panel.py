@@ -3,7 +3,7 @@
 
 设计原则（服从架构宪法）：
   本文件**一行业务逻辑都不实现**。状态取自 health_check 的检查函数，配置取自
-  modules.config，进程取自系统查询。它只是「现有积木的视图 + 遥控器」。
+  core.config，进程取自系统查询。它只是「现有积木的视图 + 遥控器」。
   任何新功能都应先做成积木，再由面板调用 —— 绝不在面板里写实现。
 
 能做什么（都是可逆、零风险的事）：
@@ -22,32 +22,25 @@
 import os, sys, json, time, subprocess, threading, webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+from core import paths
+from core.paths import ROOT as _ROOT
 
-from modules.cli import flag
+from core.cli import flag
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = _ROOT
 sys.path.insert(0, SCRIPT_DIR)  # health_check 同在本文件夹
 
-from modules.config import (get_key, set_keys, get_model, mask,
+from core.config import (get_key, set_keys, get_model, mask,
                             MODEL_SETTINGS, ENV_FILE, SITE_SETTINGS, get_site,
                             keyring_status, key_location,
                             migrate_secrets_to_keyring)
-from modules.subproc import run as _run, powershell   # 统一走静默子进程调用
+from core.subproc import run as _run, powershell   # 统一走静默子进程调用
 
 PORT = int(os.environ.get('PANEL_PORT', '8777'))
 HOST = '127.0.0.1'          # 只监听本机，外部访问不到
@@ -128,7 +121,7 @@ def collect_alerts():
     只看心跳会被骗，必须把失败本身暴露出来。
     """
     alerts = []
-    p = os.path.join(ROOT, 'workflow_data', 'logs', 'zotero_watcher.log')
+    p = paths.log('zotero_watcher')
     try:
         with open(p, encoding='utf-8', errors='replace') as f:
             tail = f.readlines()[-200:]
@@ -146,7 +139,7 @@ def collect_alerts():
     # Zotero 没开是最常见的根因，单独探一次给出直白结论
     try:
         import urllib.request
-        from modules.config import get_site
+        from core.config import get_site
         uid = get_site('ZOTERO_USER_ID')
         urllib.request.urlopen(urllib.request.Request(
             f"{get_site('ZOTERO_API_HOST')}/api/users/{uid}/items/top?limit=1",
@@ -159,7 +152,7 @@ def collect_alerts():
 
 def collect_heartbeat():
     """watcher 心跳距今多久（秒）。None 表示没有心跳文件。"""
-    hb = os.path.join(ROOT, 'workflow_data', 'logs', 'watcher_heartbeat.txt')
+    hb = paths.runtime('watcher_heartbeat.txt')
     try:
         return int(time.time() - int(open(hb, encoding='utf-8').read().strip()))
     except Exception:
@@ -202,7 +195,7 @@ def _job_log(msg):
 
 def _run_search(params):
     try:
-        sys.path.insert(0, os.path.join(ROOT, '找新文献'))
+        sys.path.insert(0, os.path.join(ROOT, '找新文献'))  # paths-exempt: 借用兄弟脚本，阶段4迁入 pipelines/discover 后删除
         from discover import run_discovery
         r = run_discovery(
             params['query'], limit=params.get('limit', 25),
@@ -263,9 +256,9 @@ def action_collect(payload):
         return False, '没有选中任何文献'
     deep = bool(payload.get('deep'))
     try:
-        sys.path.insert(0, os.path.join(ROOT, '找新文献'))
+        sys.path.insert(0, os.path.join(ROOT, '找新文献'))  # paths-exempt: 借用兄弟脚本，阶段4迁入 pipelines/discover 后删除
         from import_by_doi import import_dois
-        from modules.lib_match import build_index
+        from pipelines.lib_match import build_index
         _, have = build_index(force=True)
         skipped = [d for d in dois if d.lower() in have]
         todo = [d for d in dois if d.lower() not in have]
@@ -294,11 +287,11 @@ def collect_review():
     **评价不回写 Zotero** —— 用户的标签栏永远只有「在读/读完」两个，
     不会再堆积（他被 707 个自动标签坑过）。已评价与否记在本地评测集里。
     """
-    from modules import evalset as E
+    from adapters import evalset as E
     out = {'pending': [], 'stats': E.stats(), 'reasons': E.REASONS,
            'reading': 0, 'read': 0}
     try:
-        from modules.zotero_client import zget, USER_ID
+        from adapters.zotero_client import zget, USER_ID
         import urllib.parse
         q = urllib.parse.quote(READ_TAG)
         items = zget(f'/users/{USER_ID}/items?tag={q}&limit=100')
@@ -322,7 +315,7 @@ def collect_review():
 
 def action_rate(payload):
     """保存一条精读评价。"""
-    from modules import evalset as E
+    from adapters import evalset as E
     key = (payload.get('key') or '').strip()
     verdict = payload.get('verdict')
     if not key or verdict not in ('good', 'bad'):
@@ -357,9 +350,8 @@ def collect_blocks():
         return fallback
 
     blocks = []
-    for f in sorted(glob.glob(os.path.join(ROOT, 'modules', '*', '__init__.py'))):
-        d = os.path.dirname(f)
-        name = os.path.basename(d)
+    for ring, name, d in paths.block_dirs():
+        f = os.path.join(d, '__init__.py')
         try:
             tree = ast.parse(open(f, encoding='utf-8').read())
             doc = (ast.get_docstring(tree) or '').split('\n')[0]
@@ -376,7 +368,7 @@ def collect_blocks():
         })
 
     flows = []
-    skip = {'modules', 'docs', 'workflow_data', 'n8n_data', 'wf_backup', 'b'}
+    skip = paths.NON_WORKFLOW_DIRS
     for d in sorted(os.listdir(ROOT)):
         p = os.path.join(ROOT, d)
         if (not os.path.isdir(p) or d in skip or d.startswith(('.', 'zotero_backup'))
@@ -393,8 +385,9 @@ def collect_blocks():
 
 def action_selftest(name):
     """跑某块积木的自测。只读、可重复，是安全操作。"""
-    p = os.path.join(ROOT, 'modules', name, 'selftest.py')
-    if not os.path.exists(p) or os.path.sep + '..' in name or '/' in name:
+    d = paths.block_dir(name) if name and '/' not in name and '..' not in name else None
+    p = os.path.join(d, 'selftest.py') if d else ''
+    if not p or not os.path.exists(p):
         return False, '没有这块积木或它没有自测'
     try:
         r = _run([sys.executable, p], timeout=120, cwd=ROOT)
@@ -410,7 +403,7 @@ def collect_logs(name='zotero_watcher', lines=40):
     safe = {'zotero_watcher', 'watchdog', 'auto_sync'}      # 白名单，防路径穿越
     if name not in safe:
         return ['(不允许的日志名)']
-    p = os.path.join(ROOT, 'workflow_data', 'logs', name + '.log')
+    p = paths.log(name)
     if not os.path.exists(p):
         return ['(日志文件还不存在)']
     try:
@@ -424,7 +417,7 @@ def collect_recent_reads(n=8):
     """最近处理过的文献：按 summary.html 修改时间排序，附正文字数用于识别废品。"""
     import glob, re
     rows = []
-    for f in glob.glob(os.path.join(ROOT, 'workflow_data', 'library', '*', 'summary.html')):
+    for f in glob.glob(os.path.join(paths.LIBRARY, '*', 'summary.html')):
         try:
             st = os.path.getmtime(f)
             h = open(f, encoding='utf-8', errors='replace').read()
@@ -466,9 +459,41 @@ def action_save_config(payload):
 
 # ───────────────────────────── HTTP 服务 ─────────────────────────────
 
+# 面板允许的访问来源：只有本机、且只有本面板自己的端口。
+# 「只绑 127.0.0.1」挡得住别的机器，挡不住**你自己浏览器里打开的任何网页** ——
+# 那些页面同样跑在你本机，照样能往 127.0.0.1:8777 发请求（踩坑 #47）。
+_ALLOWED_HOSTS = {f'127.0.0.1:{PORT}', f'localhost:{PORT}', f'[::1]:{PORT}'}
+_ALLOWED_ORIGINS = {f'http://{h}' for h in _ALLOWED_HOSTS}
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass    # 不往 stdout 刷日志
+
+    def _guard(self, need_json):
+        """挡住来自其它网页的跨站请求（CSRF）与 DNS 重绑定。
+
+        面板能改密钥、重启服务、发起烧钱的检索 —— 这些都不该被一个
+        你随手打开的网页悄悄触发。三道判据，任一不过就拒绝：
+
+        1. Host 必须是本机+本端口 —— 挡 DNS 重绑定（把恶意域名解析到 127.0.0.1）。
+        2. 有 Origin 时必须是面板自己 —— 挡跨站脚本发起的请求。
+        3. 写操作必须是 application/json —— HTML 表单发不出这个 Content-Type，
+           跨站 fetch 想发它会先触发 CORS 预检，而本服务不应答预检。
+           面板自己的 JS 本来就带着它，所以这条对正常使用零影响。
+
+        返回 None 表示放行，否则返回要回给对方的 (码, 说明)。
+        """
+        if (self.headers.get('Host') or '').lower() not in _ALLOWED_HOSTS:
+            return 403, '只允许本机访问'
+        origin = self.headers.get('Origin')
+        if origin and origin.lower() not in _ALLOWED_ORIGINS:
+            return 403, '拒绝跨站请求'
+        if need_json:
+            ctype = (self.headers.get('Content-Type') or '').split(';')[0].strip().lower()
+            if ctype != 'application/json':
+                return 415, '写操作必须用 application/json'
+        return None
 
     def _send(self, obj, code=200, ctype='application/json'):
         body = (obj if isinstance(obj, bytes)
@@ -480,6 +505,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        bad = self._guard(need_json=False)
+        if bad:
+            return self._send({'error': bad[1]}, bad[0])
         p = self.path.split('?')[0]
         if p == '/':
             return self._send(PAGE.encode('utf-8'), ctype='text/html')
@@ -505,7 +533,7 @@ class Handler(BaseHTTPRequestHandler):
                 # 中文不能写在 b'' 字节串里，要显式编码
                 return self._send('<h3>无效的文献编号</h3>'.encode('utf-8'),
                                   400, 'text/html')
-            fp = os.path.join(ROOT, 'workflow_data', 'library', key, 'summary.html')
+            fp = paths.summary(key)
             if not os.path.exists(fp):
                 return self._send('<h3>这篇还没有精读结果</h3>'.encode('utf-8'),
                                   404, 'text/html')
@@ -528,6 +556,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._send({'error': 'not found'}, 404)
 
     def do_POST(self):
+        bad = self._guard(need_json=True)
+        if bad:
+            return self._send({'ok': False, 'msg': bad[1]}, bad[0])
         try:
             n = int(self.headers.get('Content-Length', 0))
             payload = json.loads(self.rfile.read(n) or b'{}')

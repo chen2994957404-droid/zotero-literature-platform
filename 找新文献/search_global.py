@@ -13,29 +13,20 @@
 """
 import os, sys, re
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
 
-from modules.cli import pos, flag, opt
-from modules.sciverse import search_papers, available, looks_chinese, SciverseError
+from core.cli import pos, flag, opt
+from adapters.sciverse import search_papers, available, looks_chinese, SciverseError
 
 
 def library_index():
     """库里已有文献的标题/DOI，用于标记「已有」。复用 paper_discovery 的实现，不重写。"""
     try:
-        from modules.paper_discovery import _library_index
+        from pipelines.paper_discovery import _library_index
         return _library_index()
     except Exception:
         return set(), set()

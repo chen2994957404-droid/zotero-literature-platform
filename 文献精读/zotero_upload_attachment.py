@@ -5,25 +5,17 @@ Zotero 上传流程：创建attachment条目 → 授权 → 上传 → 注册。
 """
 import os, sys, re, json, hashlib, mimetypes, urllib.parse, urllib.request
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
 
-from modules.cli import pos
-from modules.config import get_key, need_site
+from core import role
+from core.cli import pos
+from core.config import get_key, need_site
 
-# 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+# 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
 USER_ID = need_site('ZOTERO_USER_ID')
 _STORAGE = need_site('ZOTERO_STORAGE')   # 校验必填项存在（附件目录上传后落盘用）
 KEY = get_key('ZOTERO_API_KEY')
@@ -40,6 +32,8 @@ def api(url, method='GET', data=None, headers=None, raw=False):
 
 
 def upload_attachment(parent_key, filepath, display_name):
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    role.require_prod('上传附件到 Zotero', force=False)
     fname = os.path.basename(filepath)
     filesize = os.path.getsize(filepath)
     with open(filepath, 'rb') as f:

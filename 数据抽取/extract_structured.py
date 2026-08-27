@@ -16,28 +16,20 @@ schema，用 DeepSeek 抽成对齐的机器可读 JSON。这是"向量检索"之
 """
 import os, sys, json, re
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+from core import paths
 
-from modules.cli import flag, pos
-from modules.config import get_key, get_model
-# LLM 调用已收敛到公理件 modules/llm_client（消除 6 处重复实现，见踩坑 #17）
-from modules.llm_client import chat_json as _chat_json
+from core.cli import flag, pos
+from core.config import get_key, get_model
+# LLM 调用已收敛到公理件 adapters/llm_client（消除 6 处重复实现，见踩坑 #17）
+from adapters.llm_client import chat_json as _chat_json
 
-LIBRARY = os.path.join(_ROOT, 'workflow_data', 'library')
-OUT_DIR = os.path.join(_ROOT, 'workflow_data', 'structured')
+LIBRARY = paths.LIBRARY
+OUT_DIR = paths.STRUCTURED
 os.makedirs(OUT_DIR, exist_ok=True)
 
 DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')

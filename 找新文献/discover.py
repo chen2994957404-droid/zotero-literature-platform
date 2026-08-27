@@ -40,24 +40,16 @@
 """
 import os, sys, re, json, time
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+from core import paths
 
-from modules.cli import pos, flag, opt
-from modules.lib_match import match_many, rank
-from modules import sciverse
+from core.cli import pos, flag, opt
+from pipelines.lib_match import match_many, rank
+from adapters import sciverse
 
 
 def fetch_one(query, limit, year_from, use_openalex, prefer):
@@ -65,13 +57,15 @@ def fetch_one(query, limit, year_from, use_openalex, prefer):
     if not use_openalex and sciverse.available():
         r = sciverse.search_papers(query, limit=limit, year_from=year_from, prefer=prefer)
         return r['items'], r['total'], 'Sciverse（4.55 亿条）'
-    from modules.paper_discovery import search as oa_search
+    from pipelines.paper_discovery import search as oa_search
     out = []
     for it in oa_search(query, limit=limit):
         out.append({'title': it.get('title') or '', 'doi': it.get('doi') or '',
                     'year': it.get('year'), 'venue': it.get('venue') or '',
-                    'citations': it.get('cited') or 0, 'abstract': it.get('abstract') or '',
-                    'is_oa': it.get('is_oa'), 'oa_url': ''})
+                    # ⚠ 字段名必须是 citations：曾经这里读 'cited'、上游发 'cited_by'，
+                    #   两边对不上，导致走 OpenAlex 时引用数永远是 0（阶段 2 修）
+                    'citations': it.get('citations') or 0, 'abstract': it.get('abstract') or '',
+                    'is_oa': it.get('is_oa'), 'oa_url': it.get('oa_url') or ''})
     return out, len(out), 'OpenAlex（免费）'
 
 
@@ -132,7 +126,7 @@ def run_discovery(query, limit=25, n_queries=5, mode='survey', year_from=None,
     # **只有本平台知道这个用户属于哪一界** —— 因为只有我们有他的库。
     ctx = []
     try:
-        from modules.lib_match import pick_seeds
+        from pipelines.lib_match import pick_seeds
         ctx = [s['title'] for s in pick_seeds(query, n=5) if s.get('title')]
         if ctx:
             say(f'（按你库里的方向理解：{ctx[0][:46]}…）')
@@ -143,7 +137,7 @@ def run_discovery(query, limit=25, n_queries=5, mode='survey', year_from=None,
     if n_queries > 1:
         say(f'把问题拆成 {n_queries} 个互补检索式（{"解决问题" if mode == "problem" else "系统调研"}模式）…')
         try:
-            from modules.query_expand import expand as qexpand
+            from pipelines.query_expand import expand as qexpand
             queries = qexpand(query, mode=mode, n=n_queries, context=ctx)
         except Exception as e:
             say(f'扩展失败，退回单查询：{str(e)[:50]}')
@@ -160,8 +154,8 @@ def run_discovery(query, limit=25, n_queries=5, mode='survey', year_from=None,
 
     seeds, snow_added = [], 0
     if snowball_seeds > 0:
-        from modules.lib_match import pick_seeds
-        from modules.snowball import expand as snowball
+        from pipelines.lib_match import pick_seeds
+        from adapters.snowball import expand as snowball
         # 同样用扩展式集合挑种子：原始输入可能是「PBS」这种无语义的缩写
         seeds = pick_seeds(' ; '.join(queries), n=snowball_seeds)
         if seeds:
@@ -237,7 +231,7 @@ def main():
     if n_q > 1:
         print(f'正在把问题拆成 {n_q} 个互补的检索式（{"解决问题" if mode == "problem" else "系统调研"}模式）…')
         try:
-            from modules.query_expand import expand
+            from pipelines.query_expand import expand
             queries = expand(query, mode=mode, n=n_q)
         except Exception as e:
             print(f'（扩展失败，退回单查询：{str(e)[:50]}）')
@@ -260,8 +254,8 @@ def main():
     # 实证：单库检索召回 13~35%，优化检索式 50~95%，**再加一轮前后向雪球才到 90~100%**。
     snow_stats = []
     if not flag('--不雪球'):
-        from modules.lib_match import pick_seeds
-        from modules.snowball import expand as snowball
+        from pipelines.lib_match import pick_seeds
+        from adapters.snowball import expand as snowball
         seed_val = opt('--种子')
         seeds = pick_seeds(queries[0], n=int(seed_val) if seed_val and seed_val.isdigit() else 3)
         if seeds:
@@ -353,7 +347,7 @@ def main():
         print()
 
     # 把这次结果存下来，供 collect.py 按编号挑选 —— 用户不必手抄 DOI
-    stash = os.path.join(_ROOT, 'workflow_data', '_last_search.json')
+    stash = paths.last_search()
     try:
         with open(stash, 'w', encoding='utf-8') as f:
             json.dump({'query': query, 'time': time.strftime('%Y-%m-%d %H:%M'),

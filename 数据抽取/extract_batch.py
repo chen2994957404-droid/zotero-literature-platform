@@ -11,23 +11,16 @@ MineRU 解析（find_pdf 定位本地 PDF → mineru_parse 落地到 library/<ke
 """
 import os, sys, json
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+from core import paths, role
+from core.paths import ROOT as _ROOT
 
-from modules.cli import opt, positionals
-from modules.config import need_site, get_site
+from core.cli import opt, positionals, flag
+from core.config import need_site, get_site
 
 # 同文件夹脚本互相 import（标准开头只把项目根加进 sys.path，兄弟脚本目录需自己加）
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -37,17 +30,17 @@ sys.path.insert(0, SCRIPT_DIR)
 from extract_structured import (SYS, build_user_prompt, hierarchical_body,
                                 deepseek_json, DEEPSEEK_MODEL)
 # 公理件：Zotero 定位 + PDF 解析（定理编排公理，符合架构宪法）
-from modules.zotero_client import find_pdf
-from modules.pdf_parse import parse_pdf, PDFParseError
+from adapters.zotero_client import find_pdf
+from adapters.pdf_parse import parse_pdf, PDFParseError
 
-LIBRARY = os.path.join(_ROOT, 'workflow_data', 'library')
-OUT_DIR = os.path.join(_ROOT, 'workflow_data', 'structured')
+LIBRARY = paths.LIBRARY
+OUT_DIR = paths.STRUCTURED
 MINERU_SCRIPT = os.path.join(_ROOT, '文献精读', 'mineru_parse.py')
 
 # Zotero 本地读 + 存储路径（与 zotero_watcher.py 一致）
 ZOTERO_LOCAL = get_site('ZOTERO_API_HOST') + '/api'
 ZH = {'Zotero-Allowed-Request': 'true'}
-# 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+# 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
 USER_ID = need_site('ZOTERO_USER_ID')
 STORAGE_DIR = need_site('ZOTERO_STORAGE')
 
@@ -86,6 +79,8 @@ def extract_one(key):
     return True
 
 def main():
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    role.require_prod('批量结构化抽取（调用付费 API）', force=flag('--force'))
     fp = opt('--file')
     if fp:
         keys = [l.strip() for l in open(fp, encoding='utf-8') if l.strip()]

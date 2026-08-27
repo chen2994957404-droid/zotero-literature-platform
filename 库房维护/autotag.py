@@ -9,31 +9,23 @@ Zotero 现在只保留「待精读」「已精读」两个工作流标签。
 """
 import os, json, sys, urllib.request, urllib.error, re, time
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
 
-from modules.cli import flag, opt
-from modules.config import get_key, get_model, need_site
-from modules.llm_client import chat_json as _chat_json
+from core import role
+from core.cli import flag, opt
+from core.config import get_key, get_model, need_site, get_site
+from adapters.llm_client import chat_json as _chat_json
 
-# 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+# 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
 _UID = need_site('ZOTERO_USER_ID')
 _STORAGE = need_site('ZOTERO_STORAGE')
 USER_ID = _UID
 KEY = get_key('ZOTERO_API_KEY')
-LOCAL = 'http://localhost:23119/api/users/' + USER_ID
+LOCAL = get_site('ZOTERO_API_HOST') + '/api/users/' + USER_ID
 WEB = 'https://api.zotero.org/users/' + USER_ID
 LH = {'Zotero-Allowed-Request': 'true'}
 WH = {'Zotero-API-Key': KEY, 'Zotero-API-Version': '3'}
@@ -76,6 +68,8 @@ def to_tags(result):
 
 
 def main():
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    role.require_prod('自动打标签（写回 Zotero）', force=flag('--force'))
     # 取有摘要的文献
     tops = []; s = 0
     while True:

@@ -7,31 +7,24 @@
 """
 import os, sys, json, shutil, urllib.request
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+from core import paths, role
+from core.paths import ROOT as _ROOT
 
-from modules.cli import opt, positionals
-from modules.config import get_key, need_site
+from core.cli import opt, positionals, flag
+from core.config import get_key, need_site
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)     # 同文件夹脚本互相 import（zotero_upload_attachment 等）
 from zotero_upload_attachment import upload_attachment
 
 ROOT = _ROOT
-LIBRARY = os.path.join(ROOT, 'workflow_data', 'library')
-# 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+LIBRARY = paths.LIBRARY
+# 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
 USER_ID = need_site('ZOTERO_USER_ID')
 STORAGE_DIR = need_site('ZOTERO_STORAGE')
 WEB_API_KEY = get_key('ZOTERO_API_KEY')
@@ -85,6 +78,8 @@ def do_one(key):
 
 
 def main():
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    role.require_prod('批量回写精读附件', force=flag('--force'))
     fp = opt('--file')
     if fp:
         keys = [l.strip() for l in open(fp, encoding='utf-8') if l.strip()]

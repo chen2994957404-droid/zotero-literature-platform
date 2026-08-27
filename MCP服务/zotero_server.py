@@ -1,15 +1,6 @@
 # -*- coding: utf-8 -*-
 import os, sys
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
@@ -17,7 +8,7 @@ except Exception:
 """zotero_server · 库房层 MCP 服务（只读工具集，供 agent 调用）
 
 谁调用它：MCP 客户端（Claude Code / Cursor / DSH 等）以 stdio 子进程方式启动本文件；
-本文件把平台现有的 modules/zotero_client（公理件）包成 10 个只读 MCP 工具。
+本文件把平台现有的 adapters/zotero_client（公理件）包成 10 个只读 MCP 工具。
 
 设计决策（详见 MCP服务/CLAUDE.md）：
   - v1 只读：搜/查/找 PDF/取全文/合集/标签/统计——零写操作，最安全，agent 可直接调；
@@ -36,9 +27,9 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
-from modules.config import need_site
-from modules.zotero_client import LOCAL_API, find_pdf, get_fulltext, zget
-from modules.cli import flag
+from core.config import need_site
+from adapters.zotero_client import LOCAL_API, find_pdf, get_fulltext, zget
+from core.cli import flag
 
 VERSION = '0.1.0'
 _HDR = {'Zotero-Allowed-Request': 'true'}   # 本地 API 要求的请求头（与 zotero_client 一致）

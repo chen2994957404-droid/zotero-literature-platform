@@ -14,25 +14,16 @@
 """
 import os, sys
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
 
-from modules.cli import positionals, opt
-from modules.sciverse import ask_evidence, available, SciverseError
-from modules.llm_client import chat
-from modules.config import get_key, get_model
+from core.cli import positionals, opt
+from adapters.sciverse import ask_evidence, available, SciverseError
+from adapters.llm_client import chat
+from core.config import get_key, get_model
 
 SYS = ('你是科研文献助手。请**只根据下面提供的文献片段**回答用户问题，用中文，准确专业。'
        '每个关键论断后面用 [1] [2] 这样的编号标出依据来自哪条片段。'
@@ -45,13 +36,13 @@ MIN_SCORE = 0.60      # 相关度低于此值的片段基本是噪声，实测 0
 
 
 def to_english_query(q):
-    """把中文问题转成英文检索式。逻辑在 modules.query_expand 里，此处不重复实现。
+    """把中文问题转成英文检索式。逻辑在 pipelines.query_expand 里，此处不重复实现。
 
     **为什么必须转（踩坑 #35 实测）**：Sciverse 按提问语言偏向同语言文献。
     中文提问「聚硼硅氧烷的剪切硬化机理」召回的是硼硅玻璃辐照、炉渣、LTCC 陶瓷；
     同一问题用英文问，相关度 0.97 且全部对口。
     """
-    from modules.query_expand import to_english
+    from pipelines.query_expand import to_english
     return to_english(q)
 
 
