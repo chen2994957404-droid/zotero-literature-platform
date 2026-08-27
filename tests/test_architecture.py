@@ -276,3 +276,81 @@ def test_项目内的import都能解析到真实存在的包():
     assert not offenders, (
         '这些 import 指向不存在的东西（改名/搬家后漏改）：' + _NL
         + _NL.join(sorted(set(offenders))))
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 守卫四：两台机器的分工（见 docs/两台机器的分工.md）
+# ══════════════════════════════════════════════════════════════════════
+# 编程端（A 机）和运行端（B 机）**共用同一个 Zotero 账号**。
+# 编程端一旦回写，污染的是真实文献库，而且立刻同步到主力机。
+# 所以每个写 Zotero 的地方都必须先过 core.role.require_prod。
+
+_ZOTERO_WRITE_HOST = 'api.zotero.org'      # Zotero 本地 API 只读，写只能走这个域名
+_GUARD_CALL = 'role.require_prod'
+
+# 允许出现该域名却不需要守卫的文件：适配层的只读封装、文档、守卫自己
+_GUARD_EXEMPT = {
+    'tests/test_architecture.py',
+    'tests/test_core_role.py',
+    'core/role.py',
+}
+
+
+def test_每个写Zotero的地方都有机器角色守卫():
+    """漏掉一处，就等于这道闸不存在。
+
+    为什么用「扫域名」而不是「信任大家记得加」：写 Zotero 的脚本有 9 个，
+    分散在 4 个文件夹里。靠人记住「在编程端别跑这些」是不可靠的 ——
+    一次手滑就把真实文献库的标签改掉，而且会同步到主力机，
+    事后极难看出是什么时候被改的。
+    """
+    offenders = []
+    for f in _py_files():
+        rel = _rel(f)
+        if rel in _GUARD_EXEMPT or rel.startswith('归档'):
+            continue
+        src = open(f, encoding='utf-8', errors='replace').read()
+        if _ZOTERO_WRITE_HOST in src and _GUARD_CALL not in src:
+            offenders.append(rel)
+    assert not offenders, (
+        '这些文件会写 Zotero，但没有机器角色守卫：' + _NL
+        + _NL.join(sorted(offenders))
+        + _NL + '做法：在执行写操作的函数开头加一行'
+        + _NL + "  role.require_prod('这是什么操作', force=flag('--force'))")
+
+
+def test_常驻服务不许在编程端启动():
+    """watcher / 看门狗两台都跑会重复精读、重复写回、重复烧钱，标签状态机还会打架。"""
+    offenders = []
+    for rel in ('文献精读/zotero_watcher.py', '文献精读/watchdog.py'):
+        f = os.path.join(ROOT, rel.replace('/', os.sep))
+        if not os.path.isfile(f):
+            continue
+        if _GUARD_CALL not in open(f, encoding='utf-8', errors='replace').read():
+            offenders.append(rel)
+    assert not offenders, '常驻服务缺少机器角色守卫：' + _NL + _NL.join(offenders)
+
+
+def test_守卫必须在函数体里而不是模块顶层():
+    """守卫写在模块顶层会让 import 就抛错 —— 体检的「运行时导入」检查、
+    pytest 的收集、面板借用这些模块的逻辑，全都会连带失败。
+
+    守卫要挡的是「执行」，不是「加载」。
+    """
+    offenders = []
+    for f in _py_files():
+        rel = _rel(f)
+        if rel in _GUARD_EXEMPT:
+            continue
+        try:
+            tree = ast.parse(open(f, encoding='utf-8', errors='replace').read(), f)
+        except SyntaxError:
+            continue
+        for node in tree.body:          # 只看模块顶层
+            for sub in ast.walk(node):
+                if (isinstance(sub, ast.Call)
+                        and getattr(sub.func, 'attr', '') == 'require_prod'
+                        and isinstance(node, (ast.Expr, ast.Assign, ast.If))):
+                    offenders.append(f'{rel}:{sub.lineno}')
+    assert not offenders, (
+        '守卫被写在了模块顶层（import 时就会抛错）：' + _NL + _NL.join(sorted(offenders)))

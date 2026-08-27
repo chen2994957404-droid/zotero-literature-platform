@@ -11,7 +11,8 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths
+from core import paths, role
+from core.cli import flag
 
 from core.config import get_key, need_site, get_site
 
@@ -234,6 +235,9 @@ def set_state_tag(item_key, web_uid, new_state):
         print(f'  [标签更新失败] {e}')
 
 def main():
+    # 机器角色守卫：常驻服务只能在运行端（主力机）跑。
+    # 两台都跑会重复精读同一篇、重复写回 Zotero、重复烧钱，标签状态机还会互相打架。
+    role.require_prod('常驻精读监听（watcher）', force=flag('--force'))
     # 单实例锁：任务计划自启一份、看门狗又启一份时，第二份直接退出（踩坑 #30）。
     # 两份同时轮询会抢同一篇文献，导致重复精读/重复上传。
     try:
@@ -290,4 +294,11 @@ def main():
         time.sleep(60)  # 每60秒检查一次，避免API限流
 
 if __name__ == '__main__':
-    main()
+    # 机器角色不对时给一句人话，而不是甩一坨 traceback 到日志里 ——
+    # 这个失败在主力机首次部署时必然发生一次（ROLE 默认是最安全的 dev）。
+    from core import errors as _err
+    try:
+        main()
+    except _err.WrongMachineError as _e:
+        print(str(_e))
+        sys.exit(2)

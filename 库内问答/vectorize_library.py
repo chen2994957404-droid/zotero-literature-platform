@@ -11,7 +11,7 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths
+from core import paths, role
 
 from adapters import vectordb
 from core.cli import flag
@@ -97,6 +97,8 @@ def vectorize_light(x, coll, existing):
 
 def main():
     """命令行入口：增量轻量全库向量化（--rebuild 参数原脚本即声明但从未生效，保持该语义）。"""
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    role.require_prod('全库向量化', force=flag('--force'))
     rebuild = flag('--rebuild')    # 原脚本只声明了该开关、从未使用（无清空逻辑），此处保持原行为不变
     os.makedirs(VECTOR_DB, exist_ok=True)
     coll = get_collection()

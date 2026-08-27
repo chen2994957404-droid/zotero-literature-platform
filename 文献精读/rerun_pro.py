@@ -11,10 +11,10 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths
+from core import paths, role
 from core.paths import ROOT as _ROOT
 
-from core.cli import pos
+from core.cli import pos, flag
 from core.config import get_key, need_site, get_site
 
 _NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
@@ -38,6 +38,8 @@ def get_title(key):
 
 
 def main():
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    role.require_prod('用 pro 重跑精读（调用付费 API）', force=flag('--force'))
     dirs = [d for d in os.listdir(WORK) if os.path.isdir(os.path.join(WORK, d))
             and os.path.exists(os.path.join(WORK, d, 'layout.json'))]
     dirs.sort()

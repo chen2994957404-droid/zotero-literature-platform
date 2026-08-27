@@ -15,6 +15,7 @@ try:
 except Exception:
     pass
 
+from core import role
 from core.cli import flag, opt
 from core.config import get_key, get_model, need_site, get_site
 from adapters.llm_client import chat_json as _chat_json
@@ -67,6 +68,8 @@ def to_tags(result):
 
 
 def main():
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    role.require_prod('自动打标签（写回 Zotero）', force=flag('--force'))
     # 取有摘要的文献
     tops = []; s = 0
     while True:

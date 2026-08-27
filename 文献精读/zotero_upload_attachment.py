@@ -11,6 +11,7 @@ try:
 except Exception:
     pass
 
+from core import role
 from core.cli import pos
 from core.config import get_key, need_site
 
@@ -31,6 +32,8 @@ def api(url, method='GET', data=None, headers=None, raw=False):
 
 
 def upload_attachment(parent_key, filepath, display_name):
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    role.require_prod('上传附件到 Zotero', force=False)
     fname = os.path.basename(filepath)
     filesize = os.path.getsize(filepath)
     with open(filepath, 'rb') as f:

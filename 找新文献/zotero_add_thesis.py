@@ -8,6 +8,8 @@ try:
 except Exception:
     pass
 
+from core import role
+from core.cli import flag
 from core.config import get_key, need_site
 
 # 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
@@ -76,6 +78,8 @@ def add_thesis(t):
 
 
 def main():
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    role.require_prod('往 Zotero 添加学位论文', force=flag('--force'))
     for t in THESES:
         add_thesis(t)
     print('完成')

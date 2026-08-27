@@ -22,7 +22,7 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths
+from core import paths, role
 
 from core.cli import flag
 from core.config import get_key, get_site, need_site
@@ -87,6 +87,8 @@ def ollama_extract(title, body):
     return _parse_json_lenient(r['message']['content'])
 
 def main():
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    role.require_prod('全库结构化抽取', force=flag('--force'))
     # 已抽过的 key（精层 or 粗层都算），增量跳过；精层结果绝不覆盖
     # protected：精层记录（source != 'coarse'），即使 --rebuild 也跳过，防止被粗层降级（踩坑 #16）
     done = set(); protected = set()

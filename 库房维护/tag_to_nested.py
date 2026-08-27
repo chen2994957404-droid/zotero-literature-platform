@@ -11,7 +11,8 @@ try:
 except Exception:
     pass
 
-from core.cli import pos
+from core import role
+from core.cli import pos, flag
 from core.config import get_key, need_site, get_site
 
 # 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
@@ -33,6 +34,8 @@ def lget(p):
 
 
 def main():
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    role.require_prod('标签改造（写回 Zotero）', force=flag('--force'))
     # 取所有顶层文献
     tops = []; s = 0
     while True:

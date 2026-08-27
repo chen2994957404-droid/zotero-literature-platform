@@ -72,6 +72,16 @@ class DataError(PlatformError):
     """
 
 
+class WrongMachineError(PlatformError):
+    """这台机器不该做这件事（见 docs/两台机器的分工.md）。
+
+    典型场景：在编程端（A 机）试图写回 Zotero、启动 watcher、跑全库批量作业。
+    两台机器共用同一个 Zotero 账号，编程端一回写就污染真实文献库，
+    而且会立刻同步到主力机 —— 这类错误没有「重试」一说，
+    要么换机器做，要么明确知道自己在干什么再加 --force。
+    """
+
+
 class AuthError(PlatformError):
     """密钥无效、过期、余额不足 —— 属于外部服务，但重试一万次也不会好。"""
 

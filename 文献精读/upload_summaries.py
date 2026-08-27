@@ -12,10 +12,10 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths
+from core import paths, role
 from core.paths import ROOT as _ROOT
 
-from core.cli import opt, positionals
+from core.cli import opt, positionals, flag
 from core.config import get_key, need_site
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -78,6 +78,8 @@ def do_one(key):
 
 
 def main():
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    role.require_prod('批量回写精读附件', force=flag('--force'))
     fp = opt('--file')
     if fp:
         keys = [l.strip() for l in open(fp, encoding='utf-8') if l.strip()]

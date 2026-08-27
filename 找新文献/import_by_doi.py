@@ -19,7 +19,8 @@ try:
 except Exception:
     pass
 
-from core.cli import opts, positionals
+from core import role
+from core.cli import opts, positionals, flag
 from core.config import get_key, get_site
 
 BASE = 'https://api.zotero.org'
@@ -115,6 +116,8 @@ def import_dois(dois, tags=None, verbose=True):
 
 
 def main():
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    role.require_prod('按 DOI 导入 Zotero', force=flag('--force'))
     args = positionals()
     tags = opts('--tag')
     if not args:

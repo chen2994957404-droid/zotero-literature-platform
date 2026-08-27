@@ -14,7 +14,8 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths
+from core import paths, role
+from core.cli import flag
 from core.paths import ROOT as _ROOT
 
 from core import subproc as _sp   # 统一走静默子进程调用，避免弹窗
@@ -71,6 +72,9 @@ def restart_watcher():
 
 
 def main():
+    # 机器角色守卫：常驻服务只能在运行端（主力机）跑。
+    # 两台都跑会重复精读同一篇、重复写回 Zotero、重复烧钱，标签状态机还会互相打架。
+    role.require_prod('看门狗（守护 watcher）', force=flag('--force'))
     log(f'看门狗启动。心跳阈值 {STALE}s，检查间隔 {CHECK}s')
     last_restart = 0
     while True:
@@ -88,4 +92,11 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    # 机器角色不对时给一句人话，而不是甩一坨 traceback 到日志里 ——
+    # 这个失败在主力机首次部署时必然发生一次（ROLE 默认是最安全的 dev）。
+    from core import errors as _err
+    try:
+        main()
+    except _err.WrongMachineError as _e:
+        print(str(_e))
+        sys.exit(2)

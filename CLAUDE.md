@@ -15,17 +15,17 @@ MCP服务/ （3 个脚本）
     mcp_stdio.py、selftest.py、zotero_server.py
 adapters/  ← 外接口：唯一允许联网/用第三方库的一环（9 块）
     embed、evalset、llm_client、openalex、pdf_parse、sciverse、snowball、vectordb、zotero_client
-core/  ← 内核：谁都依赖它，它不依赖任何人（7 块）
-    cli、config、proc_lock、subproc、errors.py、log.py、paths.py
-docs/                    ← 文档（14 份）
+core/  ← 内核：谁都依赖它，它不依赖任何人（8 块）
+    cli、config、proc_lock、subproc、errors.py、log.py、paths.py、role.py
+docs/                    ← 文档（15 份）
 domain/  ← 纯逻辑：不联网、不知道文件放在哪（2 块）
     figure_crop、si_filter
 pipelines/  ← 编排：把上面三者按顺序组合成能力（4 块）
     chart_digitize、lib_match、paper_discovery、query_expand
-tests/ （5 个脚本）
-    test_adapters_vectordb.py、test_architecture.py、test_core_log_errors.py、test_core_paths.py、test_no_undefined_names.py
-平台管理/ （4 个脚本）
-    health_check.py、panel.py、panel_launch.py、交接.py
+tests/ （6 个脚本）
+    test_adapters_vectordb.py、test_architecture.py、test_core_log_errors.py、test_core_paths.py、test_core_role.py、test_no_undefined_names.py
+平台管理/ （5 个脚本）
+    health_check.py、panel.py、panel_launch.py、交接.py、诊断报告.py
 库内问答/ （4 个脚本）
     ask.py、ask_world.py、vectorize.py、vectorize_library.py
 库房维护/ （7 个脚本）
@@ -39,7 +39,7 @@ tests/ （5 个脚本）
 文献精读/ （12 个脚本）
     deepread_batch.py、deepread_v4.py、merge_summary.py、mineru_parse.py、refresh_summary_file.py、rerun_pro.py、si_batch.py、si_deepread.py…
 
-根目录文件：CLAUDE.md、LICENSE、README.md、pyproject.toml、requirements.txt、控制面板.bat、精读监听.bat
+根目录文件：CLAUDE.md、LICENSE、README.md、pyproject.toml、requirements.txt、控制面板.bat、更新平台.bat、精读监听.bat、诊断报告.bat
 
 （workflow_data/ 是数据目录，3000+ 文件，**不要去 glob 它**）
 ```
@@ -49,6 +49,19 @@ tests/ （5 个脚本）
 进度、健康状况、下一步做什么 → 见 `HANDOVER.md`
 
 <!-- AUTO:结构 结束 -->
+
+## ⚠ 两台机器，先搞清楚你在哪一台
+
+**本项目跑在两台机器上，分工见 `docs/两台机器的分工.md`（动手前必读）。**
+
+- **A 机 = 编程端**：有 Claude Code 的这台。改代码的唯一入口。
+  **默认不许写 Zotero、不许跑 watcher、不许跑花钱的批量作业** ——
+  两台共用同一个 Zotero 账号，A 机一回写就污染真实文献库。
+- **B 机 = 运行端**：主力机。Ollama、watcher、4 个自启任务、
+  `workflow_data/` 的权威副本都在那儿。**没有 Claude Code**，
+  它的状态只能靠用户把诊断报告贴给你。
+
+你现在能读到这句话，说明你在 **A 机**。
 
 ## 📌 新对话第一件事：读 `HANDOVER.md`（**别先 glob 根目录**）
 
@@ -230,6 +243,9 @@ pip install -e . --no-deps
 5. **联网只许在 `adapters/` 里**。别处要调外部服务，先把它包成一块 adapter，
    本环只调那块——守卫会拦
 6. 日志走 `core.log` 的 `get_logger(名)`，**不要自己写 `def log()`，更不要劫持 `print`**
+7. **写 Zotero / 跑全库作业 / 起常驻服务，函数开头必须加机器角色守卫**：
+   `role.require_prod('这是什么操作', force=flag('--force'))`——同样有守卫拦截。
+   守卫要写在**函数体里**，不能写模块顶层（写顶层会让 import 就抛错）
 
 ## 验证自主性
 

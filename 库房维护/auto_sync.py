@@ -19,7 +19,8 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths
+from core import paths, role
+from core.cli import flag
 from core.paths import ROOT as _ROOT
 
 from core.config import need_site, get_site
@@ -104,6 +105,8 @@ def run(script, name, timeout=3600):
 
 
 def main():
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    role.require_prod('定时增量同步', force=flag('--force'))
     log('=== 自动同步开始 ===')
     if not check_deps():
         return

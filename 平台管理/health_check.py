@@ -359,10 +359,21 @@ def c_data():
     n_lib = len([d for d in glob.glob(os.path.join(paths.LIBRARY, '*') + os.sep) if os.path.isdir(d)])
     n_struct = len(glob.glob(os.path.join(paths.STRUCTURED, '*.json')))
     vdb = os.path.exists(paths.VECTOR_DB)
-    return OK, f'library {n_lib} 篇 / structured {n_struct} 条 / 向量库{"在" if vdb else "缺失"}'
+    msg = f'library {n_lib} 篇 / structured {n_struct} 条 / 向量库{"在" if vdb else "缺失"}'
+    from core import role
+    if role.is_dev():
+        # 编程端的权威数据在主力机，这里只需要够做回归测试的金样本（2~3 篇）
+        if n_lib == 0:
+            return WARN, msg + ' —— 编程端没有金样本，纯逻辑改动无法做回归验证；'                                '建议从主力机拷 2~3 篇的 parsed/ 过来'
+        return OK, msg + f'（编程端，金样本 {n_lib} 篇；权威数据在主力机）'
+    return OK, msg
 
 
 def c_services():
+    """四个自启任务在不在。**只对运行端有意义** —— 编程端本来就不该注册它们。"""
+    from core import role
+    if role.is_dev():
+        return OK, '编程端不注册自启任务（常驻服务只在主力机跑），跳过检查'
     try:
         from core.subproc import powershell
         out = powershell(
@@ -381,6 +392,23 @@ def c_services():
 # ══════════════════════════════════════════════════════════════════════
 # 离线档：不依赖任何外部服务，永远应该全绿（见 docs/架构重构_v2总体设计.md 第五节）
 # ══════════════════════════════════════════════════════════════════════
+def c_role():
+    """本机角色配没配、配的是什么。见 docs/两台机器的分工.md。
+
+    这一项排在很前面，因为它决定了后面几项该不该报警：
+    编程端本来就不该有自启任务、不该有全库数据，那些黄灯是噪音不是问题。
+    """
+    from core import role
+    r, lab = role.current(), role.label()
+    if not role.is_configured():
+        return WARN, (f'没设置机器角色，按最安全的 {r}（{lab}）处理。'
+                      f'请在控制面板「本机设置」里把「机器角色」填成 '
+                      f'dev（编程端）或 prod（运行端·主力机）')
+    if r == role.PROD:
+        return OK, f'{lab} —— 允许写 Zotero、跑常驻服务、跑全库作业'
+    return OK, f'{lab} —— 已禁止写 Zotero / 跑 watcher / 跑全库作业（保护真实文献库）'
+
+
 def c_installed():
     """项目是否已装成 Python 包 —— 现在所有 import 都依赖这一步。"""
     try:
@@ -416,6 +444,7 @@ def c_offline_tests():
 if __name__ == '__main__':
     offline = flag('--offline')     # 只跑不依赖外部服务的检查
     print('=== 平台健康检查%s ===\n' % ('（离线档）' if offline else ''), flush=True)
+    check('机器角色', c_role)
     check('包安装', c_installed)
     check('离线测试', c_offline_tests)
     check('语法', c_syntax)

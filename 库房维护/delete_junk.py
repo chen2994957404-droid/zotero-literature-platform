@@ -7,7 +7,8 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths
+from core import paths, role
+from core.cli import flag
 
 from core.config import get_key, need_site
 
@@ -22,6 +23,8 @@ JUNK_FILE = paths.junk_list('json')
 
 
 def main():
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    role.require_prod('删除 Zotero 条目', force=flag('--force'))
     j = json.load(open(JUNK_FILE, encoding='utf-8'))
     keys = j['A'] + j['B']
     print(f'待删 {len(keys)} 个条目')
