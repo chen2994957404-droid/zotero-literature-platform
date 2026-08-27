@@ -182,14 +182,29 @@ def main():
     io.open(dest, 'w', encoding='utf-8', newline='').write(text)
     print(text[:2000])
     print(f'\n…（完整内容已写入）\n\n报告文件：{dest}')
-    # 顺手放进剪贴板，用户直接粘给 Claude
+    # 放进剪贴板，用户直接粘给 Claude。
+    #
+    # ⚠ 不能用 `clip`：它按**当前控制台代码页**（中文 Windows 上是 GBK）读 stdin，
+    #   我们喂 UTF-8 进去，出来就是「鏍囪...」那种乱码（2026-08-27 实测复现）。
+    #   走 PowerShell 读回刚写好的 UTF-8 文件再 Set-Clipboard，全程 Unicode，不丢字。
+    quoted = dest.replace("'", "''")
+    copied = False
     try:
-        p = subprocess.run(['clip'], input=text, text=True, encoding='utf-8',
-                           timeout=30, creationflags=_NOWIN)
-        if p.returncode == 0:
-            print('（已复制到剪贴板，可以直接粘贴给 Claude）')
+        r = subprocess.run(
+            ps("Get-Content -LiteralPath '" + quoted + "' -Encoding UTF8 -Raw "
+               "| Set-Clipboard"),
+            capture_output=True, text=True, encoding='utf-8', errors='replace',
+            timeout=60, creationflags=_NOWIN)
+        copied = (r.returncode == 0)
     except Exception:
         pass
+    if copied:
+        print('（已复制到剪贴板，可以直接粘贴给 Claude）')
+    else:
+        print('（复制到剪贴板失败 —— 请手动打开上面那个文件，全选复制）')
+    print('')
+    print('把整份报告发给 Claude 即可 —— 它看不见这台机器，只能靠这份报告。')
+
     return 0
 
 
