@@ -339,6 +339,15 @@ def sync_claude_md():
     同时解决数字过时：手写的「10 块公理件」早已落后于实际的 16 块，
     而新会话若只读 CLAUDE.md 就会**自信地答错**。自动生成即永不过时。
     """
+    # ⚠ 只有编程端才写 CLAUDE.md。
+    #    CLAUDE.md 是版本库里的文件，而这个函数会重写它的结构区块。
+    #    运行端的面板上也有「生成交接文件」按钮，用户会点 ——
+    #    一点就产生本地改动，下次 git pull 必冲突（2026-08-26 真实发生过）。
+    #    HANDOVER.md 本身已移出版本库，两台各生成各的，互不干扰。
+    from core import role
+    if not role.is_dev():
+        print('（运行端：只生成 HANDOVER.md，不改 CLAUDE.md —— 那是编程端的活）')
+        return False
     if not os.path.exists(CLAUDE_MD):
         return False
     body = ['', AUTO_BEGIN, '',

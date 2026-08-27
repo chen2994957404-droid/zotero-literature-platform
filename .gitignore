@@ -58,3 +58,12 @@ build/
 dist/
 .pytest_cache/
 平台管理/*.log
+
+# --- 生成物与运行时缓存：不进版本库（2026-08-26，两机冲突的根因）---
+# 判据：**进版本库的文件必须只有一个生产者。**
+# 这两个文件两台机器都会改写，于是每次 git pull 必冲突：
+#   HANDOVER.md            交接.py 生成，面板上有按钮，两台都会点
+#   _last_search.json      每次「找新文献」都重写
+# 它们都是可再生的，本地留着自己用即可。
+HANDOVER.md
+workflow_data/_last_search.json
