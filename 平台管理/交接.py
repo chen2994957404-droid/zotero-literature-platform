@@ -18,6 +18,7 @@ git 提交历史、体检结果、评测集进展、待办、最近踩的坑。
   python 平台管理/交接.py           生成/更新 HANDOVER.md
   python 平台管理/交接.py --print    只打印不写文件
 """
+import io
 import os, sys, io, glob, re, json, time
 
 # 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
@@ -111,6 +112,28 @@ def tree():
     return lines
 
 
+def _current_stage():
+    """从 CLAUDE.md 抽出「架构重构走到哪一阶段」。抽不到就返回 None（绝不编）。
+
+    CLAUDE.md 是唯一事实来源，这里只做提取，不维护第二份 ——
+    手写的第二份会过时，而过时的「下一步」会把新对话直接带偏。
+    """
+    try:
+        lines = io.open(CLAUDE_MD, encoding='utf-8').read().split(chr(10))
+    except Exception:
+        return None
+    for i, ln in enumerate(lines):
+        if '已完成阶段' in ln:
+            block = [ln.strip()]
+            for nxt in lines[i + 1:i + 4]:
+                t = nxt.strip()
+                if not t or t.startswith('#') or t.startswith('```'):
+                    break
+                block.append(t)
+            return '**架构重构（主线）**：' + ' '.join(block).replace('**', '')
+    return None
+
+
 def next_step():
     """推断「下一步该做什么」。
 
@@ -118,6 +141,10 @@ def next_step():
     proc_lock 解决的 watcher 重复实例）。这里全部依据系统的真实状态推断。
     """
     steps = []
+    # 主线排第一：架构重构走到哪，是「我们做到哪了」最重要的一条
+    stage = _current_stage()
+    if stage:
+        steps.append(stage)
     h = _HEALTH_CACHE.get('data') or {}
     if h.get('problems'):
         steps.append('**先修体检报的问题**（见上一节），其余都往后放')
