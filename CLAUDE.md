@@ -15,15 +15,15 @@ MCP服务/ （3 个脚本）
     mcp_stdio.py、selftest.py、zotero_server.py
 adapters/  ← 外接口：唯一允许联网/用第三方库的一环（9 块）
     embed、evalset、llm_client、openalex、pdf_parse、sciverse、snowball、vectordb、zotero_client
-core/  ← 内核：谁都依赖它，它不依赖任何人（9 块）
-    cli、config、proc_lock、subproc、errors.py、heartbeat.py、log.py、paths.py、role.py
+core/  ← 内核：谁都依赖它，它不依赖任何人（10 块）
+    cli、config、proc_lock、subproc、errors.py、heartbeat.py、jobs.py、log.py、paths.py、role.py
 docs/                    ← 文档（15 份）
 domain/  ← 纯逻辑：不联网、不知道文件放在哪（2 块）
     figure_crop、si_filter
-pipelines/  ← 编排：把上面三者按顺序组合成能力（4 块）
-    chart_digitize、lib_match、paper_discovery、query_expand
-tests/ （9 个脚本）
-    test_adapters_vectordb.py、test_architecture.py、test_artifact_gaps.py、test_core_heartbeat.py、test_core_log_errors.py、test_core_paths.py、test_core_role.py、test_no_undefined_names.py…
+pipelines/  ← 编排：把上面三者按顺序组合成能力（5 块）
+    chart_digitize、deepread、lib_match、paper_discovery、query_expand
+tests/ （11 个脚本）
+    test_adapters_vectordb.py、test_architecture.py、test_artifact_gaps.py、test_core_heartbeat.py、test_core_jobs.py、test_core_log_errors.py、test_core_paths.py、test_core_role.py…
 平台管理/ （8 个脚本）
     health_check.py、panel.py、panel_launch.py、交接.py、打开面板.py、更新平台.py、查产物缺口.py、诊断报告.py
 库内问答/ （4 个脚本）
@@ -44,7 +44,7 @@ tests/ （9 个脚本）
 （workflow_data/ 是数据目录，3000+ 文件，**不要去 glob 它**）
 ```
 
-**积木 19 块**（`modules/`，原子能力）· **工作流 8 个**（用积木搭出来的功能；`归档_旧版本` 是废弃代码，不计入）
+**积木 20 块**（`modules/`，原子能力）· **工作流 8 个**（用积木搭出来的功能；`归档_旧版本` 是废弃代码，不计入）
 
 进度、健康状况、下一步做什么 → 见 `HANDOVER.md`
 
