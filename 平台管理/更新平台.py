@@ -190,7 +190,19 @@ def main():
     if not ok:
         print('\n** 安装失败，把上面的报错发给 Claude **')
         return 1
-    print('完成。')
+    # 离线体检要跑 pytest，那是第 5 步的上线闸门 —— 闸门跑不了等于没有闸门
+    try:
+        import pytest        # noqa: F401
+        has_pytest = True
+    except Exception:
+        has_pytest = False
+    if not has_pytest:
+        print('顺带装上 pytest（第 5 步的离线体检要用它）…')
+        run([sys.executable, '-m', 'pip', 'install', 'pytest>=8.0', '-q'], timeout=900)
+    if refresh_imports():
+        print('完成。本进程已能 import 项目包。')
+    else:
+        print('完成，但本进程仍 import 不到项目包 —— 后面几步会降级处理。')
 
     # ── 3. 停旧面板 ──
     step(3, total, '停掉跑着旧代码的控制面板')

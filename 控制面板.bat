@@ -1,7 +1,5 @@
 @echo off
 chcp 65001 >nul
 cd /d "%~dp0"
-start "" /min python 平台管理\panel_launch.py
-timeout /t 2 /nobreak >nul
-start "" http://127.0.0.1:8777/
-exit
+python "平台管理\打开面板.py"
+if errorlevel 1 pause
