@@ -6,7 +6,6 @@
 """
 import sys, os
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, ROOT)
 from modules.si_filter import classify, filtered_text, stats
 
 SAMPLE = """# A novel material derived from diboron structures

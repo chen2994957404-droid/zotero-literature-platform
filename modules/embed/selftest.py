@@ -4,7 +4,6 @@
 需本地 Ollama 跑着 bge-m3。
 """
 import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from modules.embed import embed, chunk, strip_references
 
 def main():

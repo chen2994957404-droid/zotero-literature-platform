@@ -6,7 +6,6 @@
 （stream:false 下看起来像卡死），自测只验链路，不测翻译。
 """
 import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from modules.llm_client import chat, chat_json, LLMError
 
 def main():
@@ -39,7 +38,6 @@ def main():
     #    注：安全改造后 key 从 modules.config 读，参数传空会自动回退到 .env——
     #    这是期望行为（更健壮），所以这里测"能拿到密钥"而非"传空必报错"。
     try:
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
         from modules.config import get_key
         if get_key('DEEPSEEK_KEY'):
             print('  [PASS] 密钥链路正常（config 能取到 DEEPSEEK_KEY）'); ok += 1

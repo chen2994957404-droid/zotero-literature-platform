@@ -21,7 +21,6 @@ Sciverse 尚处公测（官网有「抢先体验新接口与公测计划」字�
 """
 import os, sys, re, json, time, urllib.request, urllib.error
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from modules.config import get_key
 
 BASE = 'https://api.sciverse.space'

@@ -14,26 +14,19 @@
 import os, sys, time, io, json, urllib.request
 from subprocess import TimeoutExpired
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+from core import paths
+from core.paths import ROOT as _ROOT
 
 from modules.config import need_site, get_site
 from modules.subproc import run as _sub_run   # 子进程统一走积木：不弹窗+超时+UTF-8
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG = os.path.join(_ROOT, 'workflow_data', 'logs', 'auto_sync.log')
+LOG = paths.log('auto_sync')
 os.makedirs(os.path.dirname(LOG), exist_ok=True)
 
 

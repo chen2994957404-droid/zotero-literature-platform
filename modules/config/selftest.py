@@ -13,7 +13,6 @@ except Exception:
     pass
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, ROOT)
 from modules.config import (get_key, all_keys, ENV_FILE, keyring_status,
                             key_location, _kr_set, _kr_get, SECRET_KEYS)
 

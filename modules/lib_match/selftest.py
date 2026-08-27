@@ -14,7 +14,6 @@ try:
 except Exception:
     pass
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from modules.lib_match import (build_index, match_many, rank, norm_title, _overlap)
 
 

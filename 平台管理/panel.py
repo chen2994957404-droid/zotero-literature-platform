@@ -22,20 +22,13 @@
 import os, sys, json, time, subprocess, threading, webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+from core import paths
+from core.paths import ROOT as _ROOT
 
 from modules.cli import flag
 
@@ -128,7 +121,7 @@ def collect_alerts():
     只看心跳会被骗，必须把失败本身暴露出来。
     """
     alerts = []
-    p = os.path.join(ROOT, 'workflow_data', 'logs', 'zotero_watcher.log')
+    p = paths.log('zotero_watcher')
     try:
         with open(p, encoding='utf-8', errors='replace') as f:
             tail = f.readlines()[-200:]
@@ -159,7 +152,7 @@ def collect_alerts():
 
 def collect_heartbeat():
     """watcher 心跳距今多久（秒）。None 表示没有心跳文件。"""
-    hb = os.path.join(ROOT, 'workflow_data', 'logs', 'watcher_heartbeat.txt')
+    hb = paths.runtime('watcher_heartbeat.txt')
     try:
         return int(time.time() - int(open(hb, encoding='utf-8').read().strip()))
     except Exception:
@@ -202,7 +195,7 @@ def _job_log(msg):
 
 def _run_search(params):
     try:
-        sys.path.insert(0, os.path.join(ROOT, '找新文献'))
+        sys.path.insert(0, os.path.join(ROOT, '找新文献'))  # paths-exempt: 借用兄弟脚本，阶段4迁入 pipelines/discover 后删除
         from discover import run_discovery
         r = run_discovery(
             params['query'], limit=params.get('limit', 25),
@@ -263,7 +256,7 @@ def action_collect(payload):
         return False, '没有选中任何文献'
     deep = bool(payload.get('deep'))
     try:
-        sys.path.insert(0, os.path.join(ROOT, '找新文献'))
+        sys.path.insert(0, os.path.join(ROOT, '找新文献'))  # paths-exempt: 借用兄弟脚本，阶段4迁入 pipelines/discover 后删除
         from import_by_doi import import_dois
         from modules.lib_match import build_index
         _, have = build_index(force=True)
@@ -410,7 +403,7 @@ def collect_logs(name='zotero_watcher', lines=40):
     safe = {'zotero_watcher', 'watchdog', 'auto_sync'}      # 白名单，防路径穿越
     if name not in safe:
         return ['(不允许的日志名)']
-    p = os.path.join(ROOT, 'workflow_data', 'logs', name + '.log')
+    p = paths.log(name)
     if not os.path.exists(p):
         return ['(日志文件还不存在)']
     try:
@@ -424,7 +417,7 @@ def collect_recent_reads(n=8):
     """最近处理过的文献：按 summary.html 修改时间排序，附正文字数用于识别废品。"""
     import glob, re
     rows = []
-    for f in glob.glob(os.path.join(ROOT, 'workflow_data', 'library', '*', 'summary.html')):
+    for f in glob.glob(os.path.join(paths.LIBRARY, '*', 'summary.html')):
         try:
             st = os.path.getmtime(f)
             h = open(f, encoding='utf-8', errors='replace').read()
@@ -540,7 +533,7 @@ class Handler(BaseHTTPRequestHandler):
                 # 中文不能写在 b'' 字节串里，要显式编码
                 return self._send('<h3>无效的文献编号</h3>'.encode('utf-8'),
                                   400, 'text/html')
-            fp = os.path.join(ROOT, 'workflow_data', 'library', key, 'summary.html')
+            fp = paths.summary(key)
             if not os.path.exists(fp):
                 return self._send('<h3>这篇还没有精读结果</h3>'.encode('utf-8'),
                                   404, 'text/html')

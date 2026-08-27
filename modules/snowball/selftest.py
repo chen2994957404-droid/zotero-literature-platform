@@ -12,7 +12,6 @@ try:
 except Exception:
     pass
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from modules.snowball import expand, work_by_doi, _abstract, _norm
 
 # 用户库里真实存在的一篇 PBS 机理文章，方向对口，适合当测试种子

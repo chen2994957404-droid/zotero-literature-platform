@@ -14,7 +14,6 @@ try:
 except Exception:
     pass
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from modules.sciverse import clean_chunk, _year, available, paper_relations, SciverseError
 
 

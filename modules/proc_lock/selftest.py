@@ -12,7 +12,6 @@ try:
 except Exception:
     pass
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from modules.proc_lock import single_instance, release, holder, _lock_path
 from modules.subproc import run as _run
 
@@ -40,8 +39,8 @@ def main():
         print('  [FAIL] 同进程再抢被拒，说明会自锁')
 
     # 3. 另一个进程抢同一把锁应失败 —— 这是本积木存在的唯一理由
-    code = (f"import sys; sys.path.insert(0, r'{os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))}');"
-            f"from modules.proc_lock import single_instance;"
+    # 子进程直接 import：项目已装成包（pip install -e .），不需要塞 sys.path
+    code = (f"from modules.proc_lock import single_instance;"
             f"print('GOT' if single_instance('{NAME}') else 'BLOCKED')")
     r = _run([sys.executable, '-c', code], timeout=40)
     if 'BLOCKED' in r.stdout:

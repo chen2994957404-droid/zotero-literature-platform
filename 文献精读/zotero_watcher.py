@@ -6,25 +6,17 @@
 """
 import os, sys, time, json, re, subprocess, urllib.request, urllib.parse, traceback
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+from core import paths
 
 from modules.config import get_key, need_site, get_site
 
 # ===== 运行日志 =====
-_LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'workflow_data', 'logs')
+_LOG_DIR = paths.LOGS
 os.makedirs(_LOG_DIR, exist_ok=True)
 _LOG_FILE = os.path.join(_LOG_DIR, 'zotero_watcher.log')
 _print = print
@@ -68,7 +60,7 @@ EXTRACT_SCRIPT = os.path.join(ROOT, '数据抽取', 'extract_structured.py')  # 
 SI_DEEPREAD = os.path.join(SCRIPT_DIR, 'si_deepread.py')            # SI 实验细节精读
 MERGE_SCRIPT = os.path.join(SCRIPT_DIR, 'merge_summary.py')         # 正文+SI 合并
 # 新的以文献为单元的库结构：workflow_data/library/<key>/{parsed/, summary.html}
-LIBRARY = os.path.join(ROOT, 'workflow_data', 'library')
+LIBRARY = paths.LIBRARY
 os.makedirs(LIBRARY, exist_ok=True)
 
 # 引入附件上传能力

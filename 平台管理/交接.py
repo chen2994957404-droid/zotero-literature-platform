@@ -20,20 +20,12 @@ git 提交历史、体检结果、评测集进展、待办、最近踩的坑。
 """
 import os, sys, io, glob, re, json, time
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+from core.paths import ROOT as _ROOT
 
 from modules.cli import flag
 from modules.subproc import out as _out
@@ -103,7 +95,7 @@ def tree():
     lines.append('')
     lines.append('根目录文件：' + '、'.join(files))
     lines.append('')
-    lines.append('（workflow_data/ 是数据目录，3000+ 文件，**不要去 glob 它**）')
+    lines.append('（workflow_data/ 是数据目录，3000+ 文件，**不要去 glob 它**）')  # paths-exempt: 生成的文档正文
     return lines
 
 
@@ -340,7 +332,7 @@ def sync_claude_md():
         return False
     body = ['', AUTO_BEGIN, '',
             '## 项目结构（自动同步，**不要 glob 根目录**）', '',
-            '> `workflow_data/` 有 3000+ 个数据文件，glob 根目录会直接淹掉你的上下文。',
+            '> `workflow_data/` 有 3000+ 个数据文件，glob 根目录会直接淹掉你的上下文。',  # paths-exempt: 生成的文档正文
             '> 下面这棵树就是全部结构，不必再去扫。', '', '```']
     body += tree()
     body += ['```', '']

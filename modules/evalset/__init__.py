@@ -26,10 +26,11 @@
   - stats()                  → 好/差各多少、客观指标的差异
 """
 import os, sys, re, json, time
+from core import paths
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-LIBRARY = os.path.join(ROOT, 'workflow_data', 'library')
-EVALSET = os.path.join(ROOT, 'workflow_data', 'evalset.json')
+LIBRARY = paths.LIBRARY
+EVALSET = paths.evalset()
 
 # 差评原因选项（用户在面板上勾选；以后从样本里归纳新的类别）
 REASONS = [

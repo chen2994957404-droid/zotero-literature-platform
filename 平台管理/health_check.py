@@ -6,27 +6,19 @@
 """
 import os, sys, ast, glob, json, urllib.request, subprocess
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+from core import paths
+from core.paths import ROOT as _ROOT
 
 from modules.cli import flag
 
 _NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
 ROOT = _ROOT
 os.chdir(ROOT)
-sys.path.insert(0, ROOT)
 
 OK, WARN, FAIL = '[OK]  ', '[WARN]', '[FAIL]'
 results = []
@@ -357,9 +349,9 @@ def c_no_selftest():
 
 
 def c_data():
-    n_lib = len([d for d in glob.glob('workflow_data/library/*/') if os.path.isdir(d)])
-    n_struct = len(glob.glob('workflow_data/structured/*.json'))
-    vdb = os.path.exists('workflow_data/vector_db')
+    n_lib = len([d for d in glob.glob(os.path.join(paths.LIBRARY, '*') + os.sep) if os.path.isdir(d)])
+    n_struct = len(glob.glob(os.path.join(paths.STRUCTURED, '*.json')))
+    vdb = os.path.exists(paths.VECTOR_DB)
     return OK, f'library {n_lib} 篇 / structured {n_struct} 条 / 向量库{"在" if vdb else "缺失"}'
 
 

@@ -51,3 +51,10 @@ workflow_data/_disc*
 # 配置备份含明文密钥，绝不进版本库
 .env.bak*
 .env.tmp
+
+# --- 打包 / 测试产物（阶段 0 重构引入）---
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+平台管理/*.log

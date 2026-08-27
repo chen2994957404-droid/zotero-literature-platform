@@ -26,11 +26,11 @@
 依赖：modules.embed（本地 bge-m3，免费）、modules.zotero_client、chromadb。
 """
 import os, sys, re, time
+from core import paths
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-VECTOR_DB = os.path.join(ROOT, 'workflow_data', 'vector_db')
+VECTOR_DB = paths.VECTOR_DB
 
 # 判定阈值（实测可调）。语义相似度用 1-余弦距离。
 DUP_SIM = 0.92        # 高于此值 + 标题也像 → 基本可断定是同一篇（换了写法）

@@ -20,9 +20,10 @@ zotero_watcher 反复出现 2 个实例并存 —— 任务计划自启一份、
 锁会在进程退出时自动释放（含被强杀的情况：靠 PID 存活检测识别僵尸锁）。
 """
 import os, sys, atexit
+from core import paths
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-LOCK_DIR = os.path.join(ROOT, 'workflow_data', 'logs')
+LOCK_DIR = paths.LOGS
 
 _held = []          # 本进程持有的锁文件路径，退出时清理
 

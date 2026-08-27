@@ -23,7 +23,6 @@ silly putty / shear stiffening gel / dilatant compound …
 """
 import os, sys, re
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from modules.llm_client import chat
 from modules.config import get_key, get_model
 

@@ -3,7 +3,6 @@
 用法: python modules/pdf_parse/selftest.py
 """
 import sys, os, tempfile
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from modules.pdf_parse import parse_pdf, is_parsed, PDFParseError
 
 def main():
@@ -24,7 +23,6 @@ def main():
     # 2. token 获取链路正常（环境变量 或 .env 都能拿到）
     #    注：安全化后 _token() 会回退到 modules.config 读 .env，这是期望行为，
     #    所以测"能拿到 token"；真的没有时才验证报错（且错误信息要有修复指引）。
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     from modules.pdf_parse import _token
     try:
         t = _token()

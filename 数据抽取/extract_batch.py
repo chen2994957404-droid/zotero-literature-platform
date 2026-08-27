@@ -11,20 +11,13 @@ MineRU 解析（find_pdf 定位本地 PDF → mineru_parse 落地到 library/<ke
 """
 import os, sys, json
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+from core import paths
+from core.paths import ROOT as _ROOT
 
 from modules.cli import opt, positionals
 from modules.config import need_site, get_site
@@ -40,8 +33,8 @@ from extract_structured import (SYS, build_user_prompt, hierarchical_body,
 from modules.zotero_client import find_pdf
 from modules.pdf_parse import parse_pdf, PDFParseError
 
-LIBRARY = os.path.join(_ROOT, 'workflow_data', 'library')
-OUT_DIR = os.path.join(_ROOT, 'workflow_data', 'structured')
+LIBRARY = paths.LIBRARY
+OUT_DIR = paths.STRUCTURED
 MINERU_SCRIPT = os.path.join(_ROOT, '文献精读', 'mineru_parse.py')
 
 # Zotero 本地读 + 存储路径（与 zotero_watcher.py 一致）

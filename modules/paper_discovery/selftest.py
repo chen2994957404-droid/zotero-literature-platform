@@ -4,7 +4,6 @@
 需联网（OpenAlex）。Zotero 开着则能测 in_library 标记。
 """
 import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from modules.paper_discovery import search
 
 def main():

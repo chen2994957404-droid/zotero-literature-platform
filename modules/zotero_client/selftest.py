@@ -3,7 +3,6 @@
 用法: python modules/zotero_client/selftest.py
 """
 import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from modules.zotero_client import find_pdf
 
 # 已知有正文的 key（CABSSMLA 是踩坑#15 那篇：SI 比正文大，考验判定）

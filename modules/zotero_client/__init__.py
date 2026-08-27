@@ -16,7 +16,6 @@ import os, re, json, urllib.request
 
 # 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
 import os as _os, sys as _sys
-_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
 try:
     from modules.config import need_site as _site, get_site as _gsite
 except Exception:

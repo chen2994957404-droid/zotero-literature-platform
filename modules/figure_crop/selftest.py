@@ -5,11 +5,11 @@
 """
 import sys, os
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, ROOT)
 from modules.figure_crop import crop_figures
+from core import paths
 
 def main():
-    lib = os.path.join(ROOT, 'workflow_data', 'library')
+    lib = paths.LIBRARY
     # 找第一个有 parsed/layout.json 的文献
     target = None
     if os.path.isdir(lib):

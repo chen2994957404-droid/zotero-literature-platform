@@ -6,20 +6,13 @@
 """
 import os, sys, re, json, subprocess, urllib.request
 
-# 【标准开头】项目根加入 import 路径 + 强制 UTF-8 输出（详见 docs/代码规范_标准脚本模板.md）
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-while True:
-    if os.path.isdir(os.path.join(_ROOT, 'modules')):
-        break                      # 项目根特征：modules/ 目录只在根存在
-    parent = os.path.dirname(_ROOT)
-    if parent == _ROOT:
-        break                      # 到盘符根，兜底
-    _ROOT = parent
-sys.path.insert(0, _ROOT)
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+from core import paths
+from core.paths import ROOT as _ROOT
 
 from modules.cli import pos
 from modules.config import get_key, need_site, get_site
@@ -27,8 +20,8 @@ from modules.config import get_key, need_site, get_site
 _NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = _ROOT
-WORK = os.path.join(ROOT, 'workflow_data', 'zotero_work')
-SUMMARY = os.path.join(ROOT, 'workflow_data', 'summary')
+WORK = os.path.join(paths.DATA, 'zotero_work')
+SUMMARY = os.path.join(paths.DATA, 'summary')
 DEEPREAD = os.path.join(SCRIPT_DIR, 'deepread_v4.py')
 DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')
 
