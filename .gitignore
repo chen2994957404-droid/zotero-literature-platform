@@ -68,3 +68,6 @@ dist/
 # 它们都是可再生的，本地留着自己用即可。
 HANDOVER.md
 workflow_data/_last_search.json
+
+# 手工备份（如 evalset.json.backup）：留在本地即可，不进版本库
+*.backup
