@@ -20,7 +20,7 @@ except Exception:
 from core import paths
 from core.paths import ROOT as _ROOT
 
-from modules.cli import pos, flag
+from core.cli import pos, flag
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)     # 同文件夹脚本互相 import（upload_summaries 等）

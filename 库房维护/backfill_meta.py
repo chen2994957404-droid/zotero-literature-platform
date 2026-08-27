@@ -12,9 +12,9 @@ except Exception:
     pass
 from core import paths
 
-from modules.config import need_site, get_site
+from core.config import need_site, get_site
 
-# 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+# 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
 _UID = need_site('ZOTERO_USER_ID')
 _STORAGE = need_site('ZOTERO_STORAGE')
 USER_ID = _UID

@@ -96,7 +96,7 @@ class TestRoot:
     def test_ROOT指向项目根(self):
         # 项目根的特征：有 pyproject.toml 和 modules/
         assert os.path.isfile(os.path.join(paths.ROOT, 'pyproject.toml'))
-        assert os.path.isdir(os.path.join(paths.ROOT, 'modules'))
+        assert os.path.isdir(os.path.join(paths.ROOT, 'core'))
 
     def test_ROOT与当前工作目录无关(self, tmp_path, monkeypatch):
         before = paths.ROOT

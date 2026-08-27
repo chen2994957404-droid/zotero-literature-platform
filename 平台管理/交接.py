@@ -28,8 +28,8 @@ except Exception:
 from core import paths
 from core.paths import ROOT as _ROOT
 
-from modules.cli import flag
-from modules.subproc import out as _out
+from core.cli import flag
+from core.subproc import out as _out
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = _ROOT
@@ -76,10 +76,21 @@ def tree():
         if d.startswith('.') or d in skip_dir or d.startswith('zotero_backup'):
             continue
         if os.path.isdir(p):
-            if d == 'modules':
-                subs = sorted(x for x in os.listdir(p) if os.path.isdir(os.path.join(p, x)))
-                lines.append(f'{d}/                 ← 积木层（{len(subs)} 块）')
-                lines.append('    ' + '、'.join(subs))
+            if d in paths.CODE_RINGS:
+                # 四环（重构 v2）：依赖只能从上往下 apps → pipelines → domain/adapters → core
+                RING_DESC = {
+                    'core':      '内核：谁都依赖它，它不依赖任何人',
+                    'domain':    '纯逻辑：不联网、不知道文件放在哪',
+                    'adapters':  '外接口：唯一允许联网/用第三方库的一环',
+                    'pipelines': '编排：把上面三者按顺序组合成能力',
+                }
+                subs = sorted(x for x in os.listdir(p)
+                              if os.path.isdir(os.path.join(p, x))
+                              and x not in paths.NOISE_DIRS)
+                extra = sorted(os.path.basename(f) for f in glob.glob(os.path.join(p, '*.py'))
+                               if not os.path.basename(f).startswith('__'))
+                lines.append(f'{d}/  ← {RING_DESC.get(d, "")}（{len(subs) + len(extra)} 块）')
+                lines.append('    ' + '、'.join(subs + extra))
             elif d == 'docs':
                 n = len(glob.glob(os.path.join(p, '*.md')))
                 lines.append(f'{d}/                    ← 文档（{n} 份）')
@@ -111,7 +122,7 @@ def next_step():
     if h.get('problems'):
         steps.append('**先修体检报的问题**（见上一节），其余都往后放')
     try:
-        from modules import evalset as E
+        from adapters import evalset as E
         s = E.stats()
         if not s['ready']:
             need_g, need_b = max(0, 3 - s['good']), max(0, 3 - s['bad'])
@@ -134,8 +145,8 @@ _HEALTH_CACHE = {}
 
 def blocks():
     rows = []
-    for f in sorted(glob.glob(os.path.join(ROOT, 'modules', '*', '__init__.py'))):
-        name = os.path.basename(os.path.dirname(f))
+    for ring, name, d in paths.block_dirs():
+        f = os.path.join(d, '__init__.py')
         doc = ''
         try:
             import ast
@@ -174,7 +185,7 @@ def flows():
 
 def evalset_state():
     try:
-        from modules import evalset as E
+        from adapters import evalset as E
         s = E.stats()
         return s
     except Exception:

@@ -17,8 +17,8 @@ except Exception:
 from core import paths
 from core.paths import ROOT as _ROOT
 
-from modules.cli import opt, positionals, flag
-from modules.config import get_key, get_model
+from core.cli import opt, positionals, flag
+from core.config import get_key, get_model
 
 _NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))

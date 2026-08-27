@@ -17,8 +17,8 @@ try:
 except Exception:
     pass
 
-from modules.cli import pos
-from modules.config import get_key   # 密钥统一从 modules/config 读（环境变量 → 系统凭据库 → .env）
+from core.cli import pos
+from core.config import get_key   # 密钥统一从 core/config 读（环境变量 → 系统凭据库 → .env）
 
 BASE = 'https://mineru.net/api/v4'
 

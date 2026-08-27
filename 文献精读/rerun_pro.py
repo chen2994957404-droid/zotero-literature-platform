@@ -14,8 +14,8 @@ except Exception:
 from core import paths
 from core.paths import ROOT as _ROOT
 
-from modules.cli import pos
-from modules.config import get_key, need_site, get_site
+from core.cli import pos
+from core.config import get_key, need_site, get_site
 
 _NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))

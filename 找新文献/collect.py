@@ -26,7 +26,7 @@ from core import paths
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 
-from modules.cli import flag, positionals
+from core.cli import flag, positionals
 
 STASH = paths.last_search()
 
@@ -114,7 +114,7 @@ def main():
     # 导入前实时查一次库：检索结果可能是几分钟前的，期间你可能已经收过了。
     # 重复条目清理起来很麻烦（之前全库去重花了不少功夫），**从源头防住最省事**。
     try:
-        from modules.lib_match import build_index
+        from pipelines.lib_match import build_index
         _, have_dois = build_index(force=True)
         already = [c for c in chosen if (c.get('doi') or '').lower() in have_dois]
         if already:

@@ -18,7 +18,7 @@ except Exception:
 from core import paths
 from core.paths import ROOT as _ROOT
 
-from modules.cli import flag
+from core.cli import flag
 
 _NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
 ROOT = _ROOT
@@ -50,7 +50,10 @@ def code_files():
         b = os.path.basename(f)
         return not (b.startswith('_tmp') or b in ('_t.py', '_h.py', '_c.py', '_f.py'))
 
-    files = [f for f in glob.glob('modules/**/*.py', recursive=True) if keep(f)]
+    files = []
+    for _ring in paths.CODE_RINGS:                     # 四环的代码
+        files += [f for f in glob.glob(_ring + '/**/*.py', recursive=True) if keep(f)]
+    files = [f for f in files if keep(f)]
     for d in workflow_dirs():
         files += [f for f in glob.glob(os.path.join(d, '**', '*.py'), recursive=True)
                   if keep(f)]
@@ -144,7 +147,7 @@ def c_no_popup():
 
     Windows 上 subprocess 默认会弹窗。面板每 15 秒、看门狗每 60 秒各查一次进程，
     没加静默标志就会不停闪蓝色窗口打扰用户。
-    正确做法：走 modules.subproc，或显式带 creationflags。
+    正确做法：走 core.subproc，或显式带 creationflags。
     **这一项是防复发的关键** —— 光修好现有的 17 处不够，得让以后写错立刻被发现。
     """
     import re
@@ -152,7 +155,7 @@ def c_no_popup():
     bad = []
     for f in code_files():
         np = os.path.normpath(f)
-        if np.startswith('modules' + os.sep + 'subproc'):
+        if np.startswith('core' + os.sep + 'subproc'):
             continue                       # 积木自己就是正确实现，豁免
         if np.startswith('归档'):
             continue                       # 归档的旧代码不再运行，不必整改
@@ -167,7 +170,7 @@ def c_no_popup():
                 line = src[:m.start()].count('\n') + 1
                 bad.append(f'{os.path.basename(f)}:{line}')
     if bad:
-        return WARN, f'{len(bad)} 处子进程调用可能弹窗（改用 modules.subproc）: {bad[:6]}'
+        return WARN, f'{len(bad)} 处子进程调用可能弹窗（改用 core.subproc）: {bad[:6]}'
     return OK, '所有子进程调用都不会弹窗'
 
 
@@ -177,7 +180,7 @@ def c_secret_storage():
     体检的既有一项只查「源码里有没有密钥」，但密钥也可能明文躺在
     .env / .env.bak / 各种临时文件里 —— 那同样是泄露面。
     """
-    from modules.config import keyring_status, key_location, SECRET_KEYS
+    from core.config import keyring_status, key_location, SECRET_KEYS
     ok, backend = keyring_status()
     plain = [k for k in SECRET_KEYS if key_location(k) == '.env明文']
     # 含明文密钥的残留文件（备份、临时文件）
@@ -210,14 +213,14 @@ def c_secret_storage():
 
 
 def c_hardcoded():
-    """守住红线 #3：配置与地址一律走 modules/config，不许 hardcode。
+    """守住红线 #3：配置与地址一律走 core/config，不许 hardcode。
 
     为什么要有这一项：2026-08-23 的「36 个脚本框架化」漏了 5 个文件，
     但体检全绿 —— 因为当时根本没有任何一项在查硬编码。
     红线写在文档里而没有检查项守着，等于没写。
     """
     import re
-    # 这些值都已经在 modules/config 的 SITE_SETTINGS 里可配，源码里不该再出现
+    # 这些值都已经在 core/config 的 SITE_SETTINGS 里可配，源码里不该再出现
     PATS = [(re.compile(r'localhost:23119'), 'ZOTERO_API_HOST'),
             (re.compile(r'localhost:11434'), 'OLLAMA_HOST')]
     bad = []
@@ -240,18 +243,18 @@ def c_hardcoded():
         for pat, setting in PATS:
             if pat.search(src):
                 bad.append(f'{f} → 应走 get_site({setting!r})')
-    return (OK, '没有硬编码的地址，配置都走 modules/config') if not bad         else (FAIL, f'{len(bad)} 处硬编码: {bad[:4]}')
+    return (OK, '没有硬编码的地址，配置都走 core/config') if not bad         else (FAIL, f'{len(bad)} 处硬编码: {bad[:4]}')
 
 
 def c_config():
-    from modules.config import get_key
+    from core.config import get_key
     missing = [k for k in ('DEEPSEEK_KEY', 'ZOTERO_API_KEY', 'MINERU_TOKEN') if not get_key(k)]
     return (OK, '三个密钥都能读到') if not missing else (FAIL, f'缺少: {missing}')
 
 
 def c_zotero():
     try:
-        from modules.config import get_site
+        from core.config import get_site
         uid = get_site('ZOTERO_USER_ID')
         host = get_site('ZOTERO_API_HOST')
         if not uid:
@@ -280,7 +283,8 @@ SLOW_TESTS = {'chart_digitize'}
 def c_modules():
     """跑各公理件的 selftest（每个限时 60s，避免单个卡死整个检查）。"""
     full = flag('--full')
-    mods = [d for d in glob.glob('modules/*/') if os.path.exists(os.path.join(d, 'selftest.py'))]
+    mods = [d for _r, _n, d in paths.block_dirs()
+            if os.path.exists(os.path.join(d, 'selftest.py'))]
     passed, failed, skipped = [], [], []
     for m in mods:
         name = os.path.basename(m.rstrip('/\\'))
@@ -293,7 +297,7 @@ def c_modules():
             (passed if r.returncode == 0 else failed).append(name)
         except subprocess.TimeoutExpired:
             failed.append(f'{name}(超时)')
-    total = len(glob.glob('modules/*/__init__.py'))
+    total = len(paths.block_dirs())
     msg = f'{len(passed)}/{len(mods)-len(skipped)} 自测通过（共 {total} 个公理件）'
     if skipped:
         msg += f'；跳过慢测试 {skipped}（--full 可跑）'
@@ -346,8 +350,8 @@ def c_importable():
 
 def c_no_selftest():
     """哪些公理件还缺自测（文档声称每个都有）。"""
-    lack = [os.path.basename(os.path.dirname(f)) for f in glob.glob('modules/*/__init__.py')
-            if not os.path.exists(os.path.join(os.path.dirname(f), 'selftest.py'))]
+    lack = [n for _r, n, d in paths.block_dirs()
+            if not os.path.exists(os.path.join(d, 'selftest.py'))]
     return (OK, '所有公理件都有自测') if not lack else (WARN, f'缺自测: {lack}')
 
 
@@ -360,7 +364,7 @@ def c_data():
 
 def c_services():
     try:
-        from modules.subproc import powershell
+        from core.subproc import powershell
         out = powershell(
             "Get-ScheduledTask | Where-Object {$_.TaskName -in "
             "@('ZoteroLiteratureWatcher','OllamaService','ZoteroApp','LiteratureAutoSync')} "

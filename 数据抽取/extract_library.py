@@ -24,8 +24,8 @@ except Exception:
     pass
 from core import paths
 
-from modules.cli import flag
-from modules.config import get_key, get_site, need_site
+from core.cli import flag
+from core.config import get_key, get_site, need_site
 
 # 同文件夹脚本互相 import（标准开头只把项目根加进 sys.path，兄弟脚本目录需自己加）
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -38,7 +38,7 @@ from extract_structured import (SCHEMA, SYS, build_user_prompt,
 OUT_DIR = paths.STRUCTURED
 os.makedirs(OUT_DIR, exist_ok=True)
 
-# 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+# 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
 USER_ID = need_site('ZOTERO_USER_ID')
 LOCAL = get_site('ZOTERO_API_HOST') + '/api/users/' + USER_ID
 LH = {'Zotero-Allowed-Request': 'true'}

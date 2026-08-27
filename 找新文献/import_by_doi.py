@@ -19,8 +19,8 @@ try:
 except Exception:
     pass
 
-from modules.cli import opts, positionals
-from modules.config import get_key, get_site
+from core.cli import opts, positionals
+from core.config import get_key, get_site
 
 BASE = 'https://api.zotero.org'
 UA = 'zotero-literature-platform/1.0'

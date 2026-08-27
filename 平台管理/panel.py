@@ -3,7 +3,7 @@
 
 设计原则（服从架构宪法）：
   本文件**一行业务逻辑都不实现**。状态取自 health_check 的检查函数，配置取自
-  modules.config，进程取自系统查询。它只是「现有积木的视图 + 遥控器」。
+  core.config，进程取自系统查询。它只是「现有积木的视图 + 遥控器」。
   任何新功能都应先做成积木，再由面板调用 —— 绝不在面板里写实现。
 
 能做什么（都是可逆、零风险的事）：
@@ -30,17 +30,17 @@ except Exception:
 from core import paths
 from core.paths import ROOT as _ROOT
 
-from modules.cli import flag
+from core.cli import flag
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = _ROOT
 sys.path.insert(0, SCRIPT_DIR)  # health_check 同在本文件夹
 
-from modules.config import (get_key, set_keys, get_model, mask,
+from core.config import (get_key, set_keys, get_model, mask,
                             MODEL_SETTINGS, ENV_FILE, SITE_SETTINGS, get_site,
                             keyring_status, key_location,
                             migrate_secrets_to_keyring)
-from modules.subproc import run as _run, powershell   # 统一走静默子进程调用
+from core.subproc import run as _run, powershell   # 统一走静默子进程调用
 
 PORT = int(os.environ.get('PANEL_PORT', '8777'))
 HOST = '127.0.0.1'          # 只监听本机，外部访问不到
@@ -139,7 +139,7 @@ def collect_alerts():
     # Zotero 没开是最常见的根因，单独探一次给出直白结论
     try:
         import urllib.request
-        from modules.config import get_site
+        from core.config import get_site
         uid = get_site('ZOTERO_USER_ID')
         urllib.request.urlopen(urllib.request.Request(
             f"{get_site('ZOTERO_API_HOST')}/api/users/{uid}/items/top?limit=1",
@@ -258,7 +258,7 @@ def action_collect(payload):
     try:
         sys.path.insert(0, os.path.join(ROOT, '找新文献'))  # paths-exempt: 借用兄弟脚本，阶段4迁入 pipelines/discover 后删除
         from import_by_doi import import_dois
-        from modules.lib_match import build_index
+        from pipelines.lib_match import build_index
         _, have = build_index(force=True)
         skipped = [d for d in dois if d.lower() in have]
         todo = [d for d in dois if d.lower() not in have]
@@ -287,11 +287,11 @@ def collect_review():
     **评价不回写 Zotero** —— 用户的标签栏永远只有「在读/读完」两个，
     不会再堆积（他被 707 个自动标签坑过）。已评价与否记在本地评测集里。
     """
-    from modules import evalset as E
+    from adapters import evalset as E
     out = {'pending': [], 'stats': E.stats(), 'reasons': E.REASONS,
            'reading': 0, 'read': 0}
     try:
-        from modules.zotero_client import zget, USER_ID
+        from adapters.zotero_client import zget, USER_ID
         import urllib.parse
         q = urllib.parse.quote(READ_TAG)
         items = zget(f'/users/{USER_ID}/items?tag={q}&limit=100')
@@ -315,7 +315,7 @@ def collect_review():
 
 def action_rate(payload):
     """保存一条精读评价。"""
-    from modules import evalset as E
+    from adapters import evalset as E
     key = (payload.get('key') or '').strip()
     verdict = payload.get('verdict')
     if not key or verdict not in ('good', 'bad'):
@@ -350,9 +350,8 @@ def collect_blocks():
         return fallback
 
     blocks = []
-    for f in sorted(glob.glob(os.path.join(ROOT, 'modules', '*', '__init__.py'))):
-        d = os.path.dirname(f)
-        name = os.path.basename(d)
+    for ring, name, d in paths.block_dirs():
+        f = os.path.join(d, '__init__.py')
         try:
             tree = ast.parse(open(f, encoding='utf-8').read())
             doc = (ast.get_docstring(tree) or '').split('\n')[0]
@@ -386,8 +385,9 @@ def collect_blocks():
 
 def action_selftest(name):
     """跑某块积木的自测。只读、可重复，是安全操作。"""
-    p = os.path.join(ROOT, 'modules', name, 'selftest.py')
-    if not os.path.exists(p) or os.path.sep + '..' in name or '/' in name:
+    d = paths.block_dir(name) if name and '/' not in name and '..' not in name else None
+    p = os.path.join(d, 'selftest.py') if d else ''
+    if not p or not os.path.exists(p):
         return False, '没有这块积木或它没有自测'
     try:
         r = _run([sys.executable, p], timeout=120, cwd=ROOT)

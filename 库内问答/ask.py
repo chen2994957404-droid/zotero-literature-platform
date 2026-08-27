@@ -12,11 +12,11 @@ except Exception:
     pass
 from core import paths
 
-import chromadb
-from modules.cli import positionals
-from modules.config import get_key, get_model
-from modules.embed import embed as _embed_batch
-from modules.llm_client import chat as _chat
+from core.cli import positionals
+from core.config import get_key, get_model
+from adapters.embed import embed as _embed_batch
+from adapters.llm_client import chat as _chat
+from adapters import vectordb
 
 VECTOR_DB = paths.VECTOR_DB
 DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')
@@ -24,8 +24,7 @@ DEEPSEEK_MODEL = get_model('ASK_MODEL')      # 可在控制面板切换
 TOP_K = 6
 
 # embedding 与 LLM 调用走公理件
-client = chromadb.PersistentClient(path=VECTOR_DB)
-coll = client.get_or_create_collection('literature', metadata={'hnsw:space': 'cosine'})
+coll = vectordb.open_store()          # 向量库走适配层，换库只改 adapters/vectordb
 
 
 def embed(text):
@@ -45,9 +44,9 @@ def ask_answer(question, top_k=TOP_K):
     找不到内容时 answer 为空串、chunks 为 0（调用方据此给提示）。
     """
     qvec = embed(question)
-    res = coll.query(query_embeddings=[qvec], n_results=top_k,
-                     include=['documents', 'metadatas', 'distances'])
-    docs, metas = res['documents'][0], res['metadatas'][0]
+    hits = coll.query(qvec, n=top_k)
+    docs = [h['doc'] for h in hits]
+    metas = [h['meta'] for h in hits]
     if not docs:
         return {'answer': '', 'sources': [], 'chunks': 0}
     context = ''

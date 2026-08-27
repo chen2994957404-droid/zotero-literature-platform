@@ -24,7 +24,7 @@
   `llm_client`、`config`
 - 数据：`workflow_data/structured/compare.md`（brainstorm 的输入）
 
-**核心检索逻辑在积木 `modules/paper_discovery` 里，要改它请让用户改选那个文件夹。**
+**核心检索逻辑在积木 `pipelines/paper_discovery` 里，要改它请让用户改选那个文件夹。**
 本文件夹里的脚本只是它的调用者和命令行外壳。
 
 ## 注意事项

@@ -23,10 +23,10 @@ except Exception:
     pass
 from core import paths
 
-from modules.cli import flag, pos
-from modules.config import get_key, get_model
-# LLM 调用已收敛到公理件 modules/llm_client（消除 6 处重复实现，见踩坑 #17）
-from modules.llm_client import chat_json as _chat_json
+from core.cli import flag, pos
+from core.config import get_key, get_model
+# LLM 调用已收敛到公理件 adapters/llm_client（消除 6 处重复实现，见踩坑 #17）
+from adapters.llm_client import chat_json as _chat_json
 
 LIBRARY = paths.LIBRARY
 OUT_DIR = paths.STRUCTURED

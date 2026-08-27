@@ -11,7 +11,7 @@ MCP（Model Context Protocol）服务，让 Claude Code / Cursor / DSH 等 agent
 背景决策（2026-08-26，详见 变更记录）：
 - 调研了 3 个现成 Zotero MCP（nealcaren/mcp-zotero、alisoroushmd/zotero-mcp、
   drxaibi/zotero-mcp），结论是**库房层「借鉴重写」优于搬运**：
-  我们已有 `modules/zotero_client` 这块在真实库上磨出来的公理件，MCP 只是薄壳；
+  我们已有 `adapters/zotero_client` 这块在真实库上磨出来的公理件，MCP 只是薄壳；
   0-star 仓库搬运后要自己维护，不如自己写壳 + 抄它的 API 细节。
 - **分析层（知识图谱/撤稿核查等）明确不做**（用户 2026-08-26 拍板）。
 
@@ -20,7 +20,7 @@ MCP（Model Context Protocol）服务，让 Claude Code / Cursor / DSH 等 agent
 - `mcp_stdio.py`：手写 MCP stdio 协议层（JSON-RPC 2.0 + 换行分隔，零第三方依赖）。
   为什么不用官方 SDK：平台「少依赖」宪法 + 协议已实测稳定（官方 SDK 的 ReadBuffer
   就是按 `\n` 切帧，序列化 = `JSON + '\n'`）；日后要接 SSE/HTTP 再换 SDK，本层接口不变。
-- `zotero_server.py`：库房层只读工具集，封装 `modules/zotero_client`。
+- `zotero_server.py`：库房层只读工具集，封装 `adapters/zotero_client`。
 - `selftest.py`：协议层离线自测（不联网、不依赖用户数据）。
 
 ## 对外接口（zotero_server 的 MCP 工具，全部只读）

@@ -15,11 +15,11 @@ try:
 except Exception:
     pass
 
-from modules.cli import flag, opt
-from modules.config import get_key, get_model, need_site, get_site
-from modules.llm_client import chat_json as _chat_json
+from core.cli import flag, opt
+from core.config import get_key, get_model, need_site, get_site
+from adapters.llm_client import chat_json as _chat_json
 
-# 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+# 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
 _UID = need_site('ZOTERO_USER_ID')
 _STORAGE = need_site('ZOTERO_STORAGE')
 USER_ID = _UID

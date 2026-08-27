@@ -13,13 +13,17 @@
 ```
 MCP服务/ （3 个脚本）
     mcp_stdio.py、selftest.py、zotero_server.py
-core/ （4 个脚本）
-    __init__.py、errors.py、log.py、paths.py
+adapters/  ← 外接口：唯一允许联网/用第三方库的一环（9 块）
+    embed、evalset、llm_client、openalex、pdf_parse、sciverse、snowball、vectordb、zotero_client
+core/  ← 内核：谁都依赖它，它不依赖任何人（7 块）
+    cli、config、proc_lock、subproc、errors.py、log.py、paths.py
 docs/                    ← 文档（14 份）
-modules/                 ← 积木层（17 块）
-    chart_digitize、cli、config、embed、evalset、figure_crop、lib_match、llm_client、paper_discovery、pdf_parse、proc_lock、query_expand、sciverse、si_filter、snowball、subproc、zotero_client
-tests/ （3 个脚本）
-    test_architecture.py、test_core_log_errors.py、test_core_paths.py
+domain/  ← 纯逻辑：不联网、不知道文件放在哪（2 块）
+    figure_crop、si_filter
+pipelines/  ← 编排：把上面三者按顺序组合成能力（4 块）
+    chart_digitize、lib_match、paper_discovery、query_expand
+tests/ （5 个脚本）
+    test_adapters_vectordb.py、test_architecture.py、test_core_log_errors.py、test_core_paths.py、test_no_undefined_names.py
 平台管理/ （4 个脚本）
     health_check.py、panel.py、panel_launch.py、交接.py
 库内问答/ （4 个脚本）
@@ -40,7 +44,7 @@ tests/ （3 个脚本）
 （workflow_data/ 是数据目录，3000+ 文件，**不要去 glob 它**）
 ```
 
-**积木 17 块**（`modules/`，原子能力）· **工作流 7 个**（用积木搭出来的功能；`归档_旧版本` 是废弃代码，不计入）
+**积木 19 块**（`modules/`，原子能力）· **工作流 8 个**（用积木搭出来的功能；`归档_旧版本` 是废弃代码，不计入）
 
 进度、健康状况、下一步做什么 → 见 `HANDOVER.md`
 
@@ -66,7 +70,7 @@ tests/ （3 个脚本）
 
 ```
 文献精读/  库内问答/  数据抽取/  找新文献/  库房维护/  平台管理/  归档_旧版本/
-modules/   ← 积木层（公理件），每块也有自己的 CLAUDE.md
+core/  domain/  adapters/  pipelines/   ← 代码四环（重构 v2），每块也有自己的 CLAUDE.md
 ```
 
 **如果用户只选中了某一个文件夹跟你对话，那个文件夹的 CLAUDE.md 就是完整上下文。**
@@ -87,11 +91,11 @@ modules/   ← 积木层（公理件），每块也有自己的 CLAUDE.md
 | 用户说 | 你怎么做 |
 |--------|---------|
 | "我库里关于XX有什么？" "帮我查查XX" | `python 库内问答/ask.py "问题"`（RAG 问答，中文答+附来源）|
-| "帮我找XX方向的文献" "补充点XX的文献" | `modules/paper_discovery` 的 `search(query)`，返回文献列表并标记库里已有 |
+| "帮我找XX方向的文献" "补充点XX的文献" | `pipelines/paper_discovery` 的 `search(query)`，返回文献列表并标记库里已有 |
 | "帮我横向比较XX" "这方向有什么规律/空白" | 读 `workflow_data/structured/compare.md`（研究论文横向对比表，148篇）；PBS 方向另有 `compare_PBS.md` |
 | "精读某篇文献" | 让他在 Zotero 打「待处理」标签即可。**状态机自动判断**：只有正文→精读正文→标「正文精读」；有SI→连SI实验细节一起精读并合并→标「全文精读」；已精读过的只补缺的部分不重跑。服务已开机自启。 |
 | "把某批文献的数据抽出来" | `python 数据抽取/extract_batch.py KEY1 KEY2`（自动 MineRU 解析+DeepSeek 精抽）|
-| "把论文图里的曲线变成数据" | `modules/chart_digitize` 的 `digitize()`，**必须用云端大模型**（硅基流动 Qwen3.5-397B/3.6-27B），本地7B会编假数据 |
+| "把论文图里的曲线变成数据" | `pipelines/chart_digitize` 的 `digitize()`，**必须用云端大模型**（硅基流动 Qwen3.5-397B/3.6-27B），本地7B会编假数据 |
 | "帮我想想研究方向/idea" | 读 compare 表做横向关联分析（找机理×性能的空白格），或 `python 找新文献/brainstorm.py` |
 
 ## 现成数据资产（在哪找什么）
@@ -103,11 +107,21 @@ modules/   ← 积木层（公理件），每块也有自己的 CLAUDE.md
 - `workflow_data/library/<KEY>/` — 精读过的文献（parsed/full.md 全文 + summary.html 中文精读）
 - `workflow_data/vector_db/` — 向量库（9105块，供 库内问答/ask.py 检索）
 
-## 积木层（modules/，可直接 import 复用）
+## 代码四环（可直接 import 复用）
 
 **完整清单见本文件上方「项目结构」自动区块**（手写清单会过时，这里刻意不列）。
 
-改动后跑 `python modules/<名>/selftest.py` 验证单块；
+| 环 | 判据：什么会让它需要改 | 能不能联网 |
+|---|---|---|
+| `core/` | 几乎不会（基础设施：路径/配置/日志/异常/参数/锁） | 否 |
+| `domain/` | **只有我们自己想法变了**（算法、格式、schema） | 否，且不许知道文件放在哪 |
+| `adapters/` | **外部世界变了**（API 换版本、模型换代、换向量库） | **只有这一环可以** |
+| `pipelines/` | 需求一变就变（把上面三者按顺序组合） | 否 |
+
+「只有 adapters 可以联网」这一条，就是**「换掉 MineRU 只改一个文件」的全部保证** ——
+架构守卫会强制它（`python -m pytest`）。
+
+改动后跑 `python <环>/<名>/selftest.py` 验证单块；
 
 **改完的验证顺序**（前两步是离线的，秒级，必须全绿）：
 1. `python -m pytest -q` —— 离线测试 + 架构守卫
@@ -163,7 +177,7 @@ modules/   ← 积木层（公理件），每块也有自己的 CLAUDE.md
 - `OllamaService` → 本地 Ollama（问答/向量化依赖它），带正确 `OLLAMA_MODELS` 路径。
 
 **密钥管理（2026-08-09 升级后）**：密钥存在**系统凭据库**（Windows 凭据管理器），
-硬盘上没有明文。统一走 `modules/config` 的 `get_key()`，
+硬盘上没有明文。统一走 `core/config` 的 `get_key()`，
 加载顺序：环境变量 → **系统凭据库** → `.env`（后者只留模型/路径等非密配置）。
 用户在**控制面板**里填写与切换，面板会显示每个密钥存在哪。
 
@@ -192,7 +206,9 @@ modules/   ← 积木层（公理件），每块也有自己的 CLAUDE.md
 
 **先读 `docs/架构重构_v2总体设计.md`**，它规定项目正在往「四环」结构收敛：
 `core`（内核）→ `domain`（纯逻辑）/ `adapters`（外接口）→ `pipelines`（编排）→ `apps`（界面），
-依赖只能从上往下。已完成阶段 0（安全网）与阶段 1 的 `core/paths`。
+依赖只能从上往下。**已完成阶段 0（安全网）、阶段 1（内核环）、阶段 2（拆开公理层）。**
+下一步是阶段 3：把靠 subprocess 互相拉起来的工作流做成 `pipelines/` 里的函数，
+并建 `core/jobs` 状态库（续跑 / 退避重试 / 只补缺的部分）。
 
 **装一次才能跑**（换电脑/重装后必做）：
 
@@ -200,17 +216,20 @@ modules/   ← 积木层（公理件），每块也有自己的 CLAUDE.md
 pip install -e . --no-deps
 ```
 
-项目现在是真正的 Python 包，`import modules.x` / `from core import paths` 在任何目录都能用。
+项目现在是真正的 Python 包，`from adapters import openalex` / `from core import paths` 在任何目录都能用。
 
 ## 代码规范（红线，2026-08-26 更新）
 
 **改任何 .py 之前，先读 `docs/代码规范_标准脚本模板.md`。** 四条红线：
 1. 「标准开头」只剩 4 行（**只做 UTF-8，不再塞 sys.path**）。旧的 9 行走查根写法已全删，
    **不要写回去**——架构守卫会让 pytest 变红
-2. 命令行参数一律走 `modules/cli`（pos / flag / opt / opts / positionals），**禁止手写 sys.argv**
-3. 配置与模型名一律走 `modules/config`（get_key / get_site / get_model），**禁止 hardcode**
+2. 命令行参数一律走 `core/cli`（pos / flag / opt / opts / positionals），**禁止手写 sys.argv**
+3. 配置与模型名一律走 `core/config`（get_key / get_site / get_model），**禁止 hardcode**
 4. 数据路径一律走 `core.paths`（`paths.fulltext(key)` / `paths.LIBRARY` / `paths.log(名)`），
    **禁止手写 `workflow_data` 路径**——同样有守卫拦截
+5. **联网只许在 `adapters/` 里**。别处要调外部服务，先把它包成一块 adapter，
+   本环只调那块——守卫会拦
+6. 日志走 `core.log` 的 `get_logger(名)`，**不要自己写 `def log()`，更不要劫持 `print`**
 
 ## 验证自主性
 

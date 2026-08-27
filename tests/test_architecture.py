@@ -8,6 +8,7 @@
 
 见 docs/架构重构_v2总体设计.md 第一节、第三节 B。
 """
+import ast
 import os
 import re
 import pytest
@@ -24,6 +25,9 @@ SKIP_DIRS = {'workflow_data', '.git', '__pycache__', '归档_旧版本',
 # 单行豁免标记：确实需要写这个字符串（例如遍历时排除数据目录）的地方，
 # 在行尾加 `# paths-exempt` 并说明理由。刻意做成显眼的，让豁免难以泛滥。
 EXEMPT = '# paths-exempt'
+
+# 报错信息里的换行 + 缩进（写成常量，避免转义在各种工具链里被吃掉）
+_NL = chr(10) + '  '
 
 
 def _py_files():
@@ -111,27 +115,95 @@ def test_依赖方向不许反向():
         '依赖方向反了（违反架构宪法铁律 2）：\n  ' + '\n  '.join(sorted(set(violations))))
 
 
-def test_纯逻辑环不许联网也不许碰硬盘():
-    """domain/ 里出现网络或文件 I/O，就说明它放错环了，应该搬去 adapters。
+# 联网 / 外部服务客户端：只有 adapters 环可以碰
+_NETWORK = ['urllib.request', 'urllib.error', 'requests', 'httpx', 'socket',
+            'http.client', 'aiohttp']
+_EXTERNAL = ['chromadb', 'keyring']
 
-    这条保证 domain 永远可以离线、毫秒级地测试 —— 那是整个安全网的地基。
-    """
-    FORBIDDEN = ['urllib.request', 'requests', 'httpx', 'socket',
-                 'chromadb', 'subprocess']
-    domain_dir = os.path.join(ROOT, 'domain')
-    if not os.path.isdir(domain_dir):
-        pytest.skip('domain 环尚未建立（重构阶段 2）')
-    offenders = []
+
+def _imports_of(path):
+    """这个文件顶层 import 了哪些模块（含 from X import 的 X）。"""
+    src = open(path, encoding='utf-8', errors='replace').read()
+    try:
+        tree = ast.parse(src, path)
+    except SyntaxError:
+        return set()
+    mods = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Import):
+            mods.update(a.name for a in n.names)
+        elif isinstance(n, ast.ImportFrom) and n.module:
+            mods.add(n.module)
+    return mods
+
+
+def _ring_files(ring):
     for f in _py_files():
         rel = _rel(f)
-        if not rel.startswith('domain/'):
-            continue
-        src = open(f, encoding='utf-8', errors='replace').read()
-        for bad in FORBIDDEN:
-            if re.search(r'^\s*(from|import)\s+' + re.escape(bad), src, re.M):
-                offenders.append(f'{rel}: 用了 {bad}')
+        if rel.startswith(ring + '/'):
+            yield rel, f
+
+
+def test_只有adapters环可以联网():
+    """这条是「换掉 MineRU 只需改一个文件」的**全部保证**。
+
+    如果 pipelines 或 domain 也能直接发 HTTP 请求，那个承诺当场作废 ——
+    换外部服务时就得满仓库找 urlopen。重构前 `pipelines/paper_discovery`
+    正是这样：编排层里直接写着 OpenAlex 的 URL 和 urlopen。
+    """
+    offenders = []
+    for ring in ('core', 'domain', 'pipelines'):
+        for rel, f in _ring_files(ring):
+            if rel.endswith('/selftest.py'):
+                continue          # 自测里允许直接探活外部服务
+            hit = _imports_of(f) & set(_NETWORK)
+            if hit:
+                offenders.append(f'{rel}: 「{ring}」环直接联网（{sorted(hit)}）')
     assert not offenders, (
-        'domain 是纯逻辑环，不许有 I/O：\n  ' + '\n  '.join(offenders))
+        '只有 adapters 环可以联网，其余环必须通过适配器：' + _NL
+        + _NL.join(sorted(offenders))
+        + _NL + '做法：把这次外部调用包成 adapters/<服务名>，本环只调它。')
+
+
+def test_只有adapters环可以用外部服务客户端():
+    """chromadb / keyring 这类第三方客户端同理，只许出现在 adapters。"""
+    offenders = []
+    for ring in ('domain', 'pipelines'):
+        for rel, f in _ring_files(ring):
+            if rel.endswith('/selftest.py'):
+                continue
+            hit = _imports_of(f) & set(_EXTERNAL)
+            if hit:
+                offenders.append(f'{rel}: {sorted(hit)}')
+    assert not offenders, (
+        '第三方服务客户端只许出现在 adapters 环：' + _NL + _NL.join(sorted(offenders)))
+
+
+def test_纯逻辑环不许有IO也不许知道数据放在哪():
+    """domain 的两条禁令，第二条最容易被忽略但最关键。
+
+    ① 不许联网、不许起子进程 —— 保证它能离线、毫秒级地被测试
+    ② **不许 import core.paths** —— domain 永远不知道文件放在哪，
+       路径一律由调用方传进来
+
+    第二条是关键：一旦 domain 知道了 workflow_data 的布局，它就跟我们的
+    数据组织方式绑死了，既不能独立测试，也不能被别的项目复用，
+    而且改一次目录布局就会波及本该最稳定的一层。
+    """
+    if not os.path.isdir(os.path.join(ROOT, 'domain')):
+        pytest.skip('domain 环尚未建立')
+    offenders = []
+    for rel, f in _ring_files('domain'):
+        if rel.endswith('/selftest.py'):
+            continue
+        mods = _imports_of(f)
+        for bad in _NETWORK + _EXTERNAL + ['subprocess']:
+            if bad in mods:
+                offenders.append(f'{rel}: 用了 {bad}（domain 不许有 I/O）')
+        if any(m == 'core.paths' or m.startswith('core.paths.') for m in mods):
+            offenders.append(f'{rel}: import 了 core.paths —— '
+                             f'domain 不该知道文件放在哪，路径请由调用方传进来')
+    assert not offenders, 'domain 是纯逻辑环：' + _NL + _NL.join(sorted(offenders))
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -161,3 +233,46 @@ def test_不再有塞项目根到sys_path的补丁():
     assert not offenders, (
         '这些地方还在往 sys.path 塞项目根，装成包之后不需要了：\n  '
         + '\n  '.join(offenders))
+
+
+def test_项目内的import都能解析到真实存在的包():
+    """搬家/改名之后，不许留下指向已经不存在的包的 import。
+
+    这条是被真事逼出来的：阶段 2 把 `modules/` 拆成四环时，
+    `panel.py` 里有两处**缩进在函数体内**的 `from modules import evalset`，
+    批量改写的正则只匹配了行首，于是漏掉了。
+    模块能 import 成功（因为那行在函数里），语法检查也过 ——
+    只有用户点开控制面板的「精读评价」那一栏时才会炸。
+
+    这里连**函数体内的 import** 一起扫，就是为了堵住这种「只在特定操作下才发作」的洞。
+    """
+    known = set(paths.CODE_RINGS)
+    stale = {'modules'}          # 已经不存在的历史包名
+    offenders = []
+    for f in _py_files():
+        rel = _rel(f)
+        if rel.startswith('归档'):
+            continue
+        try:
+            tree = ast.parse(open(f, encoding='utf-8', errors='replace').read(), f)
+        except SyntaxError:
+            continue
+        for n in ast.walk(tree):
+            mods = []
+            if isinstance(n, ast.Import):
+                mods = [a.name for a in n.names]
+            elif isinstance(n, ast.ImportFrom) and n.module:
+                mods = [n.module]
+            for m in mods:
+                top = m.split('.')[0]
+                if top in stale:
+                    offenders.append(f'{rel}:{n.lineno}: import 了已不存在的包「{top}」')
+                elif top in known:
+                    # 环存在，再看子包/子模块在不在
+                    parts = m.split('.')
+                    d = os.path.join(ROOT, *parts)
+                    if not (os.path.isdir(d) or os.path.isfile(d + '.py')):
+                        offenders.append(f'{rel}:{n.lineno}: 找不到 {m}')
+    assert not offenders, (
+        '这些 import 指向不存在的东西（改名/搬家后漏改）：' + _NL
+        + _NL.join(sorted(set(offenders))))

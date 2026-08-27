@@ -17,7 +17,7 @@ except Exception:
 from core import paths
 from core.paths import ROOT as _ROOT
 
-from modules import subproc as _sp   # 统一走静默子进程调用，避免弹窗
+from core import subproc as _sp   # 统一走静默子进程调用，避免弹窗
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = _ROOT

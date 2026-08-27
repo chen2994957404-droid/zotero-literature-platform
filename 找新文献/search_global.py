@@ -19,14 +19,14 @@ try:
 except Exception:
     pass
 
-from modules.cli import pos, flag, opt
-from modules.sciverse import search_papers, available, looks_chinese, SciverseError
+from core.cli import pos, flag, opt
+from adapters.sciverse import search_papers, available, looks_chinese, SciverseError
 
 
 def library_index():
     """库里已有文献的标题/DOI，用于标记「已有」。复用 paper_discovery 的实现，不重写。"""
     try:
-        from modules.paper_discovery import _library_index
+        from pipelines.paper_discovery import _library_index
         return _library_index()
     except Exception:
         return set(), set()

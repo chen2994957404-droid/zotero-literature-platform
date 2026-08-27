@@ -19,8 +19,8 @@ except Exception:
 from core import paths
 from core.paths import ROOT as _ROOT
 
-from modules.cli import opt, positionals
-from modules.config import need_site, get_site
+from core.cli import opt, positionals
+from core.config import need_site, get_site
 
 # 同文件夹脚本互相 import（标准开头只把项目根加进 sys.path，兄弟脚本目录需自己加）
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -30,8 +30,8 @@ sys.path.insert(0, SCRIPT_DIR)
 from extract_structured import (SYS, build_user_prompt, hierarchical_body,
                                 deepseek_json, DEEPSEEK_MODEL)
 # 公理件：Zotero 定位 + PDF 解析（定理编排公理，符合架构宪法）
-from modules.zotero_client import find_pdf
-from modules.pdf_parse import parse_pdf, PDFParseError
+from adapters.zotero_client import find_pdf
+from adapters.pdf_parse import parse_pdf, PDFParseError
 
 LIBRARY = paths.LIBRARY
 OUT_DIR = paths.STRUCTURED
@@ -40,7 +40,7 @@ MINERU_SCRIPT = os.path.join(_ROOT, '文献精读', 'mineru_parse.py')
 # Zotero 本地读 + 存储路径（与 zotero_watcher.py 一致）
 ZOTERO_LOCAL = get_site('ZOTERO_API_HOST') + '/api'
 ZH = {'Zotero-Allowed-Request': 'true'}
-# 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+# 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
 USER_ID = need_site('ZOTERO_USER_ID')
 STORAGE_DIR = need_site('ZOTERO_STORAGE')
 

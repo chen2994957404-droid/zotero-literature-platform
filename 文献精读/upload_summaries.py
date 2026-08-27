@@ -15,8 +15,8 @@ except Exception:
 from core import paths
 from core.paths import ROOT as _ROOT
 
-from modules.cli import opt, positionals
-from modules.config import get_key, need_site
+from core.cli import opt, positionals
+from core.config import get_key, need_site
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)     # 同文件夹脚本互相 import（zotero_upload_attachment 等）
@@ -24,7 +24,7 @@ from zotero_upload_attachment import upload_attachment
 
 ROOT = _ROOT
 LIBRARY = paths.LIBRARY
-# 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+# 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
 USER_ID = need_site('ZOTERO_USER_ID')
 STORAGE_DIR = need_site('ZOTERO_STORAGE')
 WEB_API_KEY = get_key('ZOTERO_API_KEY')

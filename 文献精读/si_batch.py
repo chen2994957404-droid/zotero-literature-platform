@@ -13,7 +13,7 @@ except Exception:
 from core import paths
 from core.paths import ROOT as _ROOT
 
-from modules.cli import opt, positionals
+from core.cli import opt, positionals
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)     # 同文件夹脚本互相 import（zotero_watcher 等）

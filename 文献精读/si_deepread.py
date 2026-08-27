@@ -19,13 +19,13 @@ except Exception:
 from core import paths
 from core.paths import ROOT as _ROOT
 
-from modules.cli import pos
-from modules.config import get_key
-from modules.zotero_client import zget, USER_ID, STORAGE_DIR, SUPP_PAT
-from modules.pdf_parse import parse_pdf, PDFParseError
-from modules.si_filter import filtered_text
-from modules.figure_crop import crop_figures
-from modules.llm_client import chat
+from core.cli import pos
+from core.config import get_key
+from adapters.zotero_client import zget, USER_ID, STORAGE_DIR, SUPP_PAT
+from adapters.pdf_parse import parse_pdf, PDFParseError
+from domain.si_filter import filtered_text
+from domain.figure_crop import crop_figures
+from adapters.llm_client import chat
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = _ROOT

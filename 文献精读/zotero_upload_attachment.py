@@ -11,10 +11,10 @@ try:
 except Exception:
     pass
 
-from modules.cli import pos
-from modules.config import get_key, need_site
+from core.cli import pos
+from core.config import get_key, need_site
 
-# 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+# 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
 USER_ID = need_site('ZOTERO_USER_ID')
 _STORAGE = need_site('ZOTERO_STORAGE')   # 校验必填项存在（附件目录上传后落盘用）
 KEY = get_key('ZOTERO_API_KEY')

@@ -22,8 +22,8 @@ except Exception:
 from core import paths
 from core.paths import ROOT as _ROOT
 
-from modules.config import need_site, get_site
-from modules.subproc import run as _sub_run   # 子进程统一走积木：不弹窗+超时+UTF-8
+from core.config import need_site, get_site
+from core.subproc import run as _sub_run   # 子进程统一走积木：不弹窗+超时+UTF-8
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -63,7 +63,7 @@ def _revive(task_name, disp, probe_url, headers=None, wait=30):
 
 def check_deps():
     """检查依赖服务。缺了就跳过本轮（下轮再来），不报错刷屏。"""
-    # 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+    # 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
     _UID = need_site('ZOTERO_USER_ID')
     _STORAGE = need_site('ZOTERO_STORAGE')
     zot = _alive(get_site('ZOTERO_API_HOST') + f'/api/users/{_UID}/items/top?limit=1',

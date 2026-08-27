@@ -13,7 +13,7 @@ except Exception:
     pass
 from core import paths
 
-from modules.config import get_key, need_site, get_site
+from core.config import get_key, need_site, get_site
 
 # ===== 运行日志 =====
 # 走 core.log：带时间戳、同时打屏和落盘、超过 5MB 自动轮转。
@@ -23,12 +23,12 @@ from core.log import get_logger
 print = get_logger('zotero_watcher')       # 保留 print 这个名字，下方几十处调用不用改
 
 # ===== 配置 =====
-ZOTERO_LOCAL = get_site('ZOTERO_API_HOST') + '/api'
-ZOTERO_HEADERS = {'Zotero-Allowed-Request': 'true'}
-# 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+# Zotero 的读取能力全部走公理件 —— 重构前这里重复实现了 zget / find_pdf /
+# has_si / SUPP_PAT，与 adapters/zotero_client 里的同名实现并存（违反宪法铁律 1）。
+from adapters.zotero_client import (zget, find_pdf as _find_pdf, has_si,
+                                    USER_ID, STORAGE_DIR)
+# 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
 _NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
-USER_ID = need_site('ZOTERO_USER_ID')       # 本地API里的库id
-STORAGE_DIR = need_site('ZOTERO_STORAGE')
 # ── 标签状态机（用户定，2026-07-25）───────────────────────────────
 # 打「待处理」→ 自动检测有哪些附件、哪些还没精读 → 补做缺的 → 按结果换状态标签。
 # 状态互斥：一篇文献同一时间只有一个状态标签。
@@ -62,74 +62,6 @@ from zotero_upload_attachment import upload_attachment
 DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')
 PROVIDER = os.environ.get('DEEPREAD_PROVIDER', 'deepseek')
 MODEL = os.environ.get('DEEPREAD_MODEL', 'deepseek-v4-flash')  # 默认flash省钱；重要文献用 重跑精读_pro.bat 切pro
-
-def zget(path):
-    req = urllib.request.Request(ZOTERO_LOCAL + path, headers=ZOTERO_HEADERS)
-    return json.loads(urllib.request.urlopen(req, timeout=15).read())
-
-def find_pdf(item_key):
-    """查文献的正文PDF附件本地路径（智能排除补充材料，多个时选最大的）"""
-    children = zget(f'/users/{USER_ID}/items/{item_key}/children')
-    # 补充材料/附录 的常见特征：
-    #  - suppmat/supporting/supplement/appendix 等通用词
-    #  - -si-/_si_/si.pdf 及独立的 SI 命名
-    #  - MOESM/ESM = Springer/Nature 系 Electronic Supplementary Material 的标准命名（踩坑15）
-    SUPP_PAT = re.compile(
-        r'suppmat|supp\b|supporting|supplement|-si-|_si_|\bsi\.pdf|appendix|'
-        r'moesm|_esm\b|electronic.?supplementary', re.I)
-    candidates = []  # (path, att_key, size, is_supp, is_fulltext)
-    for c in children:
-        if c['data'].get('itemType') == 'attachment' and c['data'].get('contentType') == 'application/pdf':
-            att_key = c['key']
-            # 附件的 Zotero 标题（规范命名是最可靠信号，工单·find_pdf 优先信任命名）
-            att_title = (c['data'].get('title') or '').strip()
-            title_is_supp = bool(SUPP_PAT.search(att_title)) or att_title.upper() == 'SI'
-            is_fulltext = att_title.lower() == 'full text pdf'   # Zotero 规范化的正文命名
-            d = os.path.join(STORAGE_DIR, att_key)
-            if os.path.isdir(d):
-                for f in os.listdir(d):
-                    if f.lower().endswith('.pdf'):
-                        fp = os.path.join(d, f)
-                        try: size = os.path.getsize(fp)
-                        except: size = 0
-                        is_supp = bool(SUPP_PAT.search(f)) or title_is_supp
-                        candidates.append((fp, att_key, size, is_supp, is_fulltext))
-    if not candidates:
-        return None, None
-    # ① 最优先：title=="Full Text PDF" 的规范正文（不靠大小猜，最可靠）
-    ft = [c for c in candidates if c[4] and not c[3]]
-    if ft:
-        ft.sort(key=lambda c: c[2], reverse=True)
-        return ft[0][0], ft[0][1]
-    # ② 兜底：非补充材料里选最大的（未规范化命名时的退路）
-    main = [c for c in candidates if not c[3]]
-    pool = main if main else candidates
-    pool.sort(key=lambda c: c[2], reverse=True)
-    return pool[0][0], pool[0][1]
-
-_DOCX_CT = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-
-
-def has_si(item_key):
-    """该文献是否有 SI 附件。支持 PDF 和 .docx（Elsevier 的 SI 常是 docx）。"""
-    try:
-        children = zget(f'/users/{USER_ID}/items/{item_key}/children')
-    except Exception:
-        return False
-    for c in children:
-        d = c['data']
-        if d.get('itemType') != 'attachment':
-            continue
-        if d.get('contentType') not in ('application/pdf', _DOCX_CT):
-            continue
-        t = (d.get('title') or '').strip(); fn = (d.get('filename') or '')
-        SUPP = re.compile(r'suppmat|supp\b|supporting|supplement|-si-|_si_|\bsi\.pdf|'
-                          r'appendix|moesm|_esm\b|electronic.?supplementary', re.I)
-        if SUPP.search(t) or SUPP.search(fn) or t.upper() == 'SI':
-            return True
-    return False
-
-
 def process_item(item):
     """状态机：检测有哪些附件、哪些还没精读 → 补做缺的 → 置对应状态标签。
 
@@ -145,7 +77,7 @@ def process_item(item):
     si_html = os.path.join(lib_dir, 'si_summary.html')
     env = dict(os.environ, PYTHONIOENCODING='utf-8', DEEPSEEK_KEY=DEEPSEEK_KEY)
 
-    pdf_path, att_key = find_pdf(key)
+    pdf_path, att_key = _find_pdf(key, return_att_key=True)
     si_exists = has_si(key)
     main_done = os.path.exists(out_html)
     si_done = os.path.exists(si_html)
@@ -305,7 +237,7 @@ def main():
     # 单实例锁：任务计划自启一份、看门狗又启一份时，第二份直接退出（踩坑 #30）。
     # 两份同时轮询会抢同一篇文献，导致重复精读/重复上传。
     try:
-        from modules.proc_lock import single_instance, holder
+        from core.proc_lock import single_instance, holder
         if not single_instance('zotero_watcher'):
             print(f'已有一份 watcher 在跑（PID={holder("zotero_watcher")}），本次退出')
             return
@@ -315,7 +247,7 @@ def main():
     print(f'回写: {"已配置Web API" if WEB_API_KEY else "未配key(仅生成本地精读)"}')
     seen = set()
     fail_streak = [0]      # 连续失败轮数，用于「持续异常」提醒与「已恢复」提示
-    heartbeat = os.path.join(_LOG_DIR, 'watcher_heartbeat.txt')
+    heartbeat = paths.runtime('watcher_heartbeat.txt')
     while True:
         # 心跳：每轮开始写时间戳，看门狗据此判断存活（工单·watcher 看门狗）
         try:

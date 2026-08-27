@@ -218,6 +218,36 @@ NON_WORKFLOW_DIRS = NOISE_DIRS | {
 }
 
 
+# ③ 代码四环（重构 v2）。依赖只能从上往下：apps → pipelines → domain/adapters → core
+CODE_RINGS = ('core', 'domain', 'adapters', 'pipelines')
+
+
+def block_dirs():
+    """列出四环里所有「积木」（带 __init__.py 的子包），返回 [(环, 名字, 目录)]。
+
+    体检、控制面板、交接文件都要枚举积木。重构前它们各自 glob `modules/*/`，
+    积木一搬家三处全瞎 —— 所以这个枚举也收在契约层。
+    """
+    out = []
+    for ring in CODE_RINGS:
+        rd = os.path.join(ROOT, ring)
+        if not os.path.isdir(rd):
+            continue
+        for name in sorted(os.listdir(rd)):
+            d = os.path.join(rd, name)
+            if os.path.isdir(d) and os.path.isfile(os.path.join(d, '__init__.py')):
+                out.append((ring, name, d))
+    return out
+
+
+def block_dir(name):
+    """按名字找一块积木在哪个环，返回目录；找不到返回 None。"""
+    for _ring, n, d in block_dirs():
+        if n == name:
+            return d
+    return None
+
+
 def is_workflow_dir(name):
     """这个顶层目录名算不算一条「工作流线」（用于体检、面板、交接文件的自动发现）。"""
     return (name not in NON_WORKFLOW_DIRS

@@ -1,7 +1,7 @@
 # 交接文件 · 我们做到哪了
 
 > **本文件由 `平台管理/交接.py` 自动生成，不要手改** —— 手写的文档一定会过时。
-> 生成时间：2026-08-26 18:07
+> 生成时间：2026-08-26 19:14
 
 新对话请按这个顺序读：本文件 → `CLAUDE.md` → 需要动哪块就读那个文件夹的 `CLAUDE.md`。
 
@@ -10,13 +10,17 @@
 ```
 MCP服务/ （3 个脚本）
     mcp_stdio.py、selftest.py、zotero_server.py
-core/ （4 个脚本）
-    __init__.py、errors.py、log.py、paths.py
+adapters/  ← 外接口：唯一允许联网/用第三方库的一环（9 块）
+    embed、evalset、llm_client、openalex、pdf_parse、sciverse、snowball、vectordb、zotero_client
+core/  ← 内核：谁都依赖它，它不依赖任何人（7 块）
+    cli、config、proc_lock、subproc、errors.py、log.py、paths.py
 docs/                    ← 文档（14 份）
-modules/                 ← 积木层（17 块）
-    chart_digitize、cli、config、embed、evalset、figure_crop、lib_match、llm_client、paper_discovery、pdf_parse、proc_lock、query_expand、sciverse、si_filter、snowball、subproc、zotero_client
-tests/ （3 个脚本）
-    test_architecture.py、test_core_log_errors.py、test_core_paths.py
+domain/  ← 纯逻辑：不联网、不知道文件放在哪（2 块）
+    figure_crop、si_filter
+pipelines/  ← 编排：把上面三者按顺序组合成能力（4 块）
+    chart_digitize、lib_match、paper_discovery、query_expand
+tests/ （5 个脚本）
+    test_adapters_vectordb.py、test_architecture.py、test_core_log_errors.py、test_core_paths.py、test_no_undefined_names.py
 平台管理/ （4 个脚本）
     health_check.py、panel.py、panel_launch.py、交接.py
 库内问答/ （4 个脚本）
@@ -45,8 +49,8 @@ tests/ （3 个脚本）
 - [FAIL] 配置加载: 缺少: ['DEEPSEEK_KEY', 'ZOTERO_API_KEY', 'MINERU_TOKEN']
 - [WARN] Zotero 服务: Zotero 未开（精读/抽取/找文献会失败）
 - [WARN] Ollama 服务: Ollama 未跑（问答/向量化会失败）
-- [WARN] 公理件自测: 12/16 自测通过（共 17 个公理件）；跳过慢测试 ['chart_digitize']（--full 可跑）；失败: ['embed', 'llm_client', 'query_expand', 'zotero_client']
-- [WARN] 后台服务: 缺任务: {'ZoteroApp', 'LiteratureAutoSync', 'OllamaService', 'ZoteroLiteratureWatcher'}
+- [WARN] 公理件自测: 14/18 自测通过（共 19 个公理件）；跳过慢测试 ['chart_digitize']（--full 可跑）；失败: ['embed', 'llm_client', 'zotero_client', 'query_expand']
+- [WARN] 后台服务: 缺任务: {'OllamaService', 'LiteratureAutoSync', 'ZoteroApp', 'ZoteroLiteratureWatcher'}
 
 ## 👉 下一步该做什么
 
@@ -55,6 +59,7 @@ tests/ （3 个脚本）
 
 ## 最近做了什么（git 提交，新到旧）
 
+- `08-26` 重构阶段1完成：core/log（统一日志+轮转）+ core/errors（异常分类）
 - `08-26` 重构阶段0收尾：体检分离线/实测两档 + 文档同步 + 消灭第4份重复清单
 - `08-26` 重构阶段0+1：项目装成 Python 包 + 数据契约收进 core/paths
 - `08-26` 记录本次排查：踩坑 #43~#47 + 变更记录 + 刷新交接文件
@@ -64,7 +69,6 @@ tests/ （3 个脚本）
 - `08-25` MCP服务/CLAUDE.md 补充 Codex/Claude Code 接入示例（查证官方文档，绝对路径不依赖工作目录）
 - `08-25` MCP 服务接入 DSH（HMR 热加载生效）：记录 mcp__zotero__* 工具上线与清理调研克隆
 - `08-25` 库房层 MCP 服务落地（MCP服务/）：手写 stdio 协议零依赖 + 10 个只读工具封装 zotero_client；记录调研结论与真实库验证
-- `08-25` 控制面板.bat 移除探针；记录计划任务实况更正+ControlPanel任务注册
 
 ## 精读质量评测集
 
@@ -76,6 +80,7 @@ tests/ （3 个脚本）
 | 文件夹 | 脚本数 | 是什么 |
 |---|---|---|
 | `MCP服务` | 3 | **平台对外的 MCP 接口层**（宪法里的「界面层」）：把平台已有的能力包成 |
+| `pipelines` | 1 | **本身不解决任何原子问题，只负责「按什么顺序调用谁」的代码。** |
 | `平台管理` | 4 | 平台自己的仪表盘和体检工具 —— **用户与整个系统的交互入口**。 |
 | `库内问答` | 4 | 让用户能用大白话问自己的文献库：「我库里关于 B–N 配位有什么？」 |
 | `库房维护` | 7 | 打理 Zotero 库本身：标签、元数据、命名、去重、同步。 |
@@ -83,7 +88,7 @@ tests/ （3 个脚本）
 | `数据抽取` | 4 | 把每篇文献的关键信息抽成**结构化字段**（材料体系、动态键类型、合成条件、性能数值、 |
 | `文献精读` | 12 | 把一篇文献（PDF）变成一份中文图文精读报告，并自动回写到用户的 Zotero 里。 |
 
-**积木层 `modules/`（17 块）**：`chart_digitize`、`cli`、`config`、`embed`、`evalset`、`figure_crop`、`lib_match`、`llm_client`、`paper_discovery`、`pdf_parse`、`proc_lock`、`query_expand`、`sciverse`、`si_filter`、`snowball`、`subproc`、`zotero_client`
+**积木层 `modules/`（19 块）**：`cli`、`config`、`proc_lock`、`subproc`、`figure_crop`、`si_filter`、`embed`、`evalset`、`llm_client`、`openalex`、`pdf_parse`、`sciverse`、`snowball`、`vectordb`、`zotero_client`、`chart_digitize`、`lib_match`、`paper_discovery`、`query_expand`
 
 ## 待办（可能已过时，动手前先核实）
 
@@ -93,16 +98,16 @@ tests/ （3 个脚本）
 
 ## 最近踩的坑（全文见 `docs/踩坑记录.md`）
 
-- 踩坑 #44：默认值选错，让单实例锁在最需要它的时候失效
 - 踩坑 #45：体检报「密钥已安全存放」，其实一个密钥都没存
 - 踩坑 #46：面板存 `ZOTERO_API_HOST`，积木读 `ZOTERO_LOCAL_API` —— 键名对不上，改了不生效
 - 踩坑 #47：「只绑 127.0.0.1」挡得住别的机器，挡不住你自己浏览器里的网页
 - 踩坑 #48：logging 的 Logger 是全局的，同名再取一次会把 handler 挂两遍（2026-08-26）
+- 踩坑 #49：「模块能 import 成功」远不等于「代码没问题」（2026-08-26）
 
 ## 想深入时读哪份（**这两份是时间正序的长文件，用 tail 读末尾，别从头读**）
 
-- `docs/踩坑记录.md`（61 KB） — 所有踩过的坑，含根因与解法
-- `docs/变更记录.md`（104 KB） — 每次改动的来龙去脉
+- `docs/踩坑记录.md`（63 KB） — 所有踩过的坑，含根因与解法
+- `docs/变更记录.md`（108 KB） — 每次改动的来龙去脉
 - `docs/架构宪法_第一性原理.md`（17 KB） — 最高纲领：三条铁律 + 零号/首要判据
 - `<某文件夹>/CLAUDE.md` — 那一块的完整说明书，改哪块就读哪份
 

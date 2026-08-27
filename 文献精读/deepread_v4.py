@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """精读 v4：用 layout.json 的 page_size 精确裁完整Figure（通用所有文献）+ 脚本管元数据/图位置 + LLM只翻译解读。
 用法: python deepread_v4.py <mineru_output_dir> <out.html> <provider> <model> [key]
-（2026-08-11 框架化：流水线移入 main()，参数走 modules/cli，行为不变）
+（2026-08-11 框架化：流水线移入 main()，参数走 core/cli，行为不变）
 """
 import os, sys, re, json, base64, time, fitz
 
@@ -11,8 +11,8 @@ try:
 except Exception:
     pass
 
-from modules.cli import pos
-from modules.llm_client import chat as _chat   # LLM 调用走公理件（精读输出重，用 flash 省钱由上游 MODEL 决定）
+from core.cli import pos
+from adapters.llm_client import chat as _chat   # LLM 调用走公理件（精读输出重，用 flash 省钱由上游 MODEL 决定）
 
 MIN_OK = 3000   # 精读正文低于这个字数就是废品，不许静默写盘
 

@@ -13,11 +13,11 @@ except Exception:
     pass
 from core import paths
 
-import chromadb
+from adapters import vectordb
 
-from modules.cli import positionals
-from modules.config import get_key, get_model
-from modules.embed import embed as _embed_batch
+from core.cli import positionals
+from core.config import get_key, get_model
+from adapters.embed import embed as _embed_batch
 
 VECTOR_DB = paths.VECTOR_DB
 DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')
@@ -50,8 +50,8 @@ SYSTEM = """你是一位资深科研导师，正在和一位研究生讨论研�
 
 def retrieve(coll, query, k=TOP_K):
     qvec = embed(query)
-    res = coll.query(query_embeddings=[qvec], n_results=k, include=['documents', 'metadatas'])
-    return res['documents'][0], res['metadatas'][0]
+    hits = coll.query(qvec, n=k)
+    return [h['doc'] for h in hits], [h['meta'] for h in hits]
 
 
 def build_context(docs, metas):
@@ -64,8 +64,7 @@ def build_context(docs, metas):
 
 
 def main():
-    coll = chromadb.PersistentClient(path=VECTOR_DB).get_or_create_collection(
-        'literature', metadata={'hnsw:space': 'cosine'})
+    coll = vectordb.open_store()
     print(f'💡 创意讨论模式（基于你的 {coll.count()} 块文献 · {CHAT_MODEL}）')
     history = [{'role': 'system', 'content': SYSTEM}]
     rest = positionals()

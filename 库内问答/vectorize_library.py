@@ -13,13 +13,13 @@ except Exception:
     pass
 from core import paths
 
-import chromadb
-from modules.cli import flag
-from modules.config import need_site, get_site
-from modules.embed import embed, chunk
-from modules.zotero_client import get_fulltext
+from adapters import vectordb
+from core.cli import flag
+from core.config import need_site, get_site
+from adapters.embed import embed, chunk
+from adapters.zotero_client import get_fulltext
 
-# 本机配置（Zotero 用户ID / 附件目录）统一从 modules.config 读，换电脑只改 .env
+# 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
 _USER_ID = need_site('ZOTERO_USER_ID')
 need_site('ZOTERO_STORAGE')        # 附件目录本脚本用不到，但按原行为仍要求已配置
 LOCAL = get_site('ZOTERO_API_HOST') + '/api/users/' + _USER_ID
@@ -34,20 +34,13 @@ def lget(path):
 
 
 def get_collection():
-    """连接 Chroma（持久化到本地文件），取 literature 集合。"""
-    client = chromadb.PersistentClient(path=VECTOR_DB)
-    return client.get_or_create_collection('literature', metadata={'hnsw:space': 'cosine'})
+    """打开向量库。具体用哪家由 adapters.vectordb 决定。"""
+    return vectordb.open_store()
 
 
 def load_existing(coll):
-    """已入库的 key 集合（避免重复；精读的高质量版优先，若某 key 已有精读向量则跳过）。"""
-    existing = set()
-    try:
-        got = coll.get(include=['metadatas'])
-        existing = {m['key'] for m in got['metadatas']}
-    except Exception:
-        pass  # 向量库为空/元数据缺失：按没有已入库文献处理
-    return existing
+    """已入库的 key 集合（避免重复；某 key 已有精读向量则跳过）。库为空返回空集合。"""
+    return coll.existing_keys()
 
 
 def fetch_top_items():
@@ -98,7 +91,7 @@ def vectorize_light(x, coll, existing):
     embs = []
     for b in range(0, len(chunks), 16):
         embs.extend(embed(chunks[b:b + 16]))
-    coll.add(ids=ids, documents=chunks, metadatas=metas, embeddings=embs)
+    coll.add(ids, chunks, metas, embs)
     return 'processed', len(chunks)
 
 

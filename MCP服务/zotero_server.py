@@ -8,7 +8,7 @@ except Exception:
 """zotero_server · 库房层 MCP 服务（只读工具集，供 agent 调用）
 
 谁调用它：MCP 客户端（Claude Code / Cursor / DSH 等）以 stdio 子进程方式启动本文件；
-本文件把平台现有的 modules/zotero_client（公理件）包成 10 个只读 MCP 工具。
+本文件把平台现有的 adapters/zotero_client（公理件）包成 10 个只读 MCP 工具。
 
 设计决策（详见 MCP服务/CLAUDE.md）：
   - v1 只读：搜/查/找 PDF/取全文/合集/标签/统计——零写操作，最安全，agent 可直接调；
@@ -27,9 +27,9 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
-from modules.config import need_site
-from modules.zotero_client import LOCAL_API, find_pdf, get_fulltext, zget
-from modules.cli import flag
+from core.config import need_site
+from adapters.zotero_client import LOCAL_API, find_pdf, get_fulltext, zget
+from core.cli import flag
 
 VERSION = '0.1.0'
 _HDR = {'Zotero-Allowed-Request': 'true'}   # 本地 API 要求的请求头（与 zotero_client 一致）
