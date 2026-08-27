@@ -814,8 +814,8 @@ async function load(){
         : `<div class="row"><span class="msg" style="color:#35c15f">✓ 密钥都已存入系统凭据库，硬盘上没有明文</span></div>`);
 
   $('#cfg').innerHTML =
-  + `<h3 style="margin:4px 0 6px;font-size:15px">密钥</h3>`
-    d.config.keys.map(k=>{
+      `<h3 style="margin:4px 0 6px;font-size:15px">密钥</h3>`
+  + d.config.keys.map(k=>{
       const w = k.where==='系统凭据库' ? '<span style="color:#35c15f">🔒 凭据库</span>'
               : k.where==='.env明文'  ? '<span class="bad">⚠ 明文</span>'
               : k.where==='环境变量'   ? '<span class="hint">环境变量</span>'
