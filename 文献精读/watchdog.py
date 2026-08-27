@@ -1,9 +1,18 @@
 # -*- coding: utf-8 -*-
-"""watcher 看门狗：监控 zotero_watcher 的心跳文件，超时无更新则判定卡死，杀掉并重启。
-（工单·watcher 加心跳+看门狗，防静默卡死）
+"""watcher 看门狗：watcher 真死了就重启它 —— **但绝不打断正在干活的它**。
 
-心跳：zotero_watcher 每轮写 workflow_data/logs/watcher_heartbeat.txt（unix 时间戳）。
-看门狗每 CHECK 秒查一次；若心跳超过 STALE 秒没更新，重启 watcher。
+看两个信号（都由 `core.heartbeat` 维护，那里有完整说明）：
+
+    watcher_heartbeat.txt   后台线程固定节奏写   → 进程还活着吗
+    watcher_progress.txt    每完成一件实事时写   → 还在往前推进吗
+
+**为什么要两个**（2026-08-27 从主力机日志查出来的真问题）：
+原来只有一个心跳，写在轮询循环开头，精读期间根本不写。
+而精读一篇远不止 5 分钟 —— 于是看门狗每次都把**正在干活的 watcher 杀掉**，
+一个月误杀约 20 次，每次都白花一份 MineRU + DeepSeek，还在库里留下半成品。
+
+拆开之后：精读跑一小时也不会被误杀（后台仍在报活）；
+进程真死了 5 分钟内发现；活着但卡在某个不返回的调用上，由进度阈值兜底。
 
 用法: python watchdog.py    # 前台常驻；建议放任务计划或开机自启
 """
@@ -14,7 +23,7 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths, role
+from core import heartbeat, role
 from core.cli import flag
 from core.paths import ROOT as _ROOT
 
@@ -22,23 +31,24 @@ from core import subproc as _sp   # 统一走静默子进程调用，避免弹�
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = _ROOT
-HEARTBEAT = paths.runtime('watcher_heartbeat.txt')
 WATCHER = os.path.join(SCRIPT_DIR, 'zotero_watcher.py')
+BEACON = 'watcher'          # core.heartbeat 里的名字
 
-CHECK = 60      # 每 60 秒查一次
-STALE = 300     # 心跳超 300 秒（5分钟）没更新 = 卡死。watcher 轮询间隔60s，5分钟足够宽容
-GRACE = 180     # 重启后给 watcher 的启动宽限期，期间不判死
+CHECK = 60          # 每 60 秒查一次
+STALE = 300         # 超 300 秒没报活 = 进程死了/冻住了。后台线程每 30 秒写一次，很宽容
+NO_PROGRESS = 2700  # 报活正常但 45 分钟毫无进展 = 卡在某个不返回的调用上。
+                    # 这个阈值必须**大于最慢一篇精读的耗时**，否则又变回误杀
+GRACE = 180         # 重启后给 watcher 的启动宽限期，期间不判死
 
 
 from core.log import get_logger
 log = get_logger('watchdog')   # 统一日志：时间戳 + 落盘 + 自动轮转
 
 
-def heartbeat_age():
-    try:
-        return time.time() - int(open(HEARTBEAT, encoding='utf-8').read().strip())
-    except Exception:
-        return None   # 心跳文件不存在/读不了
+def ages():
+    """(距上次报活多少秒, 距上次有进展多少秒)。读不到就是 None。"""
+    return (heartbeat.age(BEACON, heartbeat.ALIVE),
+            heartbeat.age(BEACON, heartbeat.PROGRESS))
 
 
 def find_watcher_pids():
@@ -75,19 +85,18 @@ def main():
     # 机器角色守卫：常驻服务只能在运行端（主力机）跑。
     # 两台都跑会重复精读同一篇、重复写回 Zotero、重复烧钱，标签状态机还会互相打架。
     role.require_prod('看门狗（守护 watcher）', force=flag('--force'))
-    log(f'看门狗启动。心跳阈值 {STALE}s，检查间隔 {CHECK}s')
+    log(f'看门狗启动。报活阈值 {STALE}s，无进展阈值 {NO_PROGRESS}s，检查间隔 {CHECK}s')
     last_restart = 0
     while True:
-        age = heartbeat_age()
+        alive_age, progress_age = ages()
         now = time.time()
-        if now - last_restart < GRACE:
-            pass  # 刚重启，宽限期内不判死
-        elif age is None:
-            log('心跳文件缺失，可能 watcher 未启动 → 重启')
-            restart_watcher(); last_restart = now
-        elif age > STALE:
-            log(f'心跳已 {int(age)}s 未更新（>{STALE}）→ 判定卡死，重启')
-            restart_watcher(); last_restart = now
+        if now - last_restart >= GRACE:      # 刚重启的宽限期内不判死
+            need, why = heartbeat.verdict(alive_age, progress_age,
+                                          stale=STALE, no_progress=NO_PROGRESS)
+            if need:
+                log(f'{why} → 重启')
+                restart_watcher()
+                last_restart = now
         time.sleep(CHECK)
 
 

@@ -15,17 +15,17 @@ MCP服务/ （3 个脚本）
     mcp_stdio.py、selftest.py、zotero_server.py
 adapters/  ← 外接口：唯一允许联网/用第三方库的一环（9 块）
     embed、evalset、llm_client、openalex、pdf_parse、sciverse、snowball、vectordb、zotero_client
-core/  ← 内核：谁都依赖它，它不依赖任何人（8 块）
-    cli、config、proc_lock、subproc、errors.py、log.py、paths.py、role.py
+core/  ← 内核：谁都依赖它，它不依赖任何人（9 块）
+    cli、config、proc_lock、subproc、errors.py、heartbeat.py、log.py、paths.py、role.py
 docs/                    ← 文档（15 份）
 domain/  ← 纯逻辑：不联网、不知道文件放在哪（2 块）
     figure_crop、si_filter
 pipelines/  ← 编排：把上面三者按顺序组合成能力（4 块）
     chart_digitize、lib_match、paper_discovery、query_expand
-tests/ （6 个脚本）
-    test_adapters_vectordb.py、test_architecture.py、test_core_log_errors.py、test_core_paths.py、test_core_role.py、test_no_undefined_names.py
-平台管理/ （6 个脚本）
-    health_check.py、panel.py、panel_launch.py、交接.py、更新平台.py、诊断报告.py
+tests/ （9 个脚本）
+    test_adapters_vectordb.py、test_architecture.py、test_artifact_gaps.py、test_core_heartbeat.py、test_core_log_errors.py、test_core_paths.py、test_core_role.py、test_no_undefined_names.py…
+平台管理/ （8 个脚本）
+    health_check.py、panel.py、panel_launch.py、交接.py、打开面板.py、更新平台.py、查产物缺口.py、诊断报告.py
 库内问答/ （4 个脚本）
     ask.py、ask_world.py、vectorize.py、vectorize_library.py
 库房维护/ （7 个脚本）

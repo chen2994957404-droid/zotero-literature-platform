@@ -11,7 +11,7 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths, role
+from core import heartbeat, paths, role
 from core.cli import flag
 
 from core.config import get_key, need_site, get_site
@@ -251,17 +251,18 @@ def main():
     print(f'回写: {"已配置Web API" if WEB_API_KEY else "未配key(仅生成本地精读)"}')
     seen = set()
     fail_streak = [0]      # 连续失败轮数，用于「持续异常」提醒与「已恢复」提示
-    heartbeat = paths.runtime('watcher_heartbeat.txt')
+    # 后台线程固定节奏报活：精读一篇要几分钟到几十分钟，期间主线程根本回不到
+    # 循环顶部。原来把心跳写在循环开头，于是**正在干活的 watcher 会被看门狗当成
+    # 卡死杀掉**（主力机一个月被误杀约 20 次，每次都白花一份 MineRU + DeepSeek）。
+    # 见 core/heartbeat.py 与踩坑记录。
+    heartbeat.start('watcher')
     while True:
-        # 心跳：每轮开始写时间戳，看门狗据此判断存活（工单·watcher 看门狗）
-        try:
-            with open(heartbeat, 'w', encoding='utf-8') as f:
-                f.write(str(int(time.time())))
-        except Exception:
-            pass
+        # 「还活着」由后台线程报；这里只记「有进展」——
+        # 两个信号回答的是不同问题，见 core/heartbeat.py 开头的说明。
         try:
             q = urllib.parse.quote(' || '.join(TRIGGER_TAGS))
             items = zget(f'/users/{USER_ID}/items?tag={q}&limit=25')
+            heartbeat.progress('watcher')      # 轮询成功 = 有进展
             print(f'[心跳] 轮询正常，待处理 {len(items)} 篇')
             for it in items:
                 key = it['key']
@@ -270,6 +271,7 @@ def main():
                 seen.add(key)
                 try:
                     process_item(it)
+                    heartbeat.progress('watcher')   # 一篇做完 = 有进展
                 except Exception as e:
                     # 单篇失败不能拖垮整个轮询；但必须记进日志，否则是静默失败
                     print(f'  [处理失败] {key}: {type(e).__name__}: {e}')
