@@ -24,8 +24,8 @@ pipelines/  ← 编排：把上面三者按顺序组合成能力（4 块）
     chart_digitize、lib_match、paper_discovery、query_expand
 tests/ （6 个脚本）
     test_adapters_vectordb.py、test_architecture.py、test_core_log_errors.py、test_core_paths.py、test_core_role.py、test_no_undefined_names.py
-平台管理/ （5 个脚本）
-    health_check.py、panel.py、panel_launch.py、交接.py、诊断报告.py
+平台管理/ （6 个脚本）
+    health_check.py、panel.py、panel_launch.py、交接.py、更新平台.py、诊断报告.py
 库内问答/ （4 个脚本）
     ask.py、ask_world.py、vectorize.py、vectorize_library.py
 库房维护/ （7 个脚本）

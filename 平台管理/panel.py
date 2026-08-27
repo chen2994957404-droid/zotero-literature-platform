@@ -43,6 +43,7 @@ from core.config import (get_key, set_keys, get_model, mask,
 from core.subproc import run as _run, powershell   # 统一走静默子进程调用
 
 PORT = int(os.environ.get('PANEL_PORT', '8777'))
+_STARTED = time.strftime('%m-%d %H:%M:%S')   # 本面板进程的启动时刻
 HOST = '127.0.0.1'          # 只监听本机，外部访问不到
 
 KEY_NAMES = [
@@ -157,6 +158,30 @@ def collect_heartbeat():
         return int(time.time() - int(open(hb, encoding='utf-8').read().strip()))
     except Exception:
         return None
+
+
+def collect_version():
+    """面板进程正在跑的是哪一版代码。
+
+    **为什么需要它**：面板是常驻进程，`git pull` 不会让它重新加载代码。
+    更新完代码后如果没重启面板，你看到的还是旧界面 ——
+    这个坑在 2026-08-26 真实发生过一次（新加的「机器角色」设置项不显示，
+    因为旧面板进程占着 8777 端口，新进程绑不上直接死了）。
+
+    把版本显示在页面上，这种「我看到的是不是最新的」就一眼可辨。
+    """
+    from core import role
+    out = {'role': role.current(), 'role_label': role.label(),
+           'role_set': role.is_configured(), 'commit': '', 'dirty': None,
+           'started': _STARTED}
+    try:
+        r = _run(['git', 'log', '-1', '--format=%h %s'], timeout=20, cwd=ROOT)
+        out['commit'] = (r.stdout or '').strip()[:80]
+        r2 = _run(['git', 'status', '--porcelain'], timeout=20, cwd=ROOT)
+        out['dirty'] = bool((r2.stdout or '').strip())
+    except Exception:
+        pass
+    return out
 
 
 def collect_config():
@@ -517,6 +542,7 @@ class Handler(BaseHTTPRequestHandler):
                 'processes': collect_processes(),
                 'heartbeat': collect_heartbeat(),
                 'alerts': collect_alerts(),
+                'version': collect_version(),
                 'config': collect_config(),
                 'services': SERVICES,
                 'recent': collect_recent_reads(),
@@ -630,6 +656,7 @@ pre{background:#20232a;color:#c8d0dc;padding:12px;border-radius:8px;font-size:12
 <div class="wrap">
 <h1>文献平台 · 控制面板</h1>
 <div class="sub">每 15 秒自动刷新 · 上次刷新 <span id="t">—</span></div>
+<div class="sub" id="ver">—</div>
 
 <div id="alertbox"></div>
 
@@ -730,6 +757,17 @@ async function load(){
   $('#t').textContent=d.time;
 
   const al=d.alerts||[];
+  const v = d.version || {};
+  const roleTag = v.role === 'prod'
+      ? '<b style="color:#35c15f">运行端(prod)</b>'
+      : `<b style="color:#e6a23c">编程端(dev)</b>${v.role_set ? '' : ' <span class="bad">·未设置，按最安全的 dev 处理</span>'}`;
+  $('#ver').innerHTML =
+      `本机角色 ${roleTag}`
+    + ` · 代码 <code>${esc(v.commit || '未知')}</code>`
+    + (v.dirty ? ' <span class="bad">·工作区有未提交改动</span>' : '')
+    + ` · 面板进程启动于 ${esc(v.started || '?')}`
+    + ` <span class="hint">（更新代码后必须重启面板，否则你看到的还是旧界面）</span>`;
+
   $('#alertbox').innerHTML = al.length
     ? `<div class="card" style="border-left:4px solid #e2504a">
          <h2 style="color:#e2504a">⚠ 需要处理</h2>`

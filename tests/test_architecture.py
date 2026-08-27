@@ -354,3 +354,53 @@ def test_守卫必须在函数体里而不是模块顶层():
                     offenders.append(f'{rel}:{sub.lineno}')
     assert not offenders, (
         '守卫被写在了模块顶层（import 时就会抛错）：' + _NL + _NL.join(sorted(offenders)))
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 守卫五：进版本库的文件必须只有一个生产者
+# ══════════════════════════════════════════════════════════════════════
+# 两台机器都会改写的生成物/缓存一旦进了版本库，每次 git pull 必冲突，
+# 而运行端没有 Claude Code 来解冲突 —— 那是最难受的情形。
+# 2026-08-26 真实发生过：主力机卡在 unmerged 状态，pull 不动。
+
+# 这些文件由程序生成或运行时改写，必须保持「未跟踪」
+_MUST_NOT_TRACK = [
+    'HANDOVER.md',                       # 交接.py 生成，面板上有按钮，两台都会点
+    'workflow_data/_last_search.json',   # 每次「找新文献」都重写
+]
+
+
+def _tracked_files():
+    import subprocess
+    r = subprocess.run(['git', 'ls-files'], cwd=ROOT, capture_output=True,
+                       text=True, encoding='utf-8', errors='replace', timeout=120)
+    return set((r.stdout or '').split())
+
+
+def test_生成物和运行时缓存不许进版本库():
+    """判据：**进版本库的文件必须只有一个生产者。**
+
+    多台机器都会改写同一个被跟踪的文件 = 每次拉取都冲突。
+    这类文件都是可再生的，本地留着自己用就行。
+    """
+    tracked = _tracked_files()
+    if not tracked:
+        pytest.skip('拿不到 git 跟踪清单（不是 git 仓库？）')
+    bad = [f for f in _MUST_NOT_TRACK if f in tracked]
+    assert not bad, (
+        '这些文件是生成物/运行时缓存，不该被 git 跟踪：' + _NL + _NL.join(bad)
+        + _NL + '做法：git rm --cached <文件>，并加进 .gitignore')
+
+
+def test_用户不可重建的数据仍在版本库里():
+    """反向的闸：`evalset.json` 是用户一条条打出来的精读评价，**重建不了**。
+
+    上面那条守卫说「生成物要移出版本库」，很容易顺手把这个也移出去 ——
+    那就等于把唯一的备份删了。所以在这里钉死。
+    """
+    tracked = _tracked_files()
+    if not tracked:
+        pytest.skip('拿不到 git 跟踪清单')
+    assert 'workflow_data/evalset.json' in tracked, (
+        'evalset.json（用户人工精读评价）必须留在版本库里 —— 它不可重建，'
+        '而且只有运行端会产生它，版本库是它唯一的备份。')
