@@ -773,16 +773,22 @@ function toast(m){const e=$('#toast');e.textContent=m;e.className='on';
   setTimeout(()=>e.className='',3600);}
 function esc(s){return String(s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));}
 
-async function load(){
+// ⚠ 配置区只在首次和保存后重画。**它每 15 秒被自动刷新重画一次时，
+// 用户正在改的下拉/输入框会被悄悄改回已存的值** —— 选了 test，还没点保存
+// 就被刷回 dev，看起来像「改不动」。别把它挪回自动刷新里（踩坑 #63）。
+let cfgReady=false;
+
+async function load(force){
   let d; try{ d=await (await fetch('/api/all')).json(); }
   catch(e){ toast('面板连不上后台，可能已关闭'); return; }
   $('#t').textContent=d.time;
 
   const al=d.alerts||[];
   const v = d.version || {};
-  const roleTag = v.role === 'prod'
-      ? '<b style="color:#35c15f">运行端(prod)</b>'
-      : `<b style="color:#e6a23c">编程端(dev)</b>${v.role_set ? '' : ' <span class="bad">·未设置，按最安全的 dev 处理</span>'}`;
+  // 角色名由后端给（core.role.label），前端写死过一次就漏了 test 档
+  const roleColor = v.role === 'prod' ? '#35c15f' : v.role === 'test' ? '#4a9de0' : '#e6a23c';
+  const roleTag = `<b style="color:${roleColor}">${esc(v.role_label || v.role)}</b>`
+      + (v.role_set ? '' : ' <span class="bad">·未设置，按最安全的 dev 处理</span>');
   $('#ver').innerHTML =
       `本机角色 ${roleTag}`
     + ` · 代码 <code>${esc(v.commit || '未知')}</code>`
@@ -826,6 +832,7 @@ async function load(){
              <button onclick="migrate()">迁移到系统凭据库</button></div>`
         : `<div class="row"><span class="msg" style="color:#35c15f">✓ 密钥都已存入系统凭据库，硬盘上没有明文</span></div>`);
 
+  if(force || !cfgReady){
   $('#cfg').innerHTML =
       `<h3 style="margin:4px 0 6px;font-size:15px">密钥</h3>`
   + d.config.keys.map(k=>{
@@ -853,6 +860,7 @@ async function load(){
          <option value="deepseek-v4-pro"${m.value==='deepseek-v4-pro'?' selected':''}>pro（准·贵3倍，适合短输出）</option>
        </select>
        <span class="hint">默认 ${esc(m.default)}</span></div>`).join('');
+  cfgReady=true; }
 
   const st = d.structure || {flows:[],blocks:[]};
   $('#flows').innerHTML = `<table><tr><th>文件夹</th><th>是什么</th><th>脚本数</th><th>说明书</th></tr>`
@@ -1042,7 +1050,7 @@ async function saveCfg(){
     headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
   toast(r.msg);
   document.querySelectorAll('input[id^=k_]').forEach(el=>el.value='');
-  load();
+  load(true);          // 保存后才重画配置区，让页面显示真正存进去的值
 }
 
 async function loadLog(){
