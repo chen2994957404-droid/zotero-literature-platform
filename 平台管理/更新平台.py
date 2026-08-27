@@ -175,7 +175,10 @@ def main():
 
     # ── 1. 拉代码 ──
     step(1, total, '拉取最新代码')
-    ok, out = run(['git', 'pull'], timeout=600)
+    # --no-edit：合并时不弹编辑器。本机分支和远程分叉过的话，`git pull` 会产生
+    # 一个合并提交，git 默认要为它开编辑器让人写说明（主力机上就弹出了记事本，
+    # 不关掉脚本就一直卡着）。这里是自动流程，不该等人。
+    ok, out = run(['git', 'pull', '--no-edit'], timeout=600)
     if not ok:
         print('\n** 拉取失败 **')
         print('最常见的原因：这台机器上改过代码。本机不该改代码，改动请在编程端做。')
