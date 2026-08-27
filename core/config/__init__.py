@@ -156,9 +156,16 @@ SITE_SETTINGS = [
     #   见 docs/两台机器的分工.md 与 core/role.py。默认 dev 是刻意的（fail safe）。
     ('ROLE', '机器角色', 'dev',
      'dev=编程端（不许写 Zotero、不许跑 watcher、不许跑全库作业）；'
-     'prod=运行端（主力机，允许全部操作）'),
-    ('ZOTERO_USER_ID', 'Zotero 用户 ID', '',
-     'Zotero 设置→账户里的 userID，纯数字'),
+     'prod=运行端（主力机，允许全部操作）；'
+     'test=编程端但接的是**测试 Zotero 账号**（允许写，但只许写测试库）'),
+    ('ZOTERO_USER_ID', 'Zotero 用户 ID（本地 API）', '',
+     'Zotero 本地 API 用；本机开着 Zotero 时填 0 也行'),
+    ('ZOTERO_WEB_USER_ID', 'Zotero 用户 ID（写回用）', '',
+     '写 zotero.org 用的**真实数字 id**（设置→账户里能看到）。'
+     '留空则沿用上面那个 —— 但上面填 0 时写回必然失败'),
+    ('ZOTERO_TEST_USER_ID', '测试账号的用户 ID', '',
+     '只有机器角色=test 时才用：写回的目标必须是这个 id，否则直接拒绝。'
+     '这条是「别把测试改动写进真实文献库」的执行点'),
     ('ZOTERO_STORAGE', 'Zotero 附件目录', '',
      '形如 D:\\...\\Zotero\\storage，精读结果要写进去'),
     ('ZOTERO_API_HOST', 'Zotero 本地服务地址', 'http://localhost:23119',
@@ -198,6 +205,18 @@ def need_site(name):
             f'  配置方法：双击「控制面板.bat」→ 在「本机设置」里填写；\n'
             f'  或直接在项目根目录 .env 里写一行：{name}=你的值')
     return v
+
+
+def web_user_id():
+    """写 zotero.org 时该用哪个用户 id。
+
+    **本地 API 和 Web API 要的不是同一个东西**：本地 API 认 `0`，
+    Web API 必须是真实数字 id。此前两者共用一个配置项 `ZOTERO_USER_ID`，
+    于是编程端填 0 时「读得动、写必失败」，而失败原因看起来像鉴权问题
+    —— 这个坑记了很久（见 docs/待办与需求.md）。现在拆开：
+    没单独配就沿用旧值，行为与从前一致；配了就以它为准。
+    """
+    return get_site('ZOTERO_WEB_USER_ID') or get_site('ZOTERO_USER_ID')
 
 
 def site_missing():

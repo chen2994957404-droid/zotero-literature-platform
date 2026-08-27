@@ -7,6 +7,7 @@
 
 对外接口（稳定，供上层组合调用）：
   - zget(path)            : 本地只读 API GET
+  - USER_ID / WEB_USER_ID : 本地 API 的 id / 写 zotero.org 的真实数字 id（两者不同）
   - find_pdf(key)         : 定位正文 PDF 本地路径（优先信 Zotero 规范命名，排除 SI）
   - get_fulltext(att_key) : 取 Zotero 全文索引（粗层抽取/向量化用）
 
@@ -23,7 +24,14 @@ except Exception:
     _gsite = lambda n: _os.environ.get(n, '')
 _UID = _site('ZOTERO_USER_ID')
 _STORAGE = _site('ZOTERO_STORAGE')
-USER_ID = os.environ.get('ZOTERO_USER_ID', _UID)
+USER_ID = os.environ.get('ZOTERO_USER_ID', _UID)      # 本地 API 用（可以是 0）
+# 写 zotero.org 用的**真实数字 id** —— 与本地 API 的 id 不是一回事。
+# 没单独配就沿用上面那个（行为与从前一致）。
+try:
+    from core.config import web_user_id as _web_uid
+    WEB_USER_ID = os.environ.get('ZOTERO_WEB_USER_ID') or _web_uid() or USER_ID
+except Exception:
+    WEB_USER_ID = os.environ.get('ZOTERO_WEB_USER_ID', USER_ID)
 STORAGE_DIR = os.environ.get('ZOTERO_STORAGE', _STORAGE)
 # ⚠ 地址必须走 config（踩坑 #46）：原来只读 ZOTERO_LOCAL_API 这个键，
 # 而控制面板存的是 ZOTERO_API_HOST —— 键名对不上，用户在面板里改地址永远不生效，

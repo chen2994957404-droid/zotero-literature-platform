@@ -27,7 +27,7 @@ print = get_logger('zotero_watcher')       # 保留 print 这个名字，下方�
 # Zotero 的读取能力全部走公理件 —— 重构前这里重复实现了 zget / find_pdf /
 # has_si / SUPP_PAT，与 adapters/zotero_client 里的同名实现并存（违反宪法铁律 1）。
 from adapters.zotero_client import (zget, find_pdf as _find_pdf, has_si,
-                                    USER_ID, STORAGE_DIR)
+                                    USER_ID, WEB_USER_ID, STORAGE_DIR)
 # 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
 _NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
 # ── 标签状态机（用户定，2026-07-25）───────────────────────────────
@@ -88,7 +88,7 @@ def process_item(item):
 
     if r.state == 'nopdf':
         if WEB_API_KEY:
-            set_state_tag(key, USER_ID, TAG_NOPDF)
+            set_state_tag(key, WEB_USER_ID, TAG_NOPDF)
         return
     if r.state == 'failed':
         return          # 失败原因流水线已经打进日志了，这里不重复喊
@@ -136,7 +136,7 @@ def process_item(item):
                 shutil.copy(out_html, os.path.join(local_dir, 'summary.html'))
                 print(f'  [附件已更新] summary（本地storage已就位，点开即图文精读）')
             # 按实际完成情况置状态标签
-            set_state_tag(key, USER_ID, state_tag)
+            set_state_tag(key, WEB_USER_ID, state_tag)
         except Exception as e:
             print(f'  [附件导入失败] {e}')
     else:

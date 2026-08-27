@@ -25,7 +25,9 @@ from zotero_upload_attachment import upload_attachment
 ROOT = _ROOT
 LIBRARY = paths.LIBRARY
 # 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
-USER_ID = need_site('ZOTERO_USER_ID')
+# 写 zotero.org 必须用真实数字 id（本地 API 的 0 在这里写不进去）
+from core.config import web_user_id
+USER_ID = web_user_id() or need_site('ZOTERO_USER_ID')
 STORAGE_DIR = need_site('ZOTERO_STORAGE')
 WEB_API_KEY = get_key('ZOTERO_API_KEY')
 DONE_TAG = '已精读'

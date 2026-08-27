@@ -21,12 +21,25 @@
 一旦有人为了让本地 API 表现一致而把它改成真实数字 id，
 编程端立刻就获得了改写真实文献库的能力，而且没有任何东西会拦。
 
+## 第三档 test：编程端接测试 Zotero 账号（2026-08-27 加）
+
+编程端登录**另一个 Zotero 账号**之后，「不许写」这条就不必再一刀切了 ——
+写坏了也只坏在测试库里。此时角色设 `test`：`require_prod` 放行，
+但先验一条客观事实 —— 写回目标 id 必须等于配置里的测试账号 id（`test_library_ok()`）。
+
+**最硬的那层保护其实不在这里**：编程端只持有测试账号的 API key，
+带着它根本写不到真实库。角色守卫挡的是「配置被切回真实账号却没人发现」。
+
+顺带一提：「watcher 只能在 B 跑」那条铁律的根因是*两台共用同一账号*会重复精读、
+标签互相打架。账号不同就不存在这个冲突，所以 test 机可以跑 watcher。
+
 ## 用法
 
 ```python
 from core import role
 
-role.require_prod('写回 Zotero')            # 编程端上直接抛 WrongMachineError
+role.require_prod('写回 Zotero')            # dev 上直接抛 WrongMachineError
+                                          # test 上：确认目标是测试库才放行
 role.require_prod('全库重抽', force=flag('--force'))   # 显式 --force 可越过
 
 if role.is_dev():
@@ -49,9 +62,11 @@ from core import errors
 
 DEV = 'dev'        # 编程端：有 Claude Code，改代码的地方
 PROD = 'prod'      # 运行端：跑服务、持有权威数据的地方
-VALID = (DEV, PROD)
+TEST = 'test'      # 编程端 + 测试 Zotero 账号：允许写，但只许写测试库
+VALID = (DEV, PROD, TEST)
 
-_LABEL = {DEV: '编程端（A 机）', PROD: '运行端（B 机）'}
+_LABEL = {DEV: '编程端（A 机）', PROD: '运行端（B 机）',
+          TEST: '编程端·测试库（A 机 + 测试 Zotero 账号）'}
 
 
 def current():
@@ -71,6 +86,26 @@ def is_dev():
 
 def is_prod():
     return current() == PROD
+
+
+def is_test():
+    return current() == TEST
+
+
+def test_library_ok():
+    """test 角色下：写回的目标**确实是测试库**吗？
+
+    判据只有一条 —— 配置里「写回用的 user id」必须等于「测试账号的 user id」。
+    两个都得填；只要对不上（比如哪天把配置切回真实账号忘了改回来），
+    就当作不是测试库。
+
+    为什么单独判而不是信任角色：角色是人填的一个字，
+    而「现在指着哪个库」是客观事实。**闸门要挡在事实那一侧。**
+    """
+    from core.config import get_site, web_user_id
+    want = (get_site('ZOTERO_TEST_USER_ID') or '').strip()
+    have = (web_user_id() or '').strip()
+    return bool(want) and want == have
 
 
 def label(r=None):
@@ -103,6 +138,18 @@ def require_prod(action, force=False):
     """
     if is_prod():
         return
+    # test 角色：允许做写操作，但**必须确认目标是测试库**。
+    # 光看角色不够 —— 角色是人填的一个字，指着哪个库才是事实。
+    if is_test():
+        if test_library_ok():
+            return
+        raise errors.WrongMachineError(
+            f'「{action}」在{label()}上被拒绝：**写回目标不是测试库**。\n'
+            f'  控制面板里「Zotero 用户 ID（写回用）」必须等于「测试账号的用户 ID」，\n'
+            f'  现在两者对不上（或有一项没填）。\n'
+            f'  这道闸就是防「配置切回真实账号却忘了改角色」——'
+            f'那一下会把测试改动写进你真正的文献库。\n'
+            f'  详见 docs/两台机器的分工.md')
     if force:
         print(f'⚠ 已用 --force 越过机器角色检查：在{label()}上执行「{action}」。'
               f'两台共用同一个 Zotero 账号，改动会同步过去。')

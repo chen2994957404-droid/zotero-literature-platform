@@ -105,3 +105,73 @@ def test_角色名给人看的是中文(as_role):
     assert '编程端' in role.label()
     as_role(role.PROD)
     assert '运行端' in role.label()
+
+
+class TestTestRole:
+    """test 档：编程端接测试 Zotero 账号（2026-08-27 加）。
+
+    这一档的要害是：**放行的条件不是「角色写着 test」，而是「写回目标确实是测试库」**。
+    角色是人填的一个字，指着哪个库才是客观事实 —— 闸门要挡在事实那一侧。
+    """
+
+    @pytest.fixture
+    def site(self, monkeypatch):
+        """伪造本机设置（不碰真实 .env / 凭据库）。"""
+        cfg = {}
+
+        def _set(**kw):
+            cfg.clear()
+            cfg.update(kw)
+            monkeypatch.setattr('core.config.get_site', lambda name: cfg.get(name, ''))
+        return _set
+
+    def test_目标是测试库才放行(self, as_role, site):
+        as_role(role.TEST)
+        site(ZOTERO_TEST_USER_ID='88888888', ZOTERO_WEB_USER_ID='88888888')
+        role.require_prod('写回 Zotero')          # 不抛即通过
+
+    def test_写回目标不是测试库就拒绝(self, as_role, site):
+        """最要防的那一下：配置切回真实账号，角色却还写着 test。"""
+        as_role(role.TEST)
+        site(ZOTERO_TEST_USER_ID='88888888', ZOTERO_WEB_USER_ID='12345')
+        with pytest.raises(errors.WrongMachineError) as e:
+            role.require_prod('写回 Zotero')
+        assert '不是测试库' in str(e.value)
+
+    def test_没填测试账号id时一律拒绝(self, as_role, site):
+        """留空不能等于「随便写」—— 空配置必须落在安全那一侧。"""
+        as_role(role.TEST)
+        site(ZOTERO_WEB_USER_ID='12345')
+        with pytest.raises(errors.WrongMachineError):
+            role.require_prod('写回 Zotero')
+
+    def test_两个都空也拒绝(self, as_role, site):
+        as_role(role.TEST)
+        site()
+        assert role.test_library_ok() is False
+        with pytest.raises(errors.WrongMachineError):
+            role.require_prod('写回 Zotero')
+
+    def test_test不是dev也不是prod(self, as_role):
+        as_role(role.TEST)
+        assert role.is_test() and not role.is_dev() and not role.is_prod()
+
+    def test_角色名要看得出是测试库(self, as_role):
+        as_role(role.TEST)
+        assert '测试' in role.label()
+
+
+class TestWebUserId:
+    """写 zotero.org 的 id 与本地 API 的 id 不是一回事（拆分于 2026-08-27）。"""
+
+    def test_没单独配时沿用旧值(self, monkeypatch):
+        monkeypatch.setattr('core.config.get_site',
+                            lambda n: '12345' if n == 'ZOTERO_USER_ID' else '')
+        from core.config import web_user_id
+        assert web_user_id() == '12345'
+
+    def test_配了就以它为准(self, monkeypatch):
+        vals = {'ZOTERO_USER_ID': '0', 'ZOTERO_WEB_USER_ID': '12345'}
+        monkeypatch.setattr('core.config.get_site', lambda n: vals.get(n, ''))
+        from core.config import web_user_id
+        assert web_user_id() == '12345'
