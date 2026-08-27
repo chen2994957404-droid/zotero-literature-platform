@@ -325,7 +325,7 @@ def main():
     if no_change:
         print('（代码本来就是最新的，但服务已按新代码重启过一遍）')
     r = _role()
-    if r is not None and not r.is_prod():
+    if r is not None and not r.is_prod() and not r.is_test():
         print('')
         print('⚠ 本机角色是 ' + r.current() + '。如果这台是主力机，现在去改：')
         print('   双击「控制面板.bat」→ 本机设置 → 机器角色 → 填 prod → 保存')

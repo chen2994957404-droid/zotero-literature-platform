@@ -372,7 +372,8 @@ def sync_claude_md():
     #    一点就产生本地改动，下次 git pull 必冲突（2026-08-26 真实发生过）。
     #    HANDOVER.md 本身已移出版本库，两台各生成各的，互不干扰。
     from core import role
-    if not role.is_dev():
+    if role.is_prod():          # 判据是「是不是运行端」，不是「是不是 dev」——
+        # 测试端（test）也在同一台编程机器上，照样该更新 CLAUDE.md
         print('（运行端：只生成 HANDOVER.md，不改 CLAUDE.md —— 那是编程端的活）')
         return False
     if not os.path.exists(CLAUDE_MD):

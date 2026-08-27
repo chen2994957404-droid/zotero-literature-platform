@@ -361,6 +361,11 @@ def c_data():
     vdb = os.path.exists(paths.VECTOR_DB)
     msg = f'library {n_lib} 篇 / structured {n_struct} 条 / 向量库{"在" if vdb else "缺失"}'
     from core import role
+    if role.is_test():
+        # 测试端有自己的 Zotero 账号，数据是它自己跑出来的 —— 不用从主力机拷
+        if n_lib == 0:
+            return WARN, msg + ' —— 测试端还没有产物；在测试 Zotero 库里打「待处理」跑一篇即可'
+        return OK, msg + f'（测试端，自产 {n_lib} 篇；与主力机的权威数据互不相干）'
     if role.is_dev():
         # 编程端的权威数据在主力机，这里只需要够做回归测试的金样本（2~3 篇）
         if n_lib == 0:
@@ -370,10 +375,14 @@ def c_data():
 
 
 def c_services():
-    """四个自启任务在不在。**只对运行端有意义** —— 编程端本来就不该注册它们。"""
+    """四个自启任务在不在。**只对运行端有意义** —— 编程端/测试端都不该注册它们。
+
+    测试端可以**手动**起 watcher 做端到端验证（`精读监听.bat`），
+    但不注册自启任务：那会让它跟着开机长跑，白烧 API 额度。
+    """
     from core import role
-    if role.is_dev():
-        return OK, '编程端不注册自启任务（常驻服务只在主力机跑），跳过检查'
+    if not role.is_prod():
+        return OK, f'{role.label()}不注册自启任务（常驻服务只在主力机跑），跳过检查'
     try:
         from core.subproc import powershell
         out = powershell(
@@ -402,10 +411,17 @@ def c_role():
     r, lab = role.current(), role.label()
     if not role.is_configured():
         return WARN, (f'没设置机器角色，按最安全的 {r}（{lab}）处理。'
-                      f'请在控制面板「本机设置」里把「机器角色」填成 '
-                      f'dev（编程端）或 prod（运行端·主力机）')
+                      f'请在控制面板「本机设置」里选「机器角色」：'
+                      f'dev（编程端）/ prod（运行端·主力机）/ test（编程端接测试 Zotero 账号）')
     if r == role.PROD:
         return OK, f'{lab} —— 允许写 Zotero、跑常驻服务、跑全库作业'
+    if r == role.TEST:
+        # 对测试端来说，「指着哪个库」比「角色写着什么」重要得多，所以直接体检它
+        if role.test_library_ok():
+            return OK, f'{lab} —— 允许写，且已确认写回目标是测试库'
+        return FAIL, (f'{lab}，但**写回目标不是测试库** —— 现在任何写操作都会被拒绝。'
+                      f'请在控制面板把「Zotero 用户 ID（写回用）」和'
+                      f'「测试账号的用户 ID」填成同一个值（测试账号的数字 id）')
     return OK, f'{lab} —— 已禁止写 Zotero / 跑 watcher / 跑全库作业（保护真实文献库）'
 
 

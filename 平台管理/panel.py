@@ -27,7 +27,7 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths
+from core import paths, role
 from core.paths import ROOT as _ROOT
 
 from core.cli import flag
@@ -198,10 +198,23 @@ def collect_config():
         'models': [{'name': n, 'label': MODEL_SETTINGS[n][0],
                     'value': get_model(n), 'default': MODEL_SETTINGS[n][1]}
                    for n in MODEL_SETTINGS],
-        'sites': [{'name': n, 'label': lb, 'value': get_site(n), 'help': hp}
+        # options 由后端给：前端写死过一次选项，结果 core.role 加了第三档
+        # 面板却选不到，而且保存时会把 test 悄悄退回 dev（同踩坑 #58 一族）。
+        'sites': [{'name': n, 'label': lb, 'value': get_site(n), 'help': hp,
+                   'options': SITE_OPTIONS.get(n, [])}
                   for n, lb, _d, hp in SITE_SETTINGS],
         'env_file': ENV_FILE,
     }
+
+
+# 哪些本机设置是「选一个」而不是「填一段」。**选项从 core.role 取，不在前端写死**。
+SITE_OPTIONS = {
+    'ROLE': [
+        {'value': role.DEV,  'text': '编程端 dev —— 不许写 Zotero / 跑监听 / 跑全库作业'},
+        {'value': role.PROD, 'text': '运行端 prod —— 主力机，允许全部操作'},
+        {'value': role.TEST, 'text': '编程端·测试库 test —— 接测试 Zotero 账号，允许写（只写测试库）'},
+    ],
+}
 
 
 # ───────────────────── 找文献（后台任务 + 轮询） ─────────────────────
@@ -824,11 +837,10 @@ async function load(){
        <input id="k_${k.name}" placeholder="${k.set?'已配置 '+esc(k.masked)+'，留空即不改':(k.required?'⚠ 未配置，必填':'未配置（可选）')}">
        <span class="hint" style="margin-left:8px">${w}</span></div>`;}).join('')
   + `<h3 style="margin:18px 0 6px;font-size:15px">本机设置<span class="hint" style="font-weight:normal">（每台机器各填各的，不进版本库）</span></h3>`
-  + d.config.sites.map(s=> s.name===`ROLE`
+  + d.config.sites.map(s=> (s.options && s.options.length)
       ? `<div class="row"><span class="lbl">${esc(s.label)}</span>
-         <select id="k_${s.name}">
-           <option value="dev"${s.value!==`prod`?` selected`:``}>编程端 dev —— 不许写 Zotero / 跑监听 / 跑全库作业</option>
-           <option value="prod"${s.value===`prod`?` selected`:``}>运行端 prod —— 主力机，允许全部操作</option>
+         <select id="k_${s.name}">${s.options.map(o=>
+           `<option value="${esc(o.value)}"${s.value===o.value?` selected`:``}>${esc(o.text)}</option>`).join('')}
          </select></div>`
       : `<div class="row"><span class="lbl">${esc(s.label)}</span>
          <input id="k_${s.name}" value="${esc(s.value||'')}" placeholder="${esc(s.help)}">
