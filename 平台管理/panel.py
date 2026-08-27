@@ -36,7 +36,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = _ROOT
 sys.path.insert(0, SCRIPT_DIR)  # health_check 同在本文件夹
 
-from core.config import (get_key, set_keys, get_model, mask,
+from core.config import (SITE_SETTINGS, get_key, set_keys, get_model, mask,
                             MODEL_SETTINGS, ENV_FILE, SITE_SETTINGS, get_site,
                             keyring_status, key_location,
                             migrate_secrets_to_keyring)
@@ -473,9 +473,18 @@ def action_restart(task_name):
 
 
 def action_save_config(payload):
-    """保存密钥/模型。空值自动跳过（不会误清空），旧 .env 自动备份。"""
-    updates = {k: v for k, v in (payload or {}).items()
-               if k in dict((n, 1) for n, _, _ in KEY_NAMES) or k in MODEL_SETTINGS}
+    """保存密钥 / 本机设置 / 模型。空值自动跳过（不会误清空），旧 .env 自动备份。
+
+    ⚠ 白名单里**必须包含 SITE_SETTINGS**。原来只写了密钥和模型，于是
+    「本机设置」在页面上显示得出来、也改得动，**一保存就被静默丢弃** ——
+    用户把机器角色从 dev 改成 prod、点保存、刷新后又变回 dev，
+    而且没有任何错误提示（2026-08-26 主力机实测）。
+    「界面看着能改，其实存不进去」是最难自查的一类 bug，所以在这里钉死。
+    """
+    allowed = ({n for n, _, _ in KEY_NAMES}
+               | {s[0] for s in SITE_SETTINGS}      # 漏掉过一次
+               | set(MODEL_SETTINGS))
+    updates = {k: v for k, v in (payload or {}).items() if k in allowed}
     written = set_keys(updates)
     if not written:
         return False, '没有需要保存的改动'
@@ -710,7 +719,7 @@ pre{background:#20232a;color:#c8d0dc;padding:12px;border-radius:8px;font-size:12
 
 <div class="card"><h2>后台服务（卡住了点重启）</h2><div id="svcs"></div></div>
 
-<div class="card"><h2>密钥与模型</h2>
+<div class="card"><h2>密钥 · 本机设置 · 模型</h2>
   <div class="hint" style="margin-bottom:10px">
     密钥只显示后 4 位。留空表示不改动，不会清空已有配置。保存前自动备份旧配置。</div>
   <div id="krbar"></div>
@@ -805,6 +814,7 @@ async function load(){
         : `<div class="row"><span class="msg" style="color:#35c15f">✓ 密钥都已存入系统凭据库，硬盘上没有明文</span></div>`);
 
   $('#cfg').innerHTML =
+  + `<h3 style="margin:4px 0 6px;font-size:15px">密钥</h3>`
     d.config.keys.map(k=>{
       const w = k.where==='系统凭据库' ? '<span style="color:#35c15f">🔒 凭据库</span>'
               : k.where==='.env明文'  ? '<span class="bad">⚠ 明文</span>'
@@ -813,10 +823,17 @@ async function load(){
       return `<div class="row"><span class="lbl">${esc(k.label)}</span>
        <input id="k_${k.name}" placeholder="${k.set?'已配置 '+esc(k.masked)+'，留空即不改':(k.required?'⚠ 未配置，必填':'未配置（可选）')}">
        <span class="hint" style="margin-left:8px">${w}</span></div>`;}).join('')
-  + d.config.sites.map(s=>
-      `<div class="row"><span class="lbl">${esc(s.label)}</span>
-       <input id="k_${s.name}" value="${esc(s.value||'')}" placeholder="${esc(s.help)}">
-       </div>`).join('')
+  + `<h3 style="margin:18px 0 6px;font-size:15px">本机设置<span class="hint" style="font-weight:normal">（每台机器各填各的，不进版本库）</span></h3>`
+  + d.config.sites.map(s=> s.name===`ROLE`
+      ? `<div class="row"><span class="lbl">${esc(s.label)}</span>
+         <select id="k_${s.name}">
+           <option value="dev"${s.value!==`prod`?` selected`:``}>编程端 dev —— 不许写 Zotero / 跑监听 / 跑全库作业</option>
+           <option value="prod"${s.value===`prod`?` selected`:``}>运行端 prod —— 主力机，允许全部操作</option>
+         </select></div>`
+      : `<div class="row"><span class="lbl">${esc(s.label)}</span>
+         <input id="k_${s.name}" value="${esc(s.value||'')}" placeholder="${esc(s.help)}">
+         </div>`).join('')
+  + `<h3 style="margin:18px 0 6px;font-size:15px">模型</h3>`
   + d.config.models.map(m=>
       `<div class="row"><span class="lbl">${esc(m.label)} 用的模型</span>
        <select id="k_${m.name}">
