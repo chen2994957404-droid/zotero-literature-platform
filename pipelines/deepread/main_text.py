@@ -54,14 +54,20 @@ def _pick(mo_dir, suffix, what):
     return names[0]
 
 
-def read_metadata(md):
-    """从解析出的 Markdown 里抓标题 / 作者 / DOI。纯文本处理，无 I/O。"""
+def read_metadata(md, title=None, doi=None):
+    """从解析出的 Markdown 里抓标题 / 作者 / DOI。纯文本处理，无 I/O。
+
+    `title` / `doi` 是**调用方给的权威值**（来自 Zotero 条目）：给了就用它，
+    只有没给时才去正文里猜。正则抓 DOI 在很多期刊的版式上抓不到，
+    抓不到就空着 —— 精读的「文献信息」栏会因此缺 DOI，
+    而这个信息编排层本来就有（与踩坑 #64 同一类错误：**有权威源就别猜**）。
+    """
     def grab(pat, d=''):
         m = re.search(pat, md, re.M)
         return m.group(1).strip() if m else d
 
-    title_en = grab(r'^#\s+(.+)$')
-    doi = grab(r'(10\.\d{4,}/[^\s)]+)')
+    title_en = title or grab(r'^#\s+(.+)$')
+    doi = doi or grab(r'(10\.\d{4,}/[^\s)]+)')
     authors = ''
     mt = re.search(r'#\s+.+\n+(.+)', md)
     if mt and 'images/' not in mt.group(1):
@@ -133,7 +139,7 @@ def render_html(content):
 
 
 def read_main(parsed_dir, out_html, provider='deepseek', model='deepseek-v4-flash',
-              key='', log=print):
+              key='', log=print, title=None, doi=None):
     """跑完整的一篇正文精读，写出 out_html，返回它的路径。
 
     失败一律抛 `DeepreadFailed` —— **宁可不产出，也不产出「只有图没有字」的
@@ -150,7 +156,7 @@ def read_main(parsed_dir, out_html, provider='deepseek', model='deepseek-v4-flas
     md = open(os.path.join(parsed_dir, mdf), encoding='utf-8').read()
     json.load(open(layf, encoding='utf-8'))          # 提前炸出坏 layout.json
 
-    title_en, authors, doi = read_metadata(md)
+    title_en, authors, doi = read_metadata(md, title=title, doi=doi)
     figs = crop_figures(parsed_dir)
     log(f'元数据 title={title_en[:35]} doi={doi}')
     log(f'裁出 {len(figs)} 张完整图')

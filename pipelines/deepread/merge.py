@@ -23,6 +23,17 @@ SI_CSS = ('.si-divider{margin:48px 0 8px;padding:14px 20px;'
           'padding:10px 14px;margin:12px 0;border-radius:4px;font-size:14px}')
 
 
+def _up_to_date(out, *inputs):
+    """产物比所有输入都新吗？—— 「这一步要不要重做」最朴素也最可靠的判据。"""
+    if not os.path.exists(out):
+        return False
+    try:
+        t = os.path.getmtime(out)
+        return all(os.path.getmtime(i) <= t for i in inputs)
+    except OSError:
+        return False
+
+
 def _body_of(html):
     """取出 <body> 内部内容（去掉 html/head/style 外壳）。"""
     m = re.search(r'<body[^>]*>(.*)</body>', html, re.S | re.I)
@@ -47,10 +58,12 @@ def merge_html(main_html, si_html):
             + '</body></html>')
 
 
-def merge(key, log=print):
+def merge(key, log=print, force=False):
     """合并一篇的正文精读与 SI 精读，返回**最终该展示的那份**的路径。
 
     没有正文精读 → None；没有 SI → 直接返回正文精读（无需合并，不算失败）。
+    **两个输入都没变就直接复用已有合并版**：合并本身不花钱，但它每次要写一份
+    十几 MB 的文件，还会连带触发一次同样大小的 Zotero 回写 —— 没变就不该重来。
     """
     key = paths.check_key(key)
     main_p, si_p = paths.summary(key), paths.si_summary(key)
@@ -61,9 +74,13 @@ def merge(key, log=print):
         log(f'[提示] {key} 无 SI 精读，无需合并')
         return main_p
 
+    out = paths.summary_full(key)
+    if not force and _up_to_date(out, main_p, si_p):
+        log('[复用] 合并版比两个输入都新，无需重做')
+        return out
+
     merged = merge_html(io.open(main_p, encoding='utf-8').read(),
                         io.open(si_p, encoding='utf-8').read())
-    out = paths.summary_full(key)
     io.open(out, 'w', encoding='utf-8').write(merged)
     log(f'[合并完成] {out}  {round(os.path.getsize(out)/1024/1024,1)} MB')
     return out

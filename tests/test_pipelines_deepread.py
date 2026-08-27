@@ -6,6 +6,7 @@
 这正是阶段 3 把它从 subprocess 链搬进函数的直接收益。
 """
 import os
+import time
 
 import pytest
 
@@ -172,3 +173,75 @@ def test_合并是纯字符串处理_正文在前SI在后():
         '<html><head><style>CSSHERE</style></head><body><p>甲</p></body></html>',
         '<html><body><p>乙</p></body></html>')
     assert 'CSSHERE' in m and m.index('<p>甲</p>') < m.index('<p>乙</p>')
+
+
+class TestMerge幂等:
+    """合并不花钱，但每次要写十几 MB，还连带一次同样大小的 Zotero 回写。"""
+
+    def _both(self, tmp):
+        open(paths.summary(KEY), 'w', encoding='utf-8').write(
+            '<html><body><p>正文</p></body></html>')
+        open(paths.si_summary(KEY), 'w', encoding='utf-8').write(
+            '<html><body><p>SI</p></body></html>')
+
+    def test_输入没变就复用已有合并版(self, sandbox):
+        self._both(sandbox)
+        out = merge_mod.merge(KEY, log=lambda *a: None)
+        first = os.path.getmtime(out)
+        time.sleep(0.01)
+        merge_mod.merge(KEY, log=lambda *a: None)
+        assert os.path.getmtime(out) == first, '输入没变却重写了合并版'
+
+    def test_正文更新了就重做(self, sandbox):
+        self._both(sandbox)
+        out = merge_mod.merge(KEY, log=lambda *a: None)
+        first = os.path.getmtime(out)
+        time.sleep(0.01)
+        os.utime(paths.summary(KEY), (first + 10, first + 10))   # 假装正文刚被重写
+        merge_mod.merge(KEY, log=lambda *a: None)
+        assert os.path.getmtime(out) > first, '正文变了却没重新合并'
+
+    def test_force能强制重做(self, sandbox):
+        self._both(sandbox)
+        out = merge_mod.merge(KEY, log=lambda *a: None)
+        first = os.path.getmtime(out)
+        time.sleep(0.01)
+        merge_mod.merge(KEY, log=lambda *a: None, force=True)
+        assert os.path.getmtime(out) > first
+
+
+class Test元数据用权威值:
+    """有权威源就别猜 —— 与踩坑 #64 同一类错误。"""
+
+    MD = (chr(35) + ' 解析出来的标题' + chr(10)*2 + 'Zhao et al.'
+          + chr(10)*2 + '正文里写着 10.9999/parsed')
+
+    def test_没给就从正文里猜(self):
+        title, _authors, doi = main_text.read_metadata(self.MD)
+        assert title == '解析出来的标题' and doi == '10.9999/parsed'
+
+    def test_给了就用给的(self):
+        title, _a, doi = main_text.read_metadata(
+            self.MD, title='Zotero 上的标题', doi='10.1038/nature11409')
+        assert title == 'Zotero 上的标题' and doi == '10.1038/nature11409'
+
+    def test_正文里没有DOI时权威值仍然生效(self):
+        title, _a, doi = main_text.read_metadata('# 只有标题', doi='10.1038/x')
+        assert doi == '10.1038/x'
+
+    def test_编排层会把item里的标题和DOI传下去(self, sandbox, monkeypatch):
+        """这条才是真正要防的回归：改对了函数，却忘了在 run() 里传。"""
+        seen = {}
+
+        def fake_main(parsed_dir, out_html, **kw):
+            seen.update(kw)
+            open(out_html, 'w', encoding='utf-8').write('<html><body>x</body></html>')
+            return out_html
+
+        monkeypatch.setattr(deepread, '_ensure_parsed',
+                            lambda key, pdf, force=False, log=print: paths.parsed_dir(key, create=True))
+        monkeypatch.setattr(main_text, 'read_main', fake_main)
+        item = {'key': KEY, 'data': {'title': '权威标题', 'DOI': '10.1038/nature11409'}}
+        deepread.run(KEY, item=item, pdf_path='x.pdf', si_exists=False, log=lambda *a: None)
+        assert seen.get('title') == '权威标题'
+        assert seen.get('doi') == '10.1038/nature11409'

@@ -145,8 +145,10 @@ def run(key, item=None, pdf_path=_ASK, si_exists=_ASK, provider='deepseek',
             try:
                 with jobs.track(key, STEP_MAIN, producer=main_text.PRODUCER,
                                 model=model, prompt_ver=main_text.PROMPT_VER):
+                    d = (item or {}).get('data', {}) if item else {}
                     main_text.read_main(parsed, paths.summary(key), provider=provider,
-                                        model=model, key=llm_key, log=log)
+                                        model=model, key=llm_key, log=log,
+                                        title=d.get('title'), doi=d.get('DOI'))
                 main_done = True
                 r._mark(STEP_MAIN, 'ok')
                 log('  [正文精读完成]')
