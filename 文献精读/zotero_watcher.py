@@ -4,7 +4,7 @@
 依赖 Zotero 桌面开着（本地API读）+ Zotero Web API key（写回）。
 运行: python zotero_watcher.py
 """
-import os, sys, time, json, re, subprocess, urllib.request, urllib.parse, traceback
+import os, sys, time, json, re, urllib.request, urllib.parse, traceback
 
 # 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
@@ -26,11 +26,11 @@ print = get_logger('zotero_watcher')       # 保留 print 这个名字，下方�
 # ===== 配置 =====
 # Zotero 的读取能力全部走公理件 —— 重构前这里重复实现了 zget / find_pdf /
 # has_si / SUPP_PAT，与 adapters/zotero_client 里的同名实现并存（违反宪法铁律 1）。
+from adapters import zotero_client as zotero
 from adapters.zotero_client import (zget, find_pdf as _find_pdf, has_si,
-                                    find_child_attachment,
+                                    find_child_attachment, upload_attachment,
                                     USER_ID, WEB_USER_ID, STORAGE_DIR)
 # 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
-_NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
 # ── 标签状态机（用户定，2026-07-25）───────────────────────────────
 # 打「待处理」→ 自动检测有哪些附件、哪些还没精读 → 补做缺的 → 按结果换状态标签。
 # 状态互斥：一篇文献同一时间只有一个状态标签。
@@ -50,8 +50,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)
 # 精读流水线（解析→正文精读→SI→合并）现在是**一个函数**，不再是五个 subprocess。
 # 见 pipelines/deepread/__init__.py 开头「为什么」。
-from pipelines import deepread
-EXTRACT_SCRIPT = os.path.join(ROOT, '数据抽取', 'extract_structured.py')  # 结构化抽取（粗层）
+from pipelines import deepread, extract
 # 新的以文献为单元的库结构：workflow_data/library/<key>/{parsed/, summary.html}
 LIBRARY = paths.LIBRARY
 os.makedirs(LIBRARY, exist_ok=True)
@@ -59,10 +58,6 @@ os.makedirs(LIBRARY, exist_ok=True)
 # 「实际做成了什么」→ Zotero 状态标签。**这个映射只能在这一层**：
 # pipelines 不知道 Zotero 有什么标签，它只陈述事实（见 deepread.Result）。
 STATE_TAG = {'full': TAG_FULL, 'main': TAG_MAIN, 'si': TAG_SI, 'nopdf': TAG_NOPDF}
-
-# 引入附件上传能力
-sys.path.insert(0, SCRIPT_DIR)
-from zotero_upload_attachment import upload_attachment
 
 DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')
 PROVIDER = os.environ.get('DEEPREAD_PROVIDER', 'deepseek')
@@ -76,8 +71,6 @@ def process_item(item):
     key = item['key']
     title = item['data'].get('title', key)[:50]
     print(f'[发现] {title}')
-    env = dict(os.environ, PYTHONIOENCODING='utf-8', DEEPSEEK_KEY=DEEPSEEK_KEY)
-
     pdf_path = _find_pdf(key)
     si_exists = has_si(key)
 
@@ -97,17 +90,9 @@ def process_item(item):
     out_html = r.final_html
     state_tag = STATE_TAG[r.state]      # 事实 → 标签，映射只此一处
     # 2.5 结构化抽取（粗层）：把这篇抽成对齐字段，自动并入 structured/ 对比表
-    # （**这一步还是 subprocess** —— 抽取线尚未搬进 pipelines，见待办）
-    try:
-        ex = subprocess.run([sys.executable, EXTRACT_SCRIPT, key],
-                            capture_output=True, text=True, encoding='utf-8',
-                            errors='replace', timeout=300, env=env, creationflags=_NOWIN)
-        if ex.returncode == 0:
-            print(f'  [结构化抽取完成] 已并入 structured/compare.md')
-        else:
-            print(f'  [结构化抽取失败] {ex.stderr[-200:]}')
-    except Exception as e:
-        print(f'  [结构化抽取异常] {e}')
+    # 阶段 3 下半起也是函数调用 —— **至此本流水线不再拉任何子进程**。
+    # 它自己会记账并跳过已抽过的，失败也只返回 None，不会拖垮回写。
+    extract.run(key, log=print)
     # 3. 回写 Zotero：**复用已有 summary 附件、只更新文件内容**（不删条目）
     #    踩坑：原先"先删旧附件再传新的"，删除动作进入同步链 → Zotero 每篇都弹"冲突解决"框。
     #    改为复用同一附件条目，只覆盖本地 storage 文件，避免产生删除记录。
@@ -157,25 +142,26 @@ def find_existing_summary(item_key):
 # 其中 delete_old_summary 的「先删后传」正是踩坑 #28 反复弹同步冲突框的根因，
 # 留着只会让人以为还能用。要回写请用 set_state_tag + upload_attachment。
 def set_state_tag(item_key, web_uid, new_state):
-    """设置状态标签（互斥）：移除所有旧状态标签，只留 new_state。保留用户自己的其它标签。"""
+    """设置状态标签（互斥）：移除所有旧状态标签，只留 new_state。保留用户自己的其它标签。
+
+    **策略在这里，写在适配层**：哪些标签互斥是本工作流的业务规则，
+    而「怎么安全地写进 Zotero」（鉴权、版本冲突、机器角色守卫）是
+    `adapters.zotero_client` 的事。重构前这两件事搅在一起，
+    于是同样的写实现被抄了三份（踩坑：守卫也要跟着抄三遍，漏一处闸就没了）。
+    """
     try:
-        req = urllib.request.Request(f'https://api.zotero.org/users/{web_uid}/items/{item_key}',
-            headers={'Zotero-API-Key': WEB_API_KEY, 'Zotero-API-Version':'3'})
-        cur = json.loads(urllib.request.urlopen(req, timeout=15).read())
-        ver = cur['version']
-        old = [t.get('tag') for t in cur['data'].get('tags', []) if t.get('tag') in ALL_STATE_TAGS]
-        tags = [t for t in cur['data'].get('tags', []) if t.get('tag') not in ALL_STATE_TAGS]
+        cur = zotero.get_item(item_key)
+        old = [t.get('tag') for t in cur['data'].get('tags', [])
+               if t.get('tag') in ALL_STATE_TAGS]
+        tags = [t for t in cur['data'].get('tags', [])
+                if t.get('tag') not in ALL_STATE_TAGS]
         if new_state:
             tags.append({'tag': new_state})
-        patch = json.dumps({'tags': tags}).encode('utf-8')
-        req2 = urllib.request.Request(f'https://api.zotero.org/users/{web_uid}/items/{item_key}',
-            data=patch, method='PATCH',
-            headers={'Zotero-API-Key': WEB_API_KEY, 'Zotero-API-Version':'3',
-                     'If-Unmodified-Since-Version': str(ver), 'Content-Type':'application/json'})
-        urllib.request.urlopen(req2, timeout=15)
+        zotero.replace_tags(item_key, tags, action=f'把状态标签改成「{new_state}」')
         print(f'  [状态] {"/".join(old) or "无"} → {new_state}')
     except Exception as e:
         print(f'  [标签更新失败] {e}')
+
 
 def main():
     # 机器角色守卫：常驻服务只能在运行端（主力机）跑。

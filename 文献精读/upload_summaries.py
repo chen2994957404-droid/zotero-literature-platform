@@ -19,8 +19,7 @@ from core.cli import opt, positionals, flag
 from core.config import get_key, need_site
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, SCRIPT_DIR)     # 同文件夹脚本互相 import（zotero_upload_attachment 等）
-from zotero_upload_attachment import upload_attachment
+from adapters import zotero_client as zotero
 
 ROOT = _ROOT
 LIBRARY = paths.LIBRARY
@@ -31,52 +30,51 @@ USER_ID = web_user_id() or need_site('ZOTERO_USER_ID')
 STORAGE_DIR = need_site('ZOTERO_STORAGE')
 WEB_API_KEY = get_key('ZOTERO_API_KEY')
 DONE_TAG = '已精读'
-BASE = f'https://api.zotero.org/users/{USER_ID}'
-WH = {'Zotero-API-Key': WEB_API_KEY, 'Zotero-API-Version': '3'}
 
 
-def delete_old_summary(key):
-    try:
-        req = urllib.request.Request(BASE + f'/items/{key}/children', headers=WH)
-        for c in json.loads(urllib.request.urlopen(req, timeout=15).read()):
-            if c['data'].get('itemType') == 'attachment' and c['data'].get('title') == 'summary':
-                dreq = urllib.request.Request(BASE + f'/items/{c["key"]}', method='DELETE',
-                    headers={**WH, 'If-Unmodified-Since-Version': str(c['version'])})
-                urllib.request.urlopen(dreq, timeout=15)
-    except Exception as e:
-        print(f'    (删旧summary跳过: {e})')
+def refresh_summary(key, html):
+    """把某篇的精读回写成 Zotero 附件：**有就复用条目、只换文件内容**。
+
+    ⚠ 这里原来是「先删旧附件、再传新的」—— 那正是踩坑 #28 的根因：
+    删除动作会进 Zotero 同步链，于是每篇都弹一次「冲突解决」框。
+    watcher 早已改成复用，这个批量脚本却一直留着旧写法（同一个 bug 的两份实现，
+    修了一份忘了另一份 —— 这也是把写操作收进适配层的直接理由）。
+    """
+    att_key = zotero.find_child_attachment(key, 'summary')
+    if not att_key:
+        att_key = zotero.upload_attachment(key, html, 'summary')
+    d = os.path.join(STORAGE_DIR, att_key)
+    os.makedirs(d, exist_ok=True)
+    shutil.copy(html, os.path.join(d, 'summary.html'))    # 本地点开即最新
+    return att_key
 
 
 def add_done_tag(key):
     """给文献加「已精读」标签（保留原有标签）。"""
     try:
-        req = urllib.request.Request(BASE + f'/items/{key}', headers=WH)
-        item = json.loads(urllib.request.urlopen(req, timeout=15).read())
+        item = zotero.get_item(key)
         tags = item['data'].get('tags', [])
         if any(t.get('tag') == DONE_TAG for t in tags):
             return
         tags.append({'tag': DONE_TAG})
-        body = json.dumps({'tags': tags}).encode()
-        preq = urllib.request.Request(BASE + f'/items/{key}', data=body, method='PATCH',
-            headers={**WH, 'Content-Type': 'application/json',
-                     'If-Unmodified-Since-Version': str(item['version'])})
-        urllib.request.urlopen(preq, timeout=15)
+        zotero.replace_tags(key, tags, action='加「已精读」标签')
     except Exception as e:
         print(f'    (加标签失败: {e})')
 
 
 def do_one(key):
-    html = os.path.join(LIBRARY, key, 'summary.html')
+    html = paths.summary(key)
     if not os.path.exists(html):
-        print(f'  [跳过] 无 summary.html'); return False
-    delete_old_summary(key)
-    att_key = upload_attachment(key, html, 'summary')
-    if att_key:
-        d = os.path.join(STORAGE_DIR, att_key); os.makedirs(d, exist_ok=True)
-        shutil.copy(html, os.path.join(d, 'summary.html'))
-        add_done_tag(key)
-        print(f'  [已上传] summary + 标签「已精读」'); return True
-    print(f'  [上传失败]'); return False
+        print(f'  [跳过] 无 summary.html')
+        return False
+    try:
+        refresh_summary(key, html)
+    except Exception as e:
+        print(f'  [上传失败] {e}')
+        return False
+    add_done_tag(key)
+    print(f'  [已上传] summary + 标签「已精读」')
+    return True
 
 
 def main():

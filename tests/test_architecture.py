@@ -295,9 +295,81 @@ _GUARD_EXEMPT = {
     'core/role.py',
 }
 
-# 适配层里**只读**的云端封装：出现域名但不写，因此不需要角色守卫。
-# 这个豁免不是白给的 —— 下面 test_只读的云端封装必须保持只读 会强制它名副其实。
-_READONLY_WEB = {'adapters/zotero_client/__init__.py'}
+# 曾经有过一个「只读的云端封装」豁免名单（adapters/zotero_client 只读云端时）。
+# 2026-08-27 把三份 Zotero 写实现收进该适配层之后，它真的会写了，
+# 也真的带上了守卫 —— 豁免与配套的「必须保持只读」检查一并撤销。
+_READONLY_WEB = set()
+
+
+def _code_text(path):
+    """源码**抹掉注释与文档字符串之后**的样子 —— 守卫只该看代码，不该看散文。
+
+    为什么需要（同一天踩了两次）：守卫是文本扫描，于是
+    「在文档字符串里解释这些写操作收到哪儿去了」也会被判成「这个文件在写 Zotero」。
+    人于是被逼着为了让守卫闭嘴而少写注释 —— **那是守卫在损害它本该保护的东西**。
+
+    做法是把注释/文档字符串的字符**原地换成空格**，而不是重新拼源码：
+    重拼会改变 `role.require_prod` 这种带点的写法（tokenize 会插空格），
+    守卫反而全线误判。位置替换则保证除了被抹掉的部分，其余一个字符都没动。
+    """
+    import io as _io
+    import tokenize
+    src = open(path, encoding='utf-8', errors='replace').read()
+    lines = src.splitlines(keepends=True)
+    spans, prev = [], tokenize.INDENT
+    try:
+        for tok in tokenize.generate_tokens(_io.StringIO(src).readline):
+            if tok.type == tokenize.COMMENT:
+                spans.append((tok.start, tok.end))
+                continue          # 注释不改变「上一个有意义的 token」
+            drop = tok.type == tokenize.STRING and prev in (
+                tokenize.INDENT, tokenize.DEDENT, tokenize.NEWLINE,
+                tokenize.NL, tokenize.ENCODING)
+            if tok.type not in (tokenize.NL, tokenize.NEWLINE):
+                prev = tok.type
+            if drop:
+                spans.append((tok.start, tok.end))
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        return src          # 扫不动就退回原文（宁可误报，不可漏报）
+
+    for (srow, scol), (erow, ecol) in spans:
+        for row in range(srow, erow + 1):
+            line = lines[row - 1]
+            lo = scol if row == srow else 0
+            hi = ecol if row == erow else len(line)
+            lines[row - 1] = line[:lo] + ' ' * (hi - lo) + line[hi:]
+    return ''.join(lines)
+
+
+def test_守卫自己也要被守卫_散文不算代码(tmp_path):
+    """给 `_code_text` 的元测试：**放过散文，但绝不能放过代码**。
+
+    第二条比第一条重要得多 —— 一个「不会误报」但也不会真正报警的守卫，
+    比没有守卫更糟：它给人一种「有东西在看着」的错觉。
+    """
+    nl = chr(10)
+    prose = tmp_path / 'prose.py'
+    prose.write_text(nl.join([
+        '# 注释里提一句 api.zotero.org',
+        chr(34) * 3 + '文档字符串里也提 api.zotero.org。' + chr(34) * 3,
+        'x = 1', '']), encoding='utf-8')
+    assert _ZOTERO_WRITE_HOST not in _code_text(str(prose))
+
+    real = tmp_path / 'real.py'
+    real.write_text(nl.join([
+        chr(34) * 3 + '说明。' + chr(34) * 3,
+        chr(87) + 'EB = ' + chr(34) + 'https://api.zotero.org/users/1' + chr(34),
+        '']), encoding='utf-8')
+    code = _code_text(str(real))
+    assert _ZOTERO_WRITE_HOST in code, '真的在代码里写域名，必须还能被抓到'
+    assert '说明' not in code
+
+    guarded = tmp_path / 'guarded.py'
+    guarded.write_text(nl.join([
+        'def f():',
+        '    role.require_prod(' + chr(34) + '写' + chr(34) + ')', '']), encoding='utf-8')
+    assert _GUARD_CALL in _code_text(str(guarded)), (
+        '守卫调用被抹掉的话，所有文件都会被误判成「没守卫」')
 
 
 def test_每个写Zotero的地方都有机器角色守卫():
@@ -313,7 +385,7 @@ def test_每个写Zotero的地方都有机器角色守卫():
         rel = _rel(f)
         if rel in _GUARD_EXEMPT or rel in _READONLY_WEB or rel.startswith('归档'):
             continue
-        src = open(f, encoding='utf-8', errors='replace').read()
+        src = _code_text(f)          # 只看代码：文档里提一句域名不算「在写 Zotero」
         if _ZOTERO_WRITE_HOST in src and _GUARD_CALL not in src:
             offenders.append(rel)
     assert not offenders, (

@@ -161,6 +161,34 @@ def render_html(content, figs, title=''):
             + '\n'.join(out) + '</body></html>')
 
 
+MIN_OK = 800        # SI 精读低于这个字数基本是废品（正文线同款底线）
+
+# 额度阶梯：**V4 的推理链计入 max_tokens**，给少了会「输出被截断且正文近乎为空」。
+# 正文线早就是 32000 起 + 重试（血泪教训第 1 条），SI 线却一直是 6000 ——
+# 于是同一篇有时成、有时败，看起来像玄学。2026-08-27 真实撞上一次才发现。
+_BUDGETS = (16000, 32000)
+
+
+def _call_llm(user, model, log=print):
+    """调模型，额度不够就加倍再来一次。两次都不行才算失败，不写废品上盘。"""
+    last = ''
+    for i, budget in enumerate(_BUDGETS, 1):
+        try:
+            out = chat(SYS, user, provider='deepseek', model=model,
+                       key=get_key('DEEPSEEK_KEY'), temperature=0.3,
+                       max_tokens=budget)
+        except Exception as e:
+            log(f'  第{i}次调用失败（额度 {budget}）：{str(e)[:120]}')
+            continue
+        if len(out.strip()) >= MIN_OK:
+            return out
+        last = out
+        log(f'  第{i}次输出仅 {len(out.strip())} 字（<{MIN_OK}），加大额度重试…')
+    if len(last.strip()) >= MIN_OK:
+        return last
+    raise SIFailed(f'SI 精读输出仅 {len(last.strip())} 字，判定失败，不写盘')
+
+
 def read_si(key, out_html=None, model=None, log=print):
     """跑一篇的 SI 精读。
 
@@ -200,8 +228,7 @@ def read_si(key, out_html=None, model=None, log=print):
     log(f'  过滤后 {len(body)} 字符（原 {len(raw)}），补充图 {len(figs)} 张')
 
     user = f'补充材料共有 {len(figs)} 张图。\n\n正文:\n{body[:30000]}'
-    content = chat(SYS, user, provider='deepseek', model=model,
-                   key=get_key('DEEPSEEK_KEY'), temperature=0.3, max_tokens=6000)
+    content = _call_llm(user, model, log)
     os.makedirs(os.path.dirname(out_html), exist_ok=True)
     io.open(out_html, 'w', encoding='utf-8').write(render_html(content, figs))
     log(f'  [完成] {out_html}  {round(os.path.getsize(out_html)/1024)} KB')

@@ -21,6 +21,7 @@
 | `paper_discovery` | `adapters.openalex` 检索 + 库内匹配标记 |
 | `lib_match` | `adapters.vectordb` 检索 + 排序判定 |
 | `deepread` | **阶段 3 搬进来的主线**：解析 + 正文精读 + SI + 合并（见它自己的 CLAUDE.md）|
+| `extract` | 结构化抽取：full.md → 对齐字段 → 并入横向对比表（字段定义在 `domain/schema`）|
 
 ## 依赖规矩
 
@@ -41,9 +42,13 @@
 `文献精读/` 下的 `deepread_v4.py` / `si_deepread.py` / `merge_summary.py`
 现在只是**命令行薄壳**，逻辑都在这儿 —— 老的 .bat 和批量脚本一行没改照常能用。
 
+**结构化抽取也搬进来了**（`pipelines/extract` + `domain/schema`），
+**Zotero 写操作收进了 `adapters/zotero_client`** ——
+至此 `zotero_watcher.process_item` **不再拉任何子进程**，
+而且全项目只有一个文件会碰 api.zotero.org（机器角色守卫因此只需一处）。
+
 还没搬的（下一步）：
 
-- **结构化抽取** `数据抽取/extract_structured.py`：watcher 仍用子进程拉它
-- **向量化 / 问答**：`库内问答/` 三个脚本
-- **回写 Zotero**：`zotero_upload_attachment.py` 该收进 `adapters/zotero_client`，
-  watcher 才能瘦成「看标签 → 入队 → 完事」（设计文档阶段 4 第 19 项）
+- **向量化 / 问答**：`库内问答/` 三个脚本（依赖 Ollama，只能在主力机实测）
+- **控制面板接真进度**：状态库已有数据（`jobs.summary()`），面板还在看日志尾巴
+- watcher 还能再瘦：把「轮询 → 入队」与「处理一篇」分开（设计文档阶段 4 第 19 项）

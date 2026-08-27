@@ -26,9 +26,10 @@ from core.config import need_site, get_site
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 
-# 复用精层抽取的核心（同文件夹脚本互相 import，见上方 SCRIPT_DIR 说明）
-from extract_structured import (SYS, build_user_prompt, hierarchical_body,
-                                deepseek_json, DEEPSEEK_MODEL)
+# 字段与提示词来自纯逻辑环，调用来自编排环 —— 不再 import 兄弟脚本
+# （脚本既是程序又是库，是这次重构要根治的病）
+from domain.schema import SYS, build_user_prompt, hierarchical_body
+from pipelines.extract import llm_json as deepseek_json, _model
 # 公理件：Zotero 定位 + PDF 解析（定理编排公理，符合架构宪法）
 from adapters.zotero_client import find_pdf
 from adapters.pdf_parse import parse_pdf, PDFParseError
@@ -69,7 +70,7 @@ def extract_one(key):
     meta = json.load(open(meta_path, encoding='utf-8')) if os.path.exists(meta_path) else {}
     title = meta.get('title', key)
     body = hierarchical_body(open(md, encoding='utf-8').read())
-    print(f'  [精抽] DeepSeek {DEEPSEEK_MODEL} ...')
+    print(f'  [精抽] DeepSeek {_model()} ...')
     data = deepseek_json(SYS, build_user_prompt(title, body))
     record = {'key': key, 'title': title, 'doi': meta.get('DOI', ''), **data}  # 无 source=精层，受#16保护
     json.dump(record, open(os.path.join(OUT_DIR, f'{key}.json'), 'w', encoding='utf-8'),

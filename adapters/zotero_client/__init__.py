@@ -9,6 +9,7 @@
   - zget(path)            : 本地只读 API GET（滞后于云端，见 zweb）
   - zweb(path)            : 云端只读 API GET（自己刚写的东西要问它）
   - find_child_attachment : 找某文献下指定标题的附件（云端优先）
+  - replace_tags / upload_attachment : **写**（在 _write.py，每个都带机器角色守卫）
   - USER_ID / WEB_USER_ID : 本地 API 的 id / 写 zotero.org 的真实数字 id（两者不同）
   - find_pdf(key)         : 定位正文 PDF 本地路径（优先信 Zotero 规范命名，排除 SI）
   - get_fulltext(att_key) : 取 Zotero 全文索引（粗层抽取/向量化用）
@@ -54,33 +55,11 @@ def zget(path):
     return json.loads(urllib.request.urlopen(req, timeout=20).read())
 
 
-# ── zotero.org（云端）只读封装 ────────────────────────────────────────
-# **本模块只放「读」**：写操作留在调用方，那里有机器角色守卫。
-# 这条约定由 tests/test_architecture.py 强制（本文件不许出现写方法）。
-WEB_API = 'https://api.zotero.org'
-
-
-def zweb(path, key=None, timeout=30):
-    """云端只读 API GET。path 如 '/items/<key>/children'（用户段自动拼）。
-
-    **为什么需要它**：本地 API 反映的是 Zotero 桌面端**已经同步下来**的状态，
-    比我们刚写上去的东西滞后几分钟。用本地 API 去查「我刚传的附件在不在」，
-    答案会是「不在」—— 于是又传一份（踩坑 #64）。
-    自己写上去的东西，要问权威方。
-    """
-    k = key
-    if k is None:
-        try:
-            from core.config import get_key
-            k = get_key('ZOTERO_API_KEY')
-        except Exception:
-            k = ''
-    if not k:
-        raise RuntimeError('没有 ZOTERO_API_KEY，读不了云端 API')
-    req = urllib.request.Request(
-        f'{WEB_API}/users/{WEB_USER_ID}{path}',
-        headers={'Zotero-API-Key': k, 'Zotero-API-Version': '3'})
-    return json.loads(urllib.request.urlopen(req, timeout=timeout).read())
+# ── zotero.org（云端）──────────────────────────────────────────────
+# 与云端打交道的实现全在 _web.py —— 它是全项目唯一出现那个域名的文件，
+# 写操作的机器角色守卫也都在那里。这里只做再导出。
+from adapters.zotero_client._web import (WEB_API, zweb, get_item,
+                                         replace_tags, upload_attachment)
 
 
 def find_child_attachment(item_key, title):

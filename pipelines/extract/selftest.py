@@ -1,0 +1,82 @@
+# -*- coding: utf-8 -*-
+"""extract 自测：不调 LLM、不碰真实数据，验编排骨架（幂等 / 出表 / 记账）。"""
+import io, json, os, sys, tempfile
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+from core import jobs, paths
+from domain import schema
+from pipelines import extract
+
+KEY = 'ZZZZ0002'
+
+
+def main():
+    ok = total = 0
+    with tempfile.TemporaryDirectory() as d:
+        real_lib, real_struct, real_db = paths.LIBRARY, paths.STRUCTURED, jobs.db_path
+        paths.LIBRARY = os.path.join(d, 'library')
+        paths.STRUCTURED = os.path.join(d, 'structured')
+        jobs.db_path = lambda: os.path.join(d, 'state.db')
+        jobs.close()
+        try:
+            paths.parsed_dir(KEY, create=True)
+            io.open(paths.fulltext(KEY), 'w', encoding='utf-8').write('body text')
+            io.open(paths.meta(KEY), 'w', encoding='utf-8').write(
+                json.dumps({'title': 'A dynamic elastomer', 'DOI': '10.1/x'}))
+
+            calls = []
+            real_llm = extract.llm_json
+            extract.llm_json = lambda sysmsg, user: (
+                calls.append(1) or {'material_system': 'PBS', 'doc_type': 'research'})
+            extract.EVAL_ENABLED = False
+
+            total += 1
+            rec = extract.run(KEY, log=lambda *a: None)
+            if rec and rec['material_system'] == 'PBS' and rec['schema_ver'] == schema.SCHEMA_VER:
+                print('  [PASS] 抽一篇 → 落盘带版本号'); ok += 1
+            else:
+                print(f'  [FAIL] 抽取结果异常：{rec}')
+
+            total += 1
+            extract.run(KEY, log=lambda *a: None)
+            if len(calls) == 1:
+                print('  [PASS] 抽过的不重抽（省 API 费）'); ok += 1
+            else:
+                print(f'  [FAIL] 重复调用了 {len(calls)} 次')
+
+            total += 1
+            if os.path.exists(paths.compare()) and 'A dynamic elastomer' in io.open(
+                    paths.compare(), encoding='utf-8').read():
+                print('  [PASS] 自动并入横向对比表'); ok += 1
+            else:
+                print('  [FAIL] 对比表没生成')
+
+            total += 1
+            schema.SCHEMA_VER += 1                     # 假装加了字段
+            try:
+                if extract.stale_keys() == [KEY]:
+                    print('  [PASS] schema 升版 → 该重抽的自己冒出来'); ok += 1
+                else:
+                    print(f'  [FAIL] 待重抽清单不对：{extract.stale_keys()}')
+            finally:
+                schema.SCHEMA_VER -= 1
+
+            total += 1
+            row = jobs.last(KEY, extract.STEP)
+            if row and row['status'] == jobs.OK and row['producer'] == extract.PRODUCER:
+                print('  [PASS] 记账完整（谁抽的、哪版 schema）'); ok += 1
+            else:
+                print(f'  [FAIL] 状态库记录不对：{row}')
+        finally:
+            extract.llm_json = real_llm
+            jobs.close()
+            paths.LIBRARY, paths.STRUCTURED, jobs.db_path = real_lib, real_struct, real_db
+
+    print(f'\n{ok}/{total} 通过')
+    sys.exit(0 if ok == total else 1)
+
+
+if __name__ == '__main__':
+    main()

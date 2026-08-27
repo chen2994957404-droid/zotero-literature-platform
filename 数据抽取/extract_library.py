@@ -31,9 +31,9 @@ from core.config import get_key, get_site, need_site
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 
-# 复用精层的 schema 与提示词，保证字段一致（同文件夹脚本互相 import，见上方 SCRIPT_DIR 说明）
-from extract_structured import (SCHEMA, SYS, build_user_prompt,
-                                build_compare_table, hierarchical_body)
+# 复用同一份 schema 与提示词，保证粗细两层字段一致
+from domain.schema import SCHEMA, SYS, build_user_prompt, hierarchical_body
+from pipelines.extract import write_compare_table as build_compare_table
 
 OUT_DIR = paths.STRUCTURED
 os.makedirs(OUT_DIR, exist_ok=True)

@@ -25,7 +25,7 @@
 
 | 块 | 包住谁 |
 |---|---|
-| `zotero_client` | Zotero（本地 API 读、找正文 PDF、判断有没有 SI）|
+| `zotero_client` | Zotero。读：本地 API、找正文 PDF、判断有没有 SI；**写：改标签、传附件（`_web.py`，全项目唯一碰 api.zotero.org 的文件）** |
 | `llm_client` | 各家大模型（云端 / 本地 Ollama）|
 | `embed` | 本地 bge-m3 向量化 |
 | `pdf_parse` | MineRU 云端 PDF 解析 |
