@@ -168,6 +168,48 @@ def restart_tasks():
     return msgs
 
 
+def check_unpushed():
+    """本机有没有「已提交但没推送」的东西 —— 那是记事本反复弹出的根因。
+
+    分支一旦和远程分叉，**每次 `git pull` 都会产生一个新的合并提交**，
+    而 git 每次都要人给合并写说明，于是每次都弹编辑器（主力机上是记事本）。
+    推上去之后两边合流，往后的拉取都是快进，就不会再弹了。
+    """
+    _ok, out = run(['git', 'log', '--oneline', '@{u}..HEAD'], timeout=120, quiet=True)
+    ahead = [l for l in (out or '').splitlines() if l.strip()]
+    _ok2, out2 = run(['git', 'status', '--short'], timeout=120, quiet=True)
+    dirty = [l for l in (out2 or '').splitlines() if l.strip() and not l.startswith('??')]
+    if not ahead and not dirty:
+        return
+    print('')
+    print('-' * 60)
+    if ahead:
+        print(f'⚠ 本机有 {len(ahead)} 个提交还没推送到 GitHub：')
+        for l in ahead[:5]:
+            print('    ' + l)
+        print('  只要没推上去，分支就和远程分叉，**每次 git pull 都会产生新的合并**，')
+        print('  git 每次都要你给合并写说明 —— 那就是记事本反复弹出的原因。')
+    if dirty:
+        print('⚠ 还有改动没提交：')
+        for l in dirty[:5]:
+            print('    ' + l)
+    # 建议要贴着实际情况给 —— 写死一条命令，遇到别的文件就会把人带沟里
+    data_only = all('evalset.json' in l for l in dirty) if dirty else True
+    print('  处理办法（在项目文件夹里依次跑）：')
+    if dirty and not data_only:
+        print('    ⚠ 本机改到了数据以外的文件。按分工，运行端只读代码、不改代码',
+              '（见 docs/两台机器的分工.md）。')
+        print('    先把上面这几行发给 Claude，别急着提交。')
+    else:
+        if dirty:
+            print('      git add workflow_data/evalset.json')
+            print('      git commit -m "主力机：精读评价更新"')
+        print('      git push')
+        print('  推完这一次，两边就合流了，以后不会再弹记事本。')
+    print('-' * 60)
+
+
+
 def main():
     total = 6
     print('\n============ 更新平台 ============')
@@ -234,6 +276,8 @@ def main():
     # ── 6. 完整体检 ──
     step(6, total, '完整体检（检查 Zotero / Ollama / 自启任务）')
     run([sys.executable, os.path.join('平台管理', 'health_check.py')], timeout=1800)
+
+    check_unpushed()
 
     print('\n============ 更新完成 ============')
     if no_change:
