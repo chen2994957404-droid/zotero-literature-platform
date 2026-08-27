@@ -6,7 +6,9 @@
 不再各自拷贝 find_pdf 等逻辑（消除技术债：曾有 3 份 find_pdf 拷贝）。
 
 对外接口（稳定，供上层组合调用）：
-  - zget(path)            : 本地只读 API GET
+  - zget(path)            : 本地只读 API GET（滞后于云端，见 zweb）
+  - zweb(path)            : 云端只读 API GET（自己刚写的东西要问它）
+  - find_child_attachment : 找某文献下指定标题的附件（云端优先）
   - USER_ID / WEB_USER_ID : 本地 API 的 id / 写 zotero.org 的真实数字 id（两者不同）
   - find_pdf(key)         : 定位正文 PDF 本地路径（优先信 Zotero 规范命名，排除 SI）
   - get_fulltext(att_key) : 取 Zotero 全文索引（粗层抽取/向量化用）
@@ -50,6 +52,57 @@ def zget(path):
     """本地只读 API GET。path 如 '/users/<id>/items/<key>/children'。"""
     req = urllib.request.Request(LOCAL_API + path, headers=_H)
     return json.loads(urllib.request.urlopen(req, timeout=20).read())
+
+
+# ── zotero.org（云端）只读封装 ────────────────────────────────────────
+# **本模块只放「读」**：写操作留在调用方，那里有机器角色守卫。
+# 这条约定由 tests/test_architecture.py 强制（本文件不许出现写方法）。
+WEB_API = 'https://api.zotero.org'
+
+
+def zweb(path, key=None, timeout=30):
+    """云端只读 API GET。path 如 '/items/<key>/children'（用户段自动拼）。
+
+    **为什么需要它**：本地 API 反映的是 Zotero 桌面端**已经同步下来**的状态，
+    比我们刚写上去的东西滞后几分钟。用本地 API 去查「我刚传的附件在不在」，
+    答案会是「不在」—— 于是又传一份（踩坑 #64）。
+    自己写上去的东西，要问权威方。
+    """
+    k = key
+    if k is None:
+        try:
+            from core.config import get_key
+            k = get_key('ZOTERO_API_KEY')
+        except Exception:
+            k = ''
+    if not k:
+        raise RuntimeError('没有 ZOTERO_API_KEY，读不了云端 API')
+    req = urllib.request.Request(
+        f'{WEB_API}/users/{WEB_USER_ID}{path}',
+        headers={'Zotero-API-Key': k, 'Zotero-API-Version': '3'})
+    return json.loads(urllib.request.urlopen(req, timeout=timeout).read())
+
+
+def find_child_attachment(item_key, title):
+    """找某条文献下标题为 title 的附件，返回它的 key；没有则 None。
+
+    **先问云端，读不到再退回本地**：用途是「我上次传的那个还在不在」，
+    而这个问题只有云端答得准。云端不可达（没配 key / 断网）时退回本地 ——
+    退化的后果是可能重复建一个附件，比整篇精读白做轻。
+    """
+    for fetch in (lambda: zweb(f'/items/{item_key}/children'),
+                  lambda: zget(f'/users/{USER_ID}/items/{item_key}/children')):
+        try:
+            children = fetch()
+        except Exception:
+            continue
+        for c in children:
+            d = c['data']
+            if (d.get('itemType') == 'attachment'
+                    and (d.get('title') or '').strip() == title):
+                return c['key']
+        return None          # 问到了，确实没有 —— 不必再问下一个来源
+    return None
 
 
 def find_pdf(item_key, return_att_key=False):

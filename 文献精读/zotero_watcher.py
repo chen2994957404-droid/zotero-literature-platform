@@ -27,6 +27,7 @@ print = get_logger('zotero_watcher')       # 保留 print 这个名字，下方�
 # Zotero 的读取能力全部走公理件 —— 重构前这里重复实现了 zget / find_pdf /
 # has_si / SUPP_PAT，与 adapters/zotero_client 里的同名实现并存（违反宪法铁律 1）。
 from adapters.zotero_client import (zget, find_pdf as _find_pdf, has_si,
+                                    find_child_attachment,
                                     USER_ID, WEB_USER_ID, STORAGE_DIR)
 # 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
 _NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
@@ -143,16 +144,13 @@ def process_item(item):
         print('  [提示] 未配 ZOTERO_API_KEY，跳过回写。')
 
 def find_existing_summary(item_key):
-    """找该文献已有的 summary 附件 key（用于复用，避免删除→同步冲突）。"""
-    try:
-        children = zget(f'/users/{USER_ID}/items/{item_key}/children')
-        for c in children:
-            d = c['data']
-            if d.get('itemType') == 'attachment' and (d.get('title') or '').strip() == 'summary':
-                return c['key']
-    except Exception:
-        pass
-    return None
+    """找该文献已有的 summary 附件 key（用于复用，避免删除→同步冲突）。
+
+    ⚠ 这里**必须问云端**，不能问本地 API（踩坑 #64）：附件是我们自己传上
+    zotero.org 的，本地 Zotero 要等下一次同步才看得见。问本地会得到「没有」，
+    于是又传一份 —— 重复附件正是踩坑 #28 要防的东西。
+    """
+    return find_child_attachment(item_key, 'summary')
 
 # 注：回写「精读笔记」的旧方案（writeback / extract_text_summary / swap_tag /
 # delete_old_summary）已于本次清理删除。它早被「复用 summary 附件」取代，

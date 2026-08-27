@@ -295,6 +295,10 @@ _GUARD_EXEMPT = {
     'core/role.py',
 }
 
+# 适配层里**只读**的云端封装：出现域名但不写，因此不需要角色守卫。
+# 这个豁免不是白给的 —— 下面 test_只读的云端封装必须保持只读 会强制它名副其实。
+_READONLY_WEB = {'adapters/zotero_client/__init__.py'}
+
 
 def test_每个写Zotero的地方都有机器角色守卫():
     """漏掉一处，就等于这道闸不存在。
@@ -307,7 +311,7 @@ def test_每个写Zotero的地方都有机器角色守卫():
     offenders = []
     for f in _py_files():
         rel = _rel(f)
-        if rel in _GUARD_EXEMPT or rel.startswith('归档'):
+        if rel in _GUARD_EXEMPT or rel in _READONLY_WEB or rel.startswith('归档'):
             continue
         src = open(f, encoding='utf-8', errors='replace').read()
         if _ZOTERO_WRITE_HOST in src and _GUARD_CALL not in src:
@@ -317,6 +321,36 @@ def test_每个写Zotero的地方都有机器角色守卫():
         + _NL.join(sorted(offenders))
         + _NL + '做法：在执行写操作的函数开头加一行'
         + _NL + "  role.require_prod('这是什么操作', force=flag('--force'))")
+
+
+# HTTP 写方法的写法（够用即可：本项目一律用 urllib，method= 显式传）
+_WRITE_METHODS = ("'POST'", '"POST"', "'PATCH'", '"PATCH"',
+                  "'PUT'", '"PUT"', "'DELETE'", '"DELETE"')
+
+
+def test_只读的云端封装必须保持只读():
+    """上一条守卫给 `_READONLY_WEB` 里的文件开了免检，这条负责让免检名副其实。
+
+    为什么需要这一对：适配层需要读云端（「我上次传的附件还在不在」，
+    这个问题只有云端答得准，本地 API 滞后于同步 —— 踩坑 #64）。
+    读不需要机器角色守卫，写需要。**开了口子就得有东西守着口子**，
+    否则哪天有人在这个文件里加个 POST，免检会让它一路绿灯溜过去。
+    """
+    offenders = []
+    for rel in sorted(_READONLY_WEB):
+        f = os.path.join(ROOT, rel.replace('/', os.sep))
+        if not os.path.isfile(f):
+            continue
+        src = open(f, encoding='utf-8', errors='replace').read()
+        quotes = chr(39) + chr(34)
+        hit = [m.strip(quotes) for m in _WRITE_METHODS if m in src]
+        if hit:
+            offenders.append(f'{rel}: 出现写方法 {sorted(set(hit))}')
+    assert not offenders, (
+        '这些文件被当成「只读的云端封装」而免了机器角色守卫，但它们在写：' + _NL
+        + _NL.join(offenders)
+        + _NL + '要么把写操作挪回调用方（那里有守卫），'
+        + _NL + '要么给它加 role.require_prod 并从 _READONLY_WEB 里去掉。')
 
 
 def test_常驻服务不许在编程端启动():
