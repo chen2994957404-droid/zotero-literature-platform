@@ -51,6 +51,7 @@ workflow_data/_disc*
 # 配置备份含明文密钥，绝不进版本库
 .env.bak*
 .env.tmp
+workflow_data/_qwen_compare/
 
 # --- 打包 / 测试产物（阶段 0 重构引入）---
 *.egg-info/
