@@ -31,7 +31,6 @@ watcher 用 subprocess 拉它，另外两个脚本 `from extract_structured impo
 **要改抽什么字段，去改 `domain/schema/__init__.py`，并把 `SCHEMA_VER` +1。**
 """
 import os
-import shutil
 import sys
 import time
 
@@ -48,15 +47,10 @@ from pipelines import extract, paper_db
 
 
 def _backup(keys):
-    """覆盖前把这些篇的旧结果整批备份出去。返回备份目录（没东西可备份则 None）。"""
-    have = [k for k in keys if os.path.exists(paths.structured(k))]
-    if not have:
-        return None
-    dest = paths.structured_backup(time.strftime('%Y%m%d_%H%M%S'))
-    os.makedirs(dest, exist_ok=True)
-    for k in have:
-        shutil.copy2(paths.structured(k), os.path.join(dest, k + '.json'))
-    print(f'旧结果已备份 {len(have)} 份 → {dest}')
+    """覆盖前备份旧结果（实现在 pipelines/extract，向导与本 CLI 共用）。"""
+    dest = extract.backup_records(keys)
+    if dest:
+        print(f'旧结果已备份 → {dest}')
     return dest
 
 

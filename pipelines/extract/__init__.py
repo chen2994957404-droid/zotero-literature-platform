@@ -191,6 +191,23 @@ def stale_keys():
     return jobs.stale(STEP, schema_ver=schema.SCHEMA_VER)
 
 
+def backup_records(keys, stamp=None):
+    """覆盖前把这些篇的旧结果整批备份出去。返回备份目录；没东西可备份返回 None。
+
+    踩坑 #16 的代价买来的：曾用低档结果盖掉高档结果，丢了真数据。
+    """
+    import shutil
+    import time as _time
+    have = [k for k in keys if os.path.exists(paths.structured(k))]
+    if not have:
+        return None
+    dest = paths.structured_backup(stamp or _time.strftime('%Y%m%d_%H%M%S'))
+    os.makedirs(dest, exist_ok=True)
+    for k in have:
+        shutil.copy2(paths.structured(k), os.path.join(dest, k + '.json'))
+    return dest
+
+
 def local_keys():
     """哪些记录是**本地模型**抽的 —— 以后云端密钥可用时，这就是「值得花钱升级」的清单。"""
     out = []
