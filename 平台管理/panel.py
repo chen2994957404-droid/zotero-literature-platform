@@ -561,11 +561,23 @@ def collect_recent_reads(n=8):
 # ───────────────────────── 动作（可逆，低风险） ─────────────────────────
 
 def action_restart(task_name):
+    """重启一个自启任务。
+
+    ⚠ **不要用 `Restart-ScheduledTask`** —— Windows PowerShell 5.1 里根本没有这个
+    cmdlet（2026-08-28 在主力机上实测：面板的「重启」按钮一直报
+    「无法将 Restart-ScheduledTask 项识别为 cmdlet」，也就是说这个按钮从来没生效过）。
+    只有 `Stop-ScheduledTask` / `Start-ScheduledTask` 是真存在的。
+
+    停一下再起：Stop 对没在跑的任务会报错，所以吞掉它的失败，只认 Start 的结果。
+    """
     if task_name not in SERVICES:
         return False, '未知服务'
     try:
+        _run(['powershell', '-NoProfile', '-NonInteractive', '-Command',
+              f'Stop-ScheduledTask -TaskName {task_name} -ErrorAction SilentlyContinue'],
+             timeout=40)
         r = _run(['powershell', '-NoProfile', '-NonInteractive', '-Command',
-                  f'Restart-ScheduledTask -TaskName {task_name}'], timeout=40)
+                  f'Start-ScheduledTask -TaskName {task_name}'], timeout=40)
         if r.returncode == 0:
             return True, f'{SERVICES[task_name]} 已重启'
         return False, (r.stderr or '重启失败')[:200]
