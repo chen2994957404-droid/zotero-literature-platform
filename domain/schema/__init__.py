@@ -419,6 +419,35 @@ def parse_properties(record):
     return [parse_property(x) for x in items if str(x).strip()]
 
 
+# ── 抽出来的数字，原文里找得到吗 ──────────────────────────────────────
+# 「哪个模型更靠谱」不能靠读着顺不顺。最容易自动化、也最要命的一条是：
+# **它给的数字是不是编的**。把输出里的数字逐个回原文找，找不到的挑出来看。
+_NUM_TOKEN = re.compile(r'\d+(?:\.\d+)?')
+
+
+def number_grounding(data, source):
+    """抽取结果里的数字，有多少能在原文里逐字找到。返回 (命中, 总数, 没找到的列表)。
+
+    **这是粗判据，不是判决**：单位换算（1.5×10^4 vs 15000）、
+    模型把 90% 写成 0.9，都会算成「没找到」。所以要看的是**两个模型的相对差距**，
+    以及没找到的那些具体是什么 —— 一眼就能看出是换算还是瞎编。
+    只数两位及以上的数字：个位数（1、2、3）在任何长文里都必然命中，没有区分度。
+    """
+    src = re.sub(r'[\s,]', '', str(source))
+    miss, hit, total = [], 0, 0
+    for k, v in (data or {}).items():
+        text = '; '.join(str(x) for x in v) if isinstance(v, (list, tuple)) else str(v)
+        for tok in _NUM_TOKEN.findall(text):
+            if len(tok.replace('.', '')) < 2:
+                continue
+            total += 1
+            if tok in src:
+                hit += 1
+            else:
+                miss.append(f'{k}: {tok}')
+    return hit, total, miss
+
+
 def make_record(key, title, doi, data, schema_ver=None,
                 source=SOURCE_FINE, si_used=False):
     """抽取结果 → 落盘用的记录。

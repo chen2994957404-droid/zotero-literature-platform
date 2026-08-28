@@ -132,6 +132,15 @@ def main():
         print('  [FAIL] 对比表没标来源或没排序')
 
     total += 1
+    hit, tot, miss = schema.number_grounding(
+        {'a': 'cured at 150 °C for 12 h', 'b': ['tensile strength: 99 MPa']},
+        'The sample was cured at 150 °C for 12 h.')
+    if hit == 2 and tot == 3 and miss == ['b: 99']:
+        print('  [PASS] 数字回原文核对：编出来的那个 99 被挑出来了'); ok += 1
+    else:
+        print(f'  [FAIL] 数字核对不对：{hit}/{tot} {miss}')
+
+    total += 1
     r = schema.make_record('ABCD1234', '标题', '10.1/x', {'material_system': 'PBS'},
                            si_used=True)
     if (r['schema_ver'] == schema.SCHEMA_VER and r['key'] == 'ABCD1234'
