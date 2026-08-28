@@ -560,6 +560,10 @@ def collect_recent_reads(n=8):
 
 # ───────────────────────── 动作（可逆，低风险） ─────────────────────────
 
+# 任务 → 它真正干活的那个进程持有的锁名（`core.proc_lock`）。
+# 重启任务时要连这个进程一起停，否则新配置进不去（见 action_restart）。
+_TASK_LOCKS = {'ZoteroLiteratureWatcher': 'watcher'}
+
 def action_restart(task_name):
     """重启一个自启任务。
 
@@ -576,6 +580,16 @@ def action_restart(task_name):
         _run(['powershell', '-NoProfile', '-NonInteractive', '-Command',
               f'Stop-ScheduledTask -TaskName {task_name} -ErrorAction SilentlyContinue'],
              timeout=40)
+        # ⚠ 计划任务启动的是**看门狗**，watcher 是看门狗 spawn 出去的独立进程 ——
+        #   停任务不会停 watcher。于是「重启」之后 watcher 还揣着启动那一刻的配置。
+        #   2026-08-28 就栽在这儿：密钥换新了、任务也重启了，watcher 照用旧密钥。
+        #   所以这里要按锁文件把真正干活的那个进程也停掉，让它带着新配置重新起。
+        lock = _TASK_LOCKS.get(task_name)
+        if lock:
+            from core.proc_lock import holder
+            pid = holder(lock)
+            if pid:
+                _run(['taskkill', '/PID', str(pid), '/F'], timeout=30)
         r = _run(['powershell', '-NoProfile', '-NonInteractive', '-Command',
                   f'Start-ScheduledTask -TaskName {task_name}'], timeout=40)
         if r.returncode == 0:
