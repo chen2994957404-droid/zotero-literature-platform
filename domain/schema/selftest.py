@@ -96,6 +96,26 @@ def main():
         print('  [FAIL] 综述分流不对')
 
     total += 1
+    a = schema.parse_property('tensile strength: 12 MPa')
+    b = schema.parse_property('Mn: 3.2×10^4 g/mol')
+    c = schema.parse_property('degradation: 225-300 °C')
+    d = schema.parse_property('stretchability: >20 times')
+    if (a['value'] == 12 and a['unit'] == 'MPa' and b['value'] == 32000
+            and c['value_max'] == 300 and d['cmp'] == '>'):
+        print('  [PASS] 性能字符串拆成能比大小的数（含科学计数、区间、大于号）'); ok += 1
+    else:
+        print(f'  [FAIL] 性能解析不对：{a} {b} {c} {d}')
+
+    total += 1
+    e = schema.parse_property('self-healing: yes')
+    ps = schema.parse_properties({'key_properties': ['tensile strength: 12 MPa',
+                                                     'self-healing: yes']})
+    if e['value'] is None and len(ps) == 2 and ps[0]['value'] == 12:
+        print('  [PASS] 拆不出数字的也留着（只是不能比大小）'); ok += 1
+    else:
+        print(f'  [FAIL] 非数值性能被丢了：{ps}')
+
+    total += 1
     t2 = schema.compare_table([{'title': '粗的', 'doc_type': 'research', 'source': 'coarse'},
                                {'title': '精的', 'doc_type': 'research', 'si_used': True}])
     if ('来源' in t2 and schema.TIER_COARSE in t2 and schema.TIER_FINE_SI in t2

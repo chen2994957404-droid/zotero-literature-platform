@@ -20,8 +20,8 @@ core/  ← 内核：谁都依赖它，它不依赖任何人（10 块）
 docs/                    ← 文档（16 份）
 domain/  ← 纯逻辑：不联网、不知道文件放在哪（3 块）
     figure_crop、schema、si_filter
-pipelines/  ← 编排：把上面三者按顺序组合成能力（6 块）
-    chart_digitize、deepread、extract、lib_match、paper_discovery、query_expand
+pipelines/  ← 编排：把上面三者按顺序组合成能力（7 块）
+    chart_digitize、deepread、extract、lib_match、paper_db、paper_discovery、query_expand
 tests/ （13 个脚本）
     test_adapters_vectordb.py、test_architecture.py、test_artifact_gaps.py、test_core_heartbeat.py、test_core_jobs.py、test_core_log_errors.py、test_core_paths.py、test_core_role.py…
 平台管理/ （8 个脚本）
@@ -34,8 +34,8 @@ tests/ （13 个脚本）
     build_deepread_workflow.py、watcher.py
 找新文献/ （7 个脚本）
     brainstorm.py、collect.py、discover.py、find_papers.py、import_by_doi.py、search_global.py、zotero_add_thesis.py
-数据抽取/ （4 个脚本）
-    extract_batch.py、extract_library.py、extract_structured.py、filter_domain.py
+数据抽取/ （5 个脚本）
+    extract_batch.py、extract_library.py、extract_structured.py、filter_domain.py、查询库.py
 文献精读/ （12 个脚本）
     deepread_batch.py、deepread_v4.py、merge_summary.py、mineru_parse.py、refresh_summary_file.py、rerun_pro.py、si_batch.py、si_deepread.py…
 
@@ -44,7 +44,7 @@ tests/ （13 个脚本）
 （workflow_data/ 是数据目录，3000+ 文件，**不要去 glob 它**）
 ```
 
-**积木 22 块**（`modules/`，原子能力）· **工作流 8 个**（用积木搭出来的功能；`归档_旧版本` 是废弃代码，不计入）
+**积木 23 块**（`modules/`，原子能力）· **工作流 8 个**（用积木搭出来的功能；`归档_旧版本` 是废弃代码，不计入）
 
 进度、健康状况、下一步做什么 → 见 `HANDOVER.md`
 

@@ -22,6 +22,7 @@
 | `lib_match` | `adapters.vectordb` 检索 + 排序判定 |
 | `deepread` | **阶段 3 搬进来的主线**：解析 + 正文精读 + SI + 合并（见它自己的 CLAUDE.md）|
 | `extract` | 结构化抽取：full.md → 对齐字段 → 并入横向对比表（字段定义在 `domain/schema`）|
+| `paper_db` | 结构化记录 → 可查询的 SQLite 库（性能数值拆成能比大小的数）|
 
 ## 依赖规矩
 

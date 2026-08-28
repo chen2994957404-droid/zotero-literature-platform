@@ -31,7 +31,7 @@ except Exception:
 from core import paths, role
 from core.cli import flag, pos
 from domain import schema
-from pipelines import extract
+from pipelines import extract, paper_db
 
 
 def main():
@@ -62,6 +62,7 @@ def main():
         if rec:
             done += 1
     extract.write_compare_table()
+    paper_db.rebuild()          # 查询库是 JSON 的索引，抽完顺手重建（秒级、不花钱）
     print(f'\n完成：本次 {done} 篇，库内共 {len(extract.all_records())} 条结构化记录')
     print(f'对比表：{paths.compare()}')
 

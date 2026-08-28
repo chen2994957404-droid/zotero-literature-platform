@@ -53,3 +53,19 @@
 python extract_structured.py <KEY>          # 单篇验证，看字段是否合理、N/A 是否偏多
 python ../平台管理/health_check.py
 ```
+
+
+## 查询库（2026-08-28 新增）
+
+`compare.md` 是给人竖着看的表，不能筛、不能分组、性能数值比不了大小。
+所以 `structured/*.json` 现在还会建成一个 SQLite 查询库：
+
+```
+python 数据抽取/查询库.py --rebuild                     # 重建（抽取 CLI 已自动带上）
+python 数据抽取/查询库.py --stats                       # 各档次 × 各字段有值率
+python 数据抽取/查询库.py --find boron --prop tensile --min 10
+python 数据抽取/查询库.py --sql "SELECT tier, COUNT(*) n FROM papers GROUP BY tier"
+```
+
+逻辑在 `pipelines/paper_db`（那儿有完整说明）。
+**库是索引不是真相** —— 真相是 JSON，库随时可删可重建。

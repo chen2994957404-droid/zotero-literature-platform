@@ -1,0 +1,60 @@
+# pipelines/paper_db · 文献查询库 —— 给 LLM 的说明
+
+> 你可能是被单独选中这个文件夹打开的。本文件是你的全部上下文。
+
+## 这块是什么
+
+**`structured/*.json` → 一个能查的 SQLite 库**（`workflow_data/papers.db`）。
+
+它让这类问题第一次可回答：
+
+- 「所有含硼、拉伸强度 > 10 MPa 的体系，按动态键类型分组」
+- 「哪些篇有合成条件但没有性能数值」
+- 「精层里 `self_healing` 有值的有几篇，粗层呢」
+
+此前答不了的原因很具体：`key_properties` 存的是 `'tensile strength: 12 MPa'`
+这种人话，机器比不了大小；而 `compare.md` 是给人竖着看的一张表，不能筛也不能分组。
+
+## 两张表
+
+| 表 | 一行是什么 | 关键列 |
+|---|---|---|
+| `papers` | 一篇文献 | `key` / `title` / `tier` / `source` / `si_used` / `schema_ver` / `is_review` + schema 的每个字段 |
+| `properties` | 一条性能数值 | `key` / `name` / `value` / `value_max` / `unit` / `cmp` / `raw` |
+
+`properties` 由 `domain.schema.parse_properties()` 拆出来：
+`'Mn: 3.2×10^4 g/mol'` → `name='mn', value=32000.0, unit='g/mol'`；
+`'225–300 °C'` → `value=225, value_max=300`；`'>20 times'` → `cmp='>'`。
+拆不出数字的照样入库（`value` 为 NULL），只是不能参与大小比较。
+
+**不做单位换算**：MPa 与 kPa 混在一起时宁可让人看见 —— 偷偷换算错，
+比查不到更难发现。查询时按「名字 + 单位」一起筛（`find(prop=..., unit=...)`）。
+
+## 对外接口
+
+```python
+from pipelines import paper_db
+
+paper_db.rebuild()                       # 从 structured/*.json 整库重建
+paper_db.query(sql, args)                # 只读 SQL → list[dict]（只接受 SELECT / WITH）
+paper_db.find(text='boron', prop='tensile', min_value=10, tier='精层', field='...')
+paper_db.stats()                         # 各档次 × 各字段有值率
+paper_db.props('tensile')                # 抽到过哪些性能、各多少条、范围多大
+```
+
+命令行：`python 数据抽取/查询库.py --rebuild | --stats | --props X | --find X | --sql "..."`
+
+## 铁律：库是索引，不是真相
+
+真相永远是 `structured/<key>.json`。库删了随时重建（秒级、零成本、不花钱），
+所以**本模块只有整库重建，没有增量维护** —— 增量会带来一整类
+「库里还留着已删记录」的 bug，而我们什么都换不来。
+
+同理 `query()` 只接受 SELECT / WITH：**要改数据就去改 JSON 再 rebuild**，
+不许有第二个真相来源。
+
+## 什么时候该改这块
+
+- 加/删 schema 字段 → 不用改（列由 `domain.schema.SCHEMA` 自动生成），**但要 rebuild**
+- 性能字符串拆得不准 → 改 `domain.schema.parse_property`（纯逻辑，那儿有自测）
+- 想加新的筛法 → 加在 `find()` 里；一次性的分析直接用 `query()` 写 SQL

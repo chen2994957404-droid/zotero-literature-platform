@@ -181,6 +181,15 @@ def state_db():
     return os.path.join(DATA, 'state.db')
 
 
+def papers_db():
+    """workflow_data/papers.db —— 文献查询库（结构化字段 + 能比大小的性能数值）。
+
+    **可重建**：由 `structured/*.json` 整库生成（见 pipelines/paper_db），
+    删掉零代价。真相永远是那些 JSON。
+    """
+    return os.path.join(DATA, 'papers.db')
+
+
 def evalset():
     """workflow_data/evalset.json —— 精读质量评测集（用户的人工评价，不可重建）。"""
     return os.path.join(DATA, 'evalset.json')

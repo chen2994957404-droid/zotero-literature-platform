@@ -22,6 +22,7 @@
   - is_review                : 这篇是不是综述（决定进哪张表）
   - has_value / coverage     : 「这格有真值吗」「各档次各字段的有值率」
   - tier_label               : 这条记录是哪个档次抽的（精+SI / 精层 / 粗层）
+  - parse_property(ies)      : 'tensile strength: 12 MPa' → 可比大小的数
   - compare_table / reviews_table : 记录 → Markdown 表（**返回字符串，不写盘**）
 """
 import json
@@ -232,8 +233,8 @@ def tier_label(record):
 
 
 # 「没有值」的各种写法。模型不总是老老实实写 N/A。
-_EMPTY = {'', 'n/a', 'na', 'none', 'null', '-', 'not available', 'not specified',
-          'not reported', 'not mentioned', 'unknown', '无', '未提及', '未知'}
+EMPTY_VALUES = {'', 'n/a', 'na', 'none', 'null', '-', 'not available', 'not specified',
+                'not reported', 'not mentioned', 'unknown', '无', '未提及', '未知'}
 
 
 def has_value(v):
@@ -244,7 +245,7 @@ def has_value(v):
         return any(has_value(x) for x in v)
     if isinstance(v, dict):
         return any(has_value(x) for x in v.values())
-    return str(v).strip().lower() not in _EMPTY
+    return str(v).strip().lower() not in EMPTY_VALUES
 
 
 def coverage(records, cols=None):
@@ -325,6 +326,86 @@ def reviews_table(records):
             str(r.get('key_finding', 'N/A')).replace('\n', ' ')[:90],
             str(r.get('limitation', 'N/A')).replace('\n', ' ')[:60]]) + ' |')
     return '\n'.join(rows)
+
+
+
+# ── 性能数值：字符串 → 能比大小的数 ────────────────────────────────────
+# 为什么要这一步（2026-08-28，数据库方向③）：
+#     key_properties 里存的是 'tensile strength: 12 MPa' 这种人话。
+#     人能看，机器比不了大小 —— 「拉伸强度 > 10 MPa 的都有哪些」这类问题
+#     只要还停在字符串上就永远答不了。把它拆成 (名字, 数, 单位) 才能进查询库。
+# **不做单位换算**：MPa 与 kPa 混在一起时宁可让人看见，也不偷偷换算错。
+# 查询时按名字 + 单位一起筛（见 pipelines/paper_db）。
+
+_NUM = (r'([-+]?\d+(?:[.,]\d+)?)'                    # 3.2
+        r'(?:\s*[eE]([-+]?\d+)'                      # 3.2e-5
+        r'|\s*[×xX*]\s*10\s*\^?\s*([-+]?\d+)'      # 3.2 × 10^4
+        r'|\s*[×xX*]\s*10\s*([-+−]\d+))?')           # 3.2 × 10-5（上标丢了的情形）
+_CMP = r'([~≈><≥≤]|about|approx\.?|up to|over|more than|less than)?\s*'
+_PROP_RE = re.compile(r'(?i)^\s*' + _CMP + _NUM)
+_RANGE_RE = re.compile(_NUM + r'\s*[–—\-~]\s*' + _NUM)
+
+_CMP_MAP = {'~': '~', '≈': '~', 'about': '~', 'approx': '~', 'approx.': '~',
+            '>': '>', 'over': '>', 'more than': '>', 'up to': '<',
+            '<': '<', 'less than': '<', '≥': '>', '≤': '<'}
+
+
+def _to_float(m, base=1):
+    """把匹配到的「数 + 指数」拼成一个 float；拼不出来返回 None。"""
+    try:
+        v = float(str(m.group(base)).replace(',', ''))
+    except (TypeError, ValueError):
+        return None
+    for g in (base + 1, base + 2, base + 3):
+        exp = m.group(g)
+        if exp:
+            try:
+                v *= 10 ** int(str(exp).replace('−', '-'))
+            except ValueError:
+                return None
+            break
+    return v
+
+
+def parse_property(text):
+    """`'tensile strength: 12 MPa'` → `{'name','value','unit','cmp','value_max','raw'}`。
+
+    拆不出数字时 value 为 None（`'self-healing: yes'` 这种照样保留，
+    只是不能参与大小比较）。**不换算单位**，unit 原样留着。
+    """
+    raw = str(text).strip()
+    name, _, rest = raw.partition(':')
+    if not rest:                       # 没有冒号：整句当名字，试着从里面找数
+        name, rest = raw, raw
+    name = name.strip().lower()
+    rest = rest.strip()
+    out = {'name': name, 'value': None, 'value_max': None,
+           'unit': '', 'cmp': '', 'raw': raw}
+
+    rng = _RANGE_RE.search(rest)
+    m = _PROP_RE.match(rest)
+    if rng and (not m or rng.start() <= m.start(2)):
+        out['value'] = _to_float(rng, 1)
+        out['value_max'] = _to_float(rng, 5)
+        tail = rest[rng.end():]
+    elif m:
+        c = (m.group(1) or '').strip().lower()
+        out['cmp'] = _CMP_MAP.get(c, '')
+        out['value'] = _to_float(m, 2)
+        tail = rest[m.end():]
+    else:
+        return out
+    out['unit'] = tail.strip().strip('.,;').strip()[:24]
+    return out
+
+
+def parse_properties(record):
+    """一条记录的 key_properties → 解析过的数值列表（拆不出数的也留着）。"""
+    v = record.get('key_properties')
+    if not v:
+        return []
+    items = v if isinstance(v, (list, tuple)) else re.split(r'[;\n]| \| ', str(v))
+    return [parse_property(x) for x in items if str(x).strip()]
 
 
 def make_record(key, title, doi, data, schema_ver=None,
