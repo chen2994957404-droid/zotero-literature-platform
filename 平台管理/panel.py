@@ -562,7 +562,7 @@ def collect_recent_reads(n=8):
 
 # 任务 → 它真正干活的那个进程持有的锁名（`core.proc_lock`）。
 # 重启任务时要连这个进程一起停，否则新配置进不去（见 action_restart）。
-_TASK_LOCKS = {'ZoteroLiteratureWatcher': 'watcher'}
+_TASK_LOCKS = {'ZoteroLiteratureWatcher': 'zotero_watcher'}   # 锁名见 文献精读/zotero_watcher.py
 
 def action_restart(task_name):
     """重启一个自启任务。
