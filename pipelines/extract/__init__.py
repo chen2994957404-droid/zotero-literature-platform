@@ -123,8 +123,9 @@ def extract_one(key, log=print):
     si = si_text(key)
     log(f'[抽取] {title[:50]} …' + (f'（含 SI {len(si)} 字符）' if si else ''))
     data, _report = extract_with_eval(title, body, si, log=log)
+    src = schema.SOURCE_LOCAL if _provider() == 'ollama' else schema.SOURCE_FINE
     record = schema.make_record(key, title, meta.get('DOI', ''), data,
-                               source=schema.SOURCE_FINE, si_used=bool(si))
+                               source=src, si_used=bool(si))
     os.makedirs(paths.STRUCTURED, exist_ok=True)
     json.dump(record, io.open(paths.structured(key), 'w', encoding='utf-8'),
               ensure_ascii=False, indent=2)
@@ -188,6 +189,22 @@ def run(key, force=False, log=print):
 def stale_keys():
     """哪些文献该重抽（schema 升版了，或上次没成功）。"""
     return jobs.stale(STEP, schema_ver=schema.SCHEMA_VER)
+
+
+def local_keys():
+    """哪些记录是**本地模型**抽的 —— 以后云端密钥可用时，这就是「值得花钱升级」的清单。"""
+    out = []
+    for key in paths.all_keys():
+        p = paths.structured(key)
+        if not os.path.exists(p):
+            continue
+        try:
+            rec = json.load(io.open(p, encoding='utf-8'))
+        except Exception:
+            continue
+        if str(rec.get('source', '')).lower() == schema.SOURCE_LOCAL:
+            out.append(key)
+    return out
 
 
 def si_pending_keys():

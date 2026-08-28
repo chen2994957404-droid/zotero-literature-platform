@@ -69,6 +69,13 @@ def main():
         print('  [FAIL] 来源档次判断不对')
 
     total += 1
+    if (schema.tier_label({'source': 'local', 'si_used': True}) == schema.TIER_LOCAL_SI
+            and schema.tier_label({'source': 'local'}) == schema.TIER_LOCAL):
+        print('  [PASS] 本地模型抽的单独一档，不冒充精层'); ok += 1
+    else:
+        print('  [FAIL] 本地档没分出来')
+
+    total += 1
     if (not schema.has_value('N/A') and not schema.has_value([]) and not schema.has_value('未提及')
             and schema.has_value(['tensile strength: 12 MPa'])):
         print('  [PASS] 有值判据：N/A / 空列表 / 未提及 都算没值'); ok += 1

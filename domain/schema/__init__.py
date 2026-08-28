@@ -217,18 +217,28 @@ COMPARE_COLS = ['material_system', 'dynamic_bond_type', 'synthesis_conditions',
 # 空格多得多。两档混在一张表里且看不出区别，用户竖着比字段时
 # **分不清空白是「这篇本来就没有」还是「粗层没抽到」** —— 对比表的价值就废了。
 SOURCE_FINE = 'fine'        # MineRU 全文 + 云端大模型
+SOURCE_LOCAL = 'local'      # MineRU 全文 + **本地** 模型（料一样好，模型小一档）
 SOURCE_COARSE = 'coarse'    # Zotero 全文索引 + 本地小模型（数据抽取/extract_library.py）
 
 TIER_FINE_SI = '精+SI'
 TIER_FINE = '精层'
+TIER_LOCAL_SI = '本地+SI'
+TIER_LOCAL = '本地'
 TIER_COARSE = '粗层'
-TIER_ORDER = [TIER_FINE_SI, TIER_FINE, TIER_COARSE]
+TIER_ORDER = [TIER_FINE_SI, TIER_FINE, TIER_LOCAL_SI, TIER_LOCAL, TIER_COARSE]
 
 
 def tier_label(record):
-    """这条记录属于哪一档。老记录没有 `source` 字段 → 一律算精层（粗层从来都带标记）。"""
-    if str(record.get('source') or SOURCE_FINE).lower() == SOURCE_COARSE:
+    """这条记录属于哪一档。老记录没有 `source` 字段 → 一律算精层（粗层从来都带标记）。
+
+    **料和模型是两件事**：`本地+SI` 的料和 `精+SI` 一样好（MineRU 全文 + SI），
+    差的只是模型档次。分开标，才知道「这一格该不该花钱升级」。
+    """
+    src = str(record.get('source') or SOURCE_FINE).lower()
+    if src == SOURCE_COARSE:
         return TIER_COARSE
+    if src == SOURCE_LOCAL:
+        return TIER_LOCAL_SI if record.get('si_used') else TIER_LOCAL
     return TIER_FINE_SI if record.get('si_used') else TIER_FINE
 
 
@@ -294,8 +304,9 @@ def compare_table(records):
             "> 自动生成。竖着比同一字段，找矛盾、空白、规律。",
             f"> 研究论文 {len(research)} 篇；综述 {len(reviews)} 篇已分流到 compare_reviews.md"
             f"（综述无单一体系数值，不入本表）。", "",
-            "> **先看「来源」列再看格子**：`精+SI` = MineRU 全文+SI，最全；"
+            "> **先看「来源」列再看格子**：`精+SI` = MineRU 全文+SI+云端大模型，最全；"
             "`精层` = 只读了正文，合成条件多半缺；"
+            "`本地+SI` = 料一样全，但用本地模型抽的（免费，准确度低一档）；"
             "`粗层` = Zotero 全文索引+本地小模型，空格多是**没抽到**，不是原文没有。", "",
             "各档次的字段有值率（空格到底是「没有」还是「没抽到」，看这里）：", ""]
     cov = coverage_table(research)

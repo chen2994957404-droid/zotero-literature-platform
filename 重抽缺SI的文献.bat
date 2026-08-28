@@ -2,6 +2,7 @@
 chcp 65001 >nul
 cd /d "%~dp0"
 set PYTHONIOENCODING=utf-8
+if /i "%~2"=="local" set EXTRACT_PROVIDER=ollama
 if "%~1"=="-y" goto run
 echo ================================================================
 echo  重抽「有补充材料、但当初抽取没读它」的文献

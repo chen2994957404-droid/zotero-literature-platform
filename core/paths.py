@@ -150,6 +150,15 @@ def structured(key):
     return os.path.join(STRUCTURED, check_key(key) + '.json')
 
 
+def structured_backup(stamp):
+    """structured_bak_<stamp>/ —— 覆盖已有抽取结果之前的备份落点。
+
+    为什么要有（踩坑 #16）：曾经拿低档结果覆盖了高档结果，丢了真数据。
+    重抽前先把旧的挪进这里，出事能原样搬回来。
+    """
+    return os.path.join(DATA, 'structured_bak_' + str(stamp))
+
+
 def compare(name='compare'):
     """★ structured/<name>.md —— 横向对比表（找 idea 的载体）。
 
