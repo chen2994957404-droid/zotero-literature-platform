@@ -184,6 +184,42 @@ def collect_version():
     return out
 
 
+def action_check_keys(_payload=None):
+    """当场验一验三把密钥到底**能不能用**（不花钱，只查余额/有效性接口）。
+
+    为什么面板必须有这一条（2026-08-28 真事）：面板此前只显示密钥「存在哪」
+    （🔒 凭据库 / ⚠ 明文），不显示「有没有用」。于是 DeepSeek 密钥已经 401 了，
+    用户看着满屏绿色的「已存入系统凭据库」，**看不出任何问题** ——
+    直到一批重抽全军覆没才发现。
+
+    踩坑 #66 已经把体检升级成「查有效性」，却漏了用户天天看的这一屏。
+    密钥只有本机交互式会话读得到，所以这个按钮只能在本机点，也只该在本机点。
+    """
+    try:
+        from adapters.llm_client import check_key as _ds
+        from adapters.pdf_parse import check_token as _mineru
+        from adapters.zotero_client import check_key as _zot
+    except Exception as e:
+        return False, f'适配层加载失败：{e}'
+    lines, all_ok = [], True
+    for name, fn_ in (('DeepSeek（精读/抽取）', _ds), ('MineRU（PDF 解析）', _mineru)):
+        try:
+            ok, msg = fn_()
+        except Exception as e:
+            ok, msg = False, str(e)[:140]
+        all_ok = all_ok and (ok is not False)
+        lines.append(('✅ ' if ok else '❌ ') + name + '：' + str(msg)[:160])
+    try:
+        ok, msg, _d = _zot()
+    except Exception as e:
+        ok, msg = False, str(e)[:140]
+    all_ok = all_ok and (ok is not False)
+    lines.append(('✅ ' if ok else '❌ ') + 'Zotero（回写标签/附件）：' + str(msg)[:160])
+    if not all_ok:
+        lines.append('失效的那把请在上面重填并保存，然后重启精读监听。')
+    return all_ok, '\n'.join(lines)
+
+
 def collect_config():
     """密钥（脱敏）与模型设置。**绝不返回密钥明文**。"""
     kr_ok, kr_backend = keyring_status()
@@ -673,6 +709,8 @@ class Handler(BaseHTTPRequestHandler):
                      timeout=400, cwd=ROOT)
             ok = r.returncode == 0
             msg = (r.stdout or r.stderr or '').strip().split('\n')[-1][:160] or '已生成'
+        elif self.path == '/api/check_keys':
+            ok, msg = action_check_keys(payload)
         elif self.path == '/api/migrate_secrets':
             moved, msg = migrate_secrets_to_keyring()
             ok = bool(moved) or '没有需要迁移' in msg
@@ -876,7 +914,10 @@ async function load(force){
         ? `<div class="row" style="background:#fff6f5;border-radius:8px;padding:10px">
              <span class="msg bad">还有 ${d.config.plain_count} 个密钥以明文存在 .env 文件里</span>
              <button onclick="migrate()">迁移到系统凭据库</button></div>`
-        : `<div class="row"><span class="msg" style="color:#35c15f">✓ 密钥都已存入系统凭据库，硬盘上没有明文</span></div>`);
+        : `<div class="row"><span class="msg" style="color:#35c15f">✓ 密钥都已存入系统凭据库，硬盘上没有明文</span></div>`)
+    + `<div class="row"><span class="msg hint">「存进去了」不等于「还能用」—— 密钥会被吊销、会过期</span>
+         <button onclick="checkKeys()">测一测这三把密钥（不花钱）</button></div>
+       <div id="keychk" class="hint" style="white-space:pre-line;padding:2px 0 0"></div>`;
 
   if(force || !cfgReady){
   $('#cfg').innerHTML =
@@ -1101,6 +1142,14 @@ async function doCollect(deep){
   toast(r.msg);
   if(r.ok) document.querySelectorAll('.pick:checked').forEach(e=>{
     e.checked=false; e.closest('tr').style.opacity=.45;});
+}
+
+async function checkKeys(){
+  $('#keychk').textContent='正在验（几秒）…';
+  const r=await (await fetch('/api/check_keys',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:'{}'})).json();
+  $('#keychk').innerHTML=esc(r.msg||'').replace(/\n/g,'<br>');
+  toast(r.ok?'三把密钥都有效':'有密钥失效，看下面');
 }
 
 async function migrate(){
