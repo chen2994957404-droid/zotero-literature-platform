@@ -20,6 +20,17 @@ from core.config import (get_key, all_keys, ENV_FILE, keyring_status,
 def main():
     ok = total = 0
 
+    # 0. 环境变量盖住凭据库：这正是 2026-08-28 让三把新密钥全程失灵的机制
+    total += 1
+    from core.config import env_shadow
+    os.environ['DEEPSEEK_KEY'] = 'sk-fake-for-selftest-9999'
+    sh = env_shadow('DEEPSEEK_KEY')
+    os.environ.pop('DEEPSEEK_KEY', None)
+    if sh and sh['env_tail'] == '9999' and env_shadow('DEEPSEEK_KEY') in (None,):
+        print('  [PASS] 认得出「环境变量正盖着凭据库里的密钥」'); ok += 1
+    else:
+        print(f'  [FAIL] 环境变量遮蔽没识别出来：{sh}')
+
     # 1. 环境变量优先
     total += 1
     os.environ['_TEST_CFG_KEY'] = 'from_env'

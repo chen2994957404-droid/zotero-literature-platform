@@ -39,7 +39,7 @@ sys.path.insert(0, SCRIPT_DIR)  # health_check 同在本文件夹
 from core.config import (SITE_SETTINGS, get_key, set_keys, get_model, mask,
                             MODEL_SETTINGS, ENV_FILE, SITE_SETTINGS, get_site,
                             keyring_status, key_location,
-                            migrate_secrets_to_keyring)
+                            migrate_secrets_to_keyring, env_shadow, clear_env_key)
 from core.subproc import run as _run, powershell   # 统一走静默子进程调用
 
 PORT = int(os.environ.get('PANEL_PORT', '8777'))
@@ -184,6 +184,14 @@ def collect_version():
     return out
 
 
+def action_clear_env_key(payload):
+    """清掉某把密钥的用户级环境变量（它正盖着凭据库里的新值）。"""
+    name = (payload or {}).get('name', '')
+    if name not in [n for n, _l, _r in KEY_NAMES]:
+        return False, '不认识这个密钥名'
+    return clear_env_key(name)
+
+
 def action_check_keys(_payload=None):
     """当场验一验三把密钥到底**能不能用**（不花钱，只查余额/有效性接口）。
 
@@ -225,7 +233,7 @@ def collect_config():
     kr_ok, kr_backend = keyring_status()
     keys = [{'name': n, 'label': lb, 'required': rq,
              'set': bool(get_key(n)), 'masked': mask(get_key(n)),
-             'where': key_location(n)}
+             'where': key_location(n), 'shadow': env_shadow(n)}
             for n, lb, rq in KEY_NAMES]
     return {
         'keys': keys,
@@ -709,6 +717,8 @@ class Handler(BaseHTTPRequestHandler):
                      timeout=400, cwd=ROOT)
             ok = r.returncode == 0
             msg = (r.stdout or r.stderr or '').strip().split('\n')[-1][:160] or '已生成'
+        elif self.path == '/api/clear_env_key':
+            ok, msg = action_clear_env_key(payload)
         elif self.path == '/api/check_keys':
             ok, msg = action_check_keys(payload)
         elif self.path == '/api/migrate_secrets':
@@ -925,11 +935,19 @@ async function load(force){
   + d.config.keys.map(k=>{
       const w = k.where==='系统凭据库' ? '<span style="color:#35c15f">🔒 凭据库</span>'
               : k.where==='.env明文'  ? '<span class="bad">⚠ 明文</span>'
-              : k.where==='环境变量'   ? '<span class="hint">环境变量</span>'
+              : k.where==='环境变量'   ? '<span class="bad">⚠ 环境变量</span>'
               : '<span class="hint">未配置</span>';
+      const sh = k.shadow;
+      // 环境变量优先级最高：它一旦有值，你在这里填的新密钥**永远用不上**。
+      // 这条必须喊出来 —— 2026-08-28 就是它让三把新密钥全程失灵，而面板一片正常。
+      const warn = sh ? `<div class="row" style="background:#fff6f5;border-radius:8px;padding:8px 10px">
+          <span class="msg bad">⚠ 这把密钥正由**环境变量**提供（末位 ${esc(sh.env_tail)}）${
+            sh.differs ? '，而凭据库里另有一把（末位 '+esc(sh.stored_tail)+'）—— <b>你在这里填的新密钥被它盖住了</b>'
+                       : '；在这里填新值也不会生效'}</span>
+          <button onclick="clearEnv('${k.name}')">清除这个环境变量</button></div>` : '';
       return `<div class="row"><span class="lbl">${esc(k.label)}</span>
        <input id="k_${k.name}" placeholder="${k.set?'已配置 '+esc(k.masked)+'，留空即不改':(k.required?'⚠ 未配置，必填':'未配置（可选）')}">
-       <span class="hint" style="margin-left:8px">${w}</span></div>`;}).join('')
+       <span class="hint" style="margin-left:8px">${w}</span></div>` + warn;}).join('')
   + `<h3 style="margin:18px 0 6px;font-size:15px">本机设置<span class="hint" style="font-weight:normal">（每台机器各填各的，不进版本库）</span></h3>`
   + d.config.sites.map(s=> (s.options && s.options.length)
       ? `<div class="row"><span class="lbl">${esc(s.label)}</span>
@@ -1142,6 +1160,13 @@ async function doCollect(deep){
   toast(r.msg);
   if(r.ok) document.querySelectorAll('.pick:checked').forEach(e=>{
     e.checked=false; e.closest('tr').style.opacity=.45;});
+}
+
+async function clearEnv(name){
+  if(!confirm(name+'：删掉用户级环境变量里的这把旧密钥？\n凭据库里的新密钥会重新生效，服务需重启。'))return;
+  const r=await (await fetch('/api/clear_env_key',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({name})})).json();
+  toast(r.msg); load(true);
 }
 
 async function checkKeys(){

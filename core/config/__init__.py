@@ -326,6 +326,75 @@ def key_location(name):
     return '.env明文' if _cache.get(name) else '未配置'
 
 
+def _tail(v, n=4):
+    """只露末 4 位 —— 够人分辨是不是同一把，又不泄露密钥。"""
+    v = str(v or '')
+    return v[-n:] if len(v) > n else '?' * len(v)
+
+
+def env_shadow(name):
+    """环境变量里是不是有一把**旧密钥，正盖着**你新填进凭据库的那把？
+
+    这是 2026-08-28 咬人的那件事：加载顺序是「环境变量 → 凭据库 → .env」，
+    用户在面板里填了新密钥（进了凭据库），可环境变量里还躺着一把作废的旧的，
+    于是**新值被静默盖住**，跑什么都是 401，而面板一片正常。
+
+    返回 None（没有环境变量）或 dict：
+        env_tail    环境变量里那把的末 4 位（真正在生效的）
+        stored_tail 凭据库里那把的末 4 位（''=凭据库里没有）
+        differs     两者不是同一把 —— 这就是「新值被盖住」
+    """
+    env_v = os.environ.get(name)
+    if not env_v:
+        return None
+    stored = _kr_get(name) if name in SECRET_KEYS else ''
+    return {'env_tail': _tail(env_v), 'stored_tail': _tail(stored) if stored else '',
+            'differs': bool(stored) and stored.strip() != env_v.strip()}
+
+
+def clear_env_key(name):
+    """删掉**用户级**环境变量 `name`，让凭据库里的新密钥重新生效。返回 (ok, 人话)。
+
+    只删用户级（HKCU）。系统级（HKLM）要管理员且影响全机，只报告不擅自动。
+    删完还要重启用到它的进程 —— 进程的环境变量是启动时拷贝的，删注册表不会追过去。
+    """
+    if os.name != 'nt':
+        return False, '只在 Windows 上支持'
+    import winreg
+    removed = False
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Environment', 0,
+                            winreg.KEY_SET_VALUE | winreg.KEY_READ) as k:
+            try:
+                winreg.QueryValueEx(k, name)
+            except FileNotFoundError:
+                pass
+            else:
+                winreg.DeleteValue(k, name)
+                removed = True
+    except OSError as e:
+        return False, f'删用户级环境变量失败：{e}'
+    machine = False
+    try:
+        with winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                r'SYSTEM\CurrentControlSet\Control\Session Manager\Environment') as k:
+            try:
+                winreg.QueryValueEx(k, name)
+                machine = True
+            except FileNotFoundError:
+                pass
+    except OSError:
+        pass
+    os.environ.pop(name, None)         # 当前进程立刻不再受它影响
+    if not removed and not machine:
+        return True, f'{name}：用户级环境变量本来就没有（可能只在某个窗口里临时设过）'
+    msg = f'{name}：已删掉用户级环境变量' if removed else f'{name}：用户级没有'
+    if machine:
+        msg += '；⚠ 系统级（HKLM）还有一份，要用管理员权限删'
+    return True, msg + '。用到它的服务要重启才会拿到新值'
+
+
 def migrate_secrets_to_keyring():
     """把 .env 里的明文密钥搬进系统凭据库，并从 .env 中删除。
 
