@@ -255,7 +255,12 @@ def has_value(v):
         return any(has_value(x) for x in v)
     if isinstance(v, dict):
         return any(has_value(x) for x in v.values())
-    return str(v).strip().lower() not in EMPTY_VALUES
+    t = str(v).strip().lower()
+    # 模型常写成「N/A (no explicit synthesis temperature given in the text)」——
+    # 那依然是「没有」。不这么判，有值率会被这类句子灌水（2026-08-28 实测撞上）。
+    if t.startswith('n/a') or t.startswith('not available') or t.startswith('未提及'):
+        return False
+    return t not in EMPTY_VALUES
 
 
 def coverage(records, cols=None):

@@ -11,6 +11,12 @@
   python 数据抽取/重抽向导.py            # 交互问
   python 数据抽取/重抽向导.py --local     # 不问，直接用本地模型
   python 数据抽取/重抽向导.py --cloud     # 不问，直接用云端
+  python 数据抽取/重抽向导.py --cloud --no-eval   # 云端但不做自检重抽（省一半调用）
+  python 数据抽取/重抽向导.py --n 5       # 只跑前 5 篇（先看看花多少钱）
+
+**每篇跑完会报这一篇花了多少 token 和大约多少钱**（2026-08-28 加）：
+在此之前谁也说不出「一篇要多少钱」，用户只能靠余额掉得快不快来判断，
+于是跑到第 7 篇就不敢跑了。看不见的开销没法优化，也没法让人放心。
 """
 import io
 import os
@@ -23,13 +29,31 @@ try:
 except Exception:
     pass
 
+from adapters.llm_client import usage_snapshot
 from core import paths, role
-from core.cli import flag
+from core.cli import flag, opt
 from core.config import drop_stale_env
 from domain import schema
 from pipelines import extract, paper_db
 
 LINE = '=' * 64
+
+# DeepSeek 官方价（2026-08-28 查 api-docs.deepseek.com/quick_start/pricing，USD / 百万 token）：
+#   v4-flash  输入未命中缓存 0.44 / 输出 1.32（高峰价；低谷价减半）
+#   v4-pro    输入未命中缓存 1.32 / 输出 3.96
+# ⚠ 这是**估算**：不知道这次是不是低谷时段、也不知道缓存命中多少，
+#   所以按高峰价、全部未命中算 —— **报出来的数只会高不会低**。真实账单以官网为准。
+PRICE_USD = {'deepseek-v4-flash': (0.44, 1.32), 'deepseek-v4-pro': (1.32, 3.96)}
+USD_TO_CNY = 7.2      # 粗略汇率，够看个量级
+
+
+def _money(u0, u1, model):
+    """两次 usage 快照之差 → (提示 token, 输出 token, 估算人民币)。"""
+    pin = u1['prompt'] - u0['prompt']
+    pout = u1['completion'] - u0['completion']
+    rate = PRICE_USD.get(model) or PRICE_USD['deepseek-v4-flash']
+    cny = (pin * rate[0] + pout * rate[1]) / 1e6 * USD_TO_CNY
+    return pin, pout, cny
 
 
 def _log_path():
@@ -110,18 +134,31 @@ def main():
         log.write(msg + '\n')
         log.flush()
 
+    if flag('--no-eval'):
+        os.environ['EXTRACT_NO_EVAL'] = '1'      # 不做自检重抽 —— 调用数直接减半
+    n_limit = opt('--n')
+    if n_limit:
+        keys = keys[:int(n_limit)]
+        print(f'\n 只跑前 {len(keys)} 篇（--n {n_limit}）')
+
     before = paper_db.stats()
     say(f'\n 开始（{name}）。这个窗口要一直开着。\n')
     t0 = time.time()
     done = failed = 0
+    u_start = usage_snapshot()
+    model = extract._model()
     for i, key in enumerate(keys, 1):
         say(f'[{i}/{len(keys)}] {key}  （已用时 {round(time.time() - t0)}s）')
+        u0 = usage_snapshot()
         rec = extract.run(key, force=True, log=say)
         if rec:
             done += 1
             say(f'    合成条件: {str(rec.get("synthesis_conditions"))[:100]}')
         else:
             failed += 1
+        if provider == 'deepseek':
+            pin, pout, cny = _money(u0, usage_snapshot(), model)
+            say(f'    这篇花了：输入 {pin} + 输出 {pout} token ≈ {cny:.3f} 元')
     extract.write_compare_table()
     paper_db.rebuild(log=say)
     after = paper_db.stats()

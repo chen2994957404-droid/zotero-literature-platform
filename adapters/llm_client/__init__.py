@@ -50,6 +50,28 @@ def _cfg(provider, model, key):
     return provider, model, key
 
 
+# ── 花了多少 token（记账）────────────────────────────────────────────
+# 为什么要记（2026-08-28）：用户跑了 7 篇就发现「花了不少钱」，而我们当时
+# **谁也说不出一篇要多少钱** —— 只能猜。看不见的开销没法优化，也没法让人放心。
+USAGE = {'calls': 0, 'prompt': 0, 'completion': 0, 'reasoning': 0, 'model': ''}
+
+
+def _note_usage(u, model=''):
+    if not u:
+        return
+    USAGE['calls'] += 1
+    USAGE['prompt'] += int(u.get('prompt_tokens') or 0)
+    USAGE['completion'] += int(u.get('completion_tokens') or 0)
+    det = u.get('completion_tokens_details') or {}
+    USAGE['reasoning'] += int(det.get('reasoning_tokens') or 0)
+    USAGE['model'] = model or USAGE['model']
+
+
+def usage_snapshot():
+    """到目前为止这个进程花掉的 token。调用方自己算差值就是「这一篇花了多少」。"""
+    return dict(USAGE)
+
+
 def _deepseek(messages, model, key, temperature, json_mode, max_tokens, thinking=None):
     """thinking: True=开推理链, False=关, None=随 API 默认（V4 默认开）。
 
@@ -83,6 +105,7 @@ def _deepseek(messages, model, key, temperature, json_mode, max_tokens, thinking
                 import time as _t; _t.sleep(5 * 2 ** attempt)   # 5s/10s/20s
     else:
         raise LLMError(f'DeepSeek 服务端异常，重试 4 次仍失败: {last}')
+    _note_usage(r.get('usage'), model)
     ch = r['choices'][0]
     out = ch['message'].get('content') or ''
     # 输出被 max_tokens 截断时明确报错，避免静默产出半截/空结果
@@ -189,14 +212,20 @@ def _parse_json_lenient(txt):
 
 
 def chat_json(system, user, provider=None, model=None, key=None,
-              temperature=0.1, num_ctx=16384):
-    """强制 JSON 输出并解析成 dict。用于结构化抽取。temperature 默认低求稳。"""
+              temperature=0.1, num_ctx=16384, thinking=False):
+    """强制 JSON 输出并解析成 dict。用于结构化抽取。temperature 默认低求稳。
+
+    **`thinking` 默认关**（2026-08-28 改）：V4 的推理链默认开启，而推理 token
+    **按输出价计费（约为输入价的 3 倍）**。结构化抽取要的是「照着原文填表格」，
+    不是解数学题 —— 那条推理链既没用上，又是这件事最大的一笔开销。
+    确实需要模型多想一步时，显式传 `thinking=True`。
+    """
     provider, model, key = _cfg(provider, model, key)
     messages = [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}]
     if provider == 'ollama':
         out = _ollama(messages, model, temperature, True, num_ctx)
     else:
-        out = _deepseek(messages, model, key, temperature, True, None)
+        out = _deepseek(messages, model, key, temperature, True, None, thinking)
     return _parse_json_lenient(out)
 
 
