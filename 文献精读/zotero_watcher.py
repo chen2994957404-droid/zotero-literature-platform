@@ -163,6 +163,37 @@ def set_state_tag(item_key, web_uid, new_state):
         print(f'  [标签更新失败] {e}')
 
 
+# 同一篇隔多久可以再试一次（回写失败那类，标签没换掉、条目也没变化）
+RETRY_AFTER = 1800          # 30 分钟
+
+
+def should_process(key, version, seen, now):
+    """这一篇现在该不该处理？—— watcher 轮询的唯一判据。
+
+    **原来这里是一个 `seen` 集合：处理过一次就永远跳过。**
+    它想防的是「回写失败 → 标签没换掉 → 每 60 秒重跑一次烧钱」，
+    但它同时挡掉了**用户重新打标签**这个明确请求 ——
+    而「先精读正文，后来补了 SI，再打一次待处理」正是文档里写明的核心用法。
+    真实后果：用户打了标签，watcher 每分钟都看得见它，却一小时一动不动，
+    日志里连一行「发现」都没有（2026-08-28 用户实测撞上，见踩坑 #67）。
+
+    现在的判据两条，满足其一就处理：
+      1. **条目变了**（`version` 变化）—— 用户改了标签/元数据，是明确请求
+      2. **距上次尝试超过 30 分钟** —— 给「上次没做完」一个自愈机会，
+         而不是等到 watcher 重启
+
+    为什么不怕重跑烧钱：每一步都是幂等的（`core.jobs` + 产物检查），
+    重跑一篇已完成的只花几百毫秒、零 API 调用。
+    """
+    last = seen.get(key)
+    if last is None:
+        return True
+    last_ver, last_at = last
+    if last_ver != version:
+        return True
+    return (now - last_at) >= RETRY_AFTER
+
+
 def log_key_status():
     """启动时把三把密钥的**有效性**写进日志。零成本，几秒钟。
 
@@ -212,7 +243,7 @@ def main():
     print(f'Zotero闭环轮询器启动。触发标签: 「{TRIGGER_TAG}」')
     print(f'回写: {"已配置Web API" if WEB_API_KEY else "未配key(仅生成本地精读)"}')
     log_key_status()
-    seen = set()
+    seen = {}          # key -> (上次处理时的条目 version, 上次处理时刻)
     fail_streak = [0]      # 连续失败轮数，用于「持续异常」提醒与「已恢复」提示
     # 后台线程固定节奏报活：精读一篇要几分钟到几十分钟，期间主线程根本回不到
     # 循环顶部。原来把心跳写在循环开头，于是**正在干活的 watcher 会被看门狗当成
@@ -229,9 +260,9 @@ def main():
             print(f'[心跳] 轮询正常，待处理 {len(items)} 篇')
             for it in items:
                 key = it['key']
-                if key in seen:
+                if not should_process(key, it.get('version'), seen, time.time()):
                     continue
-                seen.add(key)
+                seen[key] = (it.get('version'), time.time())
                 try:
                     process_item(it)
                     heartbeat.progress('watcher')   # 一篇做完 = 有进展
@@ -239,7 +270,7 @@ def main():
                     # 单篇失败不能拖垮整个轮询；但必须记进日志，否则是静默失败
                     print(f'  [处理失败] {key}: {type(e).__name__}: {e}')
                     print('  ' + traceback.format_exc().replace('\n', '\n  ').rstrip())
-                    seen.discard(key)      # 允许下一轮重试（可能只是网络抖动）
+                    seen.pop(key, None)    # 允许下一轮重试（可能只是网络抖动）
         except Exception as e:
             # ⚠ 踩坑 #33：原来这里是 traceback.print_exc()，打到标准输出。
             # 但服务是 pythonw 无窗口运行的，标准输出直接被丢弃 ——
