@@ -4,7 +4,12 @@
 
 ## 这块是什么
 
-**一篇文献的 `full.md` → 对齐的机器可读字段 → 并入横向对比表。**
+**一篇文献的正文 `parsed/full.md` **加上** SI `si_parsed/full.md`
+→ 对齐的机器可读字段 → 并入横向对比表。**
+
+**SI 必须读**（2026-08-28，踩坑 #68）：投料量、配比、温度时间几乎只写在补充材料里，
+论文正文不写。不读它 `synthesis_conditions` 就只能是 N/A。
+SI 的 `full.md` 是精读那一步早就解析好的，读它不花任何钱。
 
 它组合了四样东西，自己不解决任何原子问题：
 
@@ -25,6 +30,8 @@ extract.run(key)              # 抽一篇 + 并入对比表；抽过且字段没
 extract.extract_one(key)      # 只抽，不出表（批量时用，最后统一出一次表）
 extract.write_compare_table() # 读全部 structured/*.json 重出两张表
 extract.stale_keys()          # 字段升版后，谁该重抽
+extract.si_pending_keys()     # 有 SI 却是「没读 SI 时」抽的，谁该重抽（花钱前先看这个）
+extract.si_text(key)          # 这篇的 SI 全文（取过合成相关章节）；没有就空串
 ```
 
 `run()` **不抛异常**：失败返回 None 并记进状态库。

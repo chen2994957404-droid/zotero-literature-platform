@@ -4,6 +4,11 @@
 **这是 watcher 里最后一个 subprocess**（阶段 3 下半）。搬进来之后，
 精读流水线从头到尾不再拉任何子进程。
 
+它读什么料：正文 `parsed/full.md` **加上** SI `si_parsed/full.md`。
+**SI 必须读** —— 投料量、配比、温度时间几乎只写在 SI 里，
+不读它 `synthesis_conditions` 就只能是 N/A（2026-08-28 实测：精层也只有 36% 有值）。
+哪些篇有 SI 却是「没读 SI 时抽的」→ `si_pending_keys()`，那就是该重抽的清单。
+
 它组合了什么：
     core.paths（去哪读、往哪写）
   + domain.schema（抽什么字段、怎么问、怎么摆成表）
@@ -64,23 +69,40 @@ def evaluate(body, data):
         return {'ok': True, 'missed': [], 'hallucinated': [], '_eval_error': str(e)}
 
 
-def extract_with_eval(title, body, max_cycles=2, log=print):
-    """抽取 + 自我评估重抽循环。返回 (data, report)。"""
-    data = llm_json(schema.SYS, schema.build_user_prompt(title, body))
+def extract_with_eval(title, body, si='', max_cycles=2, log=print):
+    """抽取 + 自我评估重抽循环。返回 (data, report)。`si` 为补充材料全文（可空）。"""
+    data = llm_json(schema.SYS, schema.build_user_prompt(title, body, si))
     if not EVAL_ENABLED or _provider() == 'ollama':      # 本地模型评估不可靠
         return data, {'ok': None, 'note': 'eval skipped'}
+    # 自检也要照着「正文+SI」查，否则 SI 里抽来的投料量会被判成幻觉
+    source = body if not si else body + "\n\n[SUPPLEMENTARY INFORMATION]\n" + si
     report = {'ok': None}
     for cycle in range(max_cycles):
-        report = evaluate(body, data)
+        report = evaluate(source, data)
         if report.get('ok') is True or (not report.get('missed')
                                         and not report.get('hallucinated')):
             return data, report
         log(f'  [自检第{cycle+1}轮] 漏抽{len(report.get("missed", []))} '
             f'幻觉{len(report.get("hallucinated", []))}，重抽')
         data = llm_json(schema.SYS,
-                        schema.build_user_prompt(title, body) + "\n\n"
+                        schema.build_user_prompt(title, body, si) + "\n\n"
                         + schema.build_feedback(report))
     return data, report
+
+
+def si_text(key):
+    """这篇的 SI 全文（层次化取过的）；没有 SI 解析产物就返回空串。
+
+    只有跑过 SI 精读的篇才有 `si_parsed/full.md` —— 那一步已经把 PDF/docx
+    解析成 Markdown 了，这里**不再花任何钱**，纯读文件。
+    """
+    p = paths.si_fulltext(key)
+    if not os.path.exists(p):
+        return ''
+    try:
+        return schema.si_body(io.open(p, encoding='utf-8').read())
+    except Exception:
+        return ''          # SI 读不出来不该毁掉整篇抽取，正文照抽
 
 
 def extract_one(key, log=print):
@@ -98,9 +120,11 @@ def extract_one(key, log=print):
             meta = {}
     title = meta.get('title') or key
     body = schema.hierarchical_body(io.open(md_path, encoding='utf-8').read())
-    log(f'[抽取] {title[:50]} …')
-    data, _report = extract_with_eval(title, body, log=log)
-    record = schema.make_record(key, title, meta.get('DOI', ''), data)
+    si = si_text(key)
+    log(f'[抽取] {title[:50]} …' + (f'（含 SI {len(si)} 字符）' if si else ''))
+    data, _report = extract_with_eval(title, body, si, log=log)
+    record = schema.make_record(key, title, meta.get('DOI', ''), data,
+                               source=schema.SOURCE_FINE, si_used=bool(si))
     os.makedirs(paths.STRUCTURED, exist_ok=True)
     json.dump(record, io.open(paths.structured(key), 'w', encoding='utf-8'),
               ensure_ascii=False, indent=2)
@@ -164,3 +188,25 @@ def run(key, force=False, log=print):
 def stale_keys():
     """哪些文献该重抽（schema 升版了，或上次没成功）。"""
     return jobs.stale(STEP, schema_ver=schema.SCHEMA_VER)
+
+
+def si_pending_keys():
+    """**有 SI，但现有结构化记录是没读 SI 时抽的** —— 值得重抽的清单。
+
+    为什么单独一个清单而不是升 SCHEMA_VER：字段一个没变，
+    升版会把 175 篇全判成待重抽（全是钱）。真正缺料的只有这些篇。
+    """
+    out = []
+    for key in paths.all_keys():
+        if not os.path.exists(paths.si_fulltext(key)):
+            continue
+        p = paths.structured(key)
+        if not os.path.exists(p):
+            continue                       # 还没抽过：走正常抽取流程，不算这一类
+        try:
+            rec = json.load(io.open(p, encoding='utf-8'))
+        except Exception:
+            continue
+        if not rec.get('si_used'):
+            out.append(key)
+    return out

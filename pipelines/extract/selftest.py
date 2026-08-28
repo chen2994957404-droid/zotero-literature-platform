@@ -26,10 +26,14 @@ def main():
             io.open(paths.meta(KEY), 'w', encoding='utf-8').write(
                 json.dumps({'title': 'A dynamic elastomer', 'DOI': '10.1/x'}))
 
-            calls = []
+            io.open(os.path.join(paths.si_parsed_dir(KEY, create=True), 'full.md'),
+                    'w', encoding='utf-8').write('PDMS:boric acid = 10:1, 150 °C 2 h')
+
+            calls, prompts = [], []
             real_llm = extract.llm_json
             extract.llm_json = lambda sysmsg, user: (
-                calls.append(1) or {'material_system': 'PBS', 'doc_type': 'research'})
+                calls.append(1) or prompts.append(user)
+                or {'material_system': 'PBS', 'doc_type': 'research'})
             extract.EVAL_ENABLED = False
 
             total += 1
@@ -38,6 +42,28 @@ def main():
                 print('  [PASS] 抽一篇 → 落盘带版本号'); ok += 1
             else:
                 print(f'  [FAIL] 抽取结果异常：{rec}')
+
+            total += 1
+            if prompts and '10:1' in prompts[0] and rec and rec['si_used'] is True:
+                print('  [PASS] SI 一起喂给模型（合成条件就在 SI 里）'); ok += 1
+            else:
+                print('  [FAIL] 抽取没读 SI')
+
+            total += 1
+            if extract.si_pending_keys() == []:
+                print('  [PASS] 读过 SI 的不再进「该重抽」清单'); ok += 1
+            else:
+                print(f'  [FAIL] 待重抽清单不对：{extract.si_pending_keys()}')
+
+            total += 1
+            old = json.load(io.open(paths.structured(KEY), encoding='utf-8'))
+            old.pop('si_used')
+            json.dump(old, io.open(paths.structured(KEY), 'w', encoding='utf-8'))
+            if extract.si_pending_keys() == [KEY]:
+                print('  [PASS] 有 SI 却没读 SI 的自己冒出来（旧记录）'); ok += 1
+            else:
+                print(f'  [FAIL] 旧记录没被认出来：{extract.si_pending_keys()}')
+            json.dump(rec, io.open(paths.structured(KEY), 'w', encoding='utf-8'))
 
             total += 1
             extract.run(KEY, log=lambda *a: None)

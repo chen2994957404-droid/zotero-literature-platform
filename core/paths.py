@@ -107,6 +107,23 @@ def images_dir(key):
     return os.path.join(parsed_dir(key), 'images')
 
 
+def si_parsed_dir(key, create=False):
+    """<library>/<key>/si_parsed/ —— 补充材料（SI）的解析产物。"""
+    p = os.path.join(paper_dir(key), 'si_parsed')
+    if create:
+        os.makedirs(p, exist_ok=True)
+    return p
+
+
+def si_fulltext(key):
+    """★ si_parsed/full.md —— SI 的全文 Markdown。
+
+    **合成条件（投料量、配比、温度时间）大多只写在 SI 里**，正文只给结论。
+    结构化抽取要读它，不然 `synthesis_conditions` 只能是 N/A（2026-08-28）。
+    """
+    return os.path.join(si_parsed_dir(key), 'full.md')
+
+
 def summary(key):
     """★ summary.html —— 正文的中文图文精读（图已内嵌 base64，可独立打开）。"""
     return os.path.join(paper_dir(key), 'summary.html')

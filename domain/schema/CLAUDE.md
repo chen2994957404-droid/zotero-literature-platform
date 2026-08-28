@@ -55,3 +55,28 @@ jobs.stale('extract', schema_ver=2)   # 这就是「谁缺新字段」的答案
 python domain/schema/selftest.py     # 6 条，毫秒级，全离线
 python -m pytest -q                  # 含架构守卫
 ```
+
+
+## 来源档次：一个空格到底是「没有」还是「没抽到」（2026-08-28）
+
+同一张对比表里混着两种料抽出来的记录：
+
+| 档次 | 料 | 模型 | 谁产的 |
+|---|---|---|---|
+| `精+SI` | MineRU 正文 + SI 全文 | 云端 DeepSeek | `pipelines/extract` |
+| `精层` | 只有 MineRU 正文 | 云端 DeepSeek | 同上（2026-08-28 之前的记录） |
+| `粗层` | Zotero 全文索引 | 本地 qwen2.5 | `数据抽取/extract_library.py` |
+
+不标出来的后果很实在：**用户竖着比字段找规律时，分不清空白格是
+「这篇本来就没有」还是「粗层没抽到」** —— 对比表的全部价值就在竖着比。
+
+对应接口：`tier_label(record)` / `has_value(v)` / `coverage(records)` /
+`coverage_table(records)`；`make_record(..., source=, si_used=)` 负责把档次写进记录。
+**老记录没有 `source` 字段一律算精层** —— 粗层从来都带 `source: 'coarse'` 标记。
+
+## SI 取文（si_body）为什么不照抄 hierarchical_body
+
+正文有摘要、有固定章节名；SI 没有摘要，开头常是目录或图注，
+而且**很多 SI 根本没有 Materials 小标题**，配方数字散在各节图注里。
+所以 `si_body` 两轮挑：先要「材料/合成/制备/方法」这类章节，
+还有余量就按**配方线索密度**（带单位的数字、配比）补 —— 只按标题挑会全漏。

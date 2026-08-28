@@ -205,7 +205,7 @@ def read_si(key, out_html=None, model=None, log=print):
         return None
     log(f'[SI] {os.path.basename(si_file)} ({kind})')
 
-    parsed = os.path.join(paths.paper_dir(key), 'si_parsed')
+    parsed = paths.si_parsed_dir(key)
     figs = []
     if kind == 'pdf':
         try:

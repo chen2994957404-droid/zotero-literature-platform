@@ -18,7 +18,10 @@
   - build_user_prompt        : 抽取提示词
   - build_eval_prompt        : 自检提示词（对照原文查漏抽/幻觉）
   - hierarchical_body        : 层次化取正文（优于固定截断）
+  - si_body                  : 层次化取 SI（合成配方就在这儿）
   - is_review                : 这篇是不是综述（决定进哪张表）
+  - has_value / coverage     : 「这格有真值吗」「各档次各字段的有值率」
+  - tier_label               : 这条记录是哪个档次抽的（精+SI / 精层 / 粗层）
   - compare_table / reviews_table : 记录 → Markdown 表（**返回字符串，不写盘**）
 """
 import json
@@ -66,13 +69,27 @@ def _field_list():
     return "\n".join(f'  - "{k}": {v}' for k, v in SCHEMA.items())
 
 
-def build_user_prompt(title, body):
-    return (
+def build_user_prompt(title, body, si=''):
+    """抽取提示词；`si` 是补充材料全文（可空）。
+
+    **为什么要带 SI**：正文只写结论，「投料量、配比、温度、时间」几乎全在 SI 里。
+    不给 SI 时 `synthesis_conditions` 的有值率只有 36%（2026-08-28 实测 39 篇精层）。
+    """
+    p = (
         f"Paper title: {title}\n\n"
         f"Extract the following fields as JSON (keys are the English field names, values in English, keep original units):\n"
         f"{_field_list()}\n\n"
-        f"===== TEXT START =====\n{body}\n===== TEXT END ====="
+        f"===== MAIN TEXT START =====\n{body}\n===== MAIN TEXT END ====="
     )
+    if si and si.strip():
+        p += (
+            f"\n\n===== SUPPLEMENTARY INFORMATION START =====\n{si}\n"
+            "===== SUPPLEMENTARY INFORMATION END =====\n\n"
+            "The supplementary information belongs to this same paper and usually contains the "
+            "exact experimental recipe (amounts, weight/molar ratios, concentrations, temperature, "
+            "time, atmosphere). Prefer those numbers for \"precursors\" and \"synthesis_conditions\"."
+        )
+    return p
 
 
 def build_eval_prompt(data, body):
@@ -126,6 +143,53 @@ def hierarchical_body(md, budget=14000):
     return "\n".join(kept)
 
 
+_SI_PRIORITY = re.compile(
+    r'(?i)(material|synthes|preparation|sample prep|experiment|method|procedure|protocol'
+    r'|characteri|measurement|instrument|材料|合成|制备|实验|方法|表征|测试)')
+
+# 配方线索：带单位的数字与配比 —— 「这一节像不像在讲怎么配料」的粗判据
+_RECIPE_CUE = re.compile(
+    r'(?i)(\d+\s*(mmol|mol|mg|kg|ml|wt\s*%|vol\s*%|w/w|°\s*c|℃|rpm|min|hour|hr)\b'
+    r'|\bratio\b|\d+\s*:\s*\d+|投料|配比|质量比|摩尔比)')
+
+
+def _recipe_score(text):
+    """这一段里有多少配方线索。越多越像「怎么配出来的」，越该喂给模型。"""
+    return len(_RECIPE_CUE.findall(text))
+
+
+def si_body(md, budget=8000):
+    """层次化取 SI：先要「材料 / 合成 / 制备 / 实验方法」章节，
+    还有余量就按**配方线索密度**（投料量、配比、温度、时间这些数字）补。
+
+    与 `hierarchical_body` 的区别：SI 没有摘要，开头往往是目录或图注，
+    所以不保留开头；而且很多 SI 根本没有「Materials」小标题，
+    配方数字散在各节的图注里（实测 IDY9U372 就是这样）—— 只按标题挑会漏掉，
+    所以第二轮按线索密度排序补足。
+    """
+    md = strip_refs(md)
+    md = re.sub(r'!\[\]\(images/[^)]+\)', '', md).strip()      # 去图片
+    if len(md) <= budget:
+        return md
+    blocks = re.split(r'(?m)^(#{1,4}\s.*)$', md)
+    if len(blocks) < 3:
+        return md[:budget]                                       # 没有章节标题：只能截断
+    secs = [(i, blocks[i] + blocks[i + 1]) for i in range(1, len(blocks) - 1, 2)]
+    kept, used = {}, 0
+    for idx, seg in secs:                                        # 第一轮：优先章节
+        if _SI_PRIORITY.search(blocks[idx]) and used + len(seg) <= budget:
+            kept[idx] = seg
+            used += len(seg)
+    for idx, seg in sorted(secs, key=lambda x: -_recipe_score(x[1])):   # 第二轮：配方线索多的
+        if idx in kept or _recipe_score(seg) == 0 or used + len(seg) > budget:
+            continue
+        kept[idx] = seg
+        used += len(seg)
+    if not kept:
+        return md[:budget]
+    return "\n".join(kept[i] for i in sorted(kept))              # 按原文顺序输出
+
+
 # ── 分流与出表 ────────────────────────────────────────────────────────
 _REVIEW_WORDS = ('review', 'overview', 'recent advances', 'recent progress',
                  'a survey', 'perspective', '综述', '研究进展', '进展')
@@ -147,19 +211,100 @@ COMPARE_COLS = ['material_system', 'dynamic_bond_type', 'synthesis_conditions',
                 'key_properties', 'self_healing', 'key_finding']
 
 
+# ── 来源档次：这条记录是拿什么料抽出来的 ──────────────────────────────
+# 为什么必须标出来（2026-08-28）：粗层是拿 Zotero 全文索引 + 本地小模型抽的，
+# 空格多得多。两档混在一张表里且看不出区别，用户竖着比字段时
+# **分不清空白是「这篇本来就没有」还是「粗层没抽到」** —— 对比表的价值就废了。
+SOURCE_FINE = 'fine'        # MineRU 全文 + 云端大模型
+SOURCE_COARSE = 'coarse'    # Zotero 全文索引 + 本地小模型（数据抽取/extract_library.py）
+
+TIER_FINE_SI = '精+SI'
+TIER_FINE = '精层'
+TIER_COARSE = '粗层'
+TIER_ORDER = [TIER_FINE_SI, TIER_FINE, TIER_COARSE]
+
+
+def tier_label(record):
+    """这条记录属于哪一档。老记录没有 `source` 字段 → 一律算精层（粗层从来都带标记）。"""
+    if str(record.get('source') or SOURCE_FINE).lower() == SOURCE_COARSE:
+        return TIER_COARSE
+    return TIER_FINE_SI if record.get('si_used') else TIER_FINE
+
+
+# 「没有值」的各种写法。模型不总是老老实实写 N/A。
+_EMPTY = {'', 'n/a', 'na', 'none', 'null', '-', 'not available', 'not specified',
+          'not reported', 'not mentioned', 'unknown', '无', '未提及', '未知'}
+
+
+def has_value(v):
+    """这格是真有内容，还是等于空？—— 有值率统计与后续入库的唯一判据。"""
+    if v is None:
+        return False
+    if isinstance(v, (list, tuple, set)):
+        return any(has_value(x) for x in v)
+    if isinstance(v, dict):
+        return any(has_value(x) for x in v.values())
+    return str(v).strip().lower() not in _EMPTY
+
+
+def coverage(records, cols=None):
+    """各档次 × 各字段的有值率：{档次: {'n': 篇数, 'rate': {字段: 0~1}}}。
+
+    这是「数据有多准」的体温计：粗层 synthesis_conditions 只有 5%，
+    这类事实必须摆在表里，不能只活在某次对话里。
+    """
+    cols = cols or list(SCHEMA.keys())
+    out = {}
+    for r in records:
+        t = out.setdefault(tier_label(r), {'n': 0, 'hit': {c: 0 for c in cols}})
+        t['n'] += 1
+        for c in cols:
+            if has_value(r.get(c)):
+                t['hit'][c] += 1
+    return {k: {'n': v['n'],
+                'rate': {c: (v['hit'][c] / v['n'] if v['n'] else 0.0) for c in cols}}
+            for k, v in out.items()}
+
+
+def coverage_table(records, cols=None):
+    """有值率小表（Markdown 字符串），贴在对比表开头当「本表可信度说明」。"""
+    cols = cols or COMPARE_COLS
+    cov = coverage(records, cols)
+    if not cov:
+        return ''
+    tiers = [t for t in TIER_ORDER if t in cov] + [t for t in cov if t not in TIER_ORDER]
+    rows = ['| 字段 | ' + ' | '.join(f'{t}({cov[t]["n"]}篇)' for t in tiers) + ' |',
+            '|' + '---|' * (len(tiers) + 1)]
+    for c in cols:
+        rows.append('| ' + c + ' | '
+                    + ' | '.join(f'{round(cov[t]["rate"][c] * 100)}%' for t in tiers) + ' |')
+    return '\n'.join(rows)
+
+
 def compare_table(records):
     """研究论文的横向对比表（Markdown 字符串）。**不写盘** —— 写哪去是编排环的事。"""
     research = [r for r in records if not is_review(r)]
     reviews = [r for r in records if is_review(r)]
+    # 按档次排序：精+SI → 精层 → 粗层。同档保持原顺序（按 key），
+    # 这样「可信的那几十行」聚在一起，竖着比才有意义。
+    rank = {t: i for i, t in enumerate(TIER_ORDER)}
+    research = sorted(research, key=lambda r: rank.get(tier_label(r), 99))
     rows = ["# 结构化抽取 · 横向对比表（仅研究论文）", "",
             "> 自动生成。竖着比同一字段，找矛盾、空白、规律。",
             f"> 研究论文 {len(research)} 篇；综述 {len(reviews)} 篇已分流到 compare_reviews.md"
-            f"（综述无单一体系数值，不入本表）。", ""]
-    header = ['论文'] + COMPARE_COLS
+            f"（综述无单一体系数值，不入本表）。", "",
+            "> **先看「来源」列再看格子**：`精+SI` = MineRU 全文+SI，最全；"
+            "`精层` = 只读了正文，合成条件多半缺；"
+            "`粗层` = Zotero 全文索引+本地小模型，空格多是**没抽到**，不是原文没有。", "",
+            "各档次的字段有值率（空格到底是「没有」还是「没抽到」，看这里）：", ""]
+    cov = coverage_table(research)
+    if cov:
+        rows += [cov, ""]
+    header = ['论文', '来源'] + COMPARE_COLS
     rows.append('| ' + ' | '.join(header) + ' |')
     rows.append('|' + '---|' * len(header))
     for r in research:
-        cells = [str(r.get('title', ''))[:30]] + [
+        cells = [str(r.get('title', ''))[:30], tier_label(r)] + [
             str(r.get(c, 'N/A')).replace('\n', ' ')[:80] for c in COMPARE_COLS]
         rows.append('| ' + ' | '.join(cells) + ' |')
     return '\n'.join(rows)
@@ -182,7 +327,14 @@ def reviews_table(records):
     return '\n'.join(rows)
 
 
-def make_record(key, title, doi, data, schema_ver=None):
-    """抽取结果 → 落盘用的记录。**带上版本号**，否则以后没法知道它是哪版 schema 抽的。"""
+def make_record(key, title, doi, data, schema_ver=None,
+                source=SOURCE_FINE, si_used=False):
+    """抽取结果 → 落盘用的记录。
+
+    **带上版本号**，否则以后没法知道它是哪版 schema 抽的；
+    **带上来源档次与是否读了 SI**，否则以后没法知道一个空格是
+    「原文没有」还是「料不够没抽到」（这正是 2026-08-28 对比表的病）。
+    """
     return {'key': key, 'title': title, 'doi': doi or '',
-            'schema_ver': SCHEMA_VER if schema_ver is None else schema_ver, **data}
+            'schema_ver': SCHEMA_VER if schema_ver is None else schema_ver,
+            'source': source, 'si_used': bool(si_used), **data}
