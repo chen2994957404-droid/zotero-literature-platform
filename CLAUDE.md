@@ -22,7 +22,7 @@ domain/  ← 纯逻辑：不联网、不知道文件放在哪（3 块）
     figure_crop、schema、si_filter
 pipelines/  ← 编排：把上面三者按顺序组合成能力（6 块）
     chart_digitize、deepread、extract、lib_match、paper_discovery、query_expand
-tests/ （12 个脚本）
+tests/ （13 个脚本）
     test_adapters_vectordb.py、test_architecture.py、test_artifact_gaps.py、test_core_heartbeat.py、test_core_jobs.py、test_core_log_errors.py、test_core_paths.py、test_core_role.py…
 平台管理/ （8 个脚本）
     health_check.py、panel.py、panel_launch.py、交接.py、打开面板.py、更新平台.py、查产物缺口.py、诊断报告.py
