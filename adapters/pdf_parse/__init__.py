@@ -14,7 +14,7 @@
 配置（环境变量）：
   - MINERU_TOKEN : MineRU API token（必须；无默认，密钥不硬编码）
 """
-import os, json, time, zipfile, io, urllib.request
+import os, json, time, zipfile, io, urllib.request, urllib.error
 import urllib.parse as _up, http.client as _hc
 
 BASE = 'https://mineru.net/api/v4'
@@ -100,3 +100,30 @@ def parse_pdf(pdf_path, out_dir, reuse=True):
     zip_bytes = urllib.request.urlopen(zip_url, timeout=120).read()
     zipfile.ZipFile(io.BytesIO(zip_bytes)).extractall(out_dir)
     return out_dir
+
+
+def check_token(timeout=20):
+    """MineRU token 还有效吗？返回 (ok, 说明)。**零成本，不产生解析任务**。
+
+    做法：拿一个不存在的 batch id 去查结果 ——
+      · token 有效 → HTTP 200 + `task not found or expire`（业务层说找不到）
+      · token 无效 → HTTP 401 `user authenticate failed`
+    实测确认过两种响应（2026-08-28）。这是目前找到的唯一免费校验方式：
+    MineRU 没有「查账号/查额度」这类接口。
+    """
+    try:
+        tok = _token()
+    except PDFParseError as e:
+        return False, str(e)[:60]
+    req = urllib.request.Request(
+        BASE + '/extract-results/batch/zzzznotexist',
+        headers={'Authorization': 'Bearer ' + tok})
+    try:
+        urllib.request.urlopen(req, timeout=timeout)
+        return True, '有效'
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            return False, 'token 无效或已过期，去 mineru.net 重新申请'
+        return None, f'查不了：HTTP {e.code}'
+    except Exception as e:
+        return None, f'连不上 MineRU：{type(e).__name__}'

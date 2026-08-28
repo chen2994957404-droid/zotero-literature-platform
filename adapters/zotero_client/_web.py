@@ -211,3 +211,36 @@ def upload_attachment(parent_key, filepath, display_name,
           {'Content-Type': 'application/x-www-form-urlencoded',
            'If-None-Match': '*'}, raw=True)
     return att_key
+
+
+def check_key(timeout=15):
+    """这把 Zotero API key 有效吗、属于哪个账号？返回 (ok, 说明, 详情dict)。
+
+    **顺带回答「我连的是不是我以为的那个库」** —— 两台机器 + 一个测试账号之后，
+    「key 属于账号 A、配置里写着账号 B」是个真实存在的错法，
+    症状是所有写操作 403，而看起来像「密钥坏了」。
+    """
+    import urllib.error as _ue
+    try:
+        d = _call('/keys/current')
+    except _ue.HTTPError as e:
+        if e.code in (403, 404):
+            return False, '密钥无效或已撤销（HTTP %d）' % e.code, {}
+        return False, f'查不了：HTTP {e.code}', {}
+    except Exception as e:
+        return None, f'连不上 zotero.org：{type(e).__name__}', {}
+    from core.config import web_user_id
+    uid = str(d.get('userID', ''))
+    want = str(web_user_id() or '')
+    acc = d.get('access', {}).get('user', {})
+    can_write = bool(acc.get('write') or acc.get('library'))
+    if want and uid != want:
+        return False, (f'密钥属于账号 {uid}（{d.get("username")}），'
+                       f'但本机配的是 {want} —— 写操作会全部 403'), d
+    if not can_write:
+        return False, f'密钥没有写权限（账号 {uid}），回写会失败', d
+    return True, f'有效，账号 {uid}（{d.get("username")}），有写权限', d
+
+
+def _call_get(path, timeout=30):     # 兼容别处可能的调用
+    return _call(path, timeout=timeout)

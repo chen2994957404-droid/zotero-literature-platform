@@ -198,3 +198,37 @@ def chat_json(system, user, provider=None, model=None, key=None,
     else:
         out = _deepseek(messages, model, key, temperature, True, None)
     return _parse_json_lenient(out)
+
+
+def check_key(key=None, timeout=15):
+    """这把 DeepSeek 密钥现在还有效吗？返回 (ok, 人话说明)。**不花钱**。
+
+    为什么需要（2026-08-28 真事）：主力机的密钥早就失效了，
+    但体检只查「读得到」，于是心跳正常、体检全绿，**精读其实一次都跑不了** ——
+    等用户下次打标签才会发现，而那时他只会看到「怎么没反应」。
+    **「配置存在」不等于「配置有用」，安全网必须查后者。**
+    """
+    import json as _json
+    import urllib.error as _ue
+    import urllib.request as _ur
+    k = key
+    if k is None:
+        from core.config import get_key
+        k = get_key('DEEPSEEK_KEY')
+    if not k:
+        return False, '没配 DEEPSEEK_KEY'
+    try:
+        r = _ur.urlopen(_ur.Request('https://api.deepseek.com/user/balance',
+                                    headers={'Authorization': 'Bearer ' + k}), timeout=timeout)
+        d = _json.loads(r.read())
+        infos = d.get('balance_infos') or [{}]
+        bal = infos[0].get('total_balance', '?')
+        cur = infos[0].get('currency', '')
+        if not d.get('is_available', True):
+            return False, f'密钥有效但账户不可用（余额 {bal} {cur}）'
+        return True, f'有效，余额 {bal} {cur}'
+    except _ue.HTTPError as e:
+        return False, ('密钥无效或已撤销（HTTP 401）' if e.code == 401
+                       else f'查不了：HTTP {e.code}')
+    except Exception as e:
+        return None, f'连不上 DeepSeek：{type(e).__name__}'

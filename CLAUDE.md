@@ -113,7 +113,7 @@ core/  domain/  adapters/  pipelines/   ← 代码四环（重构 v2），每块
 
 ## 现成数据资产（在哪找什么）
 
-- `workflow_data/structured/compare.md` — 148篇研究论文横向对比表（材料/动态键/合成/性能/机理）
+- `workflow_data/structured/compare.md` — 研究论文横向对比表（2026-08-28 实测 175 条：39 条精层 + 136 条粗层）
 - `workflow_data/structured/compare_reviews.md` — 5篇综述单列
 - `workflow_data/structured/compare_PBS.md` — 聚硼硅氧烷方向精层子表（10篇，含真实数值）
 - `workflow_data/structured/<KEY>.json` — 每篇的结构化字段
@@ -258,7 +258,7 @@ pip install -e . --no-deps
 
 有 Windows MCP，可直接在用户机器跑验证，**无需每次停下来问**：
 - 自主做：只读/验证类命令、A/B 对比、单篇验证、读脚本读数据 → 跑完直接报结果。
-- 先问用户：全库重抽（154篇×API，花钱）、覆盖/删除数据、影响 Zotero 库的写操作、
+- 先问用户：全库重抽（175 条×API，花钱）、覆盖/删除数据、影响 Zotero 库的写操作、
   方向性抉择（改 schema、换技术路线——这是用户的领域判断）。
 - 原则：可还原零成本的自己跑；有副作用/花钱/不可逆的先说清代价再问。
 

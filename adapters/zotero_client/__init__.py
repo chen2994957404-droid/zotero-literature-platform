@@ -60,7 +60,8 @@ def zget(path):
 # 写操作的机器角色守卫也都在那里。这里只做再导出。
 from adapters.zotero_client._web import (WEB_API, zweb, get_item, patch_item,
                                          create_items, delete_item,
-                                         replace_tags, upload_attachment)
+                                         replace_tags, upload_attachment,
+                                         check_key)
 
 
 def find_child_attachment(item_key, title):

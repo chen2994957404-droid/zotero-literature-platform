@@ -252,6 +252,41 @@ def c_config():
     return (OK, '三个密钥都能读到') if not missing else (FAIL, f'缺少: {missing}')
 
 
+def c_keys_valid():
+    """三把密钥**真的还能用吗** —— 不是「读得到」，是「打过去对方认不认」。
+
+    2026-08-28 的真事：主力机的 DeepSeek 与 Zotero 密钥早已失效，
+    但心跳正常、体检全绿（那时只查存在性），**精读其实一次都跑不了**，
+    而且要等用户下次打标签才会发现。
+
+    > **「配置存在」不等于「配置有用」。** 安全网必须查后者，否则它只是让人安心。
+
+    三个校验都免费：DeepSeek 查余额、Zotero 问 /keys/current、
+    MineRU 拿一个不存在的任务 id 去查（401 vs 200 能区分认证问题）。
+    """
+    from adapters.llm_client import check_key as _ds
+    from adapters.pdf_parse import check_token as _mineru
+    from adapters.zotero_client import check_key as _zot
+    def _zot2():                       # 统一成 (ok, msg) 两元组
+        ok, msg, _detail = _zot()
+        return ok, msg
+
+    rows, bad, unknown = [], [], []
+    for name, fn in (('DeepSeek', _ds), ('MineRU', _mineru), ('Zotero', _zot2)):
+        ok, msg = fn()
+        rows.append(f'{name} {msg}')
+        if ok is False:
+            bad.append(name)
+        elif ok is None:               # 网络不通之类，说不清有效无效
+            unknown.append(name)
+    detail = '；'.join(rows)
+    if bad:
+        return FAIL, f'{"、".join(bad)} 的密钥用不了 —— {detail}'
+    if unknown:
+        return WARN, f'{"、".join(unknown)} 没验成（多半是网络）—— {detail}'
+    return OK, detail
+
+
 def c_zotero():
     try:
         from core.config import get_site
@@ -476,6 +511,7 @@ if __name__ == '__main__':
     # ── 实测档：需要真实服务/密钥/数据，本机没配就会红，属正常 ──
     if not offline:
         check('配置加载', c_config)
+        check('密钥有效性', c_keys_valid)
         check('Zotero 服务', c_zotero)
         check('Ollama 服务', c_ollama)
         check('公理件自测', c_modules)
