@@ -352,6 +352,53 @@ def env_shadow(name):
             'differs': bool(stored) and stored.strip() != env_v.strip()}
 
 
+def _broadcast_env_change():
+    """告诉全系统「环境变量变了」（WM_SETTINGCHANGE）。
+
+    **少了这一步，删注册表等于没删**：`explorer.exe` 是所有双击出来的程序的父进程，
+    它的环境是自己启动时拷贝的。不广播，它就一直用旧值，
+    于是用户双击任何东西，拿到的都还是那把作废的密钥（2026-08-28 踩坑 #73）。
+    注意广播只让**愿意重读的**进程更新（explorer 会），已经在跑的普通进程不受影响。
+    """
+    if os.name != 'nt':
+        return
+    try:
+        import ctypes
+        HWND_BROADCAST, WM_SETTINGCHANGE, SMTO_ABORTIFHUNG = 0xFFFF, 0x001A, 0x0002
+        ctypes.windll.user32.SendMessageTimeoutW(
+            HWND_BROADCAST, WM_SETTINGCHANGE, 0,
+            ctypes.c_wchar_p('Environment'), SMTO_ABORTIFHUNG, 3000, None)
+    except Exception:
+        pass          # 广播失败不影响删除本身，只是要重登录才生效
+
+
+def drop_stale_env(names=None, log=None):
+    """**本进程内**丢掉那些「和凭据库对不上」的密钥环境变量。返回被丢掉的键名。
+
+    为什么需要（2026-08-28 连栽两次）：加载顺序是「环境变量 → 凭据库 → .env」。
+    用户在面板里填了新密钥（进凭据库）、也删了注册表里的旧环境变量，
+    **但 explorer.exe 还揣着旧的**，于是他双击出来的每个程序都继承那份旧值 ——
+    看起来一切正常，一调 API 就 401。
+
+    这里只在**两边都有值且不一样**时丢弃环境变量那份：
+    「临时用环境变量覆盖」这个正当用法（CI、调试）依然有效 ——
+    只要凭据库里没存过那把密钥，就不会被动到。
+    """
+    dropped = []
+    for name in (names or SECRET_KEYS):
+        env_v = os.environ.get(name)
+        if not env_v:
+            continue
+        stored = _kr_get(name)
+        if stored and stored.strip() != env_v.strip():
+            os.environ.pop(name, None)
+            dropped.append(name)
+            if log:
+                log(f'  [用凭据库里的密钥] {name}：环境变量里那把（末位 {_tail(env_v)}）'
+                    f'已作废，改用凭据库里的（末位 {_tail(stored)}）')
+    return dropped
+
+
 def clear_env_key(name):
     """删掉**用户级**环境变量 `name`，让凭据库里的新密钥重新生效。返回 (ok, 人话)。
 
@@ -387,6 +434,7 @@ def clear_env_key(name):
     except OSError:
         pass
     os.environ.pop(name, None)         # 当前进程立刻不再受它影响
+    _broadcast_env_change()            # 让 explorer 等长驻进程重新读环境（否则双击出来的程序还是旧值）
     if not removed and not machine:
         return True, f'{name}：用户级环境变量本来就没有（可能只在某个窗口里临时设过）'
     msg = f'{name}：已删掉用户级环境变量' if removed else f'{name}：用户级没有'

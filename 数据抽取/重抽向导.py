@@ -25,6 +25,7 @@ except Exception:
 
 from core import paths, role
 from core.cli import flag
+from core.config import drop_stale_env
 from domain import schema
 from pipelines import extract, paper_db
 
@@ -76,6 +77,22 @@ def main():
         return
     os.environ['EXTRACT_PROVIDER'] = provider
     name = '本地 Ollama' if provider == 'ollama' else '云端 DeepSeek'
+
+    # 双击出来的窗口继承的是 explorer 的环境，里面可能还躺着作废的旧密钥（踩坑 #73）。
+    # 凭据库里有新的就用新的 —— 否则下面 28 篇会一篇不落地全 401。
+    drop_stale_env(log=print)
+
+    # **先验一把再开跑**：上一版一头扎进去，烧了 28 次失败才发现密钥不对。
+    # 「验证要验到事情真的发生」（踩坑 #66 的判据），这里就是那个验证点。
+    if provider == 'deepseek':
+        from adapters.llm_client import check_key
+        ok, msg = check_key()
+        print(f'\n 密钥自检：{msg}')
+        if not ok:
+            print('\n 密钥不可用，什么都没动。请在控制面板里重填密钥并点「测一测」，')
+            print(' 如果面板显示的是「⚠ 环境变量」，先点旁边的「清除这个环境变量」，')
+            print(' 然后**注销一次 Windows 再登录**（双击出来的程序继承的是登录时的环境）。')
+            return
 
     # 全库作业只允许在运行端跑（见 docs/两台机器的分工.md）
     role.require_prod(f'批量重抽结构化字段（{name}）', force=flag('--force'))

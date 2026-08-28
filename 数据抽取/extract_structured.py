@@ -42,6 +42,7 @@ except Exception:
 
 from core import paths, role
 from core.cli import flag, pos
+from core.config import drop_stale_env
 from domain import schema
 from pipelines import extract, paper_db
 
@@ -63,6 +64,7 @@ def main():
     if flag('--local'):
         # 抽取走本地 Ollama。**只在这里设一次**，pipelines/extract 每次调用都读它。
         os.environ['EXTRACT_PROVIDER'] = 'ollama'
+    drop_stale_env(log=print)      # 作废的旧密钥可能还躺在本进程的环境里（踩坑 #73）
 
     if upgrade_local:
         pending = extract.local_keys()
