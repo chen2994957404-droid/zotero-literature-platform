@@ -62,15 +62,18 @@ def _log_path():
 
 def ask_provider():
     """问一句用哪个模型。返回 'deepseek' / 'ollama' / None（放弃）。"""
-    print('\n 用哪个模型抽？')
-    print('   [1] 云端 DeepSeek —— 准，快（约半分钟一篇），要密钥有效，花钱（很少）')
-    print('   [2] 本地模型 Ollama —— 免费不限量，慢（约两分钟一篇），准确度低一档')
+    print('\n 用哪个模型抽？（每篇跑完都会告诉你这一篇花了多少钱）')
+    print('   [1] 云端 DeepSeek —— 最准：抽完让模型对照原文自检一轮，漏了就重抽')
+    print('   [2] 云端 DeepSeek · 省钱模式 —— 不做自检，调用数减半，准确度略降')
+    print('   [3] 本地模型 Ollama —— 免费不限量，慢（约两分钟一篇），准确度低一档')
     print('       （本地抽的会标成「本地+SI」档，绝不冒充云端结果）')
     try:
-        ans = input('\n 输入 1 或 2 后回车（直接关窗口 = 放弃）：').strip()
+        ans = input('\n 输入 1 / 2 / 3 后回车（直接关窗口 = 放弃）：').strip()
     except EOFError:
         return None
-    return {'1': 'deepseek', '2': 'ollama'}.get(ans)
+    if ans == '2':
+        os.environ['EXTRACT_NO_EVAL'] = '1'      # 不做自检重抽 —— 调用数直接减半
+    return {'1': 'deepseek', '2': 'deepseek', '3': 'ollama'}.get(ans)
 
 
 def main():
