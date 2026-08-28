@@ -163,6 +163,39 @@ def set_state_tag(item_key, web_uid, new_state):
         print(f'  [标签更新失败] {e}')
 
 
+def log_key_status():
+    """启动时把三把密钥的**有效性**写进日志。零成本，几秒钟。
+
+    为什么放在这儿（踩坑 #66）：2026-08-28 发现主力机的 DeepSeek 与 Zotero 密钥
+    早已失效，而心跳正常、体检全绿 —— 因为那时只查「读得到」。
+    更麻烦的是**密钥只有本机的交互式会话读得到**（凭据库的限制），
+    远程排查时看不见真相。watcher 本身就跑在那个会话里，
+    所以让它开机说一句，是唯一能把这件事变成「可观察」的地方。
+
+    **不因为密钥无效就拒绝启动** —— Zotero 读取仍然可用，
+    而且拒启会让「服务没了」和「密钥坏了」两件事长得一样。
+    """
+    try:
+        from adapters.llm_client import check_key as _ds
+        from adapters.pdf_parse import check_token as _mineru
+        from adapters.zotero_client import check_key as _zot
+        bad = []
+        for name, fn in (('DeepSeek', _ds), ('MineRU', _mineru)):
+            ok, msg = fn()
+            print(f'[密钥] {name}: {msg}')
+            if ok is False:
+                bad.append(name)
+        ok, msg, _d = _zot()
+        print(f'[密钥] Zotero: {msg}')
+        if ok is False:
+            bad.append('Zotero')
+        if bad:
+            print(f'[⚠ 密钥失效] {"、".join(bad)} —— 精读会失败。'
+                  f'请在控制面板重填，然后重启本服务')
+    except Exception as e:
+        print(f'[密钥自检跳过] {type(e).__name__}: {e}')
+
+
 def main():
     # 机器角色守卫：常驻服务只能在运行端（主力机）跑。
     # 两台都跑会重复精读同一篇、重复写回 Zotero、重复烧钱，标签状态机还会互相打架。
@@ -178,6 +211,7 @@ def main():
         print(f'[提醒] 单实例锁不可用（{e}），继续运行')
     print(f'Zotero闭环轮询器启动。触发标签: 「{TRIGGER_TAG}」')
     print(f'回写: {"已配置Web API" if WEB_API_KEY else "未配key(仅生成本地精读)"}')
+    log_key_status()
     seen = set()
     fail_streak = [0]      # 连续失败轮数，用于「持续异常」提醒与「已恢复」提示
     # 后台线程固定节奏报活：精读一篇要几分钟到几十分钟，期间主线程根本回不到

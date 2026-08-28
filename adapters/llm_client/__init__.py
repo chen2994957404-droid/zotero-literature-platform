@@ -221,12 +221,15 @@ def check_key(key=None, timeout=15):
         r = _ur.urlopen(_ur.Request('https://api.deepseek.com/user/balance',
                                     headers={'Authorization': 'Bearer ' + k}), timeout=timeout)
         d = _json.loads(r.read())
-        infos = d.get('balance_infos') or [{}]
-        bal = infos[0].get('total_balance', '?')
-        cur = infos[0].get('currency', '')
+        # ⚠ balance_infos 是**按币种一条**的列表。只取 [0] 会报出
+        # 「0.00 USD」而实际人民币账户里还有钱 —— 一个把好消息说成坏消息的显示 bug。
+        infos = d.get('balance_infos') or []
+        parts = [f'{i.get("total_balance", "?")} {i.get("currency", "")}'.strip()
+                 for i in infos if str(i.get('total_balance', '0')) not in ('0', '0.00')]
+        bal = '、'.join(parts) if parts else '0（各币种都是 0）'
         if not d.get('is_available', True):
-            return False, f'密钥有效但账户不可用（余额 {bal} {cur}）'
-        return True, f'有效，余额 {bal} {cur}'
+            return False, f'密钥有效但账户不可用（余额 {bal}）'
+        return True, f'有效，余额 {bal}'
     except _ue.HTTPError as e:
         return False, ('密钥无效或已撤销（HTTP 401）' if e.code == 401
                        else f'查不了：HTTP {e.code}')
