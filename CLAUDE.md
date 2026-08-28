@@ -34,12 +34,12 @@ tests/ （13 个脚本）
     build_deepread_workflow.py、watcher.py
 找新文献/ （7 个脚本）
     brainstorm.py、collect.py、discover.py、find_papers.py、import_by_doi.py、search_global.py、zotero_add_thesis.py
-数据抽取/ （5 个脚本）
-    extract_batch.py、extract_library.py、extract_structured.py、filter_domain.py、查询库.py
+数据抽取/ （7 个脚本）
+    extract_batch.py、extract_library.py、extract_structured.py、filter_domain.py、查询库.py、试一试本地模型.py、重抽向导.py
 文献精读/ （12 个脚本）
     deepread_batch.py、deepread_v4.py、merge_summary.py、mineru_parse.py、refresh_summary_file.py、rerun_pro.py、si_batch.py、si_deepread.py…
 
-根目录文件：CLAUDE.md、LICENSE、README.md、pyproject.toml、requirements.txt、控制面板.bat、更新平台.bat、精读监听.bat、诊断报告.bat
+根目录文件：CLAUDE.md、LICENSE、README.md、pyproject.toml、requirements.txt、控制面板.bat、更新平台.bat、比一比两个模型.bat、精读监听.bat、诊断报告.bat、重抽缺SI的文献.bat
 
 （workflow_data/ 是数据目录，3000+ 文件，**不要去 glob 它**）
 ```
