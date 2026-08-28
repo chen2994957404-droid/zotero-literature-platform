@@ -415,12 +415,22 @@ def parse_property(text):
     return out
 
 
+# 「一句话里塞了好几条性能」怎么切：只在逗号后面**紧跟一个新的「名字:」**时才切。
+# 为什么要这一条（2026-08-28 实测）：云端老老实实返回一个列表，
+# 本地模型常返回一整个字符串 'Mn: 0.60 kg/mol, Mn: 0.56 kg/mol, …'。
+# 不切开，本地就被算成「只抽到 1 条数值」—— 那是**格式差异，不是能力差异**，
+# 拿这种指标去比模型，会得出错误结论。
+_SPLIT_PROPS = re.compile(r'[;\n]|\s\|\s|,(?=\s*[A-Za-z一-龥][^:：,]{0,40}[:：])')
+
+
 def parse_properties(record):
     """一条记录的 key_properties → 解析过的数值列表（拆不出数的也留着）。"""
     v = record.get('key_properties')
     if not v:
         return []
-    items = v if isinstance(v, (list, tuple)) else re.split(r'[;\n]| \| ', str(v))
+    items = []
+    for chunk in (v if isinstance(v, (list, tuple)) else [v]):
+        items += _SPLIT_PROPS.split(str(chunk))
     return [parse_property(x) for x in items if str(x).strip()]
 
 
