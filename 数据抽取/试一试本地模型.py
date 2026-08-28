@@ -117,8 +117,15 @@ def compare_one(key, only_local=False):
         print(f'  本地: {_fmt(local.get(f))}')
         if cloud is not None:
             print(f'  云端: {_fmt(cloud.get(f))}')
+        if d['old'] is not None:
+            print(f'  库里: {_fmt(d["old"].get(f))}')
     m_local = _metrics(local, source)
     m_cloud = _metrics(cloud, source) if cloud is not None else None
+    # 库里已有的那条多半就是**云端刚抽的**（精+SI）。只跑本地时拿它当对照组，
+    # 就是一次真正的 A/B —— 不必为了比较再花一次钱。
+    if m_cloud is None and d['old'] is not None and schema.tier_label(d['old']) in (
+            schema.TIER_FINE_SI, schema.TIER_FINE):
+        m_cloud = _metrics(d['old'], source)
     print(f'\n  本地: 有值 {m_local["filled"]}/{len(schema.SCHEMA)}，'
           f'数值 {m_local["nums"]} 条，数字可追溯 {m_local["hit"]}/{m_local["total"]}')
     if m_local['miss']:
