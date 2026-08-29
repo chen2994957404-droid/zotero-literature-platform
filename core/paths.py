@@ -44,6 +44,22 @@ VECTOR_DB = os.path.join(DATA, 'vector_db')    # Chroma 向量库（可重建）
 LOGS = os.path.join(DATA, 'logs')              # 运行日志
 BACKUP = os.path.join(DATA, 'backup')          # 备份（如 Zotero 标签快照）
 INCOMING = os.path.join(DATA, '_incoming')     # 临时处理区（可清空）
+DIRECTION = os.path.join(DATA, 'direction')    # 方向地图：种子/引用网络/聚类（可重建）
+
+# ── 方向地图（领域全景，非单篇文献）────────────────────────────────
+# 与 library/ 的区别：library 按「我读过的文献」组织，direction 按「领域长什么样」
+# 组织。前者是资产，后者是**可重建的派生层** —— 删掉再跑一遍命令就有。
+def direction_db():
+    """方向地图的 SQLite 库：论文 / 引用边 / 种子 / 聚类都在这一个文件里。"""
+    return os.path.join(DIRECTION, 'map.db')
+
+
+def direction_file(name, create_dir=False):
+    """方向地图目录下的其它产物（导出的 json、网页版地图等）。"""
+    if create_dir:
+        os.makedirs(DIRECTION, exist_ok=True)
+    return os.path.join(DIRECTION, name)
+
 
 # ── Zotero item key 的形状 ────────────────────────────────────────────
 # 数据契约保证「文件夹名 = Zotero item key，8 位字母数字」。

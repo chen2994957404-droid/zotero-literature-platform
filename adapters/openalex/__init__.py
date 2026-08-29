@@ -162,3 +162,49 @@ def work_by_doi(doi):
         return get(f'{BASE}/works/doi:{urllib.parse.quote(doi)}')
     except errors.PlatformError:
         return None
+
+
+# ── 批量取用（方向地图那类「几百上千篇一起要」的活）────────────────────
+# 为什么要有这个：一篇一请求的话，754 篇种子 + 3000 篇骨干参考文献 = 近 4000 次
+# 往返，跑一次要半小时以上。OpenAlex 的 filter 支持用 | 一次问 40~50 个 id，
+# 实测把同样的活压到 100 次请求以内。**这是编排层里最容易写错的地方之一**
+# （分批、拼 URL、漏掉查不到的），所以收在适配器里只写一遍。
+BATCH = 40
+
+
+def _batch_filter(kind, values, select, batch=BATCH, on_progress=None):
+    """按 `kind:a|b|c` 分批查询，返回 {openalex短id: work}。查不到的静默跳过。"""
+    out = {}
+    vals = [v for v in values if v]
+    for i in range(0, len(vals), batch):
+        chunk = vals[i:i + batch]
+        f = '%s:%s' % (kind, '|'.join(chunk))
+        url = '%s/works?filter=%s&per-page=%d&select=%s' % (
+            BASE, urllib.parse.quote(f, safe=':|/.'), batch, select)
+        try:
+            for w in get(url).get('results', []):
+                out[w['id'].rsplit('/', 1)[-1]] = w
+        except errors.PlatformError:
+            # 单批失败不该让整轮作废 —— 上层拿到的就是「这批没查到」。
+            pass
+        if on_progress:
+            on_progress(min(i + batch, len(vals)), len(vals), len(out))
+    return out
+
+
+def works_by_dois(dois, select=FIELDS, on_progress=None):
+    """一批 DOI → {openalex短id: work}。DOI 会被规范化（去前缀、小写、非断行连字符）。"""
+    norm = []
+    for d in dois:
+        d = (d or '').strip().lower().replace('https://doi.org/', '').rstrip('.')
+        for ch in ('‑', '‐', '–'):   # 微信正文里的非断行连字符（踩坑）
+            d = d.replace(ch, '-')
+        if d:
+            norm.append(d)
+    return _batch_filter('doi', sorted(set(norm)), select, on_progress=on_progress)
+
+
+def works_by_ids(ids, select=FIELDS, on_progress=None):
+    """一批 OpenAlex 短 id（W123...）→ {短id: work}。"""
+    clean = [str(i).rsplit('/', 1)[-1] for i in ids if i]
+    return _batch_filter('openalex', sorted(set(clean)), select, on_progress=on_progress)
