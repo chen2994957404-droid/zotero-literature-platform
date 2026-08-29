@@ -170,29 +170,67 @@ def work_by_doi(doi):
 # 实测把同样的活压到 100 次请求以内。**这是编排层里最容易写错的地方之一**
 # （分批、拼 URL、漏掉查不到的），所以收在适配器里只写一遍。
 BATCH = 40
+# 礼貌池：OpenAlex 官方建议带 mailto，配额明显更好。
+# ⚠ 这一行是实测补上的：`search()` 一直带着 mailto，而批量取用**漏了**，
+# 于是批量跑到几千条就撞限流 —— 同一个 API，两个入口两种待遇。
+POLITE_MAILTO = 'research@example.com'
+# 撞限流后的退避阶梯（秒）。比 get() 内部那两次重试更长 ——
+# 内部重试对付的是偶发抖动，这里对付的是「已经被限流了，得真的等一会」。
+_BACKOFF = (5, 15, 45)
 
 
-def _batch_filter(kind, values, select, batch=BATCH, on_progress=None):
-    """按 `kind:a|b|c` 分批查询，返回 {openalex短id: work}。查不到的静默跳过。"""
-    out = {}
+def _batch_filter(kind, values, select, batch=BATCH, on_progress=None,
+                  mailto=POLITE_MAILTO, allow_partial=False):
+    """按 `kind:a|b|c` 分批查询，返回 {openalex短id: work}。
+
+    ⚠ **默认严格：任何一批最终失败就抛异常，绝不静默返回残缺结果。**
+
+    这条是踩出来的（踩坑 #76）：早先这里写的是 `except PlatformError: pass`，
+    结果建 impact 窄带时打到几千条撞上限流，**3126 篇骨干文献静默丢失（30%）**，
+    日志全绿、不报错，只是图悄悄少了三成。而且排查时我还先误判成
+    「这些 id 在 OpenAlex 里查不到」—— 因为重查时仍在限流期内，
+    单条端点却能取到，两个现象一叠加就把人带沟里去了。
+
+    **判据：静默的部分成功比明确的失败危险得多。**
+    宁可整个作业失败让人重跑，也不要产出一份看不出问题的残缺数据。
+
+    allow_partial=True 时不抛，但会把失败批次的数量交给 on_progress 报出来 ——
+    调用方必须自己把这个数字落进产物里，否则残缺同样不可见。
+    """
+    out, failed = {}, []
     vals = [v for v in values if v]
     for i in range(0, len(vals), batch):
         chunk = vals[i:i + batch]
         f = '%s:%s' % (kind, '|'.join(chunk))
-        url = '%s/works?filter=%s&per-page=%d&select=%s' % (
-            BASE, urllib.parse.quote(f, safe=':|/.'), batch, select)
-        try:
-            for w in get(url).get('results', []):
-                out[w['id'].rsplit('/', 1)[-1]] = w
-        except errors.PlatformError:
-            # 单批失败不该让整轮作废 —— 上层拿到的就是「这批没查到」。
-            pass
+        url = '%s/works?filter=%s&per-page=%d&select=%s&mailto=%s' % (
+            BASE, urllib.parse.quote(f, safe=':|/.'), batch, select,
+            urllib.parse.quote(mailto))
+        ok = False
+        for wait in _BACKOFF + (None,):
+            try:
+                for w in get(url).get('results', []):
+                    out[w['id'].rsplit('/', 1)[-1]] = w
+                ok = True
+                break
+            except errors.PlatformError:
+                if wait is None:
+                    break
+                time.sleep(wait)
+        if not ok:
+            failed.extend(chunk)
         if on_progress:
             on_progress(min(i + batch, len(vals)), len(vals), len(out))
+    if failed:
+        msg = ('OpenAlex 批量取用有 %d / %d 条最终失败（多半是限流，等几分钟重跑）'
+               % (len(failed), len(vals)))
+        if not allow_partial:
+            raise errors.ExternalServiceError(msg, service='openalex')
+        if on_progress:
+            on_progress(len(vals), len(vals), len(out))
     return out
 
 
-def works_by_dois(dois, select=FIELDS, on_progress=None):
+def works_by_dois(dois, select=FIELDS, on_progress=None, allow_partial=False):
     """一批 DOI → {openalex短id: work}。DOI 会被规范化（去前缀、小写、非断行连字符）。"""
     norm = []
     for d in dois:
@@ -201,10 +239,12 @@ def works_by_dois(dois, select=FIELDS, on_progress=None):
             d = d.replace(ch, '-')
         if d:
             norm.append(d)
-    return _batch_filter('doi', sorted(set(norm)), select, on_progress=on_progress)
+    return _batch_filter('doi', sorted(set(norm)), select, on_progress=on_progress,
+                         allow_partial=allow_partial)
 
 
-def works_by_ids(ids, select=FIELDS, on_progress=None):
+def works_by_ids(ids, select=FIELDS, on_progress=None, allow_partial=False):
     """一批 OpenAlex 短 id（W123...）→ {短id: work}。"""
     clean = [str(i).rsplit('/', 1)[-1] for i in ids if i]
-    return _batch_filter('openalex', sorted(set(clean)), select, on_progress=on_progress)
+    return _batch_filter('openalex', sorted(set(clean)), select,
+                         on_progress=on_progress, allow_partial=allow_partial)
