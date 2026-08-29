@@ -16,7 +16,7 @@
 
 配置从环境变量读，带默认值（便于独立使用）。
 """
-import os, re, json, urllib.request
+import os, re, json, urllib.request, urllib.parse
 
 # 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
 import os as _os, sys as _sys
@@ -53,6 +53,47 @@ def zget(path):
     """本地只读 API GET。path 如 '/users/<id>/items/<key>/children'。"""
     req = urllib.request.Request(LOCAL_API + path, headers=_H)
     return json.loads(urllib.request.urlopen(req, timeout=20).read())
+
+
+def _local_uid():
+    """本地 API 也要用户 id。模块顶部已经用 need_site 取过（缺了 import 就会失败），
+    这里只做兜底，用 USER_ID 而不是再抛一个自定义异常 ——
+    曾经这里写了个根本没定义的 ZoteroError，一旦触发就是 NameError，
+    而它偏偏只在「配置缺失、最需要看清报错」时触发。"""
+    return USER_ID or _site('ZOTERO_USER_ID')
+
+
+def search_items(query='', limit=100, qmode='everything', tag=None,
+                 item_type=None, collection=None, start=0):
+    """按关键词/标签/类型/合集搜库内顶层条目，返回 Zotero 原始条目列表。
+
+    **只服务本机**：Zotero 的本地 API 只监听 localhost，所以这个函数只能在
+    Zotero 正在跑的那台机器上用（见 docs/两台机器的分工.md）。
+    编程端调它会连不上 —— 那不是 bug，调用方应当捕获后跳过。
+
+    qmode 默认 'everything'（连全文一起搜），比 'titleCreatorYear' 召回高得多；
+    要精确匹配标题作者年份时才传后者。
+    """
+    parts = ['/users/%s/items/top?format=json' % _local_uid(),
+             'limit=%d' % int(limit), 'start=%d' % int(start),
+             'qmode=%s' % qmode]
+    for k, v in (('q', query), ('tag', tag), ('itemType', item_type),
+                 ('collection', collection)):
+        if v:
+            parts.append('%s=%s' % (k, urllib.parse.quote(str(v))))
+    return zget('&'.join(parts))
+
+
+def dois_of(items):
+    """一批 Zotero 条目 → 去重后的 DOI 列表（没有 DOI 的静默跳过）。"""
+    out = []
+    for it in items or ():
+        data = it.get('data') if isinstance(it, dict) and 'data' in it else it
+        d = ((data or {}).get('DOI') or '').strip().lower()
+        d = d.replace('https://doi.org/', '').rstrip('.')
+        if d and d not in out:
+            out.append(d)
+    return out
 
 
 # ── zotero.org（云端）──────────────────────────────────────────────

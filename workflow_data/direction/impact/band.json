@@ -1,0 +1,85 @@
+{
+ "id": "impact",
+ "name": "高分子抗冲击",
+ "note": "这个方向是两个几乎不相往来的社群：化学侧（强韧/自修复/动态键弹性体，发 AM/AFM/JACS，公众号全覆盖）与工程侧（聚脲防爆、弹道防护、剪切增稠，发 IJIE/Composite Structures，公众号零覆盖）。所以 queries 里工程侧是必须项 —— 只靠 from_band 会得到一张缺一半的图。",
+ "queries": [
+  {
+   "q": "polyurea coating blast mitigation",
+   "limit": 200,
+   "year_from": 2010
+  },
+  {
+   "q": "polyurea impact protection steel plate",
+   "limit": 200,
+   "year_from": 2010
+  },
+  {
+   "q": "ballistic impact resistance polymer composite armor",
+   "limit": 200,
+   "year_from": 2010
+  },
+  {
+   "q": "shear thickening fluid impact protection",
+   "limit": 200,
+   "year_from": 2010
+  },
+  {
+   "q": "shear stiffening gel anti-impact material",
+   "limit": 200,
+   "year_from": 2010
+  },
+  {
+   "q": "low velocity impact damage composite laminate protection",
+   "limit": 200,
+   "year_from": 2010
+  },
+  {
+   "q": "blast resistant polymer coating structure",
+   "limit": 200,
+   "year_from": 2010
+  },
+  {
+   "q": "energy absorption structure impact polymer foam",
+   "limit": 200,
+   "year_from": 2010
+  },
+  {
+   "q": "impact stiffening supramolecular elastomer",
+   "limit": 200,
+   "year_from": 2010
+  },
+  {
+   "q": "tough self-healing elastomer energy dissipation sacrificial bond",
+   "limit": 200,
+   "year_from": 2010
+  },
+  {
+   "q": "dynamic covalent bond elastomer impact resistance",
+   "limit": 200,
+   "year_from": 2010
+  },
+  {
+   "q": "nacre inspired impact resistant layered composite",
+   "limit": 200,
+   "year_from": 2010
+  },
+  {
+   "q": "polyborosiloxane shear stiffening",
+   "limit": 200,
+   "year_from": 2000
+  },
+  {
+   "q": "protective equipment helmet impact absorbing material",
+   "limit": 200,
+   "year_from": 2010
+  }
+ ],
+ "from_band": {
+  "band": "wechat_polymer",
+  "match": "impact|ballistic|blast|penetrat|puncture|shock|shear[- ]?(thicken|stiffen)|strain[- ]?stiffen|dilatant|damping|energy[- ]?dissipat|toughen|polyurea|nacre|brick[- ]and[- ]mortar|armor|armour"
+ },
+ "zotero": {
+  "query": "impact",
+  "limit": 300
+ }
+}

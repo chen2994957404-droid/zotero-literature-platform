@@ -49,16 +49,60 @@ DIRECTION = os.path.join(DATA, 'direction')    # 方向地图：种子/引用网
 # ── 方向地图（领域全景，非单篇文献）────────────────────────────────
 # 与 library/ 的区别：library 按「我读过的文献」组织，direction 按「领域长什么样」
 # 组织。前者是资产，后者是**可重建的派生层** —— 删掉再跑一遍命令就有。
-def direction_db():
-    """方向地图的 SQLite 库：论文 / 引用边 / 种子 / 聚类都在这一个文件里。"""
-    return os.path.join(DIRECTION, 'map.db')
+#
+# ⚠ **按「窄带」分库，不是单例。** 用户会陆续做多条窄带（抗冲、别的方向……），
+# 加一条窄带必须是「加一份配置」而不是「改代码」。所以 band 是必填参数，
+# 没有默认值 —— 有默认值就会有人忘了传，然后两条窄带的数据混进同一个库。
+BAND_RE = re.compile(r'^[a-z0-9][a-z0-9_-]{0,31}$')
 
 
-def direction_file(name, create_dir=False):
-    """方向地图目录下的其它产物（导出的 json、网页版地图等）。"""
-    if create_dir:
-        os.makedirs(DIRECTION, exist_ok=True)
-    return os.path.join(DIRECTION, name)
+class BadBandError(errors.BadInputError):
+    """窄带 id 不合法。必须是小写字母数字下划线短横（做目录名要安全）。"""
+
+
+def check_band(band):
+    """校验窄带 id。不合法就抛 BadBandError。"""
+    b = str(band or '').strip().lower()
+    if not BAND_RE.match(b):
+        raise BadBandError(
+            f'不是合法的窄带 id: {band!r}（小写字母开头，只含 a-z 0-9 _ -，最长 32 位）')
+    return b
+
+
+def direction_dir(band, create=False):
+    """<direction>/<band>/ —— 一条窄带的全部产物。"""
+    d = os.path.join(DIRECTION, check_band(band))
+    if create:
+        os.makedirs(d, exist_ok=True)
+    return d
+
+
+def direction_db(band):
+    """某条窄带的 SQLite 库：论文 / 引用边 / 种子 / 聚类都在这一个文件里。"""
+    return os.path.join(direction_dir(band), 'map.db')
+
+
+def direction_spec(band):
+    """某条窄带的定义文件（检索式、关键词、边界判据）。加窄带就是加这个。"""
+    return os.path.join(direction_dir(band), 'band.json')
+
+
+def direction_file(name, band, create_dir=False):
+    """某条窄带目录下的其它产物（导出的 json、网页版地图等）。"""
+    return os.path.join(direction_dir(band, create=create_dir), name)
+
+
+def direction_bands():
+    """现有的窄带 id 列表（目录里有 map.db 或 band.json 的才算）。"""
+    if not os.path.isdir(DIRECTION):
+        return []
+    out = []
+    for n in sorted(os.listdir(DIRECTION)):
+        d = os.path.join(DIRECTION, n)
+        if os.path.isdir(d) and (os.path.isfile(os.path.join(d, 'map.db'))
+                                 or os.path.isfile(os.path.join(d, 'band.json'))):
+            out.append(n)
+    return out
 
 
 # ── Zotero item key 的形状 ────────────────────────────────────────────

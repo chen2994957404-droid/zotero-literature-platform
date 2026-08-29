@@ -17,10 +17,19 @@ workflow_data/logs/
 workflow_data/_incoming/
 workflow_data/*.txt
 workflow_data/state.db
+
+# --- 方向地图 ---
+# map.db 与各种导出都能由 `方向地图.py build/cluster/report` 重建，不进仓库。
+# 但 band.json 是**窄带定义**（检索式 + 边界判据），是这个目录里唯一
+# 不可重建的东西 —— 丢了要重新想一遍边界怎么画，所以必须进仓库。
+workflow_data/direction/*
+!workflow_data/direction/*/
+workflow_data/direction/*/*
+!workflow_data/direction/*/band.json
 # 查询库同理：由 structured/*.json 秒级重建，不该进仓库
 workflow_data/papers.db
 workflow_data/papers.db-*
-workflow_data/state.db-*
+workflow_data/state.db
 
 # --- n8n 运行数据（数据库/日志，非源码）---
 n8n_data/
