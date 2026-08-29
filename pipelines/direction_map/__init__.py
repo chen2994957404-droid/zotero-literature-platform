@@ -367,6 +367,49 @@ def build(band, min_df=3, progress=None):
             'edges': len(edge_rows), 'backbone': len(refs_meta)}
 
 
+def missing_backbone(band, min_df=3):
+    """哪些骨干参考文献还没有元数据。返回 id 列表。
+
+    存在的理由是踩坑 #76：批量取用撞上额度耗尽会静默丢数据。
+    **有了这个查询，"缺没缺"就从看不见变成一句话能问出来的事。**
+    """
+    c = _conn(band)
+    df = collections.Counter()
+    for _src, dst in c.execute('SELECT src,dst FROM edges'):
+        df[dst] += 1
+    have = set(r[0] for r in c.execute('SELECT id FROM works'))
+    c.close()
+    return [r for r, n in df.items() if n >= min_df and r not in have]
+
+
+def fill_missing(band, min_df=3, singleton=True, progress=None):
+    """把缺的骨干元数据补齐。
+
+    默认走 OpenAlex 的**单条端点**：它免费且不限次，而 list/filter 查询
+    自 2026-02 起要花额度（无 key 时一天只够约 1000 次）。
+    慢，但额度耗尽时它是唯一还能走的路。
+    """
+    say = progress or (lambda *a: None)
+    miss = missing_backbone(band, min_df)
+    if not miss:
+        say('骨干元数据没有缺口')
+        return 0
+    say('缺 %d 篇骨干元数据，用%s补...'
+        % (len(miss), '免费的单条端点' if singleton else '批量查询'))
+    got = openalex.works_by_ids(
+        miss, select=REF_SELECT, singleton=singleton, allow_partial=True,
+        on_progress=lambda d, t, f: say('  ...%d/%d → %d' % (d, t, f)))
+    c = _conn(band)
+    seed_ids = set(r[0] for r in c.execute('SELECT id FROM works WHERE is_seed=1'))
+    rows, _overlap = ref_rows_for(got, seed_ids)
+    with c:
+        c.executemany('INSERT OR REPLACE INTO works VALUES (?,?,?,?,?,?,?,?,?)', rows)
+    c.close()
+    left = len(missing_backbone(band, min_df))
+    say('补进 %d 篇，仍缺 %d 篇' % (len(rows), left))
+    return len(rows)
+
+
 # ══════════════════════════════════════════════════════════════════════
 # 第三步：聚类
 # ══════════════════════════════════════════════════════════════════════

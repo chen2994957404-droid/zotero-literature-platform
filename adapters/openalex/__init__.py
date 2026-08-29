@@ -45,6 +45,25 @@ from core import errors
 
 BASE = 'https://api.openalex.org'
 UA = {'User-Agent': 'zotero-literature-platform (research tool)'}
+
+# ── API key（2026-02 起 OpenAlex 改成按量计费，见踩坑 #77）────────────
+# 无 key：$0.10/天（约 1000 次 filter 查询）；免费 key：$1/天（约 10000 次）。
+# 单价：单条 /works/W123 **免费且无限次** · list/filter $0.10/千次 · 全文搜索 $1/千次。
+# key 在 openalex.org/settings/api 免费领，30 秒。没有也能跑，只是额度小 10 倍。
+def api_key():
+    try:
+        from core.config import get_key
+        return get_key('OPENALEX_KEY') or ''
+    except Exception:
+        return ''
+
+
+def _auth(url):
+    """给 URL 挂上 api_key（有就挂）。key 从系统凭据库/环境变量读，不落盘。"""
+    k = api_key()
+    if not k:
+        return url
+    return url + ('&' if '?' in url else '?') + 'api_key=' + urllib.parse.quote(k)
 # 只取用得上的字段：响应小一个数量级，也更快
 FIELDS = ('id,doi,title,publication_year,cited_by_count,primary_location,'
           'abstract_inverted_index,open_access,authorships')
@@ -61,7 +80,7 @@ def get(url, timeout=45, retries=2):
     last = None
     for attempt in range(retries + 1):
         try:
-            req = urllib.request.Request(url, headers=UA)
+            req = urllib.request.Request(_auth(url), headers=UA)
             return json.loads(urllib.request.urlopen(req, timeout=timeout).read())
         except urllib.error.HTTPError as e:
             last = f'HTTP {e.code}'
@@ -69,7 +88,14 @@ def get(url, timeout=45, retries=2):
                 time.sleep(3 * (attempt + 1))
                 continue
             if e.code == 429:
-                raise errors.RateLimited('OpenAlex 限流', service='openalex') from e
+                hint = ('OpenAlex 额度用尽或限流。'
+                        + ('已配 OPENALEX_KEY（$1/天），等 UTC 午夜重置，'
+                           '或改用免费的单条端点 works_by_ids(..., singleton=True)'
+                           if api_key() else
+                           '**当前没有配 API key，日额度只有 $0.10**。'
+                           '去 openalex.org/settings/api 免费领一个（30 秒），'
+                           '额度提高 10 倍；填进控制面板的 OPENALEX_KEY'))
+                raise errors.RateLimited(hint, service='openalex') from e
             if e.code in _RETRIABLE:
                 raise errors.ExternalServiceError(
                     f'OpenAlex {last}', service='openalex') from e
@@ -243,8 +269,40 @@ def works_by_dois(dois, select=FIELDS, on_progress=None, allow_partial=False):
                          allow_partial=allow_partial)
 
 
-def works_by_ids(ids, select=FIELDS, on_progress=None, allow_partial=False):
-    """一批 OpenAlex 短 id（W123...）→ {短id: work}。"""
+def works_by_ids(ids, select=FIELDS, on_progress=None, allow_partial=False,
+                 singleton=False):
+    """一批 OpenAlex 短 id（W123...）→ {短id: work}。
+
+    singleton=True 时逐条走 `/works/W123` —— **那个端点免费且不限次**，
+    代价是请求数等于条目数（慢，但不花额度）。额度告急或没配 key 时用它。
+    """
     clean = [str(i).rsplit('/', 1)[-1] for i in ids if i]
+    if singleton:
+        return works_singleton(clean, select=select, on_progress=on_progress,
+                               allow_partial=allow_partial)
     return _batch_filter('openalex', sorted(set(clean)), select,
                          on_progress=on_progress, allow_partial=allow_partial)
+
+
+def works_singleton(ids, select=FIELDS, on_progress=None, allow_partial=True):
+    """逐条取（`/works/W123`）。**免费、不限次**，但一条一个请求。
+
+    存在的理由：2026-02 起 list/filter 查询要花额度，而单条端点不花。
+    没有 API key 时，一天只够 ~1000 次 filter；用这条路能把同样的活跑完，
+    只是慢。**它是额度耗尽后唯一还能走的通路。**
+    """
+    out, failed = {}, []
+    uniq = sorted(set(str(i).rsplit('/', 1)[-1] for i in ids if i))
+    for n, wid in enumerate(uniq, 1):
+        try:
+            w = get('%s/works/%s?select=%s' % (BASE, wid, select))
+            out[w['id'].rsplit('/', 1)[-1]] = w
+        except errors.PlatformError:
+            failed.append(wid)
+        if on_progress and n % 200 == 0:
+            on_progress(n, len(uniq), len(out))
+    if failed and not allow_partial:
+        raise errors.ExternalServiceError(
+            'OpenAlex 单条取用有 %d / %d 条失败' % (len(failed), len(uniq)),
+            service='openalex')
+    return out
