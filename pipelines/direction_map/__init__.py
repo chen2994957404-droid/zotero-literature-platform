@@ -462,8 +462,11 @@ def cluster(band, resolutions=(1.5, 2.0, 2.5, 3.0), min_size=5, tries=10, progre
     for res, q, ncl, cov, p in report_:
         say('  res=%.1f | 模块度 %.3f | 簇>=%d %2d | 覆盖 %d/%d | 主题纯度 %.2f'
             % (res, q, min_size, ncl, cov, len(keys), p))
-    best_res = max(report_, key=lambda r: r[4])[0]
-    say('选定 res=%.1f（按主题纯度，不按模块度 —— 见 domain.bibliometrics 说明）' % best_res)
+    # 和 best_partition 用同一条判据：纯度并列时取最粗的一档（见那边的说明）
+    top_p = max(r[4] for r in report_)
+    best_res = min(r[0] for r in report_ if r[4] >= top_p - 0.02)
+    say('选定 res=%.1f（纯度最高的若干档里取最粗的一档 —— 纯度差在噪声量级时，'
+        '选最碎的那档只会换来一张读不了的图）' % best_res)
 
     with c:
         c.execute('DELETE FROM clusters')

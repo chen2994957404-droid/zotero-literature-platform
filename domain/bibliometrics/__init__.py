@@ -200,13 +200,23 @@ def purity(groups, topic_of, min_size=4):
 
 
 def best_partition(S, keys, topic_of, resolutions=(1.5, 2.0, 2.5, 3.0),
-                   tries=10, min_size=5):
-    """扫分辨率，按主题纯度挑最好的一档。返回 (labels, 报告列表)。
+                   tries=10, min_size=5, purity_tol=0.02):
+    """扫分辨率挑一档。返回 (labels, 报告列表)。
 
     报告列表每项 = (resolution, 模块度, 簇数, 覆盖篇数, 纯度)，便于把过程打出来 ——
     「为什么选这一档」应该是看得见的，而不是藏在代码里的一个魔数。
+
+    **挑法：先按纯度，纯度打平时选最粗的那一档。**
+
+    ⚠ 只按纯度挑会出事（实测）：impact_mech 的四档纯度是 0.42/0.42/0.43/0.43，
+    差异在噪声量级，而规则却为了 0.01 选了最碎的 res=3.0 ——
+    69 个簇、模块度 0.410、覆盖 3296；而 res=1.5 是 47 个簇、模块度 0.509、覆盖 3346。
+    **拿噪声当信号，换来一张读不了的图。**
+
+    所以加 purity_tol：纯度在最优值 tol 以内的都算「一样好」，
+    这些里面选**分辨率最低**（簇最少、模块度通常最高、覆盖最全）的一档。
     """
-    report, best = [], None
+    report, cand = [], []
     for res in resolutions:
         bl, bq = None, -1.0
         for s in range(tries):
@@ -218,9 +228,11 @@ def best_partition(S, keys, topic_of, resolutions=(1.5, 2.0, 2.5, 3.0),
         big = [m for m in gs if len(m) >= min_size]
         p = purity(gs, topic_of)
         report.append((res, bq, len(big), sum(len(m) for m in big), p))
-        if best is None or p > best[0]:
-            best = (p, bl)
-    return best[1], report
+        cand.append((res, p, bl))
+    top = max(c[1] for c in cand)
+    ok = [c for c in cand if c[1] >= top - purity_tol]
+    chosen = min(ok, key=lambda c: c[0])          # 并列时取最粗
+    return chosen[2], report
 
 
 # ── 时间趋势 ──────────────────────────────────────────────────────────
