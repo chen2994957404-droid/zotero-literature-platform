@@ -39,7 +39,7 @@ KEYRING_SERVICE = 'literature-platform'
 
 # 哪些是「密钥」（存凭据库），哪些是普通配置（留在 .env，需要可读可移植）
 SECRET_KEYS = ('DEEPSEEK_KEY', 'ZOTERO_API_KEY', 'MINERU_TOKEN', 'SILICONFLOW_KEY',
-               'SCIVERSE_KEY')
+               'SCIVERSE_KEY', 'OPENALEX_KEY')
 
 
 def _keyring():
@@ -138,7 +138,8 @@ def all_keys():
     if _cache is None:
         _cache = _load_env_file()
     names = set(_cache.keys())
-    for n in ('DEEPSEEK_KEY', 'ZOTERO_API_KEY', 'MINERU_TOKEN', 'SILICONFLOW_KEY'):
+    for n in ('DEEPSEEK_KEY', 'ZOTERO_API_KEY', 'MINERU_TOKEN', 'SILICONFLOW_KEY',
+              'OPENALEX_KEY'):
         if os.environ.get(n):
             names.add(n)
     return sorted(names)

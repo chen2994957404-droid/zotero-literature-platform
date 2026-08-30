@@ -185,7 +185,7 @@ def c_secret_storage():
     plain = [k for k in SECRET_KEYS if key_location(k) == '.env明文']
     # 含明文密钥的残留文件（备份、临时文件）
     import re
-    pat = re.compile(r'^(DEEPSEEK_KEY|ZOTERO_API_KEY|MINERU_TOKEN|SILICONFLOW_KEY)=(.{8,})$', re.M)
+    pat = re.compile(r'^(DEEPSEEK_KEY|ZOTERO_API_KEY|MINERU_TOKEN|SILICONFLOW_KEY|OPENALEX_KEY)=(.{8,})$', re.M)
     leftovers = []
     for f in glob.glob('.env.bak*') + glob.glob('.env.tmp') + glob.glob('*.env'):
         try:
