@@ -1,0 +1,171 @@
+{
+ "id": "impact2",
+ "name": "高分子抗冲击（严格过滤版）",
+ "note": "这个方向是两个几乎不相往来的社群：化学侧（强韧/自修复/动态键弹性体，发 AM/AFM/JACS，公众号全覆盖）与工程侧（聚脲防爆、弹道防护、剪切增稠，发 IJIE/Composite Structures，公众号零覆盖）。所以 queries 里工程侧是必须项 —— 只靠 from_band 会得到一张缺一半的图。",
+ "queries": [
+  {
+   "q": "polyurea blast",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "polyurea impact",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "polyurea coating protection",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "ballistic impact composite",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "ballistic limit velocity",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "body armor material",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "penetration resistance plate",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "blast mitigation coating",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "blast resistant panel",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "low velocity impact composite",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "impact resistant composite",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "crashworthiness energy absorption",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "impact energy absorption structure",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "shear thickening fluid impact",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "shear stiffening gel",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "shear thickening gel armor",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "polyborosiloxane",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "strain rate stiffening polymer",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "impact stiffening",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "sacrificial bonds toughening",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "self-healing elastomer impact",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "dynamic bond impact resistance",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "nacre inspired impact",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "energy dissipation elastomer network",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "helmet liner impact",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  },
+  {
+   "q": "impact absorbing material protective",
+   "limit": 200,
+   "year_from": null,
+   "mode": "strict"
+  }
+ ],
+ "from_band": {
+  "band": "wechat_polymer",
+  "match": "impact|ballistic|blast|penetrat|puncture|shock|shear[- ]?(thicken|stiffen)|strain[- ]?stiffen|dilatant|damping|energy[- ]?dissipat|toughen|polyurea|nacre|brick[- ]and[- ]mortar|armor|armour"
+ },
+ "zotero": {
+  "query": "impact",
+  "limit": 300
+ }
+}

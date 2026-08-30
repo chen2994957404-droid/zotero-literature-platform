@@ -306,3 +306,33 @@ def works_singleton(ids, select=FIELDS, on_progress=None, allow_partial=True):
             'OpenAlex 单条取用有 %d / %d 条失败' % (len(failed), len(uniq)),
             service='openalex')
     return out
+
+# ── 精确过滤取用（与 search() 的模糊相关性排序是两回事）──────────────
+# 为什么要有这个（实测得出，不是洁癖）：
+# `search()` 走的是**相关性排序**，而相关性受被引数影响 ——
+# 建 impact 窄带时它把大刊综述和高被引泛论文顶了上来，
+# 结果 2328 篇种子里**只有 37% 的标题跟抗冲有关，17% 是综述**。
+# `title_and_abstract.search` 是**过滤器**：词必须真的出现在标题或摘要里。
+# 配合 type:article 排除综述，命中质量完全不同。
+def works_by_filter(filters, limit=200, select=FIELDS, sort=None, mailto=POLITE_MAILTO):
+    """按 OpenAlex filter 语法取一页结果。filters 是 {字段: 值} 或已拼好的字符串。
+
+    返回 (items, total)。items 是归一化后的统一文献字典。
+    常用字段：
+        title_and_abstract.search  词必须出现在标题或摘要（不是模糊相关性）
+        type                       article / review / book-chapter ...
+        publication_year           >2009 这种区间写法
+        is_retracted               false
+    """
+    if isinstance(filters, dict):
+        f = ','.join('%s:%s' % (k, v) for k, v in filters.items() if v not in (None, ''))
+    else:
+        f = str(filters)
+    url = '%s/works?filter=%s&per-page=%d&select=%s&mailto=%s' % (
+        BASE, urllib.parse.quote(f, safe=':|,><=/.'), min(int(limit), 200),
+        select, urllib.parse.quote(mailto))
+    if sort:
+        url += '&sort=' + urllib.parse.quote(sort)
+    d = get(url)
+    items = [normalize(w) for w in d.get('results', [])]
+    return items, (d.get('meta') or {}).get('count', len(items))

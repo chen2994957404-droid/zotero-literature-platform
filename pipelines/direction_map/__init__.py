@@ -156,7 +156,21 @@ def seeds_from_openalex(band, spec=None, progress=None):
         for q in spec.get('queries', []):
             text = q['q']
             limit = int(q.get('limit', 100))
-            items, tot = openalex.search(text, limit=limit, year_from=q.get('year_from'))
+            # mode='strict'（默认）：词必须真的出现在标题或摘要里。
+            # mode='relevance'：旧的模糊相关性排序 —— 实测它会把大刊综述和
+            # 高被引泛论文顶上来（2328 篇种子里只有 37% 标题跟主题有关），
+            # 保留它只为兼容，新窄带别用。
+            if q.get('mode', 'strict') == 'strict':
+                # 限定正式期刊：不加这条会混进 SSRN / Zenodo 上的预印本，
+                # 它们多是已发表版本的重复，会在引用网络里制造分身。
+                f = {'title_and_abstract.search': text, 'is_retracted': 'false',
+                     'primary_location.source.type': 'journal'}
+                if q.get('year_from'):
+                    f['publication_year'] = '>%d' % (int(q['year_from']) - 1)
+                items, tot = openalex.works_by_filter(f, limit=limit)
+            else:
+                items, tot = openalex.search(text, limit=limit,
+                                             year_from=q.get('year_from'))
             got = []
             for it in items:
                 wid = _short(it.get('openalex_id') or '')

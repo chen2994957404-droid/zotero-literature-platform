@@ -1,0 +1,92 @@
+{
+ "id": "impact_eng",
+ "name": "高分子抗冲 · 应用工程侧",
+ "note": "问的是「什么方案能达到什么防护指标、用在哪」。机理在 impact_mech。",
+ "queries": [
+  {
+   "q": "polyurea blast",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "polyurea impact",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "polyurea coating protection",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "ballistic impact composite",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "ballistic limit velocity",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "body armor material",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "penetration resistance plate",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "blast mitigation coating",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "blast resistant panel",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "low velocity impact composite",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "impact resistant composite",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "crashworthiness energy absorption",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "impact energy absorption structure",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "shear thickening fluid impact",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "shear thickening gel armor",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "helmet liner impact",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "impact absorbing material protective",
+   "limit": 200,
+   "mode": "strict"
+  }
+ ]
+}

@@ -1,0 +1,145 @@
+{
+ "id": "impact_mech",
+ "name": "高分子抗冲 · 机理侧",
+ "note": "用户的重点。问的是「什么新机制/新结构能实现什么性能」，不是「什么方案能达到什么防护指标」——后者在 impact_eng。两条带子分库但要做跨库桥接分析：交界处才是用户站的位置。",
+ "queries": [
+  {
+   "q": "sacrificial bonds toughening",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "energy dissipation mechanism polymer",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "toughening mechanism elastomer",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "viscoelastic energy dissipation",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "crack propagation elastomer toughness",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "fracture energy network polymer",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "entanglement network toughness",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "double network toughening",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "strain rate dependent polymer mechanics",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "shear stiffening mechanism",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "shear thickening mechanism suspension",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "impact stiffening supramolecular",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "rate dependent glass transition polymer",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "polyborosiloxane",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "shear stiffening gel",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "borate ester dynamic bond",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "dynamic covalent network mechanical",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "hydrogen bonding toughening elastomer",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "supramolecular elastomer mechanical property",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "metal coordination toughening",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "self-healing elastomer mechanical",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "microphase separation toughening",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "nanocomposite reinforcement mechanism",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "nacre inspired toughening mechanism",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "interfacial energy dissipation composite",
+   "limit": 200,
+   "mode": "strict"
+  },
+  {
+   "q": "mechanochemistry force responsive polymer",
+   "limit": 200,
+   "mode": "strict"
+  }
+ ],
+ "from_band": {
+  "band": "wechat_polymer",
+  "match": "impact|shear[- ]?(thicken|stiffen)|strain[- ]?stiffen|dilatant|damping|energy[- ]?dissipat|toughen|sacrificial|dynamic bond|viscoelastic|fracture|nacre"
+ },
+ "zotero": {
+  "query": "impact",
+  "limit": 300
+ }
+}
