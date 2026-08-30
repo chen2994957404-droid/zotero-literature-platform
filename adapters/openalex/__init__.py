@@ -336,3 +336,30 @@ def works_by_filter(filters, limit=200, select=FIELDS, sort=None, mailto=POLITE_
     d = get(url)
     items = [normalize(w) for w in d.get('results', [])]
     return items, (d.get('meta') or {}).get('count', len(items))
+
+
+def cited_by(work_id, limit=200, select=FIELDS, mailto=POLITE_MAILTO, page_all=False):
+    """谁引用了这篇（前向引用）。返回 (citing_works, total)。
+
+    这是**前向雪球**的原语，也是「跟进厚度 / CD 指数」的唯一数据来源 ——
+    库里原本只有「种子引了谁」（后向），没有「谁引了种子」。
+    后者才能回答「一个漂亮结果有没有人真的跟进」。
+
+    ⚠ 成本：一篇一次 list 查询（$0.0001）。3700 篇种子约 $0.37，
+    在免费 key 的 $1/天 里，但要留意别一天里反复重跑。
+    page_all=True 时对被引很多的论文翻页取全（每页 200，会成倍花钱）。
+    """
+    wid = str(work_id).rsplit('/', 1)[-1]
+    out, page, total = [], 1, 0
+    while True:
+        url = ('%s/works?filter=cites:%s&per-page=%d&page=%d&select=%s&mailto=%s'
+               % (BASE, wid, min(int(limit), 200), page, select,
+                  urllib.parse.quote(mailto)))
+        d = get(_ := url)
+        res = d.get('results', [])
+        total = (d.get('meta') or {}).get('count', len(res))
+        out.extend(res)
+        if not page_all or not res or len(out) >= min(total, limit):
+            break
+        page += 1
+    return out, total

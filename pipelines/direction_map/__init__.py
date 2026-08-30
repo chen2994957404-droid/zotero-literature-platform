@@ -79,6 +79,11 @@ CREATE TABLE IF NOT EXISTS wechat_files (
 CREATE TABLE IF NOT EXISTS clusters (
     work_id TEXT, cluster INTEGER, resolution REAL, PRIMARY KEY (work_id));
 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
+-- 前向雪球的进度台账：每篇种子取过没有、取到多少。
+-- 有这张表，两小时的作业才能断点续跑（实测被打断过一次）。
+CREATE TABLE IF NOT EXISTS forward (
+    work_id TEXT PRIMARY KEY, n_citers INTEGER, fetched INTEGER,
+    n_forward INTEGER, n_backward INTEGER, at TEXT);
 CREATE INDEX IF NOT EXISTS idx_edges_dst ON edges(dst);
 CREATE INDEX IF NOT EXISTS idx_works_seed ON works(is_seed);
 CREATE INDEX IF NOT EXISTS idx_seed_source ON seed_pool(source);
@@ -422,6 +427,109 @@ def fill_missing(band, min_df=3, singleton=True, progress=None):
     left = len(missing_backbone(band, min_df))
     say('补进 %d 篇，仍缺 %d 篇' % (len(rows), left))
     return len(rows)
+
+
+def snowball_forward(band, limit_per_seed=200, max_seeds=None, progress=None):
+    """前向雪球：谁引用了这些种子。**跟进厚度与 CD 指数的唯一数据来源。**
+
+    库里原本只有「种子引了谁」（建图时的后向边），没有「谁引了种子」。
+    后者才能回答用户真正关心的那个问题 ——
+    **一个漂亮结果，三年里有没有人真的跟进？** 没人跟进，多半是复现不了。
+
+    引用边存进同一张 edges 表（src 引用 dst）—— 前向边不过是 dst 恰好是种子而已，
+    不需要新表。`forward` 表只记进度，**为的是这活能断点续跑**：
+    3700 篇种子约 2.3 小时，实测被进程回收打断过。
+
+    ⚠ 成本：一篇一次 list 查询（$0.0001），3700 篇约 $0.37。
+    免费 key 每天 $1，够跑但别一天反复重跑。
+
+    ⚠ **两条读数注意事项，别在报告里省掉**：
+
+    ① `limit_per_seed` 会截断。被引 721 次的论文只取前 200 个引用者，
+       所以 n_forward / n_backward 是**抽样估计**，而且抽的是 OpenAlex 的
+       默认顺序（不是随机抽样）。`n_citers` 存的是真实总数，
+       **抽样比例可见** —— 报颠覆度时要一并报它。
+
+    ② **颠覆度高 ≠ 一定是开创性工作。** 「引用者不引它的前驱」也可能只是
+       因为这篇论文处在别的社群里、被一群不熟悉它谱系的人偶然引用。
+       这是 CD 类指标的已知批评。**它是线索，不是判决。**
+    """
+    say = progress or (lambda *a: None)
+    c = _conn(band)
+    todo = [r[0] for r in c.execute(
+        'SELECT id FROM works WHERE is_seed=1 AND id NOT IN (SELECT work_id FROM forward)')]
+    done = c.execute('SELECT COUNT(*) FROM forward').fetchone()[0]
+    c.close()
+    if max_seeds:
+        todo = todo[:int(max_seeds)]
+    if not todo:
+        say('前向雪球已完成（%d 篇种子都取过了）' % done)
+        return {'done': done, 'new': 0}
+    say('前向雪球：待取 %d 篇（已完成 %d 篇），预计 %.1f 小时 / 约 $%.2f'
+        % (len(todo), done, len(todo) * 2.2 / 3600.0, len(todo) * 0.0001))
+
+    SEL = ('id,doi,title,publication_year,cited_by_count,primary_location,'
+           'referenced_works')
+    batch_w, batch_e, batch_f, n_new = [], [], [], 0
+    for i, wid in enumerate(todo, 1):
+        try:
+            citers, total = openalex.cited_by(wid, limit=limit_per_seed, select=SEL)
+        except errors.PlatformError as e:
+            say('  [%d/%d] %s 取不到：%s' % (i, len(todo), wid, str(e)[:70]))
+            continue
+        # 这篇种子自己引了谁 —— 判断「引用者有没有也引它的前驱」要用
+        cc = _conn(band)
+        own_refs = set(r[0] for r in cc.execute(
+            'SELECT dst FROM edges WHERE src=?', (wid,)))
+        cc.close()
+        n_f = n_b = 0
+        for w in citers:
+            cid = _short(w.get('id'))
+            batch_w.append((cid, wechat_seed.normalize_doi(w.get('doi')),
+                            w.get('title') or '', w.get('publication_year'),
+                            _venue(w), w.get('cited_by_count') or 0, '', 0, ''))
+            batch_e.append((cid, wid))
+            # ⚠ **只存 引用者→种子 这一条边。**
+            # 早先版本把引用者自己的全部参考文献也存进 edges，
+            # 实测 15 篇种子就产生 140,121 条边（每篇约 9300 条），
+            # 按 3720 篇外推是**三千五百万条** —— 而其中 99% 对我们毫无用处。
+            # CD 指数真正需要的只是「引用者有没有也引这篇的前驱」这个判断，
+            # 取数时当场算一次就行，不必把边留下来。
+            crefs = set(_short(r) for r in (w.get('referenced_works') or []))
+            if crefs & own_refs:
+                n_b += 1      # 连前驱一起引 → 巩固既有路线
+            else:
+                n_f += 1      # 引它而不再引其前驱 → 改变了路线
+        batch_f.append((wid, total, len(citers), n_f, n_b, _now()))
+        n_new += len(citers)
+        if len(batch_f) >= 25 or i == len(todo):
+            c = _conn(band)
+            with c:
+                c.executemany(
+                    'INSERT OR IGNORE INTO works VALUES (?,?,?,?,?,?,?,?,?)', batch_w)
+                c.executemany('INSERT OR IGNORE INTO edges VALUES (?,?)', batch_e)
+                c.executemany('INSERT OR REPLACE INTO forward VALUES (?,?,?,?,?,?)', batch_f)
+            c.close()
+            say('  %d/%d 篇 · 新增引用者 %d · 边 %d'
+                % (i, len(todo), n_new, len(batch_e)))
+            batch_w, batch_e, batch_f = [], [], []
+    log.info('snowball_forward[%s] 取了 %d 篇种子的前向引用' % (band, len(todo)))
+    return {'done': done + len(todo), 'new': n_new}
+
+
+def follow_up(band, min_citers=0):
+    """跟进厚度：每篇种子被多少人跟进、跟进者分布在哪些年。
+
+    先看这个再谈 CD 指数 —— CD 需要更完整的网络，而「有没有人跟进」
+    这个更粗但更稳的信号，前向雪球一跑完就有。
+    """
+    c = _conn(band)
+    rows = list(c.execute(
+        'SELECT w.id, w.title, w.year, w.venue, w.cited_by, '
+        'f.n_citers, f.n_forward, f.n_backward '
+        'FROM works w JOIN forward f ON w.id=f.work_id WHERE w.is_seed=1'))
+    c.close()
+    return [r for r in rows if (r[5] or 0) >= min_citers]
 
 
 # ══════════════════════════════════════════════════════════════════════
