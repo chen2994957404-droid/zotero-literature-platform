@@ -37,5 +37,5 @@
 
 ```
 python selftest.py                       # 本块自测（6 组用例），必须全过
-python ../../平台管理/health_check.py     # 全局体检，确认没碰坏别人
+python ../../host/doctor/health_check.py     # 全局体检，确认没碰坏别人
 ```

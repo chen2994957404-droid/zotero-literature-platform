@@ -9,7 +9,7 @@
 
 ## 接口
 ```python
-from adapters.llm_client import chat, chat_json
+from shared.adapters.llm_client import chat, chat_json
 
 # 纯文本（对话/精读/问答）
 chat(system, user)                          # 默认 deepseek-v4-pro

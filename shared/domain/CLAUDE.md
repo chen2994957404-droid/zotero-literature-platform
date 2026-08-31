@@ -17,11 +17,11 @@
 ```
 ❌ 不许联网（urllib / requests / httpx / socket）
 ❌ 不许 import 数据库或外部服务客户端（chromadb、keyring），不许起子进程
-❌ 不许 import core.paths
+❌ 不许 import `shared.kernel.paths`
 ```
 
 **第三条最容易被忽略，但它才是关键**：domain 永远不知道文件放在哪，
-路径一律由调用方传进来。一旦 domain 知道了 `workflow_data` 的布局，
+路径一律由调用方传进来。一旦 domain 知道了 `data/` 的布局，
 它就跟我们的数据组织方式绑死了 —— 既不能独立测试，也不能被复用，
 而且改一次目录布局就会波及本该最稳定的一层。
 

@@ -1,6 +1,6 @@
 ---
 name: curate
-description: 库房维护：自动打标签、附件改名、清重复、定时同步。什么时候用：用户说「库里好像有重复的」「附件名乱了」「标签太乱」「同步一下」；体检报告说缺 meta.json、或精读线找不到正文 PDF
+description: 库房维护：自动打标签、附件改名、清重复、补元数据。什么时候用：用户说「库里好像有重复的」「附件名乱了」「标签太乱」「同步一下」；体检报告说缺 meta.json、或精读线找不到正文 PDF
 ---
 
 <!-- 本文件由 host/codegen/skills.py 生成，**别手改**。改源：tools/curate/SKILL.md + tools/curate/tool.toml -->
@@ -39,6 +39,6 @@ python -m tools.curate junk --删除  # 用户看过清单、明确说删，才�
 
 ## 边界
 
-- `sync` 会顺带跑全库作业（向量化 + 粗层抽取），耗时长
+- 定时增量同步不在我这儿了（在 `host/autosync/`，每小时自己跑）
 - `autotag`（自动打标签）**已于 2026-07-25 弃用**（用户认为多余），别推荐它
 - `rename` 要一份全库 JSON 作数据源，不是随手就能跑的

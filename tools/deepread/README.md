@@ -33,7 +33,7 @@ python -m host.watcher.watchdog      看门狗，它真死了才重启它
 
 ## 产物
 
-`workflow_data/library/<KEY>/`：`parsed/full.md`（解析全文）、
+`data/raw/<KEY>/parsed/full.md`（解析全文）、`data/curated/<KEY>/`：
 `summary.html`（中文精读）、`summary_full.html`（正文+SI 合并版）。
 
 ## 花钱吗

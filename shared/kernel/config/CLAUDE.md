@@ -52,6 +52,6 @@
 
 ```
 python selftest.py                       # 本块自测，必须全过
-python ../../平台管理/health_check.py     # 全局体检，确认没碰坏别人
+python ../../host/doctor/health_check.py     # 全局体检，确认没碰坏别人
 ```
 自测不过就是没改完。**没有自测覆盖的新功能，等于没写。**

@@ -17,7 +17,7 @@ get_fulltext(att_key)                   # → Zotero 全文索引文本（粗层
 zget("/users/<id>/items/<key>/children")   # → 本地只读 API
 ```
 
-## 配置（走 `core.config`，在控制面板里填，**不要写死在代码或文档里**）
+## 配置（走 `shared.kernel.config`，在控制面板里填，**不要写死在代码或文档里**）
 | 变量 | 示例 | 说明 |
 |------|------|------|
 | ZOTERO_USER_ID | `12345678` | Zotero 设置→账户里的 userID，纯数字 |

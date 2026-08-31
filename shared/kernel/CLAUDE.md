@@ -21,7 +21,7 @@
 
 | 文件 | 是什么 |
 |---|---|
-| `paths.py` | **数据契约的唯一实现**。全系统只有它知道 `workflow_data` 里的目录长什么样 |
+| `paths.py` | **数据契约的唯一实现**。全系统只有它知道 `data/` 五层里的目录长什么样 |
 | `log.py` | 统一日志：像 print 一样调用，带时间戳、落盘、自动轮转（5MB × 3 份）|
 | `errors.py` | 异常分类。分类维度是**「该拿它怎么办」**，不是「哪里出的错」|
 | `jobs.py` | **任务状态库**（SQLite）：谁做到哪一步、谁产的、失败在哪、该重跑谁 |
@@ -30,7 +30,7 @@
 ## jobs.py 怎么用
 
 ```python
-from core import jobs
+from shared.kernel import jobs
 
 if jobs.is_done(key, 'main_summary', require='summary', prompt_ver=2):
     ...跳过，省一次 MineRU + DeepSeek 的钱...
@@ -55,7 +55,7 @@ jobs.summary()                             # 按步骤统计，给面板显示�
 ## log.py 怎么用
 
 ```python
-from core.log import get_logger
+from shared.kernel.log import get_logger
 log = get_logger('zotero_watcher')
 
 log('开始处理', key)        # 像 print 一样用（老代码零成本迁移）
@@ -74,7 +74,7 @@ log.path                    # 写到哪个文件（面板展示日志时用）
 ## errors.py 怎么用
 
 ```python
-from core import errors
+from shared.kernel import errors
 
 raise errors.ConfigError('MINERU_TOKEN 没配，去控制面板填')
 raise errors.RateLimited('MineRU 限流', service='mineru', retry_after=30)
@@ -90,7 +90,7 @@ else:                        ...记下来，跳过...
 ## paths.py 怎么用
 
 ```python
-from core import paths
+from shared.kernel import paths
 
 paths.fulltext(key)       # library/<key>/parsed/full.md   ← 不可再生的核心资产
 paths.layout(key)         # library/<key>/parsed/layout.json
@@ -122,5 +122,5 @@ paths.check_key(k)                   # 校验 8 位 item key，不合法就抛 B
 
 ## 绝对不要做的事
 
-- 不要在别的地方写 `os.path.join(ROOT, 'workflow_data', ...)`。守卫会拦。
-- 不要让 core 依赖 `modules/`。现在还没有这种依赖，别开这个头。
+- 不要在别的地方拼 `data/` 的路径。守卫会拦。
+- 不要让 kernel 依赖 `shared/domain`、`shared/adapters`、`tools/` 或 `host/`。它是最底层，谁都依赖它、它不依赖任何人。

@@ -45,7 +45,7 @@ jobs.stale('extract', schema_ver=2)   # 这就是「谁缺新字段」的答案
 ## 出表函数返回字符串，不写盘
 
 `compare_table()` / `reviews_table()` 只管拼 Markdown。写到哪个文件去，
-是 `tools/extract` 的事（它才知道 `core.paths`）。
+是 `tools/extract` 的事（它才知道 `shared.kernel.paths`）。
 这不是洁癖：**domain 一旦知道了目录布局，就没法离线测试、也没法被别的项目复用**，
 而且改一次目录会波及本该最稳定的一层。
 

@@ -42,7 +42,7 @@
 | 线 | 料 | 覆盖 | 谁跑 |
 |---|---|---|---|
 | 精层 `deep_all()` | 精读产物 `parsed/full.md` | 只有精读过的 | 手动 `--deep` |
-| 粗层 `light_all()` | Zotero 自带全文索引 | **全库** | 定时任务每小时（`tools.curate.sync`）|
+| 粗层 `light_all()` | Zotero 自带全文索引 | **全库** | 定时任务每小时（`host.autosync`）|
 
 ## 对外接口
 
@@ -68,7 +68,7 @@ vectorize.deep_all()       # 精层增量
 | 检索几块 | `TOP_K`（本文件）|
 | 切块策略 | `shared/adapters/embed.chunk` —— **改完要重建向量库** |
 | 换向量库 | `shared/adapters/vectordb`（这里一行不用动）|
-| 读写路径 | `shared/kernel/paths`（不要手拼 `workflow_data`，守卫会拦）|
+| 读写路径 | `shared/kernel/paths`（不要手拼 `data/` 的路径，守卫会拦）|
 
 ## 怎么验证
 

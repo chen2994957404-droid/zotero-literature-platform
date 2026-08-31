@@ -64,5 +64,5 @@ Sciverse 等按 query 语言做亲和加权。中文问「聚硼硅氧烷的剪�
 
 ```
 python selftest.py                       # 5 项，含真实 LLM 调用
-python ../../平台管理/health_check.py
+python ../../host/doctor/health_check.py
 ```

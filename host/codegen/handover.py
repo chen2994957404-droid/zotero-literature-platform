@@ -3,11 +3,11 @@
 
 ## 为什么必须自动生成
 
-标准做法是 `CLAUDE.md` + `HANDOVER.md` 配合：前者说「这个项目是什么」，
+标准做法是 `AGENTS.md` + `HANDOVER.md` 配合：前者说「这个项目是什么」，
 后者说「我们做到哪了、试过什么、下一步是什么」。
 
 但**靠人（或 AI）记得更新的文档一定会过时** —— 本项目已经证明过三次：
-待办与需求过时（列着早已修好的 bug）、CLAUDE.md 的密钥说明过时（还写着 .env）、
+待办与需求过时（列着早已修好的 bug）、正本的密钥说明过时（还写着 .env）、
 docs 里留着教人跑 `docker ps` 的 n8n 时代教程。
 
 所以这份交接文件的内容**全部从系统真实状态抓取**：
@@ -75,9 +75,23 @@ _PKG_DESC = {
 
 
 def _members(p):
-    """一个包底下有哪些成员（子包 + 直接躺着的 .py），返回排好序的名字列表。"""
-    subs = sorted(x for x in os.listdir(p)
-                  if os.path.isdir(os.path.join(p, x)) and x not in paths.NOISE_DIRS)
+    """一个包底下有哪些成员（子包 + 直接躺着的 .py），返回排好序的名字列表。
+
+    **「是不是一块」的判据只有一个：有没有 `__init__.py`** —— 与
+    `paths.block_dirs()`（体检、面板枚举积木用的那个）完全一致。
+
+    此前这里用的是「目录在不在」，于是两处口径对不上，出过两种事故：
+      · 删包时只 `git rm`，目录以「只剩 __pycache__」的形态活着，结构树照画（踩坑 #87）
+      · `tools/<t>/{tests,evals,prompts}/` 这些配套目录被当成块，把真正的成员淹掉
+    同名不同物也只有 `__init__.py` 分得开：`shared/kernel/prompts/` 是货真价实的
+    一块（提示词读取器），而 `tools/<t>/prompts/` 只是几个 .txt。
+    """
+    def is_block(x):
+        d = os.path.join(p, x)
+        return (os.path.isdir(d) and x not in paths.NOISE_DIRS
+                and os.path.isfile(os.path.join(d, '__init__.py')))
+
+    subs = sorted(x for x in os.listdir(p) if is_block(x))
     files = sorted(os.path.basename(f) for f in glob.glob(os.path.join(p, '*.py'))
                    if not os.path.basename(f).startswith('__'))
     return subs + files
@@ -117,8 +131,17 @@ def tree():
             if d in ('shared', 'host', 'tools') or d in paths.CODE_RINGS:
                 lines += _pkg_lines(d, p)
             elif d == 'docs':
-                n = len(glob.glob(os.path.join(p, '*.md')))
-                lines.append(f'{d}/                    ← 文档（{n} 份）')
+                # R7 起 docs 按用途分四类，直接画出来 —— 只报一个总数的话，
+                # 「该去哪一类找」这个真正有用的信息就丢了。
+                sub = [(x, len(glob.glob(os.path.join(p, x, '*.md'))))
+                       for x in ('explain', 'howto', 'reference', 'incidents')
+                       if os.path.isdir(os.path.join(p, x))]
+                top = len(glob.glob(os.path.join(p, '*.md')))
+                lines.append(f'{d}/  ← 跨工具的档案（另有 {top} 份日志直接躺在下面）')
+                if sub:
+                    lines.append('    ' + '、'.join(
+                        f'{x}/（{n}）' for x, n in sub)
+                        + '  ← 为什么 / 怎么做 / 事实 / 坑')
             elif d == 'launch':
                 # 这里装的是给人双击的 .bat（文件名 = 按钮标签），不是 .py。
                 # 按 .py 数会永远显示「0 个脚本」，等于没画。
@@ -144,13 +167,13 @@ def tree():
 
 
 def _current_stage():
-    """从 CLAUDE.md 抽出「架构重构走到哪一阶段」。抽不到就返回 None（绝不编）。
+    """从 AGENTS.md 抽出「架构重构走到哪一阶段」。抽不到就返回 None（绝不编）。
 
-    CLAUDE.md 是唯一事实来源，这里只做提取，不维护第二份 ——
+    AGENTS.md 是唯一事实来源，这里只做提取，不维护第二份 ——
     手写的第二份会过时，而过时的「下一步」会把新对话直接带偏。
     """
     try:
-        lines = io.open(CLAUDE_MD, encoding='utf-8').read().split(chr(10))
+        lines = io.open(AGENTS_MD, encoding='utf-8').read().split(chr(10))
     except Exception:
         return None
     for i, ln in enumerate(lines):
@@ -202,6 +225,12 @@ _HEALTH_CACHE = {}
 
 
 def blocks():
+    """所有「块」：[(名字, 一句话, 住在哪一环)]。
+
+    环也要带出来 —— `block_dirs()` 枚举的是 `CODE_RINGS`，里面既有
+    `shared/*` 的共用件也有 `tools/*` 的工具切片。混成一句「积木层 shared/」
+    会让读的人以为工具也住在 shared 里，正好和第三节硬规则 1 说反。
+    """
     rows = []
     for ring, name, d in paths.block_dirs():
         f = os.path.join(d, '__init__.py')
@@ -212,7 +241,7 @@ def blocks():
             doc = doc.split('\n')[0].replace(f'{name} · ', '').split('（')[0][:26]
         except Exception:
             pass
-        rows.append((name, doc))
+        rows.append((name, doc, ring))
     return rows
 
 
@@ -275,7 +304,7 @@ def build():
     a(f'> **本文件由 `host/codegen/handover.py` 自动生成，不要手改** —— 手写的文档一定会过时。')
     a(f'> 生成时间：{time.strftime("%Y-%m-%d %H:%M")}')
     a('')
-    a('新对话请按这个顺序读：本文件 → `CLAUDE.md` → 需要动哪块就读那个文件夹的 `CLAUDE.md`。')
+    a('新对话请按这个顺序读：本文件 → `AGENTS.md` → 需要动哪块就读那个文件夹的 `CLAUDE.md`。')
     a('')
 
     a('## 目录结构（**不要去 glob 根目录**，数据目录有 3000+ 文件会淹掉你）')
@@ -331,14 +360,21 @@ def build():
 
     a('## 项目组成')
     a('')
-    a('| 文件夹 | 脚本数 | 是什么 |')
-    a('|---|---|---|')
-    for d, n, desc in flows():
-        a(f'| `{d}` | {n} | {desc} |')
-    a('')
+    fl = flows()
+    if fl:          # 还没切进 tools/ 的老文件夹；切完就该是空的，空表头是噪音
+        a('| 还没切进 tools/ 的文件夹 | 脚本数 | 是什么 |')
+        a('|---|---|---|')
+        for d, n, desc in fl:
+            a(f'| `{d}` | {n} | {desc} |')
+        a('')
     bs = blocks()
-    a(f'**积木层 `shared/`（{len(bs)} 块）**：'
-      + '、'.join(f'`{n}`' for n, _ in bs))
+    for ring, label in (('tools', '工具切片 `tools/`'),
+                        ('shared/kernel', '基础设施 `shared/kernel/`'),
+                        ('shared/domain', '纯逻辑 `shared/domain/`'),
+                        ('shared/adapters', '外接口 `shared/adapters/`')):
+        names = [n for n, _, r in bs if r == ring]
+        if names:
+            a(f'**{label}（{len(names)} 块）**：' + '、'.join(f'`{n}`' for n in names))
     a('')
 
     tl = todos()
@@ -380,7 +416,9 @@ def build():
     return '\n'.join(L)
 
 
-CLAUDE_MD = os.path.join(ROOT, 'CLAUDE.md')
+# R7 窗起，agent 的正本是 AGENTS.md；CLAUDE.md 只剩一行 `@AGENTS.md`。
+# 结构树只往正本里写 —— 写进那一行的文件会把它整个顶掉。
+AGENTS_MD = os.path.join(ROOT, 'AGENTS.md')
 AUTO_BEGIN = '<!-- AUTO:结构 开始 · 由 host/codegen/handover.py 生成，勿手改 -->'
 AUTO_END = '<!-- AUTO:结构 结束 -->'
 
@@ -390,29 +428,30 @@ AUTO_END = '<!-- AUTO:结构 结束 -->'
 AUTO_BEGIN_RE = r'<!-- AUTO:结构 开始[^>]*-->'
 
 
-def sync_claude_md():
-    """把目录结构同步进 CLAUDE.md 的自动区块。
+def sync_agents_md():
+    """把目录结构同步进 AGENTS.md 的自动区块。
 
-    **为什么必须写进 CLAUDE.md 而不是只写在 HANDOVER（实测得出）**：
-    CLAUDE.md 是**唯一在任何工具调用之前**就进入上下文的文件。
+    **为什么必须写进正本而不是只写在 HANDOVER（实测得出）**：
+    `CLAUDE.md`（经 `@AGENTS.md` 指过来的这份）是**唯一在任何工具调用之前**
+    就进入上下文的文件。
     新会话的第一个动作往往是 glob 根目录，然后被 3000+ 个数据文件淹没 ——
     此时它还没读到 HANDOVER 里那句「不要 glob」。
-    一个只能保护「已经读过它的人」的警告是没用的，必须提前到 CLAUDE.md。
+    一个只能保护「已经读过它的人」的警告是没用的，必须提前到正本里。
 
     同时解决数字过时：手写的「10 块公理件」早已落后于实际的 16 块，
-    而新会话若只读 CLAUDE.md 就会**自信地答错**。自动生成即永不过时。
+    而新会话若只读正本就会**自信地答错**。自动生成即永不过时。
     """
-    # ⚠ 只有编程端才写 CLAUDE.md。
-    #    CLAUDE.md 是版本库里的文件，而这个函数会重写它的结构区块。
+    # ⚠ 只有编程端才写 AGENTS.md。
+    #    AGENTS.md 是版本库里的文件，而这个函数会重写它的结构区块。
     #    运行端的面板上也有「生成交接文件」按钮，用户会点 ——
     #    一点就产生本地改动，下次 git pull 必冲突（2026-08-26 真实发生过）。
     #    HANDOVER.md 本身已移出版本库，两台各生成各的，互不干扰。
     from shared.kernel import role
     if role.is_prod():          # 判据是「是不是运行端」，不是「是不是 dev」——
-        # 测试端（test）也在同一台编程机器上，照样该更新 CLAUDE.md
-        print('（运行端：只生成 HANDOVER.md，不改 CLAUDE.md —— 那是编程端的活）')
+        # 测试端（test）也在同一台编程机器上，照样该更新 AGENTS.md
+        print('（运行端：只生成 HANDOVER.md，不改 AGENTS.md —— 那是编程端的活）')
         return False
-    if not os.path.exists(CLAUDE_MD):
+    if not os.path.exists(AGENTS_MD):
         return False
     body = ['', AUTO_BEGIN, '',
             '## 项目结构（自动同步，**不要 glob 根目录**）', '',
@@ -429,7 +468,7 @@ def sync_claude_md():
              AUTO_END, '']
     block = '\n'.join(body)
 
-    src = io.open(CLAUDE_MD, encoding='utf-8').read()
+    src = io.open(AGENTS_MD, encoding='utf-8').read()
     if re.search(AUTO_BEGIN_RE, src) and AUTO_END in src:
         new = re.sub(AUTO_BEGIN_RE + r'[\s\S]*?' + re.escape(AUTO_END),
                      block.strip(), src)
@@ -439,7 +478,7 @@ def sync_claude_md():
         pos = m.start() if m else len(src)
         new = src[:pos] + block.strip() + '\n\n' + src[pos:]
     if new != src:
-        io.open(CLAUDE_MD, 'w', encoding='utf-8', newline='').write(new)
+        io.open(AGENTS_MD, 'w', encoding='utf-8', newline='').write(new)
     return True
 
 
@@ -449,9 +488,9 @@ def main():
         print(txt)
         return
     io.open(HANDOVER, 'w', encoding='utf-8', newline='').write(txt + '\n')
-    ok = sync_claude_md()
+    ok = sync_agents_md()
     print(f'已生成 {HANDOVER}（{len(txt)} 字符）'
-          + ('；CLAUDE.md 的结构区块已同步' if ok else ''))
+          + ('；AGENTS.md 的结构区块已同步' if ok else ''))
 
 
 if __name__ == '__main__':

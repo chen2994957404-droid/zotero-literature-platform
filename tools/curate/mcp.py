@@ -13,7 +13,6 @@ except Exception:
 from shared.kernel.mcp_prompt import card
 
 WHAT = {
-    'sync': '跑一次增量同步（向量化 + 粗层抽取）',
     'junk': '找出没有正文 PDF 的垃圾条目',
     'rename': '把附件名统一成 Full Text PDF / SI / Snapshot',
     'backfill': '给缺 meta.json 的文献补元数据',
@@ -24,7 +23,7 @@ WHAT = {
 def register(server):
     server.register_prompt(
         'curate', '库房维护：定时同步 / 清垃圾条目 / 附件改名 / 补元数据 / 标签改造。',
-        [{'name': 'action', 'description': 'sync | junk | rename | backfill | tags',
+        [{'name': 'action', 'description': 'junk | rename | backfill | tags',
           'required': True}],
         lambda a: card(
             WHAT.get(a['action'], a['action']),

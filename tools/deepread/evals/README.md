@@ -23,7 +23,7 @@
 
 ## 数据在哪
 
-`workflow_data/evalset.json`（R6 窗后是 `data/state/evalset.json`），原子写入。
+`data/state/evalset.json`，原子写入。
 **不可重建**，有架构守卫盯着它必须留在版本库里。
 
 ## 用户怎么评

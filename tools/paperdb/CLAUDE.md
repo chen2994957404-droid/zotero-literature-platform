@@ -4,7 +4,7 @@
 
 ## 这块是什么
 
-**`structured/*.json` → 一个能查的 SQLite 库**（`workflow_data/papers.db`）。
+**`structured/*.json` → 一个能查的 SQLite 库**（`data/state/papers.db`）。
 
 它让这类问题第一次可回答：
 
@@ -22,7 +22,7 @@
 | `papers` | 一篇文献 | `key` / `title` / `tier` / `source` / `si_used` / `schema_ver` / `is_review` + schema 的每个字段 |
 | `properties` | 一条性能数值 | `key` / `name` / `value` / `value_max` / `unit` / `cmp` / `raw` |
 
-`properties` 由 `domain.schema.parse_properties()` 拆出来：
+`properties` 由 `shared.domain.schema.parse_properties()` 拆出来：
 `'Mn: 3.2×10^4 g/mol'` → `name='mn', value=32000.0, unit='g/mol'`；
 `'225–300 °C'` → `value=225, value_max=300`；`'>20 times'` → `cmp='>'`。
 拆不出数字的照样入库（`value` 为 NULL），只是不能参与大小比较。
@@ -65,8 +65,15 @@ paperdb.props('tensile')                # 抽到过哪些性能、各多少条�
 同理 `query()` 只接受 SELECT / WITH：**要改数据就去改 JSON 再 rebuild**，
 不许有第二个真相来源。
 
+**新鲜度是索引自己的事**（R7 窗）：`query()` 每次先比一眼时间戳，
+库比最新那份 JSON 旧就自己重建一次（秒级、不花钱）。
+此前是「谁写完 JSON 谁负责刷索引」，于是 `tools/extract` 里写着
+`from tools import paperdb` —— 违反「工具不许 import 工具」。
+真正的毛病不在那行 import，而在**责任放错了地方**：漏一个写入方
+（手改过 JSON、从 B 机同步过来一批），用户就查到旧数据，**而且不报错**。
+
 ## 什么时候该改这块
 
-- 加/删 schema 字段 → 不用改（列由 `domain.schema.SCHEMA` 自动生成），**但要 rebuild**
-- 性能字符串拆得不准 → 改 `domain.schema.parse_property`（纯逻辑，那儿有自测）
+- 加/删 schema 字段 → 不用改（列由 `shared.domain.schema.SCHEMA` 自动生成），**但要 rebuild**
+- 性能字符串拆得不准 → 改 `shared.domain.schema.parse_property`（纯逻辑，那儿有自测）
 - 想加新的筛法 → 加在 `find()` 里；一次性的分析直接用 `query()` 写 SQL

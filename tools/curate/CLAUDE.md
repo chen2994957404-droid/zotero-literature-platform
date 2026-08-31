@@ -21,14 +21,13 @@
 
 | 文件 | 干什么 | 花钱 | 写 Zotero |
 |---|---|---|---|
-| `sync.py` | 定时增量同步：新文献自动进向量库 + 进对比表 | 否 | 否 |
+| ~~`sync.py`~~ | R7 窗搬去 `host/autosync/`（它驱动别的工具，不是维护库房）| — | 否 |
 | `junk.py` | 找出无 PDF 的残留条目 → 确认后删 | 否 | **删条目** |
 | `rename.py` | 附件统一命名（正文 / SI / 快照）| 否 | **改附件名** |
 | `backfill.py` | 给缺 `meta.json` 的文献补元数据 | 否 | 否 |
 | `tags.py` | 标签改嵌套写法；`autotag` **已弃用** | autotag 花 | **改标签** |
 
 ```
-python -m tools.curate.sync            定时任务每小时跑的就是这条
 python -m tools.curate.junk            列清单（不删）
 python -m tools.curate.junk --删除      按清单删
 python -m tools.curate.rename <全库json> [apply]
@@ -40,15 +39,16 @@ python -m tools.curate.tags [apply]
 
 1. **列清单和删除分成两步**。A 组（重复残留）删了不丢东西，
    B 组（库里独一份）**删了就真没了** —— 这两种判断不该由同一条命令替人做完。
-2. **`sync` 拉起依赖服务而不只是跳过**（踩坑 #33）。
-   之前只「跳过本轮」，Zotero 开机没起来后就一直没人管，
-   精读线静默停摆 19 分钟用户才发现。**保活任务就该负责保活。**
+2. **打标签/改名一律先预览再 apply**，不带参数就是预览。
+   写真实 Zotero 库的操作不可逆，用户又不懂编程 —— 让他先看见要改什么。
 
-## 为什么 `sync` 用子进程跑别的工具
+## 定时同步不在这里了（R7 窗搬走）
 
-它要跑 `tools.ask.vectorize` 和 `tools.extract`，但
-`tools/*` **不许 import 别的 `tools/*`**（REBUILD 第三节硬规则 2）。
-子进程按**模块名**拉起：既不构成 import 边，又不怕别人搬家改路径。
+「新文献自动入库」那条每小时的定时作业住在 **`host/autosync/`**。
+它做的两件事都是**驱动别的工具**（`tools.ask.vectorize` 与 `tools.extract`），
+还顺手把睡着的 Zotero / Ollama 任务唤醒 —— 那是平台的活，不是库房维护。
+它此前没被「工具不许 import 工具」守卫抓到，只因为走的是子进程：
+**那是形式上的规避，不是本质上的合规。**
 
 ## 怎么验证
 

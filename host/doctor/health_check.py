@@ -306,8 +306,12 @@ def c_ollama():
         return WARN, 'Ollama 未跑（问答/向量化会失败）'
 
 
-# 慢自测（调大模型/网络）默认跳过，加 --full 才跑
-SLOW_TESTS = {'digitize'}
+# 慢自测（调大模型/网络）默认跳过，加 --full 才跑。
+# R7 窗清空了它：`tools/digitize/selftest.py` 原来要本机装着 qwen2.5vl、
+# 库里还得有已解析文献，在编程端永远是红的 —— 那不是「慢」，是**不该由自测负责**。
+# 重写成真正离线的之后（0.2 秒），这个豁免也就没必要了。
+# 判据：自测必须离线、秒级、任何机器上都能全绿；做不到的活属于 evals/，不属于 selftest。
+SLOW_TESTS = set()
 
 
 def c_modules():
@@ -343,7 +347,7 @@ KEY_MODULES = [
     'tools.deepread', 'host.watcher.service', 'tools.deepread.batch',
     'tools.extract', 'tools.extract.batch', 'tools.paperdb',
     'tools.ask', 'tools.ask.vectorize', 'tools.askworld',
-    'tools.discover', 'tools.discover.importer', 'tools.direction', 'tools.curate.sync',
+    'tools.discover', 'tools.discover.importer', 'tools.direction', 'host.autosync.service',
     'tools.library', 'host.mcp.server',
 ]
 # R3 窗（2026-08-30）起十个工具全是包，散脚本入口连同 find_script 一起退休了。

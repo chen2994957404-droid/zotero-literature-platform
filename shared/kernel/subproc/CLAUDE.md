@@ -54,7 +54,7 @@ proc_lock（判断 PID 是否存活）、体检（查任务计划）。
 
 ```
 python selftest.py                       # 5 项，必须全过
-python ../../平台管理/health_check.py     # 「无弹窗」一项应为 OK
+python ../../host/doctor/health_check.py     # 「无弹窗」一项应为 OK
 ```
 特别注意：**用 `pythonw` 跑一遍自测**（模拟无控制台的后台环境），
 很多编码问题只在那种环境下才暴露。

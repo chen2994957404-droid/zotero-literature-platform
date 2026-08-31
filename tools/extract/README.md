@@ -30,8 +30,8 @@ python -m tools.extract.compare_models  比一比两个模型（只读不写）
 
 ## 产物
 
-- `workflow_data/structured/<KEY>.json` —— 每篇的结构化字段
-- `workflow_data/structured/compare.md` —— 研究论文横向对比表（找 idea 的主载体）
+- `data/serving/structured/<KEY>.json` —— 每篇的结构化字段
+- `data/serving/structured/compare.md` —— 研究论文横向对比表（找 idea 的主载体）
 - `compare_reviews.md` / `compare_PBS.md` —— 综述单列 / 聚硼硅氧烷精层子表
 
 抽完会自动重建 `paperdb` 的查询库。

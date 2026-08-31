@@ -9,18 +9,17 @@
 
 | 线 | 干什么 | 花钱 | 写 Zotero |
 |---|---|---|---|
-| `sync`     | 定时增量同步：新文献自动进向量库 + 进对比表 | 否（全本地）| 否 |
+| ~~`sync`~~ | R7 窗搬去 `host/autosync/` —— 它驱动的是别的工具，不是维护库房 | 否（全本地）| 否 |
 | `junk`     | 找出无 PDF 的残留条目 → 确认后删 | 否 | **删条目** |
 | `rename`   | 附件统一命名（正文 / SI / 快照）| 否 | **改附件名** |
 | `backfill` | 给缺 `meta.json` 的文献补元数据 | 否 | 否 |
 | `tags`     | 标签改造（`dim:value` → `dim/value`）；`autotag` 已弃用 | 是（autotag）| **改标签** |
 
-**除 `sync`/`backfill` 外都写用户的真实 Zotero 库**，一律带机器角色守卫：
+**除 `backfill` 外都写用户的真实 Zotero 库**，一律带机器角色守卫：
 A 机（编程端 `ROLE=dev`）默认拒绝执行，见 docs/howto/两台机器的分工.md。
 
 对外接口：每条线一个模块，各自的 `main()` 就是命令行入口：
 
-    python -m tools.curate.sync          定时任务每小时跑的就是这条
     python -m tools.curate.junk          列清单（不删）
     python -m tools.curate.junk --删除    按清单删（危险，先看清单）
     python -m tools.curate.rename <全库json> [apply]

@@ -3,7 +3,7 @@
 
 查询库是 `structured/*.json` 的索引，读它零成本，所以按 R4 判据是 tool。
 返回值直接给 JSON：结构化数值是**给机器用的原生数据**，不翻译、不排版
-（见根目录 CLAUDE.md 的语言约定）。本文件只做参数转换。
+（见根目录 AGENTS.md 的语言约定）。本文件只做参数转换。
 """
 import os, sys
 # 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）

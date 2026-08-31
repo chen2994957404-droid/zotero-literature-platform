@@ -2,7 +2,7 @@
 """库房维护的命令行入口（只分发，逻辑在各子模块）。
 
 用法:
-    python -m tools.curate sync                     定时增量同步（任务计划每小时跑的就是这条）
+    （定时增量同步搬去了 `python -m host.autosync`，见 host/autosync/__init__.py）
     python -m tools.curate junk                     列出无正文 PDF 的垃圾条目（**只列，不删**）
     python -m tools.curate junk --删除              按上一步的清单删（危险，先看清单）
     python -m tools.curate junk --删除 --只删A      只删确认是重复残留的那组
@@ -24,7 +24,7 @@ except Exception:
 
 from shared.kernel.cli import pos, wants_help
 
-ACTIONS = ('sync', 'junk', 'rename', 'backfill', 'tags')
+ACTIONS = ('junk', 'rename', 'backfill', 'tags')
 
 
 def main():

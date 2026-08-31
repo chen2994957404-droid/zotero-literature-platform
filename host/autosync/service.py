@@ -9,7 +9,7 @@
   2. 增量粗层抽取 → `tools.extract --coarse`（本地 qwen，零成本；精层记录受保护不覆盖）
 
 前提：Zotero 开着（取全文）+ Ollama 在跑（向量化/本地抽取）。两者都有保活任务。
-用法: python -m tools.curate.sync    （由任务计划 LiteratureAutoSync 每小时调用）
+用法: python -m host.autosync      （由任务计划 LiteratureAutoSync 每小时调用）
 """
 import os
 import sys
@@ -30,7 +30,7 @@ from shared.kernel.log import get_logger
 from shared.kernel.paths import ROOT as _ROOT
 from shared.kernel.subproc import run as _sub_run   # 子进程统一走积木：不弹窗+超时+UTF-8
 
-# 日志名仍叫 auto_sync（模块虽然改名了）：日志是**数据流**不是代码路径，
+# 日志名一直叫 auto_sync（模块搬过两次家了）：日志是**数据流**不是代码路径，
 # 面板的日志下拉、诊断报告、B 机上已有的 auto_sync.log 都认这个名字。
 log = get_logger('auto_sync')   # 统一日志：时间戳 + 落盘 + 自动轮转
 

@@ -13,7 +13,7 @@
 公众号 md 目录
   → adapters.wechat_seed      提 DOI + 推送日期（正文提完即弃）
   → adapters.openalex         DOI 对齐 + 批量拉参考文献（免费无密钥）
-  → SQLite（core.paths.direction_db()）  works / edges / seeds / clusters
+  → SQLite（shared.kernel.paths.direction_db()）  works / edges / seeds / clusters
   → bibliometrics/            IDF 文献耦合 + Louvain + 时间趋势（本工具自带）
   → 报告
 ```
@@ -68,7 +68,7 @@ python -m tools.direction stats
 
 ## 数据在哪
 
-`core.paths.direction_db()` → `workflow_data/direction/map.db`。
+`shared.kernel.paths.direction_db()` → `data/serving/direction/map.db`。
 
 **这是可重建的派生层**（和 `library/` 的资产不同）：删掉再跑一遍命令就有。
 `build()` 对同一个目录是幂等的，重跑安全。

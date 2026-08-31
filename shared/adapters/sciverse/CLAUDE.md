@@ -66,6 +66,6 @@ Sciverse **尚处公测**（官网写着「抢先体验新接口与公测计划�
 
 ```
 python selftest.py                       # 5 项；纯逻辑测试不联网，配了密钥才做一次最小真实调用
-python ../../平台管理/health_check.py
+python ../../host/doctor/health_check.py
 ```
 自测刻意不做批量联网测试 —— **自测不该烧用户的 API 额度**。

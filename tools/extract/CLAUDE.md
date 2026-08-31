@@ -14,8 +14,8 @@ SI 的 `full.md` 是精读那一步早就解析好的，读它不花任何钱。
 它组合了四样东西，自己不解决任何原子问题：
 
 ```
-core.paths（去哪读、往哪写） + domain.schema（抽什么、怎么问、怎么摆）
-+ adapters.llm_client（谁来抽） + core.jobs（谁抽的、哪版字段、失败在哪）
+shared.kernel.paths（去哪读、往哪写） + shared.domain.schema（抽什么、怎么问、怎么摆）
++ shared.adapters.llm_client（谁来抽） + shared.kernel.jobs（谁抽的、哪版字段、失败在哪）
 ```
 
 ## 文件
@@ -77,7 +77,7 @@ extract.si_text(key)          # 这篇的 SI 全文（取过合成相关章节�
 | 对比表长什么样 | `domain/schema.compare_table` |
 | 用哪个模型抽 | 控制面板的「结构化抽取 用的模型」（`EXTRACT_MODEL`）|
 | 走云端还是本地 | 环境变量 `EXTRACT_PROVIDER=ollama` |
-| 读写路径 | `core/paths`（**不要在这里手拼 workflow_data**，守卫会拦）|
+| 读写路径 | `shared/kernel/paths`（**不要在这里手拼 `data/` 的路径**，守卫会拦）|
 
 ## 怎么验证
 

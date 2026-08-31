@@ -1,5 +1,5 @@
 name          = "curate"
-one_line      = "库房维护：自动打标签、附件改名、清重复、定时同步"
+one_line      = "库房维护：自动打标签、附件改名、清重复、补元数据"
 expose        = "prompt"
 costs_money   = true            # 自动打标签要大模型
 side_effects  = ["写Zotero（标签/改名/删除条目）", "写 data/curated/<key>/meta.json"]
