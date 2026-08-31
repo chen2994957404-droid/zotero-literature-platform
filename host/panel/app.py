@@ -368,7 +368,7 @@ def collect_review():
     **评价不回写 Zotero** —— 用户的标签栏永远只有「在读/读完」两个，
     不会再堆积（他被 707 个自动标签坑过）。已评价与否记在本地评测集里。
     """
-    from shared.adapters import evalset as E
+    from tools.deepread import evals as E
     out = {'pending': [], 'stats': E.stats(), 'reasons': E.REASONS,
            'reading': 0, 'read': 0}
     try:
@@ -396,7 +396,7 @@ def collect_review():
 
 def action_rate(payload):
     """保存一条精读评价。"""
-    from shared.adapters import evalset as E
+    from tools.deepread import evals as E
     key = (payload.get('key') or '').strip()
     verdict = payload.get('verdict')
     if not key or verdict not in ('good', 'bad'):
@@ -407,7 +407,8 @@ def action_rate(payload):
         s = E.stats()
         tip = ''
         if s['ready']:
-            tip = '（好/差样本各已≥3篇，可以做自动质量分校准了）'
+            tip = (f'（好 ≥{s["min_good"]} 篇、差 ≥{s["min_bad"]} 篇已达标，'
+                   f'可以做自动质量分校准了）')
         return True, f"已记录：{'好' if verdict == 'good' else '差'}。" \
                      f"评测集共 {s['total']} 条{tip}"
     except Exception as e:

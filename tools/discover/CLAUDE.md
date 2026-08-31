@@ -27,6 +27,7 @@
 | `tool.toml` | 工具清单（expose / 花不花钱 / 有什么副作用）—— MCP 服务照它挂 |
 | `mcp.py` | 给 agent 的 MCP 面（只做参数转换，不许有逻辑）|
 | `README.md` · `SKILL.md` | 给人的说明 · 给 agent 的手册（含**什么时候别用我**）|
+| `evals/` | 评测：金标 / 评分器 / 阈值。R5 窗建的骨架，**还是空的**，别当成已经验过 |
 | `collect.py` | 按编号收进 Zotero（**收 ≠ 精读**，两个决定分开）|
 | `importer.py` | 按 DOI 收进 Zotero（写操作，带机器角色守卫）|
 | `match.py` | 与我的库对照：已有/新、相关度、雪球种子、排序 |

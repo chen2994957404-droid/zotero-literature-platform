@@ -33,7 +33,6 @@
 | `sciverse` | Sciverse 学术检索（4.55 亿条，需密钥）|
 | `snowball` | 引文网络雪球扩展（建在 openalex 之上）|
 | `vectordb` | 向量库（当前实现 Chroma）|
-| `evalset` | 精读质量评测集（我们自己的持久化存储）|
 
 ## 写一块新 adapter 的规矩
 

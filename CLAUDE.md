@@ -16,12 +16,12 @@ host/  ← 平台自身：让平台活着的东西（没人 import 它）（5 �
     codegen、deploy、doctor、mcp、panel
 launch/ （0 个脚本）
 shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
-    kernel/  ← 基础设施：谁都依赖它，它不依赖任何人（11 块）
-        cli、config、proc_lock、subproc、errors.py、heartbeat.py、jobs.py、log.py、mcp_prompt.py、paths.py、role.py
+    kernel/  ← 基础设施：谁都依赖它，它不依赖任何人（12 块）
+        cli、config、proc_lock、prompts、subproc、errors.py、heartbeat.py、jobs.py、log.py、mcp_prompt.py、paths.py、role.py
     domain/  ← 纯逻辑：不联网、不知道文件放在哪（4 块）
         bibliometrics、figure_crop、schema、si_filter
-    adapters/  ← 外接口：唯一允许联网/用第三方库的一环（12 块）
-        crossref、embed、evalset、llm_client、openalex、pdf_parse、query_expand、sciverse、snowball、vectordb、wechat_seed、zotero_client
+    adapters/  ← 外接口：唯一允许联网/用第三方库的一环（11 块）
+        crossref、embed、llm_client、openalex、pdf_parse、query_expand、sciverse、snowball、vectordb、wechat_seed、zotero_client
 specs/ （0 个脚本）
 tests/ （10 个脚本）
     test_adapters_vectordb.py、test_architecture.py、test_artifact_gaps.py、test_core_heartbeat.py、test_core_jobs.py、test_core_log_errors.py、test_core_paths.py、test_core_role.py…

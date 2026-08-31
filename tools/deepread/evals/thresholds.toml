@@ -1,0 +1,17 @@
+# deepread 的评测阈值。**这里是这些数字的唯一出处** —— 别在 .py 里再写一遍。
+
+[quality]
+# 精读正文低于这个字数就是废品，不许静默写盘。
+# ⚠ 必须与 tools/deepread/main_text.py 的 MIN_OK 相等，
+#   tools/deepread/tests/test_evals.py 里有一条测试在守这个等式。
+min_chars = 3000
+
+# 一份合格精读至少该有的图数与栏目数（暂只用于展示，未做硬拦截）。
+min_figures  = 1
+min_sections = 4
+
+[calibration]
+# 「用主观评分校准自动质量分」需要的最少样本量。
+# 好、差各够这么多条，才谈得上分析「他说好的」和「他说差的」在客观指标上差在哪。
+min_good = 3
+min_bad  = 3

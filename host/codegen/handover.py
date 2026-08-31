@@ -173,10 +173,10 @@ def next_step():
     if h.get('problems'):
         steps.append('**先修体检报的问题**（见上一节），其余都往后放')
     try:
-        from shared.adapters import evalset as E
+        from tools.deepread import evals as E
         s = E.stats()
         if not s['ready']:
-            need_g, need_b = max(0, 3 - s['good']), max(0, 3 - s['bad'])
+            need_g, need_b = s['need_good'], s['need_bad']
             steps.append(
                 f'**攒精读评测集**：还差「好」{need_g} 篇、「差」{need_b} 篇。'
                 f'用户在 Zotero 打「读完」标签 → 控制面板「精读评价」里评。'
@@ -235,7 +235,7 @@ def flows():
 
 def evalset_state():
     try:
-        from shared.adapters import evalset as E
+        from tools.deepread import evals as E
         s = E.stats()
         return s
     except Exception:
@@ -308,14 +308,15 @@ def build():
         a('')
         a(f'- 已评价 **{ev["total"]}** 篇（好 {ev["good"]} / 差 {ev["bad"]}）')
         if ev['ready']:
-            a('- ✅ **好、差样本各已 ≥3 篇 —— 可以做「自动质量分」校准了**')
+            a(f'- ✅ **好 ≥{ev["min_good"]} 篇、差 ≥{ev["min_bad"]} 篇已达标 —— '
+              f'可以做「自动质量分」校准了**')
             c = ev['compare']
             a(f'- 好 vs 差 的客观差异：字数 {c["chars"]["good"]}/{c["chars"]["bad"]}、'
               f'图 {c["figures"]["good"]}/{c["figures"]["bad"]}、'
               f'数值 {c["numbers"]["good"]}/{c["numbers"]["bad"]}、'
               f'章节 {c["sections"]["good"]}/{c["sections"]["bad"]}')
         else:
-            a('- ⏳ 还不够做校准（需好、差各 ≥3 篇）。'
+            a(f'- ⏳ 还不够做校准（需好 ≥{ev["min_good"]} 篇、差 ≥{ev["min_bad"]} 篇）。'
               '用户在 Zotero 打「读完」标签 → 控制面板「精读评价」里评。')
         if ev['reasons']:
             a(f'- 差评原因排行：{"、".join(f"{k}×{v}" for k, v in ev["reasons"][:4])}')

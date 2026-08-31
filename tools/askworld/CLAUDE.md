@@ -28,6 +28,8 @@
 | `tool.toml` | 工具清单（expose / 花不花钱 / 有什么副作用）—— MCP 服务照它挂 |
 | `mcp.py` | 给 agent 的 MCP 面（只做参数转换，不许有逻辑）|
 | `README.md` · `SKILL.md` | 给人的说明 · 给 agent 的手册（含**什么时候别用我**）|
+| `prompts/` | 系统提示词（`<名>_v<N>.txt`）。**只增不改**：改措辞就新建下一版，旧版留着 |
+| `evals/` | 评测：金标 / 评分器 / 阈值。R5 窗建的骨架，**还是空的**，别当成已经验过 |
 | `search.py` | 检索命令行（`python -m tools.askworld.search "词" 20 --impact`）|
 | `selftest.py` | 离线自测（不联网、不调 LLM）|
 
