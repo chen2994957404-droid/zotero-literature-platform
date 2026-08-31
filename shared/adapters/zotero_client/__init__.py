@@ -200,3 +200,48 @@ def get_fulltext(att_key):
         return json.loads(r).get('content', '')
     except Exception:
         return ''
+
+
+def alive(timeout=6):
+    """本地 API 通不通。Zotero 没开就是 False —— 不抛异常，供调用方决定跳过还是拉起。
+
+    R3 窗（2026-08-30）收进来的：库房维护的定时同步原本自己 urlopen 探活，
+    那是「联网只在 adapters」的破口（红线 #5）。探活也是联网。
+    """
+    try:
+        zget(f'/users/{_local_uid()}/items/top?limit=1')
+        return True
+    except Exception:
+        return False
+
+
+def library_index():
+    """库里已有文献的 (归一标题集合, DOI 集合) —— 用来标记「这篇我有没有」。
+
+    Zotero 没开/没配就返回两个空集合（降级，不抛异常）：
+    只损失「已在库」标记，检索本身不受影响。
+
+    R3 窗合并进来的：此前 paper_discovery / find_papers / search_global / lib_match
+    各写了一遍同样的分页取顶层条目 + 归一，其中两份还是裸 urlopen。
+    """
+    titles, dois = set(), set()
+    try:
+        uid = _local_uid()
+        start = 0
+        while True:
+            d = zget(f'/users/{uid}/items/top?limit=100&start={start}')
+            if not d:
+                break
+            for x in d:
+                t = re.sub(r'[^a-z0-9]', '', (x['data'].get('title') or '').lower())
+                if t:
+                    titles.add(t)
+                doi = (x['data'].get('DOI') or '').lower().strip()
+                if doi:
+                    dois.add(doi)
+            start += 100
+            if len(d) < 100:
+                break
+    except Exception:
+        pass          # 本机 Zotero 未开/未配：只做纯检索，「已在库」标记留空
+    return titles, dois

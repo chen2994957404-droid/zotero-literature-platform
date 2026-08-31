@@ -55,7 +55,7 @@ def diagnose(missing, present):
     # 精读全做完了，只是元数据没落盘 —— 最省事的一类，别当成半成品重跑
     if missing == ['meta'] and 'summary' in present:
         return ('精读已完成，只差元数据',
-                '跑 `python 库房维护/backfill_meta.py` 从 Zotero 补一下即可 —— '
+                '跑 `python -m tools.curate.backfill` 从 Zotero 补一下即可 —— '
                 '**不调大模型、不花钱**。千万别重新打「待处理」标签重跑整篇')
     if 'fulltext' not in present:
         return ('解析就没成功', '重新打「待处理」标签即可，整篇会从头做一遍')
@@ -63,7 +63,7 @@ def diagnose(missing, present):
         return ('正文解析好了，精读没做完',
                 '重新打「待处理」标签；解析结果还在，不会重复花 MineRU 的钱')
     if 'meta' in missing:
-        return ('缺元数据', '跑 `python 库房维护/backfill_meta.py` 补，不花钱')
+        return ('缺元数据', '跑 `python -m tools.curate.backfill` 补，不花钱')
     return ('产物不齐', '把这一行发给 Claude 判断，先别急着重跑（重跑要花钱）')
 
 

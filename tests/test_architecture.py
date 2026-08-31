@@ -148,12 +148,12 @@ def _ring_files(ring):
 def test_只有adapters环可以联网():
     """这条是「换掉 MineRU 只需改一个文件」的**全部保证**。
 
-    如果 pipelines 或 domain 也能直接发 HTTP 请求，那个承诺当场作废 ——
+    如果工具层或 domain 也能直接发 HTTP 请求，那个承诺当场作废 ——
     换外部服务时就得满仓库找 urlopen。重构前 `pipelines/paper_discovery`
     正是这样：编排层里直接写着 OpenAlex 的 URL 和 urlopen。
     """
     offenders = []
-    for ring in ('core', 'domain', 'pipelines'):
+    for ring in ('shared/kernel', 'shared/domain', 'tools'):
         for rel, f in _ring_files(ring):
             if rel.endswith('/selftest.py'):
                 continue          # 自测里允许直接探活外部服务
@@ -169,7 +169,7 @@ def test_只有adapters环可以联网():
 def test_只有adapters环可以用外部服务客户端():
     """chromadb / keyring 这类第三方客户端同理，只许出现在 adapters。"""
     offenders = []
-    for ring in ('domain', 'pipelines'):
+    for ring in ('shared/domain', 'tools'):
         for rel, f in _ring_files(ring):
             if rel.endswith('/selftest.py'):
                 continue

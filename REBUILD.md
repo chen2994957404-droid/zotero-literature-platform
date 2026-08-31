@@ -37,8 +37,7 @@ zotero-platform/
 │   ├── paperdb/               结构化记录 → 可查询的库
 │   ├── ask/                   库内问答(含向量化)
 │   ├── askworld/              全球文献检索问答
-│   ├── discover/              找新文献
-│   ├── snowball/              引文雪球扩展
+│   ├── discover/              找新文献（含引文雪球的编排；雪球本体是 adapters）
 │   ├── digitize/              论文图表 → 数据点
 │   ├── direction/             方向地图 / 选题
 │   └── curate/                库房维护(标签/改名/去重/同步)
@@ -178,8 +177,13 @@ watcher/watchdog 作为该工具的常驻服务放 `tools/deepread/watcher.py`
 `pipelines/paper_db/*` + `数据抽取/查询库.py`
 
 ### tools/ask/
-`库内问答/{ask,vectorize,vectorize_library}.py` + `pipelines/query_expand/*` + `pipelines/lib_match/*`
-(向量化是问答的前置,属于同一个工具)
+`库内问答/{ask,vectorize,vectorize_library}.py`(向量化是问答的前置,属于同一个工具)
+
+> **R3 窗实际落位与本行不同**(踩坑 #82):`query_expand` 与 `lib_match` 都不是 ask 在用 ——
+> 用它们的是 askworld 和 discover。照本行搬会逼出 `tools`→`tools` import,违反第三节硬规则 2。
+> 实际:`query_expand` → `shared/adapters/query_expand/`(两个工具用,且它 import llm_client,进不了 domain);
+> `lib_match` → `tools/discover/match.py`(只有 discover 一个使用者,按下沉规则不下沉)。
+> **规则优先于映射表。**
 
 ### tools/askworld/
 `库内问答/ask_world.py` + `找新文献/search_global.py`
@@ -187,8 +191,12 @@ watcher/watchdog 作为该工具的常驻服务放 `tools/deepread/watcher.py`
 ### tools/discover/
 `pipelines/paper_discovery/*` + `找新文献/{discover,find_papers,collect,import_by_doi,zotero_add_thesis}.py`
 
-### tools/snowball/
-雪球的编排逻辑(见上 `adapters/snowball` 的判定)
+### ~~tools/snowball/~~ —— R3 窗判定:**不单独成工具**
+读完代码:`_get`/`_abstract`/`_norm` 全是转发 `shared.adapters.openalex`,
+`_backward`/`_forward` 是直接拼 OpenAlex 查询,`expand()` 只有「按种子循环 + 去重 + 限速」。
+**没有算法,也没有跨块编排** → 纯 API 包装,整块留 `shared/adapters/snowball/`;
+唯一那点编排(挑种子 → 扩展 → 并进候选池)留在 `tools/discover.snowball_more()`。
+**因此工具共 9 个,不是第一节列的 10 个。**
 
 ### tools/digitize/
 `pipelines/chart_digitize/*`
@@ -247,7 +255,7 @@ watcher/watchdog 作为该工具的常驻服务放 `tools/deepread/watcher.py`
 |---|---|---|---|
 | R1 | 开分支 + 建骨架 + 搬 shared/ 与 host/ | [x] | `rebuild` 分支已开。`core/domain/adapters` → `shared/{kernel,domain,adapters}`；`平台管理`+`MCP服务` → `host/{panel,doctor,deploy,codegen,mcp}`，中文脚本名换成 ASCII；115 个文件批量改 import；`paths.py` 新增 `CODE_ROOTS`、`CODE_RINGS` 改成带斜杠相对路径；pyproject 改成 `tools*/shared*/host*/pipelines*` 并重装；删 `归档_旧版本`/pycache/egg-info；3 个 .bat 内部路径已改。**pytest 195 全过、离线体检 10/0/0、完整体检 16/2/0 与重构前基线一致。**踩坑 #78 #79 #80。 |
 | R2 | 切出 deepread / extract / paperdb / digitize | [x] | 四个工具已成包。`pipelines/{deepread,extract,paper_db,chart_digitize}` + `文献精读/`（12 脚本）+ `数据抽取/`（7 脚本）→ `tools/{deepread,extract,paperdb,digitize}`，两个中文文件夹**已删**。六个精读脚本并成 `deepread/batch.py`、三个抽取脚本并成 `extract/batch.py`；新增 `deepread/tags.py`（标签状态机从 watcher 独立）；`zotero_watcher.py`→`watcher.py`。**删了 5 个纯薄壳**（deepread_v4/si_deepread/merge_summary/zotero_upload_attachment/mineru_parse —— 最后一个是 `adapters/pdf_parse` 的第二份实现，违反「联网只在 adapters」）。`extract_library` 的裸 urllib 改走适配层。测试进 `tools/deepread/tests/`，`testpaths` 加 `tools`；`CODE_RINGS` 加 `'tools'`（否则体检不再跑这四个工具的自测）。改了 health_check（关键入口改成按**模块名**查）/ panel / update / auto_sync / 架构守卫 / 4 个 .bat。**pytest 195 全过、tools/ 37 全过、离线体检 10/0/0、完整体检 16/2/0 与 R1 基线一致。**踩坑 #81。留了两处 `tools` 调 `tools`（watcher→extract、extract→paperdb），已记进待办等 R7 定夺。 |
-| R3 | 切出 ask / askworld / discover / snowball / direction / curate | [ ] | |
+| R3 | 切出 ask / askworld / discover / snowball / direction / curate | [x] | **根目录再无中文代码目录，也无 `pipelines/`。** 五个工具成包：`ask`（含两条向量化线合并）· `askworld`（问答 + 纯检索）· `discover`（paper_discovery + lib_match + discover/collect/import_by_doi/thesis）· `direction`（direction_map + 方向地图 + brainstorm）· `curate`（7 个脚本 → sync/junk/rename/backfill/tags 五模块）。**snowball 判定为纯 API 包装**（`_get`/`_norm` 全是转发 openalex，`expand()` 只有循环去重限速，无算法无跨块编排）→ 整块留 `shared/adapters/snowball/`，唯一那点编排留在 `discover.snowball_more()`，**不单独成工具，故共 9 个工具**。**两处偏离第四节映射表**（踩坑 #82）：`query_expand` → `shared/adapters/`（两个工具用，且 import llm_client 进不了 domain）、`lib_match` → `tools/discover/match.py`（只有一个使用者）——照映射表会逼出 `tools`→`tools` import，违反第三节硬规则 2，**规则优先于映射表**。顺手补掉四处「联网不在 adapters」：新建 `shared/adapters/crossref/`（三件套齐）、新增 `llm_client.chat_messages()` / `zotero_client.alive()+library_index()` / `embed.alive()`。删 `find_papers.py`（`search()` 的薄壳）。配套改 pyproject / paths / panel（删两处 sys.path 借用）/ health_check（KEY_MODULES 13 个，`find_script` 退休）/ handover 生成器 / README / CLAUDE.md。**两条联网守卫从 R1 起一直在空转**（踩坑 #83），当场改指新环路径并故意违反一次验证会红。**pytest 194 过 1 跳（同基线）· 离线体检 10/0/0 · 完整体检 16/2/0 · 真跑一次 discover 返回 14 篇。** 依赖方向守卫、docs 旧路径、sync 驱动两个工具 → 记进待办等 R7。 |
 | R4 | 每工具补齐五件套(tool.toml / README / SKILL / cli / mcp) | [ ] | |
 | R5 | prompts 与 evals 归位到各工具 | [ ] | |
 | R6 | data/ 五层重排 + launch/ + 清死文件 | [ ] | |

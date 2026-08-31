@@ -11,7 +11,7 @@ OpenAlex 学术检索 API 的唯一入口（免费、无需密钥）。**属于 
 | 处 | 状况 |
 |---|---|
 | `adapters/snowball` | 有退避重试、礼貌 UA、字段裁剪 —— 实现最好 |
-| `pipelines/paper_discovery` | 裸 urlopen，无重试 |
+| `tools/discover`（旧 paper_discovery）| 裸 urlopen，无重试 |
 | `找新文献/find_papers.py` | 裸 urlopen，无重试，又抄了一遍摘要还原 |
 
 后果一：OpenAlex 一限流，snowball 会退避重试，另外两个直接失败。

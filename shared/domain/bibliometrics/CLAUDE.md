@@ -5,9 +5,9 @@
 **输入一堆论文和它们的引用，输出「这个领域长什么样」。** 属于 domain 环：
 不联网、不知道文件放在哪，输入输出都是纯 Python 数据结构。
 
-用它的是 `pipelines/direction_map`（方向地图）。
+用它的是 `tools/direction`（方向地图）。
 
-## 为什么在 domain 而不是 pipelines
+## 为什么在 domain 而不是工具里
 
 文献耦合、Louvain、IDF 加权、时间分桶 —— 这些**只有我们自己想法变了才需要改**，
 外部世界怎么变都影响不到（OpenAlex 换 API、微信关接口，都不碰这里一行）。

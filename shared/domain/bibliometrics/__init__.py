@@ -2,7 +2,7 @@
 """bibliometrics · 文献计量纯逻辑（公理：一堆论文 + 它们的引用 → 这个领域长什么样）
 
 **这一环不联网、不知道文件放在哪。** 输入是纯 Python 数据结构，输出也是。
-所有需要 OpenAlex 的事情都由 `pipelines/direction_map` 喂进来。
+所有需要 OpenAlex 的事情都由 `tools/direction` 喂进来。
 
 ## 为什么这些函数长这样（全部有实测支撑，2026-08-28/29）
 

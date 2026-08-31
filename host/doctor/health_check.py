@@ -60,15 +60,6 @@ def code_files():
     return files
 
 
-def find_script(name):
-    """按文件名在工作流各文件夹里找脚本，返回路径或 None。"""
-    for d in workflow_dirs():
-        p = os.path.join(d, name + '.py')
-        if os.path.exists(p):
-            return p
-    return None
-
-
 def check(name, fn):
     try:
         status, msg = fn()
@@ -345,14 +336,15 @@ def c_modules():
 KEY_MODULES = [
     'tools.deepread', 'tools.deepread.watcher', 'tools.deepread.batch',
     'tools.extract', 'tools.extract.batch', 'tools.paperdb',
+    'tools.ask', 'tools.ask.vectorize', 'tools.askworld',
+    'tools.discover', 'tools.discover.importer', 'tools.direction', 'tools.curate.sync',
 ]
-KEY_SCRIPTS = ['ask']          # 还没切进 tools/ 的（R3 窗处理）
+# R3 窗（2026-08-30）起十个工具全是包，散脚本入口连同 find_script 一起退休了。
 
 
 def c_importable():
     """运行时导入检查——语法检查发现不了 NameError/ImportError（踩坑 #24）。"""
     bad = []
-    missing = []
     for mod in KEY_MODULES:
         # 用子进程 import，避免模块加载的副作用影响本进程
         r = subprocess.run(
@@ -363,26 +355,6 @@ def c_importable():
         if r.returncode != 0:
             first = [l for l in err.splitlines() if 'Error' in l]
             bad.append(f'{mod}({first[-1][:60] if first else "err"})')
-    for name in KEY_SCRIPTS:
-        p = find_script(name)
-        if not p:
-            missing.append(name)      # 关键脚本找不到 = 重组时漏搬了，必须报出来
-            continue
-        r = subprocess.run(
-            [sys.executable, '-c',
-             f"import sys; sys.path.insert(0, r'{os.path.dirname(p)}'); sys.path.insert(0,'.'); "
-             f"import importlib.util as u; "
-             f"spec=u.spec_from_file_location('_m', r'{p}'); m=u.module_from_spec(spec); "
-             f"sys.argv=['x','a','b']; "
-             f"exec(compile(open(r'{p}',encoding='utf-8').read().split('if __name__')[0], r'{p}', 'exec'), m.__dict__)"],
-            capture_output=True, text=True, encoding='utf-8', errors='replace',
-            timeout=60, creationflags=_NOWIN)
-        err = r.stderr or ''
-        if 'NameError' in err or 'ImportError' in err or 'ModuleNotFoundError' in err:
-            first = [l for l in err.splitlines() if 'Error' in l]
-            bad.append(f'{name}({first[-1][:60] if first else "err"})')
-    if missing:
-        return FAIL, f'关键脚本找不到（可能重组时漏搬）: {missing}'
     # 检查工具不该有副作用：加载脚本时若在项目根凭空造出目录，说明该脚本
     # 把有副作用的代码写在了模块顶层（踩坑 #34：曾每跑一次体检就生成一个 'b' 文件夹）
     junk = [d for d in ('a', 'b', 'x') if os.path.isdir(d)]
@@ -394,7 +366,7 @@ def c_importable():
     if junk:
         return WARN, (f'加载脚本时产生了垃圾目录 {junk}（已清理）。'
                       f'说明有脚本把副作用写在模块顶层，应移进 main()')
-    n = len(KEY_MODULES) + len(KEY_SCRIPTS)
+    n = len(KEY_MODULES)
     return (OK, f'{n} 个关键入口可正常加载') if not bad else (FAIL, f'加载失败: {bad}')
 
 

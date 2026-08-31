@@ -39,8 +39,7 @@ dev = ["pytest>=8.0"]
 #   tools*   一个工具一个自包含的包
 #   shared*  被 >=2 个工具用到的共用件（kernel / domain / adapters）
 #   host*    平台自身（面板 / 体检 / 部署 / 生成器 / MCP）
-# pipelines* 是搬家途中的临时住户：R2/R3 窗把它拆进 tools/ 之后就从这里删掉。
-include = ["tools*", "shared*", "host*", "pipelines*"]
+include = ["tools*", "shared*", "host*"]
 namespaces = true
 
 [tool.pytest.ini_options]

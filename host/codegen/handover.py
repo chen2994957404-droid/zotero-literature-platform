@@ -71,7 +71,6 @@ _PKG_DESC = {
     'shared/adapters': '外接口：唯一允许联网/用第三方库的一环',
     'host':            '平台自身：让平台活着的东西（没人 import 它）',
     'tools':           '工具切片：一个工具 = 一个自包含的包',
-    'pipelines':       '搬家途中的临时住户（R2/R3 窗拆进 tools/ 后删除）',
 }
 
 
@@ -415,9 +414,9 @@ def sync_claude_md():
     body += ['```', '']
     fl = flows()
     bl = blocks()
-    body += [f'**可枚举的块 {len(bl)} 个**（`tools/` 工具切片 + `shared/` 共用件 '
-             f'+ `pipelines/` 临时住户，每个都有 `__init__.py` 与 `selftest.py`）· '
-             f'**还没切进 `tools/` 的老文件夹 {len(fl)} 个**', '',
+    body += [f'**可枚举的块 {len(bl)} 个**（`tools/` 工具切片 + `shared/` 共用件，'
+             f'每个都有 `__init__.py` 与 `selftest.py`）'
+             + (f' · **还没切进 `tools/` 的老文件夹 {len(fl)} 个**' if fl else ''), '',
              '进度、健康状况、下一步做什么 → 见 `HANDOVER.md`', '',
              AUTO_END, '']
     block = '\n'.join(body)

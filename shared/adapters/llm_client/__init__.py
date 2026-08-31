@@ -146,6 +146,22 @@ def chat(system, user, provider=None, model=None, key=None,
     return re.sub(r'<think>[\s\S]*?</think>', '', out).strip()  # 去掉推理模型的 think 段
 
 
+def chat_messages(messages, provider=None, model=None, key=None,
+                  temperature=0.3, max_tokens=None, num_ctx=16384, thinking=None):
+    """多轮对话：直接给完整 messages 列表（含 system / 历史 user+assistant）。
+
+    R3 窗（2026-08-30）加的：创意讨论（tools/direction/brainstorm）要带上下文连续追问，
+    而它原本自己 urlopen 打 DeepSeek —— 那是「联网只在 adapters」的破口（红线 #5）。
+    `chat()` 是它的单轮特例。
+    """
+    provider, model, key = _cfg(provider, model, key)
+    if provider == 'ollama':
+        out = _ollama(messages, model, temperature, False, num_ctx)
+    else:
+        out = _deepseek(messages, model, key, temperature, False, max_tokens, thinking)
+    return re.sub(r'<think>[\s\S]*?</think>', '', out).strip()
+
+
 def chat_vision(system, user, image_b64, provider=None, model=None, key=None,
                 temperature=0.1, json_mode=False):
     """看图输出。image_b64 是图片的 base64（可含或不含 data:image 前缀）。

@@ -89,7 +89,7 @@ def collect_processes():
     """本平台相关的 python 进程。用 CIM 查，比 wmic 可靠。"""
     ps = ("Get-CimInstance Win32_Process -Filter \"Name like 'python%'\" | "
           "Where-Object {$_.CommandLine -match 'deepread|watchdog|watcher|"
-          "extract|vectorize|auto_sync|panel'} | "
+          "extract|vectorize|curate|discover|direction|panel'} | "
           "Select-Object ProcessId,CreationDate,CommandLine | ConvertTo-Json -Compress")
     # 走 subproc 积木：面板每 15 秒刷新一次，裸调 powershell 会不停闪窗口（踩坑 #31）
     try:
@@ -278,8 +278,7 @@ def _job_log(msg):
 
 def _run_search(params):
     try:
-        sys.path.insert(0, os.path.join(ROOT, '找新文献'))  # paths-exempt: 借用兄弟脚本，阶段4迁入 pipelines/discover 后删除
-        from discover import run_discovery
+        from tools.discover import run_discovery
         r = run_discovery(
             params['query'], limit=params.get('limit', 25),
             n_queries=params.get('n_queries', 5), mode=params.get('mode', 'survey'),
@@ -339,9 +338,8 @@ def action_collect(payload):
         return False, '没有选中任何文献'
     deep = bool(payload.get('deep'))
     try:
-        sys.path.insert(0, os.path.join(ROOT, '找新文献'))  # paths-exempt: 借用兄弟脚本，阶段4迁入 pipelines/discover 后删除
-        from import_by_doi import import_dois
-        from pipelines.lib_match import build_index
+        from tools.discover.importer import import_dois
+        from tools.discover.match import build_index
         _, have = build_index(force=True)
         skipped = [d for d in dois if d.lower() in have]
         todo = [d for d in dois if d.lower() not in have]

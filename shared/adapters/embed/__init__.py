@@ -77,3 +77,16 @@ def chunk(text, max_chars=800):
     if cur:
         chunks.append(cur)
     return chunks
+
+
+def alive(timeout=6):
+    """Ollama 通不通（探活也是联网，所以放在适配层，红线 #5）。
+
+    R3 窗收进来的：库房维护的定时同步原本自己 urlopen 探 /api/tags。
+    """
+    host = _cfg_site('OLLAMA_HOST') or _DEFAULTS['OLLAMA_HOST']
+    try:
+        urllib.request.urlopen(host + '/api/tags', timeout=timeout)
+        return True
+    except Exception:
+        return False

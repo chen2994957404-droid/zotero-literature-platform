@@ -15,33 +15,25 @@ docs/                    ← 文档（16 份）
 host/  ← 平台自身：让平台活着的东西（没人 import 它）（5 块）
     codegen、deploy、doctor、mcp、panel
 launch/ （0 个脚本）
-pipelines/  ← 搬家途中的临时住户（R2/R3 窗拆进 tools/ 后删除）（4 块）
-    direction_map、lib_match、paper_discovery、query_expand
 shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
     kernel/  ← 基础设施：谁都依赖它，它不依赖任何人（10 块）
         cli、config、proc_lock、subproc、errors.py、heartbeat.py、jobs.py、log.py、paths.py、role.py
     domain/  ← 纯逻辑：不联网、不知道文件放在哪（4 块）
         bibliometrics、figure_crop、schema、si_filter
-    adapters/  ← 外接口：唯一允许联网/用第三方库的一环（10 块）
-        embed、evalset、llm_client、openalex、pdf_parse、sciverse、snowball、vectordb、wechat_seed、zotero_client
+    adapters/  ← 外接口：唯一允许联网/用第三方库的一环（12 块）
+        crossref、embed、evalset、llm_client、openalex、pdf_parse、query_expand、sciverse、snowball、vectordb、wechat_seed、zotero_client
 specs/ （0 个脚本）
 tests/ （10 个脚本）
     test_adapters_vectordb.py、test_architecture.py、test_artifact_gaps.py、test_core_heartbeat.py、test_core_jobs.py、test_core_log_errors.py、test_core_paths.py、test_core_role.py…
-tools/  ← 工具切片：一个工具 = 一个自包含的包（4 块）
-    deepread、digitize、extract、paperdb
-库内问答/ （4 个脚本）
-    ask.py、ask_world.py、vectorize.py、vectorize_library.py
-库房维护/ （7 个脚本）
-    auto_sync.py、autotag.py、backfill_meta.py、delete_junk.py、list_junk.py、tag_to_nested.py、zotero_rename.py
-找新文献/ （8 个脚本）
-    brainstorm.py、collect.py、discover.py、find_papers.py、import_by_doi.py、search_global.py、zotero_add_thesis.py、方向地图.py
+tools/  ← 工具切片：一个工具 = 一个自包含的包（9 块）
+    ask、askworld、curate、deepread、digitize、direction、discover、extract、paperdb
 
 根目录文件：CLAUDE.md、LICENSE、README.md、REBUILD.md、pyproject.toml、requirements.txt、控制面板.bat、更新平台.bat、比一比两个模型.bat、精读监听.bat、诊断报告.bat、重抽缺SI的文献.bat、重跑精读PRO.bat
 
 （workflow_data/ 是数据目录，3000+ 文件，**不要去 glob 它**）
 ```
 
-**可枚举的块 26 个**（`tools/` 工具切片 + `shared/` 共用件 + `pipelines/` 临时住户，每个都有 `__init__.py` 与 `selftest.py`）· **还没切进 `tools/` 的老文件夹 3 个**
+**可枚举的块 29 个**（`tools/` 工具切片 + `shared/` 共用件，每个都有 `__init__.py` 与 `selftest.py`）
 
 进度、健康状况、下一步做什么 → 见 `HANDOVER.md`
 
@@ -76,12 +68,14 @@ glob 根目录会直接淹掉上下文（实测：前 100 个结果全是精读�
 ```
 tools/    工具切片：一个工具 = 一个自包含的包
           deepread 精读 · extract 抽取 · paperdb 查询库 · digitize 图表（R2 窗切好）
-          ask / askworld / discover / snowball / direction / curate（R3 窗切）
+          ask 库内问答 · askworld 问全世界 · discover 找新文献 ·
+          direction 方向地图 · curate 库房维护（R3 窗切好，共 9 个）
 shared/   共用件：kernel（基础设施）/ domain（纯逻辑）/ adapters（唯一能联网的一层）
 host/     平台自身：panel 面板 · doctor 体检 · deploy 部署 · codegen 生成器 · mcp 协议层
-pipelines/ 与 库内问答/ 找新文献/ 库房维护/
-          ← 搬家途中的临时住户，R3 窗拆进 tools/ 之后删除
 ```
+
+雪球（snowball）**不单独成工具**：读过代码后判定它是纯 API 包装，
+留在 `shared/adapters/snowball/`，编排那一句在 `tools/discover` 里（R3 窗判定，理由见 REBUILD 台账）。
 
 **每个文件夹里都有自己的 `CLAUDE.md`。** 用户只选中某个文件夹时，那份就是完整上下文；
 在根目录（现在这里）你能看到全部，负责跨文件夹的改动与全局判断。
@@ -110,13 +104,14 @@ pipelines/ 与 库内问答/ 找新文献/ 库房维护/
 
 | 用户说 | 你怎么做 |
 |--------|---------|
-| "我库里关于XX有什么？" "帮我查查XX" | `python 库内问答/ask.py "问题"`（RAG 问答，中文答+附来源）|
-| "帮我找XX方向的文献" "补充点XX的文献" | `pipelines/paper_discovery` 的 `search(query)`（R3 窗搬去 `tools/discover/`），返回文献列表并标记库里已有 |
+| "我库里关于XX有什么？" "帮我查查XX" | `python -m tools.ask "问题"`（RAG 问答，中文答+附来源）|
+| "帮我找XX方向的文献" "补充点XX的文献" | `python -m tools.discover "关键词"`（拆检索式+雪球+按「跟他多相关」排序）；只要一份简单列表用 `tools.discover.search(query)` |
 | "帮我横向比较XX" "这方向有什么规律/空白" | 读 `workflow_data/structured/compare.md`（研究论文横向对比表）；PBS 方向另有 `compare_PBS.md` |
 | "精读某篇文献" | 让他在 Zotero 打「待处理」标签即可。**状态机自动判断**：只有正文→精读正文→标「正文精读」；有SI→连SI一起精读并合并→标「全文精读」；已精读过的只补缺的部分不重跑。服务已开机自启。 |
 | "把某批文献的数据抽出来" | `python -m tools.extract.batch KEY1 KEY2 --parse`（自动 MineRU 解析+DeepSeek 精抽）|
+| "全世界有没有人做过XX" "查查外面的文献" | `python -m tools.askworld "问题"`（Sciverse 取原文片段作答，**带出处**；要 SCIVERSE_KEY）|
 | "把论文图里的曲线变成数据" | `tools/digitize` 的 `digitize()`，**必须用云端大模型**（本地7B会编假数据）|
-| "帮我想想研究方向/idea" | 读 compare 表做横向关联分析（找机理×性能的空白格），或 `python 找新文献/brainstorm.py` |
+| "帮我想想研究方向/idea" | 读 compare 表做横向关联分析（找机理×性能的空白格），或 `python -m tools.direction.brainstorm` |
 
 ## 现成数据资产（在哪找什么）
 
@@ -125,7 +120,7 @@ pipelines/ 与 库内问答/ 找新文献/ 库房维护/
 - `workflow_data/structured/compare_PBS.md` — 聚硼硅氧烷方向精层子表（10 篇，含真实数值）
 - `workflow_data/structured/<KEY>.json` — 每篇的结构化字段
 - `workflow_data/library/<KEY>/` — 精读过的文献（parsed/full.md 全文 + summary.html 中文精读）
-- `workflow_data/vector_db/` — 向量库（9105 块，供 `库内问答/ask.py` 检索）
+- `workflow_data/vector_db/` — 向量库（9105 块，供 `tools/ask` 检索）
 
 ## 代码四环（可直接 import 复用）
 

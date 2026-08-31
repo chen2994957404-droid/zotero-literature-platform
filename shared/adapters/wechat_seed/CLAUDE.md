@@ -3,7 +3,7 @@
 ## 是什么
 
 把「高分子学人」这类公众号下载下来的 md，变成一批 **DOI + 推送日期**。
-方向地图（`pipelines/direction_map`）的入口。
+方向地图（`tools/direction`）的入口。
 
 ## 为什么用公众号当种子
 

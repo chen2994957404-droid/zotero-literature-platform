@@ -317,19 +317,18 @@ NOISE_DIRS = {
 #    用于「自动发现有哪几条工作流线」（体检、面板、交接文件都要这个判断）。
 NON_WORKFLOW_DIRS = NOISE_DIRS | {
     'shared', 'host', 'tools',              # 重构后的三个顶层代码包
-    'pipelines',                            # 搬家途中的临时住户（R2/R3 拆完即删）
     'docs', 'tests', 'specs', 'launch',
 }
 
 
 # ③ 顶层代码目录（= 可以 import 的顶层包名）。守卫用它判断「这个 import 是不是自家的」。
-CODE_ROOTS = ('shared', 'host', 'tools', 'pipelines')
+CODE_ROOTS = ('shared', 'host', 'tools')
 
 # ④ 积木住的环。**带斜杠的相对路径**，因为 kernel/domain/adapters 现在住在 shared/ 底下。
 #    依赖只能从上往下：host → tools → shared.domain / shared.adapters → shared.kernel
 #    'tools' 也在里面：工具切片一样是「有 __init__ + 自测」的块，体检要枚举到它们
 #    （R2 窗漏掉这一行的话，搬进 tools/ 的工具会静悄悄地不再被自测覆盖）。
-CODE_RINGS = ('shared/kernel', 'shared/domain', 'shared/adapters', 'tools', 'pipelines')
+CODE_RINGS = ('shared/kernel', 'shared/domain', 'shared/adapters', 'tools')
 
 
 def block_dirs():
