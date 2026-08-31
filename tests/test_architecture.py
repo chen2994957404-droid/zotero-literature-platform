@@ -47,7 +47,7 @@ def _rel(p):
 # ══════════════════════════════════════════════════════════════════════
 # 允许直接写数据根目录字面量的文件（数据契约的实现处 + 它的测试 + 搬家脚本）
 PATHS_OWNERS = {'shared/kernel/paths.py', 'tests/test_architecture.py',
-                'tests/test_core_paths.py', 'host/deploy/migrate_data.py'}
+                'shared/kernel/tests/test_paths.py', 'host/deploy/migrate_data.py'}
 
 # 「这一行在拼路径」的特征
 _PATH_BUILDING = ('os.path.join', 'glob', 'open(', 'os.makedirs',
@@ -87,25 +87,48 @@ def test_数据目录路径只在core_paths里拼装():
 
 
 # ══════════════════════════════════════════════════════════════════════
-# 守卫二：依赖只能从上往下（宪法铁律 2）
+# 守卫二：依赖只能从上往下（宪法铁律 2 / REBUILD.md 第三节硬规则 3、4）
 # ══════════════════════════════════════════════════════════════════════
 # 环的层级，数字越小越底层。上层可以 import 下层，反之绝对不行。
-RINGS = {'core': 0, 'domain': 1, 'adapters': 1, 'pipelines': 2, 'apps': 3}
+#
+# ⚠ **这张表写的是真实的顶层目录名。** R1 窗把 core/domain/adapters 搬进
+#    shared/、把 pipelines/apps 变成 tools/host 之后，这里一直还写着老名字，
+#    于是 `_ring_of()` 对每个文件都返回 None ——**这条守卫空转了六个窗**
+#    （踩坑 #83 同款：改了位置，守卫静默地什么都不守）。R7 窗改对并当场验红。
+RINGS = {
+    'shared/kernel':   0,      # 基础设施：谁都依赖它，它不依赖任何人
+    'shared/domain':   1,      # 纯逻辑：不联网、不知道文件放在哪
+    'shared/adapters': 1,      # 外部世界：唯一允许联网的一环
+    'tools':           2,      # 工具切片：把上面三者按顺序组合
+    'host':            3,      # 平台自身：可以 import 一切，但没人可以 import 它
+}
 
-# domain 是「纯逻辑环」：只依赖 core，连同层的 adapters 也不许碰
+# domain 是「纯逻辑环」：只依赖 kernel，连同层的 adapters 也不许碰
 # （因为 adapters 会联网，domain 一旦依赖它就没法离线测试了）
-EXTRA_FORBIDDEN = {'domain': {'adapters'}}
+EXTRA_FORBIDDEN = {'shared/domain': {'shared/adapters'}}
 
 _IMPORT_RE = re.compile(r'^\s*(?:from\s+([\w.]+)\s+import|import\s+([\w.]+))', re.M)
 
 
 def _ring_of(rel_path):
-    top = rel_path.split('/')[0]
-    return top if top in RINGS else None
+    """这个文件（或这个模块名）属于哪一环 —— 取最长匹配的前缀。
+
+    最长匹配是必须的：`shared/kernel/paths.py` 同时以 `shared` 开头，
+    只按第一段切会把三个 shared 子环混成一环，domain 就能光明正大 import adapters 了。
+    """
+    for ring in sorted(RINGS, key=len, reverse=True):
+        if rel_path == ring or rel_path.startswith(ring + '/'):
+            return ring
+    return None
 
 
 def test_依赖方向不许反向():
-    """shared.kernel 不许 import shared.domain/shared.adapters/tools/host，以此类推。"""
+    """shared.kernel 不许 import shared.domain/shared.adapters/tools/host，以此类推。
+
+    最上面那条（**没人可以 import host**）是 REBUILD.md 第三节硬规则 4：
+    host 是平台自身，不是能力。一旦有工具反过来依赖它，
+    「换掉面板 / 换掉部署方式」就会波及能力层。
+    """
     violations = []
     for f in _py_files():
         rel = _rel(f)
@@ -114,14 +137,17 @@ def test_依赖方向不许反向():
             continue
         src = open(f, encoding='utf-8', errors='replace').read()
         for m in _IMPORT_RE.finditer(src):
-            mod = (m.group(1) or m.group(2) or '').split('.')[0]
-            if mod not in RINGS:
+            mod = (m.group(1) or m.group(2) or '').replace('.', '/')
+            target = _ring_of(mod)
+            if target is None or target == ring:
                 continue
-            bad = RINGS[mod] > RINGS[ring] or mod in EXTRA_FORBIDDEN.get(ring, ())
+            bad = RINGS[target] > RINGS[ring] or target in EXTRA_FORBIDDEN.get(ring, ())
             if bad:
-                violations.append(f'{rel}: 「{ring}」环 import 了「{mod}」环')
+                violations.append(f'{rel}: 「{ring}」环 import 了「{target}」环')
     assert not violations, (
-        '依赖方向反了（违反架构宪法铁律 2）：\n  ' + '\n  '.join(sorted(set(violations))))
+        '依赖方向反了（违反架构宪法铁律 2）：' + _NL + _NL.join(sorted(set(violations)))
+        + _NL + '允许的方向：host → tools → shared.domain / shared.adapters → shared.kernel'
+        + _NL + '（domain 连同层的 adapters 也不许碰 —— 那会让它没法离线测试）')
 
 
 # 联网 / 外部服务客户端：只有 adapters 环可以碰
@@ -131,7 +157,13 @@ _EXTERNAL = ['chromadb', 'keyring']
 
 
 def _imports_of(path):
-    """这个文件顶层 import 了哪些模块（含 from X import 的 X）。"""
+    """这个文件 import 了哪些模块（含函数体里的）。
+
+    ⚠ `from shared.kernel import paths` 也要算成 import 了 `shared.kernel.paths`。
+    只记 `from` 后面那一截的话，本项目最常用的写法就全漏了 ——
+    R7 窗验红时发现「domain 不许 import paths」正是这么漏掉的：
+    故意写一行 `from shared.kernel import paths`，守卫一声不吭。
+    """
     src = open(path, encoding='utf-8', errors='replace').read()
     try:
         tree = ast.parse(src, path)
@@ -141,8 +173,12 @@ def _imports_of(path):
     for n in ast.walk(tree):
         if isinstance(n, ast.Import):
             mods.update(a.name for a in n.names)
-        elif isinstance(n, ast.ImportFrom) and n.module:
+        elif isinstance(n, ast.ImportFrom) and n.module and not n.level:
             mods.add(n.module)
+            # `from 包 import 子模块` 展开成完整模块名（只对项目自己的包做，
+            # 免得把 `from os import path` 也当成模块 os.path 之类的噪音）
+            if n.module.split('.')[0] in paths.CODE_ROOTS:
+                mods.update(f'{n.module}.{a.name}' for a in n.names)
     return mods
 
 
@@ -198,11 +234,16 @@ def test_纯逻辑环不许有IO也不许知道数据放在哪():
     第二条是关键：一旦 domain 知道了 data/ 的布局，它就跟我们的
     数据组织方式绑死了，既不能独立测试，也不能被别的项目复用，
     而且改一次目录布局就会波及本该最稳定的一层。
+
+    ⚠ R1 窗把 `domain/` 搬成 `shared/domain/` 之后，这里的目录判断没跟着改，
+    于是这条守卫**一路 skip 了六个窗**（pytest 报告里那个唯一的 `s` 就是它）。
+    R7 窗改对并当场验红。教训同踩坑 #83：skip 和空转一样，都是「看起来有人守着」。
     """
-    if not os.path.isdir(os.path.join(ROOT, 'domain')):
-        pytest.skip('domain 环尚未建立')
+    ring = 'shared/domain'
+    assert os.path.isdir(os.path.join(ROOT, *ring.split('/'))), (
+        f'{ring}/ 不存在 —— 这条守卫会静默失效，先确认是不是又搬家了')
     offenders = []
-    for rel, f in _ring_files('domain'):
+    for rel, f in _ring_files(ring):
         if rel.endswith('/selftest.py'):
             continue
         mods = _imports_of(f)
@@ -216,7 +257,222 @@ def test_纯逻辑环不许有IO也不许知道数据放在哪():
 
 
 # ══════════════════════════════════════════════════════════════════════
-# 守卫三：项目已经是 Python 包，不该再有 sys.path 补丁
+# 守卫三：工具切片的形状（REBUILD.md 第二节、第三节硬规则 1 与 2）
+# ══════════════════════════════════════════════════════════════════════
+TOOLS_DIR = os.path.join(ROOT, 'tools')
+
+# 每个工具必须有的七件。少一件，这个工具就有一面对不上：
+#   没 tool.toml → MCP 服务看不见它；没 SKILL.md → 模型不知道什么时候别用它；
+#   没 tests/ → 改它的人没有任何东西接住。
+SEVEN = ('tool.toml', '__init__.py', 'cli.py', 'mcp.py', 'SKILL.md', 'README.md', 'tests')
+
+
+def _tool_names():
+    if not os.path.isdir(TOOLS_DIR):
+        return []
+    return sorted(n for n in os.listdir(TOOLS_DIR)
+                  if os.path.isfile(os.path.join(TOOLS_DIR, n, '__init__.py')))
+
+
+def test_工具不许import别的工具():
+    """REBUILD.md 第三节硬规则 2。**这条是「一个工具 = 一个文件夹」的全部意义。**
+
+    工具之间一旦互相 import，「打开一个文件夹就能优化这个工具」当场作废：
+    改 extract 会波及 deepread，而你在 deepread 的文件夹里看不到任何线索。
+
+    R7 窗清掉了三处历史违规，处理方式各不相同，都记在这里当判例：
+      · watcher 精读完顺手抽取 → **那是跨工具编排，搬去 `host/`**
+        （host 可以 import 一切，见硬规则 4）
+      · extract 抽完刷 paperdb 索引 → **责任放错了，让索引自己保新鲜**
+      · wizard 借 paperdb 算有值率 → **两边本来就该调同一个 domain 函数**
+
+    要共用一段代码，就按下沉规则把它挪进 `shared/`；
+    要串起两个工具，那件事属于 `host/`。没有第三条路。
+    """
+    offenders = []
+    for f in _py_files():
+        rel = _rel(f)
+        parts = rel.split('/')
+        if parts[0] != 'tools' or len(parts) < 2:
+            continue
+        me = parts[1]
+        for mod in _imports_of(f):
+            seg = mod.split('.')
+            if seg[0] == 'tools' and len(seg) > 1 and seg[1] != me:
+                offenders.append(f'{rel}: 「{me}」import 了「{seg[1]}」（{mod}）')
+    assert not offenders, (
+        '工具之间不许互相 import（REBUILD.md 第三节硬规则 2）：' + _NL
+        + _NL.join(sorted(set(offenders)))
+        + _NL + '三条出路：共用的代码下沉到 shared/；跨工具的编排上浮到 host/；'
+        + _NL + '或者承认这件事本来就属于其中一个工具，把它整个搬过去。')
+
+
+def test_每个工具都有全套七件():
+    """缺一件，这个工具就有一面对不上（哪一面，见 SEVEN 上方的注释）。"""
+    offenders = []
+    for t in _tool_names():
+        d = os.path.join(TOOLS_DIR, t)
+        missing = [x for x in SEVEN if not os.path.exists(os.path.join(d, x))]
+        if missing:
+            offenders.append(f'tools/{t}: 缺 {missing}')
+    assert not offenders, (
+        '工具切片的形状不完整（REBUILD.md 第二节）：' + _NL + _NL.join(offenders))
+
+
+def test_工具的tests目录里真的有测试():
+    """空的 `tests/` 比没有更糟 —— 它让守卫和人都以为「这个工具有测试」。
+
+    同理由见 R5 窗那句：**空骨架配空话等于没建。**
+    """
+    offenders = []
+    for t in _tool_names():
+        d = os.path.join(TOOLS_DIR, t, 'tests')
+        if not os.path.isdir(d):
+            continue          # 上一条守卫已经报过了
+        if not [f for f in os.listdir(d) if f.startswith('test_') and f.endswith('.py')]:
+            offenders.append(f'tools/{t}/tests/ 里一个 test_*.py 都没有')
+    assert not offenders, '这些工具的测试目录是空壳：' + _NL + _NL.join(offenders)
+
+
+def _manifests():
+    """所有 tool.toml：{工具名: 清单 dict}。读不动的原样报出去。"""
+    import tomllib
+    out = {}
+    for t in _tool_names():
+        p = os.path.join(TOOLS_DIR, t, 'tool.toml')
+        if not os.path.isfile(p):
+            continue
+        try:
+            with open(p, 'rb') as f:
+                out[t] = tomllib.load(f)
+        except Exception as e:
+            out[t] = {'_error': f'{type(e).__name__}: {e}'}
+    return out
+
+
+def test_花钱或有副作用的工具不许暴露成MCP的tool():
+    """**安全铁律**：钱和副作用必须停在人这一侧（踩坑 #86）。
+
+    MCP 的三类暴露里，`tool` 是**模型可以自己调**的，`prompt` 是人在客户端里点的。
+    把「全库重抽」这种花钱的能力注册成 tool，等于把钱包交给模型 ——
+    它不需要恶意，只要判断失误一次。
+
+    `host/mcp/registry.check()` 在服务启动时查同一件事（查的是**实际注册了什么**）；
+    这里查的是**清单自己自洽不自洽**，不用起服务就能拦住，改 tool.toml 的当场就红。
+    """
+    offenders = []
+    for t, man in sorted(_manifests().items()):
+        if '_error' in man:
+            offenders.append(f'{t}: tool.toml 读不动 —— {man["_error"]}')
+            continue
+        expose = man.get('expose')
+        if expose not in ('tool', 'resource', 'prompt', 'internal'):
+            offenders.append(f'{t}: expose={expose!r} 不是四类之一')
+        risky = bool(man.get('costs_money')) or bool(man.get('side_effects'))
+        if risky and expose == 'tool':
+            offenders.append(
+                f"{t}: costs_money={man.get('costs_money')}, "
+                f"side_effects={man.get('side_effects')} —— 这样的不许 expose='tool'")
+        if man.get('requires_role') not in ('none', 'test', 'prod'):
+            offenders.append(f"{t}: requires_role={man.get('requires_role')!r} 不是三档之一")
+    assert not offenders, (
+        'tool.toml 与安全铁律对不上：' + _NL + _NL.join(offenders)
+        + _NL + "判据：只读且便宜 → tool；只读数据 → resource；花钱或有副作用 → prompt。")
+
+
+# ── 下沉规则：被 ≥2 个使用者用到才配住 shared/ ──────────────────────────
+# 只有 1 个用的块留在 shared/ 会慢慢把那儿变成「什么都往里塞」的杂物间，
+# 一年后它就是整个仓库最烂的地方 —— 因为没人知道动它会影响谁。
+#
+# 例外只有一类，且理由是**另一条更硬的规则**：
+# adapters 是唯一允许联网的一环（硬规则 3）。一个只被一个工具用到的外部服务封装，
+# 搬进那个工具就等于让工具联网 —— 换一条规则的违反，不是解决。
+# 所以 adapters 里的单使用者块免检，domain / kernel 不免。
+SINK_EXEMPT_RINGS = ('shared/adapters',)
+
+# 逐块的豁免。**必须写理由**，而且理由只有一种合格形式：
+# 「搬走会违反另一条规则」或「它的第二个使用者是契约而不是 import」。
+# 写不出这种理由的，就该老老实实搬进那个唯一的使用者里。
+SINK_EXEMPT = {
+    'shared/domain/figure_crop':
+        'digitize 的对外契约（SKILL.md / README / MCP 提示词）明写「先用它裁图，'
+        '再逐张数字化」，只是今天那一步由调用方手工完成、没有代码调用。'
+        '搬进 deepread 会让 digitize 的文档指向另一个工具的内部。'
+        '等 digitize 长出「从解析目录直接数字化」的入口，这条豁免自动消失（见待办）。',
+}
+
+
+def _shared_block_users():
+    """{shared 块相对路径: {使用者}}。使用者按「工具名 / host 的子块」计。"""
+    import collections
+    users = collections.defaultdict(set)
+    for f in _py_files():
+        rel = _rel(f)
+        parts = rel.split('/')
+        if parts[0] == 'tools':
+            who = parts[1]
+        elif parts[0] == 'host':
+            who = 'host/' + parts[1]
+        else:
+            continue                      # shared 内部互相用不算「使用者」
+        for mod in _imports_of(f):
+            seg = mod.split('.')
+            if seg[0] == 'shared' and len(seg) >= 3:
+                users['/'.join(seg[:3])].add(who)
+    return users
+
+
+def test_下沉规则_shared里不许住只有一个使用者的块():
+    """REBUILD.md 第三节硬规则 1。
+
+    R7 窗按这条把两块搬回了工具里：
+      `shared/domain/si_filter` → `tools/deepread/`（只有精读用）
+      `shared/domain/bibliometrics` → `tools/direction/`（只有方向地图用）
+    """
+    users = _shared_block_users()
+    offenders = []
+    for ring in ('shared/kernel', 'shared/domain', 'shared/adapters'):
+        d = os.path.join(ROOT, *ring.split('/'))
+        if not os.path.isdir(d):
+            continue
+        for name in sorted(os.listdir(d)):
+            p = os.path.join(d, name)
+            block = None
+            if os.path.isdir(p) and os.path.isfile(os.path.join(p, '__init__.py')):
+                block = f'{ring}/{name}'
+            elif name.endswith('.py') and not name.startswith('__'):
+                block = f'{ring}/{name[:-3]}'
+            if not block or ring in SINK_EXEMPT_RINGS:
+                continue
+            who = users.get(block, set())
+            if len(who) < 2 and block not in SINK_EXEMPT:
+                offenders.append(f'{block}: 只有 {sorted(who) or "没有人"} 用它')
+    assert not offenders, (
+        '这些块住在 shared/ 但只有一个使用者（REBUILD.md 第三节硬规则 1）：' + _NL
+        + _NL.join(offenders)
+        + _NL + '做法：搬进那个唯一的使用者里。真要留下，写进 SINK_EXEMPT 并说明理由。'
+        + _NL + '（adapters 免检 —— 把外部服务封装搬进工具会违反「联网只在 adapters」。）')
+
+
+def test_下沉规则的豁免必须写着理由():
+    """豁免名单是这条守卫唯一的软肋，所以它自己也要被守着。
+
+    一个可以随手加名字的白名单，一年后就是「大家都在里面」。
+    这里钉死两件事：豁免的块**真的存在**（搬走了却忘了删名字 = 名单在说谎），
+    以及每条都**写了像样的理由**（一句「暂时保留」不算理由）。
+    """
+    bad = []
+    for block, why in SINK_EXEMPT.items():
+        d = os.path.join(ROOT, *block.split('/'))
+        if not (os.path.isdir(d) or os.path.isfile(d + '.py')):
+            bad.append(f'{block}: 名单里有它，但盘上没有 —— 搬走后忘了删名字？')
+        if len(why.strip()) < 40:
+            bad.append(f'{block}: 理由太短（{len(why.strip())} 字），说不清就别豁免')
+    assert not bad, '下沉规则的豁免名单有问题：' + _NL + _NL.join(bad)
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 守卫四：项目已经是 Python 包，不该再有 sys.path 补丁
 # ══════════════════════════════════════════════════════════════════════
 # 允许保留的：为「同目录兄弟脚本 import」而做的插入（阶段 4 迁入 pipelines 后消失）
 def test_不再有塞项目根到sys_path的补丁():
@@ -288,7 +544,7 @@ def test_项目内的import都能解析到真实存在的包():
 
 
 # ══════════════════════════════════════════════════════════════════════
-# 守卫四：两台机器的分工（见 docs/两台机器的分工.md）
+# 守卫五：两台机器的分工（见 docs/两台机器的分工.md）
 # ══════════════════════════════════════════════════════════════════════
 # 编程端（A 机）和运行端（B 机）**共用同一个 Zotero 账号**。
 # 编程端一旦回写，污染的是真实文献库，而且立刻同步到主力机。
@@ -300,7 +556,7 @@ _GUARD_CALL = 'role.require_prod'
 # 允许出现该域名却不需要守卫的文件：适配层的只读封装、文档、守卫自己
 _GUARD_EXEMPT = {
     'tests/test_architecture.py',
-    'tests/test_core_role.py',
+    'shared/kernel/tests/test_role.py',
     'shared/kernel/role.py',
 }
 
@@ -437,7 +693,7 @@ def test_只读的云端封装必须保持只读():
 def test_常驻服务不许在编程端启动():
     """watcher / 看门狗两台都跑会重复精读、重复写回、重复烧钱，标签状态机还会打架。"""
     offenders = []
-    for rel in ('tools/deepread/watcher.py', 'tools/deepread/watchdog.py'):
+    for rel in ('host/watcher/service.py', 'host/watcher/watchdog.py'):
         f = os.path.join(ROOT, rel.replace('/', os.sep))
         if not os.path.isfile(f):
             continue
@@ -472,7 +728,7 @@ def test_守卫必须在函数体里而不是模块顶层():
 
 
 # ══════════════════════════════════════════════════════════════════════
-# 守卫五：进版本库的文件必须只有一个生产者
+# 守卫六：进版本库的文件必须只有一个生产者
 # ══════════════════════════════════════════════════════════════════════
 # 两台机器都会改写的生成物/缓存一旦进了版本库，每次 git pull 必冲突，
 # 而运行端没有 Claude Code 来解冲突 —— 那是最难受的情形。
@@ -522,7 +778,7 @@ def test_用户不可重建的数据仍在版本库里():
 
 
 # ══════════════════════════════════════════════════════════════════════
-# 守卫六：引导脚本不许依赖「还没装好的包」
+# 守卫七：引导脚本不许依赖「还没装好的包」
 # ══════════════════════════════════════════════════════════════════════
 # 「用来修好环境的工具」自己被环境卡死，是最难受的一类故障 ——
 # 用户拿不到任何有用信息，只有一行 ModuleNotFoundError。
@@ -537,8 +793,10 @@ BOOTSTRAP_SCRIPTS = [
     'host/panel/launcher.py',      # 同上：它存在的意义就是接住 import 期的异常
 ]
 
-# 项目自己的顶层包
-_PROJECT_PKGS = {'core', 'domain', 'adapters', 'pipelines'}
+# 项目自己的顶层包。**照 paths.CODE_ROOTS 取，别在这里再抄一份** ——
+# 抄的那一份在 R1 窗改名后就没人跟着改，于是这条守卫也空转了六个窗
+# （它当时还写着 core/domain/adapters/pipelines，现在一个都不存在）。
+_PROJECT_PKGS = set(paths.CODE_ROOTS)
 
 
 def test_引导脚本不许在模块顶层import项目包():

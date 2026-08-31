@@ -148,6 +148,12 @@ def c_no_popup():
         np = os.path.normpath(f)
         if np.startswith(os.path.join('shared', 'kernel', 'subproc')):
             continue                       # 积木自己就是正确实现，豁免
+        # 测试也豁免：它们只在 pytest 里跑，本来就在控制台里，弹不弹窗与用户无关；
+        # 而且测试要的是「原样跑一遍那个脚本、拿它的退出码」，
+        # 套一层 subproc 反而遮住被测对象的真实行为。
+        base = os.path.basename(np)
+        if base.startswith('test_') or f'{os.sep}tests{os.sep}' in np:
+            continue
         try:
             src = open(f, encoding='utf-8', errors='replace').read()
         except Exception:
