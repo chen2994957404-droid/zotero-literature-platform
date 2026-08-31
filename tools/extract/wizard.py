@@ -35,20 +35,19 @@ from shared.kernel.cli import flag, opt
 from shared.kernel.config import drop_stale_env
 from shared.domain import schema
 from tools import extract
-from tools.extract import batch as _batch
 
 LINE = '=' * 64
 
 
 def _index_stats():
-    """查询库里「各档次 × 各字段有值率」，用来给用户看重抽前后的变化。
+    """「各档次 × 各字段有值率」，用来给用户看重抽前后的变化。
 
-    ⚠ tools 调 tools（见 batch._rebuild_index 里的说明）；读不到就当没有，
-    大不了少给一段前后对比，不该让重抽本身跑不起来。
+    R7 窗之前这里问的是查询库（`tools` 调 `tools`，违反第三节硬规则 2）。
+    改成直接算：口径没变 —— 两边都走 `shared.domain.schema.coverage`，
+    那才是这个数的唯一定义；也不用再为一段展示文字把整个查询库拖进来。
     """
     try:
-        from tools import paperdb
-        return paperdb.stats()
+        return schema.coverage(extract.all_records(), list(schema.SCHEMA.keys()))
     except Exception:
         return {}
 
@@ -177,7 +176,6 @@ def main():
             pin, pout, cny = _money(u0, usage_snapshot(), model)
             say(f'    这篇花了：输入 {pin} + 输出 {pout} token ≈ {cny:.3f} 元')
     extract.write_compare_table()
-    _batch._rebuild_index(log=say)
     after = _index_stats()
 
     say(f'\n{LINE}')

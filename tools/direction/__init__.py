@@ -55,7 +55,7 @@
 | `brainstorm` 子模块 | 结合库里文献做创意发散讨论（找空白、提 idea）|
 
 依赖：shared.adapters.wechat_seed / shared.adapters.openalex / shared.adapters.zotero_client /
-shared.domain.bibliometrics / shared.kernel。本工具**不联网**（联网都在 adapters 里）。
+包内的 bibliometrics / shared.kernel。本工具**不联网**（联网都在 adapters 里）。
 """
 import collections
 import io
@@ -68,7 +68,7 @@ import time
 from shared.kernel import errors, paths
 from shared.kernel.log import get_logger
 from shared.adapters import openalex, wechat_seed
-from shared.domain import bibliometrics as bib
+from tools.direction import bibliometrics as bib
 
 log = get_logger('direction')
 

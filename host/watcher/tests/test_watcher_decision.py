@@ -10,9 +10,9 @@
 """
 import pytest
 
-# R2 窗之前 watcher 住在中文目录里、不是包，这里只能按路径 exec 加载。
-# 现在它是 `tools/deepread/watcher.py`，普通 import 即可。
-from tools.deepread import watcher as w
+# 搬过两次家：中文目录（按路径 exec 加载）→ tools/deepread/watcher.py
+# → host/watcher/service.py（R7 窗，理由见 host/watcher/__init__.py）。
+from host.watcher import service as w
 
 KEY = 'ABCD1234'
 T0 = 1_000_000.0

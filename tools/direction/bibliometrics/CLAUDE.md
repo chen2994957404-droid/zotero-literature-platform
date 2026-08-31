@@ -64,7 +64,7 @@ res=3.0  模块度 0.263  簇 36  纯度 0.48   ← 采用
 ## 接口
 
 ```python
-from domain import bibliometrics as bib
+from tools.direction import bibliometrics as bib
 
 tools = bib.tool_refs({ref_id: 标题})                    # 通用工具清单
 keys, S = bib.coupling_matrix(refsets, exclude=tools)    # IDF 加权文献耦合
@@ -87,5 +87,5 @@ numpy + 标准库。**没有 sklearn / networkx / igraph** —— Louvain 和模
 ## 自测
 
 ```
-python domain/bibliometrics/selftest.py
+python tools/direction/bibliometrics/selftest.py
 ```

@@ -14,7 +14,7 @@
   → adapters.wechat_seed      提 DOI + 推送日期（正文提完即弃）
   → adapters.openalex         DOI 对齐 + 批量拉参考文献（免费无密钥）
   → SQLite（core.paths.direction_db()）  works / edges / seeds / clusters
-  → domain.bibliometrics      IDF 文献耦合 + Louvain + 时间趋势
+  → bibliometrics/            IDF 文献耦合 + Louvain + 时间趋势（本工具自带）
   → 报告
 ```
 

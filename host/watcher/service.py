@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""deepread 的常驻服务：Zotero 闭环轮询器。
+"""平台常驻服务：Zotero 闭环轮询器（打个标签就全自动）。
 
 检测带触发标签的文献 → 拉PDF → MineRU解析+精读 → 回写Zotero附件 → 改标签。
 依赖 Zotero 桌面开着（本地API读）+ Zotero Web API key（写回）。
 
-运行: python -m tools.deepread.watcher      （日常由任务计划 + 看门狗拉起）
+运行: python -m host.watcher.service        （日常由任务计划 + 看门狗拉起）
 
 **它是整条线里唯一知道 Zotero 有标签这回事的地方**：
 `tools.deepread.run()` 只陈述「实际做成了什么」，翻译成标签在这里
@@ -81,12 +81,10 @@ def process_item(item):
     # 2.5 结构化抽取（粗层）：把这篇抽成对齐字段，自动并入 structured/ 对比表
     # 它自己会记账并跳过已抽过的，失败也只返回 None，不会拖垮回写。
     #
-    # ⚠ 这是本仓库**唯一一处 tools 调 tools**（违反 REBUILD.md 第三节硬规则 2）。
-    # 真正的原因是「打个标签就全自动」这条闭环横跨两个工具，而 REBUILD.md
-    # 又明确要求 watcher 住在 tools/deepread/。R7 窗定夺：要么把 watcher 挪去
-    # host/（它本来就是平台服务，不是能力），要么把这一步做成调用方传进来的回调。
-    # 记在 docs/待办与需求.md，别在重构窗里顺手改掉行为。
-    from tools import extract          # noqa: 见上
+    # 这一步是「串起两个工具」——**正因为它，本服务才必须住在 host/ 而不是
+    # tools/deepread/**（硬规则 2：tools 不许 import tools；硬规则 4：host 可以
+    # import 一切）。R7 窗的判定与理由写在 host/watcher/__init__.py。
+    from tools import extract
     extract.run(key, log=print)
     # 3. 回写 Zotero：**复用已有 summary 附件、只更新文件内容**（不删条目）
     #    踩坑：原先"先删旧附件再传新的"，删除动作进入同步链 → Zotero 每篇都弹"冲突解决"框。

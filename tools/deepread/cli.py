@@ -15,8 +15,8 @@
    并且会把结果写回 Zotero。只允许在主力机上跑（role.require_prod 会拦）。
 
 常驻服务另有自己的入口，不走这里：
-    python -m tools.deepread.watcher     盯着 Zotero 的「待处理」标签自动精读
-    python -m tools.deepread.watchdog    看门狗（守着 watcher 别死）
+    python -m host.watcher.service       盯着 Zotero 的「待处理」标签自动精读
+    python -m host.watcher.watchdog      看门狗（守着它别死）
 """
 import os, sys
 # 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）

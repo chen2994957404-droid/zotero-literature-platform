@@ -334,7 +334,7 @@ def c_modules():
 # R2 窗（2026-08-30）起，工具是包不是散脚本 —— 「按文件名找」会在搬家后
 # 直接失效（找不到就报 FAIL），而模块名是这些工具的对外契约，本来就该稳定。
 KEY_MODULES = [
-    'tools.deepread', 'tools.deepread.watcher', 'tools.deepread.batch',
+    'tools.deepread', 'host.watcher.service', 'tools.deepread.batch',
     'tools.extract', 'tools.extract.batch', 'tools.paperdb',
     'tools.ask', 'tools.ask.vectorize', 'tools.askworld',
     'tools.discover', 'tools.discover.importer', 'tools.direction', 'tools.curate.sync',

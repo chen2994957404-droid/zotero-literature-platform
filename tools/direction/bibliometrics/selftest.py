@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """bibliometrics 自测：验证聚类能把「本来就该分开的」分开，且不被工具论文粘住。
-用法: python shared/domain/bibliometrics/selftest.py
+用法: python tools/direction/bibliometrics/selftest.py
 
 重点测那个**真实踩过的坑**：三组毫不相关的论文，因为都引了同一批 DFT 工具，
 会被文献耦合粘成一个假簇。排除工具后必须分开。
@@ -13,7 +13,7 @@ try:
 except Exception:
     pass
 
-from shared.domain import bibliometrics as bib
+from tools.direction import bibliometrics as bib
 
 ok = True
 

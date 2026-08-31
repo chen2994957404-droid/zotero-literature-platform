@@ -45,22 +45,6 @@ from tools import extract
 MIN_FULLTEXT = 500      # Zotero 全文索引短于这个字数就当没有（多半是扫描件没 OCR）
 
 
-def _rebuild_index(log=print):
-    """抽完顺手重建查询库（秒级、不花钱）。
-
-    ⚠ 这是 tools 调 tools（违反 REBUILD.md 第三节硬规则 2）。paperdb 是
-    structured/*.json 的**索引**，抽完不刷新它，用户查到的就是旧数据。
-    延迟 import + 失败不致命：抽取本身已经成了，索引没刷不该让它算失败。
-    R7 窗定夺（要么把「刷索引」交给调用方，要么承认索引是抽取的一部分）。
-    记在 docs/待办与需求.md。
-    """
-    try:
-        from tools import paperdb
-        paperdb.rebuild(log=log)
-    except Exception as e:
-        log(f'  [查询库重建失败，不影响抽取结果] {e}')
-
-
 # ───────────────────────── 精层：MineRU 全文 + 云端模型 ─────────────────────────
 
 def ensure_fullmd(key, log=print):
@@ -116,7 +100,6 @@ def extract_many(keys, force=False, parse_missing=False, log=print):
         if extract.run(key, force=force, log=log):
             done += 1
     extract.write_compare_table()
-    _rebuild_index(log=log)
     return done
 
 
@@ -210,7 +193,6 @@ def coarse_all(rebuild=False, log=print):
         log(f'[{processed}] {title[:45]}')
 
     extract.write_compare_table()      # 粗+精并入同一张对比表
-    _rebuild_index(log=log)
     log(f'\n完成：新抽 {processed} 篇，已有跳过 {skipped}，'
         f'无全文 {nofull}，失败 {failed}')
     return processed, skipped, nofull, failed

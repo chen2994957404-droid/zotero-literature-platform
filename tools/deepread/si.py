@@ -20,7 +20,7 @@ from shared.adapters.zotero_client import zget, USER_ID, STORAGE_DIR, SUPP_PAT
 from shared.kernel import paths, prompts
 from shared.kernel.config import get_key
 from shared.domain.figure_crop import crop_figures
-from shared.domain.si_filter import filtered_text
+from tools.deepread.si_filter import filtered_text
 
 # 提示词版本：改范式 = 新建 prompts/si_v<N+1>.txt，再把这里 +1（提示词只增不改）。
 PROMPT_VER = 1

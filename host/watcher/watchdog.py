@@ -14,7 +14,7 @@
 拆开之后：精读跑一小时也不会被误杀（后台仍在报活）；
 进程真死了 5 分钟内发现；活着但卡在某个不返回的调用上，由进度阈值兜底。
 
-用法: python -m tools.deepread.watchdog   # 前台常驻；日常由任务计划自启
+用法: python -m host.watcher.watchdog    # 前台常驻；日常由任务计划自启
 """
 import os, sys, time, subprocess
 
@@ -31,8 +31,12 @@ from shared.kernel import subproc as _sp   # 统一走静默子进程调用，�
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = _ROOT
-WATCHER = os.path.join(SCRIPT_DIR, 'watcher.py')
+WATCHER = os.path.join(SCRIPT_DIR, 'service.py')
 BEACON = 'watcher'          # shared.kernel.heartbeat 里的名字
+
+# 「哪些进程是 watcher」的唯一判据（见 find_watcher_pids 的说明）。
+# PowerShell 单引号串里反斜杠是字面量，所以这一串原样就是正则。
+WATCHER_PAT = "'watcher[\\\\./]service'"
 
 CHECK = 60          # 每 60 秒查一次
 STALE = 300         # 超 300 秒没报活 = 进程死了/冻住了。后台线程每 30 秒写一次，很宽容
@@ -57,16 +61,18 @@ def find_watcher_pids():
     走 subproc 积木：本函数每 60 秒被调一次，裸调 wmic 会不停弹控制台窗口（踩坑 #31）。
     wmic 在新版 Windows 已弃用，改用 PowerShell 的 CIM 查询，更可靠。
 
-    ⚠ 两个词一起匹配（deepread + watcher），**别只匹配 watcher** ——
-    R2 窗把 `文献精读/zotero_watcher.py` 改名成 `tools/deepread/watcher.py`，
-    只认旧名字的话看门狗会永远「找不到 watcher」，于是每轮再起一个。
-    'watchdog' 里没有 'watcher' 这个子串，所以它不会把自己杀掉。
+    ⚠ **认模块路径，不认单个词**（踩坑 #81 的第三次复发预防）。这里搬过两次家：
+    `文献精读/zotero_watcher.py` → `tools/deepread/watcher.py` → `host/watcher/service.py`。
+    每搬一次，「按名字找进程」都会静默失效 —— 看门狗永远「找不到 watcher」，
+    于是每轮再起一个，最后几十份并存。
+    只匹配 `watcher` 这一个词更糟：看门狗自己的命令行是 `host.watcher.watchdog`，
+    也含这个词，**它会把自己杀掉**。所以匹配的是「watcher 后面紧跟 service」，
+    斜杠点反斜杠三种写法都认（`-m host.watcher.service` 与直接跑 .py 的路径都要能匹配）。
     """
     try:
         txt = _sp.powershell(
             "Get-CimInstance Win32_Process -Filter \"Name like 'python%'\" | "
-            "Where-Object {$_.CommandLine -match 'deepread' -and "
-            "$_.CommandLine -match 'watcher'} | "
+            "Where-Object {$_.CommandLine -match " + WATCHER_PAT + "} | "
             "Select-Object -ExpandProperty ProcessId", timeout=25)
         return [t.strip() for t in txt.splitlines() if t.strip().isdigit()]
     except Exception:

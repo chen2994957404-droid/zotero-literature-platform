@@ -14,10 +14,11 @@
 | `DeepreadFailed` / `SIFailed` | 单步失败的异常类型 |
 | `batch.read_many / si_many / upload_many / rerun_with_pro` | 批量与回写 |
 | `tags.set_state_tag`       | 事实 → Zotero 状态标签（策略只在这一层） |
-| `watcher.main` / `watchdog.main` | 常驻服务：打标签即自动精读 |
 
 包内文件：`main_text.py` 正文 · `si.py` 补充材料 · `merge.py` 合并 ·
-`batch.py` 批量与回写 · `tags.py` 标签状态机 · `watcher.py` / `watchdog.py` 常驻服务。
+`batch.py` 批量与回写 · `tags.py` 标签状态机。
+常驻服务（打标签即自动精读）不在这里，在 `host/watcher/` ——
+它要串起 deepread 与 extract 两个工具，跨工具编排属于 host（R7 窗判定）。
 
 **为什么是一个函数而不是一串脚本**：在它之前，这条工作流是 watcher 里五个
 子进程调用串起来的，接口是「脚本路径 + 参数顺序」。于是改个参数次序运行时才炸；
@@ -33,7 +34,7 @@
     from tools import deepread
     r = deepread.run(key, provider='deepseek', model='deepseek-v4-flash')
 
-**`run()` 不写 Zotero、不改标签**（那是 `watcher` / `batch` 的事，
+**`run()` 不写 Zotero、不改标签**（那是 `host.watcher` / `batch` 的事，
 也是两台机器分工的闸门所在）。`r.state` 是事实，标签怎么打由调用方决定。
 """
 import json

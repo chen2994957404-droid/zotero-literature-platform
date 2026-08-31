@@ -21,8 +21,8 @@ python -m tools.deepread --rerun-pro 3      用 pro 重跑第 3 篇
 常驻服务（自己的入口）：
 
 ```
-python -m tools.deepread.watcher     盯 Zotero 标签，自动精读
-python -m tools.deepread.watchdog    看门狗，watcher 真死了才重启它
+python -m host.watcher.service       盯 Zotero 标签，自动精读
+python -m host.watcher.watchdog      看门狗，它真死了才重启它
 ```
 
 ## 状态标签（互斥，一篇同时只有一个）

@@ -180,6 +180,40 @@ def rebuild(records=None, log=print):
     return len(records), n_prop
 
 
+def _ensure_fresh():
+    """库比 `structured/*.json` 旧就自己重建一次（秒级、不花钱）。
+
+    **R7 窗为什么加这个**：此前是「谁写完 JSON 谁负责刷索引」——
+    于是 `tools/extract` 里写着 `from tools import paperdb`，
+    违反 REBUILD.md 第三节硬规则 2（工具不许 import 工具）。
+
+    真正的毛病不在那一行 import，而在**责任放错了地方**：索引的新鲜度
+    是索引自己的事。让抽取方负责，就得每个写 JSON 的人都记得刷一次，
+    漏一个（手改过 JSON、从别处拷进来一份）用户就查到旧数据 —— 而且不报错。
+
+    判据只看时间戳：库文件比最新的那份 JSON 旧 = 该重建。
+    重建 175 篇不到一秒，宁可多建一次，也不要给出旧答案。
+    """
+    p = db_path()
+    try:
+        db_mtime = os.path.getmtime(p)
+    except OSError:
+        db_mtime = -1                      # 库还不存在 → 一定要建
+    newest = -1
+    if os.path.isdir(paths.STRUCTURED):
+        for f in os.listdir(paths.STRUCTURED):
+            if f.endswith('.json'):
+                try:
+                    newest = max(newest, os.path.getmtime(
+                        os.path.join(paths.STRUCTURED, f)))
+                except OSError:
+                    continue
+    if newest < 0 and db_mtime >= 0:
+        return                             # 没有源 JSON，保持现状（多半是测试造的库）
+    if db_mtime < newest:
+        rebuild(log=lambda *_: None)       # 自动刷新不该往用户屏幕上刷字
+
+
 def query(sql, args=()):
     """只读查询，返回 list[dict]。**只允许单条 SELECT / WITH** —— 这是查询库，不是写入口。"""
     head = sql.strip().lstrip('(').lstrip().lower()
@@ -187,6 +221,7 @@ def query(sql, args=()):
         raise ValueError('只允许 SELECT / WITH 查询（要改数据请改 structured/*.json 再 rebuild）')
     if ';' in sql.strip().rstrip(';'):
         raise ValueError('一次只允许一条语句')
+    _ensure_fresh()
     return [dict(r) for r in connect().execute(sql, args).fetchall()]
 
 

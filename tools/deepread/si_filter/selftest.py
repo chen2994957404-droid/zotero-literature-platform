@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """si_filter 自测：验证 SI 噪声过滤——该丢的丢、**关键信息绝不误杀**。
-用法: python shared/domain/si_filter/selftest.py
+用法: python tools/deepread/si_filter/selftest.py
 
 重点测"不误杀"：曾因正则过粗把 `Mw = 4200 g/mol`、¹¹B NMR、公式段当作者名单丢掉（踩坑）。
 """
 import sys, os
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from shared.domain.si_filter import classify, filtered_text, stats
+from tools.deepread.si_filter import classify, filtered_text, stats
 
 SAMPLE = """# A novel material derived from diboron structures
 
