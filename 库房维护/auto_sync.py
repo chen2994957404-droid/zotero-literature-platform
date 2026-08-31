@@ -6,7 +6,7 @@
 
 本脚本做两件事，都是**增量**（已处理的跳过，没新文献时几秒结束）：
   1. 增量向量化   → vectorize_library.py（走 Zotero 全文API，本地 bge-m3，零成本）
-  2. 增量粗层抽取 → extract_library.py（本地 qwen，零成本；精层记录受保护不覆盖）
+  2. 增量粗层抽取 → tools.extract.batch --coarse（本地 qwen，零成本；精层记录受保护不覆盖）
 
 前提：Zotero 开着（取全文）+ Ollama 在跑（向量化/本地抽取）。两者都有保活任务。
 用法: python auto_sync.py        （由任务计划 LiteratureAutoSync 每小时调用）
@@ -88,11 +88,10 @@ def check_deps():
     return True
 
 
-def run(script, name, timeout=3600):
-    """跑一个增量脚本，返回是否成功。"""
+def _run_argv(argv, name, timeout=3600):
+    """跑一条子进程命令，返回是否成功。所有输出只取最后一行当摘要。"""
     try:
-        r = _sub_run([sys.executable, os.path.join(SCRIPT_DIR, script)],
-                     timeout=timeout, cwd=_ROOT,
+        r = _sub_run(argv, timeout=timeout, cwd=_ROOT,
                      env=dict(os.environ, PYTHONIOENCODING='utf-8'))
         tail = (r.stdout or '').strip().splitlines()
         summary = tail[-1] if tail else '(无输出)'
@@ -104,6 +103,20 @@ def run(script, name, timeout=3600):
         log(f'{name}: 出错 {e}'); return False
 
 
+def run(script, name, timeout=3600):
+    """跑同文件夹里的一个增量脚本。"""
+    return _run_argv([sys.executable, os.path.join(SCRIPT_DIR, script)], name, timeout)
+
+
+def run_module(module, name, args=(), timeout=3600):
+    """跑一个工具模块（`python -m tools.x.y`）。
+
+    R2 窗起，粗层抽取不再是一个 .py 脚本文件，而是 `tools/extract/batch.py`
+    里的一条线 —— 按模块名拉起，路径怎么变都不必再改这里。
+    """
+    return _run_argv([sys.executable, '-m', module] + list(args), name, timeout)
+
+
 def main():
     # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
     role.require_prod('定时增量同步', force=flag('--force'))
@@ -113,7 +126,7 @@ def main():
     # 1. 增量向量化（新文献进向量库 → 问答能查到）
     run('vectorize_library.py', '增量向量化')
     # 2. 增量粗层结构化抽取（新文献进对比表 → 横向比较能看到）
-    run('extract_library.py', '增量粗层抽取')
+    run_module('tools.extract.batch', '增量粗层抽取', ['--coarse'])
     log('=== 自动同步结束 ===')
 
 

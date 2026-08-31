@@ -45,7 +45,8 @@ namespaces = true
 
 [tool.pytest.ini_options]
 # 离线测试：不碰网络、不碰外部服务，必须永远全绿（见设计文档第五节）
-testpaths = ["tests"]
+# tests/ 放跨工具的架构守卫；每个工具自己的测试住在 tools/<t>/tests/（REBUILD.md 第三节）
+testpaths = ["tests", "tools"]
 addopts = "-q --strict-markers"
 markers = [
     "live: 需要真实外部服务（Zotero / Ollama / 各云 API），默认不跑；用 -m live 单独跑",

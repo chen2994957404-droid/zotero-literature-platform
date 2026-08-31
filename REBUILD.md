@@ -246,7 +246,7 @@ watcher/watchdog 作为该工具的常驻服务放 `tools/deepread/watcher.py`
 | 窗 | 内容 | 状态 | 实际做了什么 |
 |---|---|---|---|
 | R1 | 开分支 + 建骨架 + 搬 shared/ 与 host/ | [x] | `rebuild` 分支已开。`core/domain/adapters` → `shared/{kernel,domain,adapters}`；`平台管理`+`MCP服务` → `host/{panel,doctor,deploy,codegen,mcp}`，中文脚本名换成 ASCII；115 个文件批量改 import；`paths.py` 新增 `CODE_ROOTS`、`CODE_RINGS` 改成带斜杠相对路径；pyproject 改成 `tools*/shared*/host*/pipelines*` 并重装；删 `归档_旧版本`/pycache/egg-info；3 个 .bat 内部路径已改。**pytest 195 全过、离线体检 10/0/0、完整体检 16/2/0 与重构前基线一致。**踩坑 #78 #79 #80。 |
-| R2 | 切出 deepread / extract / paperdb / digitize | [ ] | |
+| R2 | 切出 deepread / extract / paperdb / digitize | [x] | 四个工具已成包。`pipelines/{deepread,extract,paper_db,chart_digitize}` + `文献精读/`（12 脚本）+ `数据抽取/`（7 脚本）→ `tools/{deepread,extract,paperdb,digitize}`，两个中文文件夹**已删**。六个精读脚本并成 `deepread/batch.py`、三个抽取脚本并成 `extract/batch.py`；新增 `deepread/tags.py`（标签状态机从 watcher 独立）；`zotero_watcher.py`→`watcher.py`。**删了 5 个纯薄壳**（deepread_v4/si_deepread/merge_summary/zotero_upload_attachment/mineru_parse —— 最后一个是 `adapters/pdf_parse` 的第二份实现，违反「联网只在 adapters」）。`extract_library` 的裸 urllib 改走适配层。测试进 `tools/deepread/tests/`，`testpaths` 加 `tools`；`CODE_RINGS` 加 `'tools'`（否则体检不再跑这四个工具的自测）。改了 health_check（关键入口改成按**模块名**查）/ panel / update / auto_sync / 架构守卫 / 4 个 .bat。**pytest 195 全过、tools/ 37 全过、离线体检 10/0/0、完整体检 16/2/0 与 R1 基线一致。**踩坑 #81。留了两处 `tools` 调 `tools`（watcher→extract、extract→paperdb），已记进待办等 R7 定夺。 |
 | R3 | 切出 ask / askworld / discover / snowball / direction / curate | [ ] | |
 | R4 | 每工具补齐五件套(tool.toml / README / SKILL / cli / mcp) | [ ] | |
 | R5 | prompts 与 evals 归位到各工具 | [ ] | |

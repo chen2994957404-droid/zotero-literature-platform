@@ -253,7 +253,7 @@ def state_db():
 def papers_db():
     """workflow_data/papers.db —— 文献查询库（结构化字段 + 能比大小的性能数值）。
 
-    **可重建**：由 `structured/*.json` 整库生成（见 pipelines/paper_db），
+    **可重建**：由 `structured/*.json` 整库生成（见 tools/paperdb），
     删掉零代价。真相永远是那些 JSON。
     """
     return os.path.join(DATA, 'papers.db')
@@ -327,7 +327,9 @@ CODE_ROOTS = ('shared', 'host', 'tools', 'pipelines')
 
 # ④ 积木住的环。**带斜杠的相对路径**，因为 kernel/domain/adapters 现在住在 shared/ 底下。
 #    依赖只能从上往下：host → tools → shared.domain / shared.adapters → shared.kernel
-CODE_RINGS = ('shared/kernel', 'shared/domain', 'shared/adapters', 'pipelines')
+#    'tools' 也在里面：工具切片一样是「有 __init__ + 自测」的块，体检要枚举到它们
+#    （R2 窗漏掉这一行的话，搬进 tools/ 的工具会静悄悄地不再被自测覆盖）。
+CODE_RINGS = ('shared/kernel', 'shared/domain', 'shared/adapters', 'tools', 'pipelines')
 
 
 def block_dirs():

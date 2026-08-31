@@ -49,7 +49,7 @@ args: [ <项目根>/MCP服务/zotero_server.py ]
 
 - **只读**：本 v1 不写 Zotero 任何数据，与 watcher 无并发冲突。
 - **写操作（打标签/改名/去重/清理）留 v2**：届时必须 dry-run + 显式确认参数，
-  并与 watcher 的标签状态机（文献精读/）协调，绕过 proc_lock 的写是事故。
+  并与 watcher 的标签状态机（`tools/deepread/tags.py`）协调，绕过 proc_lock 的写是事故。
 - **平台数据资产（summary.html/structured JSON/向量库）不属于本服务**：
   那是「问答/抽取」线的领域，别把 workflow_data 的读取塞进来（保持单一职责）。
 

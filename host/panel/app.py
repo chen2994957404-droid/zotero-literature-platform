@@ -88,8 +88,8 @@ def collect_status():
 def collect_processes():
     """本平台相关的 python 进程。用 CIM 查，比 wmic 可靠。"""
     ps = ("Get-CimInstance Win32_Process -Filter \"Name like 'python%'\" | "
-          "Where-Object {$_.CommandLine -match 'zotero_watcher|watchdog|deepread|"
-          "extract_|vectorize|auto_sync|panel'} | "
+          "Where-Object {$_.CommandLine -match 'deepread|watchdog|watcher|"
+          "extract|vectorize|auto_sync|panel'} | "
           "Select-Object ProcessId,CreationDate,CommandLine | ConvertTo-Json -Compress")
     # 走 subproc 积木：面板每 15 秒刷新一次，裸调 powershell 会不停闪窗口（踩坑 #31）
     try:
@@ -507,7 +507,7 @@ def collect_jobs(recent=8):
     try:
         from shared.kernel import jobs
         from shared.domain import schema as _schema
-        from pipelines.deepread import main_text as _mt
+        from tools.deepread import main_text as _mt
     except Exception as e:
         return {'ok': False, 'msg': f'状态库读不到：{e}'}
 
@@ -563,7 +563,7 @@ def collect_recent_reads(n=8):
 
 # 任务 → 它真正干活的那个进程持有的锁名（`shared.kernel.proc_lock`）。
 # 重启任务时要连这个进程一起停，否则新配置进不去（见 action_restart）。
-_TASK_LOCKS = {'ZoteroLiteratureWatcher': 'zotero_watcher'}   # 锁名见 文献精读/zotero_watcher.py
+_TASK_LOCKS = {'ZoteroLiteratureWatcher': 'zotero_watcher'}   # 锁名见 tools/deepread/watcher.py
 
 def action_restart(task_name):
     """重启一个自启任务。

@@ -310,7 +310,7 @@ def c_ollama():
 
 
 # 慢自测（调大模型/网络）默认跳过，加 --full 才跑
-SLOW_TESTS = {'chart_digitize'}
+SLOW_TESTS = {'digitize'}
 
 
 def c_modules():
@@ -339,19 +339,35 @@ def c_modules():
     return OK, msg
 
 
+# 关键入口：**按模块名**检查，而不是按文件名满仓库找。
+# R2 窗（2026-08-30）起，工具是包不是散脚本 —— 「按文件名找」会在搬家后
+# 直接失效（找不到就报 FAIL），而模块名是这些工具的对外契约，本来就该稳定。
+KEY_MODULES = [
+    'tools.deepread', 'tools.deepread.watcher', 'tools.deepread.batch',
+    'tools.extract', 'tools.extract.batch', 'tools.paperdb',
+]
+KEY_SCRIPTS = ['ask']          # 还没切进 tools/ 的（R3 窗处理）
+
+
 def c_importable():
     """运行时导入检查——语法检查发现不了 NameError/ImportError（踩坑 #24）。"""
-    import importlib.util
-    key_scripts = ['zotero_watcher', 'si_deepread', 'extract_structured', 'ask',
-                   'mineru_parse', 'deepread_batch', 'merge_summary']
     bad = []
     missing = []
-    for name in key_scripts:
+    for mod in KEY_MODULES:
+        # 用子进程 import，避免模块加载的副作用影响本进程
+        r = subprocess.run(
+            [sys.executable, '-c', f'import {mod}'],
+            capture_output=True, text=True, encoding='utf-8', errors='replace',
+            timeout=60, creationflags=_NOWIN, cwd=paths.ROOT)
+        err = r.stderr or ''
+        if r.returncode != 0:
+            first = [l for l in err.splitlines() if 'Error' in l]
+            bad.append(f'{mod}({first[-1][:60] if first else "err"})')
+    for name in KEY_SCRIPTS:
         p = find_script(name)
         if not p:
             missing.append(name)      # 关键脚本找不到 = 重组时漏搬了，必须报出来
             continue
-        # 用子进程 import，避免脚本执行副作用影响本进程
         r = subprocess.run(
             [sys.executable, '-c',
              f"import sys; sys.path.insert(0, r'{os.path.dirname(p)}'); sys.path.insert(0,'.'); "
@@ -378,7 +394,8 @@ def c_importable():
     if junk:
         return WARN, (f'加载脚本时产生了垃圾目录 {junk}（已清理）。'
                       f'说明有脚本把副作用写在模块顶层，应移进 main()')
-    return (OK, f'{len(key_scripts)} 个关键脚本可正常加载') if not bad else (FAIL, f'加载失败: {bad}')
+    n = len(KEY_MODULES) + len(KEY_SCRIPTS)
+    return (OK, f'{n} 个关键入口可正常加载') if not bad else (FAIL, f'加载失败: {bad}')
 
 
 def c_no_selftest():

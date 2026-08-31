@@ -6,7 +6,7 @@
 
 **「要抽什么、怎么问、抽完怎么摆成表」** —— 纯逻辑，不联网、不写盘、不知道文件在哪。
 
-「从哪读、调哪个模型、写到哪去」不在这里，在 `pipelines/extract`。
+「从哪读、调哪个模型、写到哪去」不在这里，在 `tools/extract`。
 这条分界是刻意的：字段 schema 是**我们自己的领域知识**（十年不变那一类），
 模型和目录布局几个月就换一次。混在一起，换模型要动 schema、加字段要动 I/O，
 谁都不敢改 —— 那正是重构前的样子。
@@ -45,7 +45,7 @@ jobs.stale('extract', schema_ver=2)   # 这就是「谁缺新字段」的答案
 ## 出表函数返回字符串，不写盘
 
 `compare_table()` / `reviews_table()` 只管拼 Markdown。写到哪个文件去，
-是 `pipelines/extract` 的事（它才知道 `core.paths`）。
+是 `tools/extract` 的事（它才知道 `core.paths`）。
 这不是洁癖：**domain 一旦知道了目录布局，就没法离线测试、也没法被别的项目复用**，
 而且改一次目录会波及本该最稳定的一层。
 
@@ -63,9 +63,9 @@ python -m pytest -q                  # 含架构守卫
 
 | 档次 | 料 | 模型 | 谁产的 |
 |---|---|---|---|
-| `精+SI` | MineRU 正文 + SI 全文 | 云端 DeepSeek | `pipelines/extract` |
+| `精+SI` | MineRU 正文 + SI 全文 | 云端 DeepSeek | `tools/extract` |
 | `精层` | 只有 MineRU 正文 | 云端 DeepSeek | 同上（2026-08-28 之前的记录） |
-| `粗层` | Zotero 全文索引 | 本地 qwen2.5 | `数据抽取/extract_library.py` |
+| `粗层` | Zotero 全文索引 | 本地 qwen2.5 | `tools.extract.batch.coarse_all` |
 
 不标出来的后果很实在：**用户竖着比字段找规律时，分不清空白格是
 「这篇本来就没有」还是「粗层没抽到」** —— 对比表的全部价值就在竖着比。

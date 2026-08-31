@@ -5,15 +5,15 @@
 
 重构前，同一件事有三种写法，且都有各自的毛病：
 
-    文献精读/zotero_watcher.py   把内置的 `print` 整个换掉（`_print = print; def print(...)`）
-    文献精读/watchdog.py         自己写一个 def log(msg)
-    库房维护/auto_sync.py        又自己写一个 def log(msg)
+    精读 watcher     把内置的 `print` 整个换掉（`_print = print; def print(...)`）
+    看门狗           自己写一个 def log(msg)
+    库房维护/auto_sync.py  又自己写一个 def log(msg)
 
 劫持 `print` 尤其糟：读代码的人看到 `print('...')` 会以为只是打屏，
 实际上它在往文件里写；而且这个 hack 无法被 import 复用，只能复制粘贴。
 
 三者还共有一个真问题：**没有任何一个会轮转**。
-`zotero_watcher` 是常驻服务，日志文件只会一直长下去。
+watcher 是常驻服务，日志文件只会一直长下去。
 
 ## 用法
 

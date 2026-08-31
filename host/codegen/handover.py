@@ -415,7 +415,8 @@ def sync_claude_md():
     body += ['```', '']
     fl = flows()
     bl = blocks()
-    body += [f'**积木 {len(bl)} 块**（`shared/` 与 `pipelines/`，原子能力）· '
+    body += [f'**可枚举的块 {len(bl)} 个**（`tools/` 工具切片 + `shared/` 共用件 '
+             f'+ `pipelines/` 临时住户，每个都有 `__init__.py` 与 `selftest.py`）· '
              f'**还没切进 `tools/` 的老文件夹 {len(fl)} 个**', '',
              '进度、健康状况、下一步做什么 → 见 `HANDOVER.md`', '',
              AUTO_END, '']

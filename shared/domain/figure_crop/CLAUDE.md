@@ -29,7 +29,7 @@
 
 ## 谁在用它
 
-精读线（deepread_v4.py）、SI 精读。
+精读线（`tools/deepread/main_text.py`）、SI 精读（`tools/deepread/si.py`）。
 
 改这里的对外接口 = 可能弄坏上面所有调用者。**改签名前先想清楚兼容性。**
 

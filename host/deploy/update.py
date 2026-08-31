@@ -173,7 +173,7 @@ def stop_watcher():
     script = (
         "$hit = Get-CimInstance Win32_Process -Filter "
         "\"Name='python.exe' or Name='pythonw.exe'\" | "
-        "Where-Object { $_.CommandLine -like '*zotero_watcher*' -and "
+        "Where-Object { $_.CommandLine -like '*deepread*watcher*' -and "
         f"$_.ProcessId -ne {me} }}; "
         "if ($hit) { $hit | ForEach-Object { "
         "  Write-Output ('停掉旧 watcher PID=' + $_.ProcessId); "

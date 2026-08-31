@@ -2,7 +2,7 @@
 """schema · 结构化抽取的字段定义与文本处理（纯逻辑，公理）
 
 **这一块回答的是「要抽什么、怎么问、抽完怎么摆成表」**，
-不回答「从哪读文件、调哪个模型、写到哪去」—— 那些是编排环 `pipelines/extract` 的事。
+不回答「从哪读文件、调哪个模型、写到哪去」—— 那些是编排环 `tools/extract` 的事。
 
 为什么单独成块（架构宪法·首要判据）：
     字段 schema 是**我们自己的领域知识**，十年不变的那一类；
@@ -218,7 +218,7 @@ COMPARE_COLS = ['material_system', 'dynamic_bond_type', 'synthesis_conditions',
 # **分不清空白是「这篇本来就没有」还是「粗层没抽到」** —— 对比表的价值就废了。
 SOURCE_FINE = 'fine'        # MineRU 全文 + 云端大模型
 SOURCE_LOCAL = 'local'      # MineRU 全文 + **本地** 模型（料一样好，模型小一档）
-SOURCE_COARSE = 'coarse'    # Zotero 全文索引 + 本地小模型（数据抽取/extract_library.py）
+SOURCE_COARSE = 'coarse'    # Zotero 全文索引 + 本地小模型（tools.extract.batch.coarse_all）
 
 TIER_FINE_SI = '精+SI'
 TIER_FINE = '精层'
@@ -351,7 +351,7 @@ def reviews_table(records):
 #     人能看，机器比不了大小 —— 「拉伸强度 > 10 MPa 的都有哪些」这类问题
 #     只要还停在字符串上就永远答不了。把它拆成 (名字, 数, 单位) 才能进查询库。
 # **不做单位换算**：MPa 与 kPa 混在一起时宁可让人看见，也不偷偷换算错。
-# 查询时按名字 + 单位一起筛（见 pipelines/paper_db）。
+# 查询时按名字 + 单位一起筛（见 tools/paperdb）。
 
 _NUM = (r'([-+]?\d+(?:[.,]\d+)?)'                    # 3.2
         r'(?:\s*[eE]([-+]?\d+)'                      # 3.2e-5

@@ -33,7 +33,7 @@ PDF → 结构化文本 + 图坐标（调 MineRU 云服务）。
 
 ## 谁在用它
 
-精读线（mineru_parse.py）、抽取线（extract_batch.py）。
+精读线（`tools/deepread` 的 `_ensure_parsed` 与 `si.read_si`）、抽取线（`tools.extract.batch.ensure_fullmd`）。
 
 改这里的对外接口 = 可能弄坏上面所有调用者。**改签名前先想清楚兼容性。**
 

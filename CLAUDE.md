@@ -15,8 +15,8 @@ docs/                    ← 文档（16 份）
 host/  ← 平台自身：让平台活着的东西（没人 import 它）（5 块）
     codegen、deploy、doctor、mcp、panel
 launch/ （0 个脚本）
-pipelines/  ← 搬家途中的临时住户（R2/R3 窗拆进 tools/ 后删除）（8 块）
-    chart_digitize、deepread、direction_map、extract、lib_match、paper_db、paper_discovery、query_expand
+pipelines/  ← 搬家途中的临时住户（R2/R3 窗拆进 tools/ 后删除）（4 块）
+    direction_map、lib_match、paper_discovery、query_expand
 shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
     kernel/  ← 基础设施：谁都依赖它，它不依赖任何人（10 块）
         cli、config、proc_lock、subproc、errors.py、heartbeat.py、jobs.py、log.py、paths.py、role.py
@@ -25,26 +25,23 @@ shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
     adapters/  ← 外接口：唯一允许联网/用第三方库的一环（10 块）
         embed、evalset、llm_client、openalex、pdf_parse、sciverse、snowball、vectordb、wechat_seed、zotero_client
 specs/ （0 个脚本）
-tests/ （13 个脚本）
+tests/ （10 个脚本）
     test_adapters_vectordb.py、test_architecture.py、test_artifact_gaps.py、test_core_heartbeat.py、test_core_jobs.py、test_core_log_errors.py、test_core_paths.py、test_core_role.py…
-tools/  ← 工具切片：一个工具 = 一个自包含的包（0 块）
+tools/  ← 工具切片：一个工具 = 一个自包含的包（4 块）
+    deepread、digitize、extract、paperdb
 库内问答/ （4 个脚本）
     ask.py、ask_world.py、vectorize.py、vectorize_library.py
 库房维护/ （7 个脚本）
     auto_sync.py、autotag.py、backfill_meta.py、delete_junk.py、list_junk.py、tag_to_nested.py、zotero_rename.py
 找新文献/ （8 个脚本）
     brainstorm.py、collect.py、discover.py、find_papers.py、import_by_doi.py、search_global.py、zotero_add_thesis.py、方向地图.py
-数据抽取/ （7 个脚本）
-    extract_batch.py、extract_library.py、extract_structured.py、filter_domain.py、查询库.py、试一试本地模型.py、重抽向导.py
-文献精读/ （12 个脚本）
-    deepread_batch.py、deepread_v4.py、merge_summary.py、mineru_parse.py、refresh_summary_file.py、rerun_pro.py、si_batch.py、si_deepread.py…
 
-根目录文件：CLAUDE.md、LICENSE、README.md、REBUILD.md、pyproject.toml、requirements.txt、控制面板.bat、更新平台.bat、比一比两个模型.bat、精读监听.bat、诊断报告.bat、重抽缺SI的文献.bat
+根目录文件：CLAUDE.md、LICENSE、README.md、REBUILD.md、pyproject.toml、requirements.txt、控制面板.bat、更新平台.bat、比一比两个模型.bat、精读监听.bat、诊断报告.bat、重抽缺SI的文献.bat、重跑精读PRO.bat
 
 （workflow_data/ 是数据目录，3000+ 文件，**不要去 glob 它**）
 ```
 
-**积木 26 块**（`shared/` 与 `pipelines/`，原子能力）· **还没切进 `tools/` 的老文件夹 5 个**
+**可枚举的块 26 个**（`tools/` 工具切片 + `shared/` 共用件 + `pipelines/` 临时住户，每个都有 `__init__.py` 与 `selftest.py`）· **还没切进 `tools/` 的老文件夹 3 个**
 
 进度、健康状况、下一步做什么 → 见 `HANDOVER.md`
 
@@ -77,11 +74,13 @@ glob 根目录会直接淹掉上下文（实测：前 100 个结果全是精读�
 ## 目录结构（2026-08-30 重构，R1 窗）
 
 ```
-tools/    工具切片：一个工具 = 一个自包含的包（R2/R3 窗往里填）
+tools/    工具切片：一个工具 = 一个自包含的包
+          deepread 精读 · extract 抽取 · paperdb 查询库 · digitize 图表（R2 窗切好）
+          ask / askworld / discover / snowball / direction / curate（R3 窗切）
 shared/   共用件：kernel（基础设施）/ domain（纯逻辑）/ adapters（唯一能联网的一层）
 host/     平台自身：panel 面板 · doctor 体检 · deploy 部署 · codegen 生成器 · mcp 协议层
-pipelines/ 与 文献精读/ 库内问答/ 数据抽取/ 找新文献/ 库房维护/
-          ← 搬家途中的临时住户，R2/R3 窗拆进 tools/ 之后删除
+pipelines/ 与 库内问答/ 找新文献/ 库房维护/
+          ← 搬家途中的临时住户，R3 窗拆进 tools/ 之后删除
 ```
 
 **每个文件夹里都有自己的 `CLAUDE.md`。** 用户只选中某个文件夹时，那份就是完整上下文；
@@ -115,8 +114,8 @@ pipelines/ 与 文献精读/ 库内问答/ 数据抽取/ 找新文献/ 库房维
 | "帮我找XX方向的文献" "补充点XX的文献" | `pipelines/paper_discovery` 的 `search(query)`（R3 窗搬去 `tools/discover/`），返回文献列表并标记库里已有 |
 | "帮我横向比较XX" "这方向有什么规律/空白" | 读 `workflow_data/structured/compare.md`（研究论文横向对比表）；PBS 方向另有 `compare_PBS.md` |
 | "精读某篇文献" | 让他在 Zotero 打「待处理」标签即可。**状态机自动判断**：只有正文→精读正文→标「正文精读」；有SI→连SI一起精读并合并→标「全文精读」；已精读过的只补缺的部分不重跑。服务已开机自启。 |
-| "把某批文献的数据抽出来" | `python 数据抽取/extract_batch.py KEY1 KEY2`（自动 MineRU 解析+DeepSeek 精抽）|
-| "把论文图里的曲线变成数据" | `pipelines/chart_digitize` 的 `digitize()`（R2 窗搬去 `tools/digitize/`），**必须用云端大模型**（本地7B会编假数据）|
+| "把某批文献的数据抽出来" | `python -m tools.extract.batch KEY1 KEY2 --parse`（自动 MineRU 解析+DeepSeek 精抽）|
+| "把论文图里的曲线变成数据" | `tools/digitize` 的 `digitize()`，**必须用云端大模型**（本地7B会编假数据）|
 | "帮我想想研究方向/idea" | 读 compare 表做横向关联分析（找机理×性能的空白格），或 `python 找新文献/brainstorm.py` |
 
 ## 现成数据资产（在哪找什么）
