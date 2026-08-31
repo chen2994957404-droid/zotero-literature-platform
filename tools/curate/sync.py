@@ -6,7 +6,7 @@
 
 做两件事，都是**增量**（已处理的跳过，没新文献时几秒结束）：
   1. 增量向量化   → `tools.ask.vectorize --light`（走 Zotero 全文API，本地 bge-m3，零成本）
-  2. 增量粗层抽取 → `tools.extract.batch --coarse`（本地 qwen，零成本；精层记录受保护不覆盖）
+  2. 增量粗层抽取 → `tools.extract --coarse`（本地 qwen，零成本；精层记录受保护不覆盖）
 
 前提：Zotero 开着（取全文）+ Ollama 在跑（向量化/本地抽取）。两者都有保活任务。
 用法: python -m tools.curate.sync    （由任务计划 LiteratureAutoSync 每小时调用）
@@ -107,7 +107,7 @@ def main():
     # 1. 增量向量化（新文献进向量库 → 问答能查到）
     run_module('tools.ask.vectorize', '增量向量化', ['--light'])
     # 2. 增量粗层结构化抽取（新文献进对比表 → 横向比较能看到）
-    run_module('tools.extract.batch', '增量粗层抽取', ['--coarse'])
+    run_module('tools.extract', '增量粗层抽取', ['--coarse'])
     log('=== 自动同步结束 ===')
 
 

@@ -1,0 +1,7 @@
+name          = "discover"
+one_line      = "找新文献：拆检索式 + 雪球扩展 + 按「跟我多相关」排序"
+expose        = "prompt"
+costs_money   = true            # 拆检索式要大模型；Sciverse 那条路也要密钥
+side_effects  = ["写Zotero（按 DOI 导入）"]
+requires_role = "prod"
+prompts       = []

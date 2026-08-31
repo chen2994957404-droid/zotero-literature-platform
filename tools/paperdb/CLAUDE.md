@@ -42,14 +42,17 @@ paperdb.stats()                         # 各档次 × 各字段有值率
 paperdb.props('tensile')                # 抽到过哪些性能、各多少条、范围多大
 ```
 
-命令行：`python -m tools.paperdb.query --rebuild | --stats | --props X | --find X | --sql "..."`
+命令行：`python -m tools.paperdb --rebuild | --stats | --props X | --find X | --sql "..."`
 
 ## 文件
 
 | 文件 | 干什么 |
 |---|---|
 | `__init__.py` | 建库 / 只读查询 / 快捷筛法 / 统计 |
-| `query.py` | 人的命令行入口（只解析参数，一行逻辑都没有） |
+| `cli.py` | 人的命令行入口（只解析参数，一行逻辑都没有） |
+| `tool.toml` | 工具清单（expose / 花不花钱 / 有什么副作用）—— MCP 服务照它挂 |
+| `mcp.py` | 给 agent 的 MCP 面（只做参数转换，不许有逻辑）|
+| `README.md` · `SKILL.md` | 给人的说明 · 给 agent 的手册（含**什么时候别用我**）|
 | `selftest.py` | 离线自测（不碰真实数据、不调任何服务） |
 
 ## 铁律：库是索引，不是真相

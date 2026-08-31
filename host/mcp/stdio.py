@@ -19,8 +19,15 @@ except Exception:
 
 对外接口：
   - MCPStdioServer(name, version)                     : 建服务
-  - server.register_tool(name, desc, input_schema, handler) : 注册一个工具
+  - server.register_tool(name, desc, input_schema, handler)   : 工具（模型可自己调）
+  - server.register_resource(uri, name, desc, reader)         : 只读数据（模型可自己读）
+  - server.register_prompt(name, desc, arguments, builder)    : 提示词（**由人点**）
   - server.serve()                                    : 阻塞读 stdin，逐条响应（stdout 只写协议）
+
+  三类的分工就是安全边界（REBUILD.md R4 的判据）：
+  **只读且便宜 → tool；只读数据 → resource；花钱或有副作用 → prompt。**
+  花钱的东西只能是 prompt —— 那样它由用户在客户端里点，模型不能自己掏钱。
+
   工具 handler 契约：handler(arguments: dict) -> dict
     text       : str   必填，给模型读的文本（markdown 或纯文本）
     structured : 可选，结构化数据（会放进 structuredContent 供程序消费）
@@ -45,17 +52,48 @@ class MCPStdioServer:
     def __init__(self, name, version):
         self.name = name
         self.version = version
-        self._tools = []  # 每项 dict(name, description, inputSchema, handler)
+        self._tools = []      # dict(name, description, inputSchema, handler)
+        self._resources = []  # dict(uri, name, description, mimeType, reader)
+        self._prompts = []    # dict(name, description, arguments, builder)
 
     # ── 注册 ──────────────────────────────────────────────────────────
 
     def register_tool(self, name, description, input_schema, handler):
-        """注册一个工具。input_schema 是 JSON Schema（type='object'）。"""
+        """注册一个工具。input_schema 是 JSON Schema（type='object'）。
+
+        **工具是模型可以自己调的**，所以只许注册只读且不花钱的东西。
+        花钱的、有副作用的一律注册成 prompt（由人来点）——
+        这条判据写在 REBUILD.md R4，R7 窗会有守卫强制。
+        """
         self._tools.append({
             'name': name,
             'description': description,
             'inputSchema': input_schema,
             'handler': handler,
+        })
+
+    def register_resource(self, uri, name, description, reader,
+                          mime_type='text/markdown'):
+        """注册一份只读数据。reader() -> str，取的时候才调（列清单不读文件）。"""
+        self._resources.append({
+            'uri': uri,
+            'name': name,
+            'description': description,
+            'mimeType': mime_type,
+            'reader': reader,
+        })
+
+    def register_prompt(self, name, description, arguments, builder):
+        """注册一条提示词模板（**由人点，不是模型自己调**）。
+
+        arguments: [{'name':.., 'description':.., 'required': bool}]
+        builder(arguments: dict) -> str，返回给模型看的那段话。
+        """
+        self._prompts.append({
+            'name': name,
+            'description': description,
+            'arguments': arguments or [],
+            'builder': builder,
         })
 
     # ── 运行 ──────────────────────────────────────────────────────────
@@ -97,9 +135,15 @@ class MCPStdioServer:
         params = msg.get('params') or {}
 
         if method == 'initialize':
+            # 只声明真的注册了的能力：声明了却没有，某些客户端会一直转圈等列表。
+            caps = {'tools': {'listChanged': False}}
+            if self._resources:
+                caps['resources'] = {'subscribe': False, 'listChanged': False}
+            if self._prompts:
+                caps['prompts'] = {'listChanged': False}
             self._respond(req_id, {
                 'protocolVersion': PROTOCOL_VERSION,
-                'capabilities': {'tools': {'listChanged': False}},
+                'capabilities': caps,
                 'serverInfo': {'name': self.name, 'version': self.version},
             })
             return
@@ -120,7 +164,70 @@ class MCPStdioServer:
         if method == 'tools/call':
             self._handle_call(req_id, params)
             return
+        if method == 'resources/list':
+            self._respond(req_id, {
+                'resources': [{k: r[k] for k in ('uri', 'name', 'description', 'mimeType')}
+                              for r in self._resources],
+            })
+            return
+        if method == 'resources/templates/list':
+            self._respond(req_id, {'resourceTemplates': []})   # 本服务不用 URI 模板
+            return
+        if method == 'resources/read':
+            self._handle_read(req_id, params)
+            return
+        if method == 'prompts/list':
+            self._respond(req_id, {
+                'prompts': [{'name': p['name'], 'description': p['description'],
+                             'arguments': p['arguments']} for p in self._prompts],
+            })
+            return
+        if method == 'prompts/get':
+            self._handle_prompt(req_id, params)
+            return
         self._error(req_id, ERR_METHOD, f'方法不存在：{method}')
+
+    def _handle_read(self, req_id, params):
+        """resources/read：结果形状 {'contents': [{uri, mimeType, text}]}（实测自官方
+        schema 2024-11-05 的 TextResourceContents，R4 窗核对）。"""
+        uri = params.get('uri') if isinstance(params, dict) else None
+        res = next((r for r in self._resources if r['uri'] == uri), None)
+        if res is None:
+            self._error(req_id, ERR_PARAMS, f'未知资源：{uri}')
+            return
+        try:
+            text = res['reader']()
+        except Exception as e:
+            self._error(req_id, ERR_INTERNAL, f'读取失败：{e}')
+            return
+        self._respond(req_id, {'contents': [{'uri': res['uri'],
+                                             'mimeType': res['mimeType'],
+                                             'text': str(text)}]})
+
+    def _handle_prompt(self, req_id, params):
+        """prompts/get：结果形状 {'description':.., 'messages':[{role, content}]}。"""
+        name = params.get('name') if isinstance(params, dict) else None
+        arguments = params.get('arguments') if isinstance(params, dict) else None
+        if not isinstance(arguments, dict):
+            arguments = {}
+        p = next((x for x in self._prompts if x['name'] == name), None)
+        if p is None:
+            self._error(req_id, ERR_PARAMS, f'未知提示词：{name}')
+            return
+        missing = [a['name'] for a in p['arguments']
+                   if a.get('required') and not arguments.get(a['name'])]
+        if missing:
+            self._error(req_id, ERR_PARAMS, f'缺少必填参数：{", ".join(missing)}')
+            return
+        try:
+            text = p['builder'](arguments)
+        except Exception as e:
+            self._error(req_id, ERR_INTERNAL, f'生成提示词失败：{e}')
+            return
+        self._respond(req_id, {
+            'description': p['description'],
+            'messages': [{'role': 'user', 'content': {'type': 'text', 'text': str(text)}}],
+        })
 
     def _handle_call(self, req_id, params):
         name = params.get('name') if isinstance(params, dict) else None

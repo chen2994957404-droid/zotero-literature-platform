@@ -1,0 +1,7 @@
+name          = "askworld"
+one_line      = "问全世界：Sciverse 全文库取原文片段，带出处地回答"
+expose        = "prompt"
+costs_money   = true            # Sciverse 检索 + 云端大模型作答
+side_effects  = []
+requires_role = "none"
+prompts       = []

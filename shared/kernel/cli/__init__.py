@@ -70,3 +70,13 @@ def opts(name):
         if a == name and i + 1 < len(args) and not args[i + 1].startswith('--'):
             values.append(args[i + 1])
     return values
+
+
+def wants_help():
+    """命令行里有没有在求助（--help / -h / 帮助）。
+
+    R4 窗加的，起因是一次真实事故：`python -m tools.extract --help` 里的 `--help`
+    没人认识，于是被当成「没给 key」→ 走进**全库抽取**那条花钱的路。
+    每个 `cli.py` 的第一句都该是「求助就打印用法然后走人」。
+    """
+    return bool({'--help', '-h', '帮助', '--帮助', '/?'} & set(_argv()))

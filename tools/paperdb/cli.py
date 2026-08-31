@@ -5,12 +5,12 @@
 「含硼、拉伸强度 > 10 MPa 的体系都有哪些」「哪些篇有合成条件但没有性能数值」。
 
 用法:
-  python -m tools.paperdb.query --rebuild        # 从 structured/*.json 重建（秒级、不花钱）
-  python -m tools.paperdb.query --stats          # 各档次 × 各字段有值率（数据有多准）
-  python -m tools.paperdb.query --props tensile  # 抽到过哪些性能、各多少条、范围多大
-  python -m tools.paperdb.query --find boron --prop tensile --min 10
-  python -m tools.paperdb.query --field synthesis_conditions  # 这个字段真有值的篇
-  python -m tools.paperdb.query --sql "SELECT tier, COUNT(*) n FROM papers GROUP BY tier"
+  python -m tools.paperdb --rebuild        # 从 structured/*.json 重建（秒级、不花钱）
+  python -m tools.paperdb --stats          # 各档次 × 各字段有值率（数据有多准）
+  python -m tools.paperdb --props tensile  # 抽到过哪些性能、各多少条、范围多大
+  python -m tools.paperdb --find boron --prop tensile --min 10
+  python -m tools.paperdb --field synthesis_conditions  # 这个字段真有值的篇
+  python -m tools.paperdb --sql "SELECT tier, COUNT(*) n FROM papers GROUP BY tier"
 
 **库是索引不是真相**：真相是 `structured/<key>.json`。库随时可删可重建，
 所以本入口只读不写（`--sql` 只接受 SELECT / WITH）。
@@ -23,7 +23,7 @@ try:
 except Exception:
     pass
 
-from shared.kernel.cli import flag, opt
+from shared.kernel.cli import flag, opt, wants_help
 from tools import paperdb
 
 
@@ -40,6 +40,9 @@ def _print_rows(rows, cols=None, width=42):
 
 
 def main():
+    if wants_help():
+        print(__doc__ or main.__doc__)
+        return 0
     if flag('--rebuild'):
         paperdb.rebuild()
         return

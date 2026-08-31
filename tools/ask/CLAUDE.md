@@ -22,7 +22,11 @@
 | 文件 | 干什么 |
 |---|---|
 | `__init__.py` | 问答编排：检索 → 拼片段 → 作答 → 带回来源 |
-| `__main__.py` | 命令行入口（`python -m tools.ask "问题"`，无参数进交互模式）|
+| `cli.py` | 命令行入口（`python -m tools.ask "问题"`，无参数进交互模式）|
+| `__main__.py` | 一行壳，转给 `cli.main()` |
+| `tool.toml` | 工具清单（expose / 花不花钱 / 有什么副作用）—— MCP 服务照它挂 |
+| `mcp.py` | 给 agent 的 MCP 面（只做参数转换，不许有逻辑）|
+| `README.md` · `SKILL.md` | 给人的说明 · 给 agent 的手册（含**什么时候别用我**）|
 | `vectorize.py` | 两条向量化线：精层（精读产物）/ 粗层（Zotero 全文索引）|
 | `selftest.py` | 离线自测（不调 LLM、不连 Ollama、不碰真实数据）|
 

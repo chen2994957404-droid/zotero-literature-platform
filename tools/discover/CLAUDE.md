@@ -23,7 +23,10 @@
 | 文件 | 干什么 |
 |---|---|
 | `__init__.py` | 混合检索编排：拆检索式 → 多式检索合并 → 雪球 → 与库对照 → 排序 |
-| `find.py` | 命令行找文献（`python -m tools.discover "词"`），结果存下供按编号收 |
+| `cli.py` | 命令行找文献（`python -m tools.discover "词"`），结果存下供按编号收 |
+| `tool.toml` | 工具清单（expose / 花不花钱 / 有什么副作用）—— MCP 服务照它挂 |
+| `mcp.py` | 给 agent 的 MCP 面（只做参数转换，不许有逻辑）|
+| `README.md` · `SKILL.md` | 给人的说明 · 给 agent 的手册（含**什么时候别用我**）|
 | `collect.py` | 按编号收进 Zotero（**收 ≠ 精读**，两个决定分开）|
 | `importer.py` | 按 DOI 收进 Zotero（写操作，带机器角色守卫）|
 | `match.py` | 与我的库对照：已有/新、相关度、雪球种子、排序 |

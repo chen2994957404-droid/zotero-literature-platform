@@ -1,91 +1,95 @@
-# MCP服务 · 把平台能力包成 agent 可调用的 MCP
+# host/mcp · 把平台能力包成 agent 可调用的 MCP
 
 > 你可能是被单独选中这个文件夹打开的，看不到项目其他部分。本文件是你的全部上下文。
 
 ## 这是什么
 
-**平台对外的 MCP 接口层**（宪法里的「界面层」）：把平台已有的能力包成
-MCP（Model Context Protocol）服务，让 Claude Code / Cursor / DSH 等 agent
-通过标准协议直接调用库房能力。
+**平台对外的 MCP 接口层**（宪法里的「界面层」）：让 Claude Code / Cursor / DSH 等 agent
+通过标准协议直接调用平台能力。
 
-背景决策（2026-08-26，详见 变更记录）：
-- 调研了 3 个现成 Zotero MCP（nealcaren/mcp-zotero、alisoroushmd/zotero-mcp、
-  drxaibi/zotero-mcp），结论是**库房层「借鉴重写」优于搬运**：
-  我们已有 `adapters/zotero_client` 这块在真实库上磨出来的公理件，MCP 只是薄壳；
-  0-star 仓库搬运后要自己维护，不如自己写壳 + 抄它的 API 细节。
-- **分析层（知识图谱/撤稿核查等）明确不做**（用户 2026-08-26 拍板）。
+R4 窗（2026-08-31）改成**聚合**：服务端自己不知道有哪些工具，
+它去 `tools/*/tool.toml` 现读现挂。加一个能力 = 新建一个 `tools/<名>/` 文件夹，
+**这个文件夹一个字都不用改**。此前是 `zotero_server.py` 里手写 10 个工具的注册表，
+加一个能力要改三处，于是没人加。
 
-## 职责
+## 各文件职责
 
-- `mcp_stdio.py`：手写 MCP stdio 协议层（JSON-RPC 2.0 + 换行分隔，零第三方依赖）。
-  为什么不用官方 SDK：平台「少依赖」宪法 + 协议已实测稳定（官方 SDK 的 ReadBuffer
-  就是按 `\n` 切帧，序列化 = `JSON + '\n'`）；日后要接 SSE/HTTP 再换 SDK，本层接口不变。
-- `zotero_server.py`：库房层只读工具集，封装 `adapters/zotero_client`。
-- `selftest.py`：协议层离线自测（不联网、不依赖用户数据）。
+| 文件 | 干什么 |
+|---|---|
+| `server.py` | ★ 服务入口。挂 `ping`，然后让 registry 把各工具挂上；`--list` 给人看清单 |
+| `registry.py` | 读 `tools/*/tool.toml`、import 各 `tools/<t>/mcp.py` 调 `register(server)`、校验自洽 |
+| `stdio.py` | 手写 MCP stdio 协议层（JSON-RPC 2.0 + 换行分隔，零第三方依赖）|
+| `selftest.py` | 协议层离线自测（不联网、不依赖用户数据）|
 
-## 对外接口（zotero_server 的 MCP 工具，全部只读）
+为什么不用官方 SDK：平台「少依赖」宪法 + 协议已实测稳定（官方 SDK 的 ReadBuffer
+就是按 `\n` 切帧，序列化 = `JSON + '\n'`）；日后要接 SSE/HTTP 再换 SDK，本层接口不变。
 
-| 工具 | 用途 | 参数 |
+## 三类暴露 —— 这就是安全边界
+
+| 类 | 谁能触发 | 判据 |
 |---|---|---|
-| `ping` | 存活检查 | — |
-| `library_stats` | 库统计 + Zotero 本地 API 是否可达 | — |
-| `search_items` | 按词/标签/类型/合集搜索 | query, qmode, tag, itemType, collection, limit, start |
-| `get_item` | 单篇完整信息（含正文 PDF 路径） | itemKey |
-| `find_pdf` | 定位正文 PDF 本地路径（排除 SI） | itemKey |
-| `get_fulltext` | 取正文全文文本 | itemKey, maxChars |
-| `list_collections` | 合集树 | — |
-| `get_collection_items` | 合集内文献 | collectionKey, limit |
-| `list_tags` | 标签及文献数 | — |
-| `get_recent_items` | 最近 N 天新增/修改 | days, limit |
+| `tool` | **模型可以自己调** | 只读且免费 |
+| `resource` | 模型可以自己读 | 只读数据（对比表这种）|
+| `prompt` | **人在客户端里点** | 花钱的、有副作用的一律走这里 |
 
-启动方式（给 MCP 客户端配）：
+**一条铁律，`registry.check()` 强制**：
+`costs_money=true` 或 `side_effects` 非空的工具切片，**不许注册 tool 类**。
+钱和副作用必须停在人这一侧。故意违反会让 `--list` 变红、自测变红。
+
+现状：`library`（9 个）与 `paperdb`（4 个）是 tool；`extract` 出 3 份 resource；
+其余 8 个切片各出 1 条 prompt。
+
+## 协议实现到什么程度
+
+`initialize` / `ping` / `tools/list` / `tools/call` /
+`resources/list` / `resources/templates/list` / `resources/read` /
+`prompts/list` / `prompts/get`。
+
+resource 与 prompt 的报文形状**核对过官方 schema `2024-11-05`**（R4 窗，
+`modelcontextprotocol/modelcontextprotocol` 仓库的 `schema/2024-11-05/schema.ts`）：
+- `resources/read` → `{'contents': [{uri, mimeType, text}]}`
+- `prompts/get` → `{'description', 'messages': [{role, content:{type:'text', text}}]}`
+- 能力声明 `resources: {subscribe, listChanged}` / `prompts: {listChanged}`，
+  **只声明真的注册了的**（声明了却没有，某些客户端会一直转圈等列表）
+
+## 启动方式（给 MCP 客户端配）
+
 ```
 command: python
-args: [ <项目根>/MCP服务/zotero_server.py ]
+args: [ <项目根>/host/mcp/server.py ]
 ```
-人看工具清单：`python MCP服务/zotero_server.py --list`
 
-## v1 边界（别越界）
-
-- **只读**：本 v1 不写 Zotero 任何数据，与 watcher 无并发冲突。
-- **写操作（打标签/改名/去重/清理）留 v2**：届时必须 dry-run + 显式确认参数，
-  并与 watcher 的标签状态机（`tools/deepread/tags.py`）协调，绕过 proc_lock 的写是事故。
-- **平台数据资产（summary.html/structured JSON/向量库）不属于本服务**：
-  那是「问答/抽取」线的领域，别把 workflow_data 的读取塞进来（保持单一职责）。
-
-## 谁在用它
-
-**已接入 DSH（2026-08-25，HMR 热加载生效）**：DSH 所有 agent 会话可用
-`mcp__zotero__*` 只读工具查文献库。接入方式见 `docs/变更记录.md` 2026-08-25 续条目
-（改 `C:\Users\Administrator\.dsh\profiles\web\cordis.patch.yml`，serverName=zotero）。
-Claude Code / Cursor 等外部客户端也可按「启动方式」自行接入。
-
-### 其他 MCP 客户端接入（2026-08-25 查证，均用绝对路径、不依赖工作目录）
-
-服务端位置由 `__file__` 定位（标准开头向上找 `modules/`），配置读项目根 `.env`，
-**agent 在哪个文件夹跑都不影响**。服务为标准 MCP stdio，协议版本 `2024-11-05`。
+人看工具清单：`python host/mcp/server.py --list`
 
 Claude Code（`--scope user` = 全局生效）：
 ```
-claude mcp add zotero --scope user -- python "D:\02_AI\Projects\zotero-literature-platform\MCP服务\zotero_server.py"
+claude mcp add zotero --scope user -- python "<项目根>\host\mcp\server.py"
 ```
-或在项目根放 `.mcp.json`：`{"mcpServers": {"zotero": {"command": "python", "args": ["D:/02_AI/Projects/zotero-literature-platform/MCP服务/zotero_server.py"]}}}`
-
 Codex CLI（`~/.codex/config.toml`）：
 ```toml
 [mcp_servers.zotero]
 command = "python"
-args = ["D:\\02_AI\\Projects\\zotero-literature-platform\\MCP服务\\zotero_server.py"]
+args = ["<项目根>\\host\\mcp\\server.py"]
 ```
+若某客户端握手报协议版本不兼容：改 `stdio.py` 顶部 `PROTOCOL_VERSION` 一行。
+多客户端可同时连接（各起独立进程）。
 
-若某客户端握手报协议版本不兼容：改 `mcp_stdio.py` 顶部 `PROTOCOL_VERSION` 一行。
-多客户端可同时连接（各起独立进程，v1 只读无冲突）。
+⚠ **B 机（主力机）上的现有配置指向的是老路径 `MCP服务/zotero_server.py`，
+工具名也变了**（`search_items` → `library_search`）。合并回 main 时要重新注册 ——
+这件事记在 REBUILD.md R7 窗的交接项里。
+
+## 写操作留给谁
+
+MCP 面**不做写操作**：写 Zotero 的能力（打标签/改名/去重/回写附件）都在
+`tools/curate` 与 `tools/deepread` 里，它们在 MCP 上是 prompt，
+由人点、由人确认，并且各自带机器角色守卫。绕过 proc_lock 的写是事故。
 
 ## 改完必须做
 
 ```
-python MCP服务/selftest.py            # 协议层自测，必须全过
-python 平台管理/health_check.py        # 全局体检，确认没碰坏别人
-python 平台管理/交接.py                 # 刷新 CLAUDE.md 结构树 / HANDOVER.md
+python host/mcp/selftest.py                   # 协议层自测，必须全过
+python host/mcp/server.py --list              # 清单必须自洽（末尾那行是 ✓）
+python host/doctor/health_check.py --offline  # 全局离线体检
+python host/codegen/handover.py               # 刷新 CLAUDE.md 结构树 / HANDOVER.md
 ```
 改动记 `docs/变更记录.md`，新坑记 `docs/踩坑记录.md`，**git commit**。

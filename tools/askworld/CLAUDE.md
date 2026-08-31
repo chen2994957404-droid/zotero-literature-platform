@@ -23,7 +23,11 @@
 | 文件 | 干什么 |
 |---|---|
 | `__init__.py` | 问答编排（`ask_world`）+ 纯检索（`search_world`）|
-| `__main__.py` | 问答命令行（`python -m tools.askworld "问题"`）|
+| `cli.py` | 问答命令行（`python -m tools.askworld "问题"`）|
+| `__main__.py` | 一行壳，转给 `cli.main()` |
+| `tool.toml` | 工具清单（expose / 花不花钱 / 有什么副作用）—— MCP 服务照它挂 |
+| `mcp.py` | 给 agent 的 MCP 面（只做参数转换，不许有逻辑）|
+| `README.md` · `SKILL.md` | 给人的说明 · 给 agent 的手册（含**什么时候别用我**）|
 | `search.py` | 检索命令行（`python -m tools.askworld.search "词" 20 --impact`）|
 | `selftest.py` | 离线自测（不联网、不调 LLM）|
 

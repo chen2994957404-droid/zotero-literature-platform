@@ -1,0 +1,12 @@
+# 工具清单（格式见 REBUILD.md 第二节；读它的是 host/mcp/registry.py）
+#   costs_money / side_effects / requires_role 描述**这个工具最危险的那条路径**，
+#   哪怕那条路径只在命令行上有、没暴露给 MCP —— 写清楚才有意义。
+#   expose 是它在 MCP 上的主暴露方式，判据：只读且便宜→tool；只读数据→resource；
+#   花钱或有副作用→prompt。花钱/有副作用的注册成 tool 会被 registry.check() 拦下。
+name          = "library"
+one_line      = "查我的 Zotero 库：搜条目、看合集标签、拿正文 PDF 与全文"
+expose        = "tool"
+costs_money   = false
+side_effects  = []
+requires_role = "none"
+prompts       = []

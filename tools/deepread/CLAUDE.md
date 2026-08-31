@@ -27,6 +27,10 @@
 | `si.py` | SI（补充材料）精读，支持 PDF 与 .docx |
 | `merge.py` | 正文 + SI 合并成一份 |
 | `batch.py` | 批量精读 / 批量补 SI / 回写附件 / 刷新本地文件 / 用 pro 重跑 |
+| `cli.py` | 命令行入口（`python -m tools.deepread <KEY>`），只解析参数 |
+| `tool.toml` | 工具清单（expose / 花不花钱 / 有什么副作用）—— MCP 服务照它挂 |
+| `mcp.py` | 给 agent 的 MCP 面（只做参数转换，不许有逻辑）|
+| `README.md` · `SKILL.md` | 给人的说明 · 给 agent 的手册（含**什么时候别用我**）|
 | `tags.py` | Zotero 状态标签状态机（互斥规则在这里） |
 | `watcher.py` | 常驻服务：轮询标签 → 调度 → 回写 → 改标签 |
 | `watchdog.py` | 看门狗：watcher 真死了才重启它（**绝不打断正在干活的它**） |
@@ -90,6 +94,6 @@ jobs.stale('main_summary', prompt_ver=3)   # 提示词升到 v3 后，谁该重�
 python tools/deepread/selftest.py             # 本工具自测，不花钱
 python -m pytest tools/deepread -q            # 编排/判据/接线三组离线测试
 python host/doctor/health_check.py --offline  # 离线体检，必须全绿
-python -m tools.deepread.batch <KEY> --force  # 拿真实文献实测（旧版自动备份 .bak）
+python -m tools.deepread <KEY> --force        # 拿真实文献实测（旧版自动备份 .bak）
 ```
 判废标准：精读正文 < 3000 字基本是失败品，正常在 8000~13000 字。

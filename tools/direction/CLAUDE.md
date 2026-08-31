@@ -100,3 +100,16 @@ python tools/direction/selftest.py
 
 自测不跑 `build()`（要联网），它把 `paths.DIRECTION` 临时指向 tmp 目录，
 **绝不碰真实数据**。
+
+## 五件套（R4 窗补，2026-08-31）
+
+| 文件 | 干什么 |
+|---|---|
+| `tool.toml` | 工具清单：`expose` / 花不花钱 / 有什么副作用 / 要哪档机器角色 |
+| `cli.py` | 人的命令行入口（`python -m tools.direction`），只解析参数 |
+| `mcp.py` | 给 agent 的 MCP 面（**只做参数转换，不许有逻辑**）|
+| `README.md` | 给人：这是什么、怎么用 |
+| `SKILL.md` | 给 agent：什么时候用我、怎么用、**什么时候别用我** |
+
+本工具在 MCP 上是 **prompt**（花钱/有副作用 → 由人在客户端里点，模型不能自己调）。
+判据与守卫见 `host/mcp/CLAUDE.md`。

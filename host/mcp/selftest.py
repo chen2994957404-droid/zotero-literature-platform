@@ -9,9 +9,8 @@ except Exception:
 
 跑法：python host/mcp/selftest.py，全部通过才算出活。
 覆盖：initialize 握手、通知不回、tools/list、tools/call（成功/业务错误/参数错误/
-未知工具/handler 抛异常）、ping、未知方法、非法 JSON、UTF-8 中文往返。
-zotero_server 的真实工具清单做「配置存在才加载」的附加检查（本机未配 ZOTERO_USER_ID
-时跳过该项并提示，不算失败——那属于真实库连通验证，见 变更记录）。
+未知工具/handler 抛异常）、resources/list+read、prompts/list+get、ping、未知方法、
+非法 JSON、UTF-8 中文往返；最后校验真实聚合（各 tools/*/tool.toml 与实际注册自洽）。
 """
 import io
 import json
@@ -115,23 +114,63 @@ def main():
     rs = feed(s, '{"jsonrpc":"2.0","id":7,"method":"ping"}')
     check('ping 回空 result', len(rs) == 1 and rs[0].get('result') == {})
 
-    # 10. 未知方法
-    rs = feed(s, '{"jsonrpc":"2.0","id":8,"method":"resources/list"}')
+    # 10. 未知方法（R4 起 resources/list 是真方法了，这里换一个真不存在的）
+    rs = feed(s, '{"jsonrpc":"2.0","id":8,"method":"completion/complete"}')
     check('未知方法回 -32601', len(rs) == 1 and rs[0].get('error', {}).get('code') == -32601)
 
     # 11. 非法 JSON
     rs = feed(s, 'not json at all')
     check('非法 JSON 回 -32700', len(rs) == 1 and rs[0].get('error', {}).get('code') == -32700)
 
-    # 12. 真实工具层（配置存在才加载）
-    try:
-        from zotero_server import build_server
-        real = build_server()
-        names = [t['name'] for t in real._tools]
-        check('zotero_server 工具数 = 10', len(names) == 10, str(len(names)))
-        check('zotero_server 工具名唯一', len(set(names)) == len(names))
-    except Exception as e:
-        print(f'  · 跳过真实工具层检查（本机未配置 ZOTERO_USER_ID？）：{e}')
+    # 12. 资源（R4 新增）
+    s2 = build_fake_server()
+    s2.register_resource('fake://a.md', 'a.md', '一份假资源', lambda: '内容：聚硼硅氧烷')
+    rs = feed(s2, '{"jsonrpc":"2.0","id":9,"method":"resources/list"}')
+    check('resources/list 列出资源',
+          len(rs) == 1 and [r['uri'] for r in rs[0]['result']['resources']] == ['fake://a.md'])
+    rs = feed(s2, '{"jsonrpc":"2.0","id":10,"method":"resources/read","params":{"uri":"fake://a.md"}}')
+    c = rs[0]['result']['contents'][0] if rs and 'result' in rs[0] else {}
+    check('resources/read 回 contents[{uri,mimeType,text}]',
+          c.get('uri') == 'fake://a.md' and c.get('text') == '内容：聚硼硅氧烷', str(c)[:80])
+    rs = feed(s2, '{"jsonrpc":"2.0","id":11,"method":"resources/read","params":{"uri":"fake://nope"}}')
+    check('未知资源回 -32602', len(rs) == 1 and rs[0].get('error', {}).get('code') == -32602)
+
+    # 13. 提示词（R4 新增）
+    s3 = build_fake_server()
+    s3.register_prompt('greet', '打个招呼',
+                       [{'name': 'who', 'description': '跟谁', 'required': True}],
+                       lambda a: f'你好，{a["who"]}')
+    rs = feed(s3, '{"jsonrpc":"2.0","id":12,"method":"prompts/list"}')
+    ps = rs[0]['result']['prompts'] if rs and 'result' in rs[0] else []
+    check('prompts/list 列出提示词与参数',
+          len(ps) == 1 and ps[0]['name'] == 'greet' and ps[0]['arguments'][0]['required'] is True,
+          str(ps)[:90])
+    rs = feed(s3, '{"jsonrpc":"2.0","id":13,"method":"prompts/get","params":{"name":"greet","arguments":{"who":"世界"}}}')
+    m = rs[0]['result']['messages'][0] if rs and 'result' in rs[0] else {}
+    check('prompts/get 回 messages[{role,content}]',
+          m.get('role') == 'user' and m.get('content', {}).get('type') == 'text'
+          and m['content']['text'] == '你好，世界', str(m)[:90])
+    rs = feed(s3, '{"jsonrpc":"2.0","id":14,"method":"prompts/get","params":{"name":"greet","arguments":{}}}')
+    check('提示词缺必填参数回 -32602',
+          len(rs) == 1 and rs[0].get('error', {}).get('code') == -32602)
+
+    # 14. 能力声明只报真的有的
+    s4 = MCPStdioServer('bare', '1.0')
+    rs = feed(s4, '{"jsonrpc":"2.0","id":15,"method":"initialize","params":{}}')
+    caps = rs[0]['result']['capabilities'] if rs else {}
+    check('没注册资源就不声明 resources 能力', 'resources' not in caps and 'prompts' not in caps,
+          str(caps))
+
+    # 15. 真实聚合：各 tools/*/tool.toml 与实际注册自洽
+    from host.mcp import registry
+    from host.mcp.server import build_server
+    real = build_server()
+    names = [t['name'] for t in real._tools]
+    check('聚合后工具名唯一', len(set(names)) == len(names))
+    check('聚合到了 tools（至少 library 的 9 个 + ping）', len(names) >= 10, str(len(names)))
+    problems = registry.check(real._report)
+    check('工具清单自洽（tool.toml ↔ 实际注册）', not problems,
+          ' / '.join(problems[:3]))
 
     print(f'\n结果：{len(_PASS)} 过 / {len(_FAIL)} 挂')
     if _FAIL:

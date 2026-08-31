@@ -48,3 +48,16 @@ python tools/digitize/selftest.py                # 本块自测，必须全过�
 python host/doctor/health_check.py --offline     # 全局体检，确认没碰坏别人
 ```
 自测不过就是没改完。**没有自测覆盖的新功能，等于没写。**
+
+## 五件套（R4 窗补，2026-08-31）
+
+| 文件 | 干什么 |
+|---|---|
+| `tool.toml` | 工具清单：`expose` / 花不花钱 / 有什么副作用 / 要哪档机器角色 |
+| `cli.py` | 人的命令行入口（`python -m tools.digitize`），只解析参数 |
+| `mcp.py` | 给 agent 的 MCP 面（**只做参数转换，不许有逻辑**）|
+| `README.md` | 给人：这是什么、怎么用 |
+| `SKILL.md` | 给 agent：什么时候用我、怎么用、**什么时候别用我** |
+
+本工具在 MCP 上是 **prompt**（花钱/有副作用 → 由人在客户端里点，模型不能自己调）。
+判据与守卫见 `host/mcp/CLAUDE.md`。

@@ -13,6 +13,9 @@
   - USER_ID / WEB_USER_ID : 本地 API 的 id / 写 zotero.org 的真实数字 id（两者不同）
   - find_pdf(key)         : 定位正文 PDF 本地路径（优先信 Zotero 规范命名，排除 SI）
   - get_fulltext(att_key) : 取 Zotero 全文索引（粗层抽取/向量化用）
+  - 库房只读浏览（R4 收进来）: counts / count_of / item / children /
+                              collections / collection_items / tags /
+                              recent_items / simplify
 
 配置从环境变量读，带默认值（便于独立使用）。
 """
@@ -245,3 +248,93 @@ def library_index():
     except Exception:
         pass          # 本机 Zotero 未开/未配：只做纯检索，「已在库」标记留空
     return titles, dois
+
+
+# ── 库房只读浏览（R4 窗从 host/mcp/zotero_server.py 收进来）───────────
+# 收进来的理由：那边原来自己拼 `/users/<id>/collections?...` 这类 Zotero API 路径、
+# 自己 urlopen 读 Total-Results 头 —— 那是「联网只在 adapters」的破口（红线 #5）。
+# API 路径长什么样、返回什么形状，是**外部世界的事**，只该有这一处知道。
+
+def count_of(path):
+    """只读计数：读 Zotero API 响应头的 Total-Results。不可达返回 None。
+
+    单独一个函数是因为条数在**响应头**里而不是响应体里 —— 这是 Zotero API
+    自己的怪癖，调用方不该知道。
+    """
+    try:
+        req = urllib.request.Request(LOCAL_API + path, headers=_H)
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return int(r.headers.get('Total-Results') or 0)
+    except Exception:
+        return None
+
+
+def counts():
+    """(顶层条目数, 合集数, 标签数)，取不到的那项为 None。"""
+    uid = _local_uid()
+    return (count_of(f'/users/{uid}/items/top?limit=1'),
+            count_of(f'/users/{uid}/collections?limit=1'),
+            count_of(f'/users/{uid}/tags?limit=1'))
+
+
+def item(key):
+    """按 key 取单条目（本地 API 单条返回对象，兼容返回列表的形态）。
+
+    与 `get_item` 的分别：那个走云端（zotero.org，自己刚写的东西要问它），
+    这个走本地 API（快、离线可用、但滞后于云端）。
+    """
+    d = zget(f'/users/{_local_uid()}/items/{key}')
+    return d[0] if isinstance(d, list) and d else d
+
+
+def children(key):
+    """某条文献下的全部子条目（附件 + 笔记）。"""
+    return zget(f'/users/{_local_uid()}/items/{key}/children')
+
+
+def collections(limit=100):
+    """全部合集（原始条目，含 parentCollection，层级由调用方拼）。"""
+    return zget(f'/users/{_local_uid()}/collections?limit={int(limit)}&format=json')
+
+
+def collection_items(collection_key, limit=25):
+    """某个合集里的顶层文献。"""
+    return zget(f'/users/{_local_uid()}/collections/{collection_key}'
+                f'/items/top?limit={int(limit)}&format=json')
+
+
+def tags(limit=100):
+    """全部标签（原始条目，文献数在 meta.numItems 里）。"""
+    return zget(f'/users/{_local_uid()}/tags?limit={int(limit)}&format=json')
+
+
+def recent_items(limit=100):
+    """按最近修改倒序取顶层条目（要「几天内」自己按 dateModified 过滤）。"""
+    return zget(f'/users/{_local_uid()}/items/top?sort=dateModified&direction=desc'
+                f'&limit={int(limit)}&format=json')
+
+
+def simplify(it):
+    """Zotero 条目 → 扁平 dict（key/itemType/title/creators/date/期刊/DOI/url/tags）。
+
+    压平放在适配层：`creators` 那种「有 name 就用 name，否则拼 lastName+firstName」
+    的形状是 Zotero 的，不是我们的，上层不该知道。
+    """
+    d = it.get('data') if isinstance(it, dict) else {}
+    names = []
+    for c in (d or {}).get('creators') or []:
+        if c.get('name'):
+            names.append(c['name'])
+        else:
+            names.append(' '.join(x for x in (c.get('lastName'), c.get('firstName')) if x))
+    return {
+        'key': it.get('key') or (d or {}).get('key'),
+        'itemType': (d or {}).get('itemType'),
+        'title': (d or {}).get('title'),
+        'creators': names,
+        'date': (d or {}).get('date'),
+        'publicationTitle': (d or {}).get('publicationTitle'),
+        'DOI': (d or {}).get('DOI'),
+        'url': (d or {}).get('url'),
+        'tags': [t.get('tag') for t in (d or {}).get('tags') or []],
+    }

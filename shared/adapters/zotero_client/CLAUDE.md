@@ -24,6 +24,12 @@
 | `zget(path)` | 调 Zotero 本地 API（`localhost:23119`） |
 | `find_pdf(item_key)` | 找该文献的**正文** PDF（智能排除补充材料） |
 | `get_fulltext(att_key)` | 取附件全文 |
+| `counts()` / `count_of(path)` | 库有多大（条数在**响应头** Total-Results 里，是 Zotero 自己的怪癖）|
+| `item(key)` / `children(key)` | 单条目 / 它的附件与笔记（走本地 API，与走云端的 `get_item` 不是一回事）|
+| `collections()` / `collection_items()` / `tags()` / `recent_items()` | 合集 / 合集内文献 / 标签 / 最近改动 |
+| `simplify(item)` | Zotero 条目 → 扁平 dict（`creators` 那套形状是它的，不该漏给上层）|
+
+R4 窗（2026-08-31）从 `host/mcp/zotero_server.py` 收进来的那一批：那边原来自己拼 `/users/<id>/collections?...` 这类路径、自己 urlopen 读响应头，是「联网只在 adapters」的破口。**API 路径长什么样只该有这一处知道。**
 
 ## find_pdf 的判别逻辑（别改坏）
 

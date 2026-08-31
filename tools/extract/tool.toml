@@ -1,0 +1,7 @@
+name          = "extract"
+one_line      = "一批文献 → 统一 schema 的结构化字段 + 横向对比表"
+expose        = "prompt"
+costs_money   = true            # 每篇都过一次云端大模型（--local 走本地则不花钱）
+side_effects  = ["写 structured/<key>.json 与 compare*.md", "重建 papers.db"]
+requires_role = "prod"          # 全库抽取是全库作业
+prompts       = []

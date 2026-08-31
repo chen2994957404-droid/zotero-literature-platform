@@ -40,7 +40,8 @@ zotero-platform/
 │   ├── discover/              找新文献（含引文雪球的编排；雪球本体是 adapters）
 │   ├── digitize/              论文图表 → 数据点
 │   ├── direction/             方向地图 / 选题
-│   └── curate/                库房维护(标签/改名/去重/同步)
+│   ├── curate/                库房维护(标签/改名/去重/同步)
+│   └── library/               查 Zotero 库(只读)  ← R4 窗新建,见下方说明
 │
 ├── shared/                    ★ 共用件:被 ≥2 个工具用到才允许住这里
 │   ├── kernel/                基础设施(谁都依赖,它不依赖任何人)
@@ -198,6 +199,19 @@ watcher/watchdog 作为该工具的常驻服务放 `tools/deepread/watcher.py`
 唯一那点编排(挑种子 → 扩展 → 并进候选池)留在 `tools/discover.snowball_more()`。
 **因此工具共 9 个,不是第一节列的 10 个。**
 
+### tools/library/ —— R4 窗新建的第十个工具
+
+`zotero_server.py` 解散时,那 10 个只读查询要有个去处。本节上面留了
+「新建 `tools/library/` 或并入 `ask`」两个选项,**R4 窗选了前者**,理由:
+
+`ask` 要调付费大模型 → 按 R4 判据只能暴露成 `prompt`(由人点)。
+把这些**免费只读**的查询并进去,它们会跟着降级成 prompt,
+**agent 从此不能自己检索用户的文献库** —— 那是实打实的功能倒退。
+免费只读的东西必须是 `tool`,所以它需要一个 `costs_money=false` 的切片来装。
+`ping` 不是能力,是服务自己的存活检查,留在 `host/mcp/server.py`。
+
+**所以工具最终是 10 个:** 上面九个 + `library`。
+
 ### tools/digitize/
 `pipelines/chart_digitize/*`
 
@@ -256,7 +270,7 @@ watcher/watchdog 作为该工具的常驻服务放 `tools/deepread/watcher.py`
 | R1 | 开分支 + 建骨架 + 搬 shared/ 与 host/ | [x] | `rebuild` 分支已开。`core/domain/adapters` → `shared/{kernel,domain,adapters}`；`平台管理`+`MCP服务` → `host/{panel,doctor,deploy,codegen,mcp}`，中文脚本名换成 ASCII；115 个文件批量改 import；`paths.py` 新增 `CODE_ROOTS`、`CODE_RINGS` 改成带斜杠相对路径；pyproject 改成 `tools*/shared*/host*/pipelines*` 并重装；删 `归档_旧版本`/pycache/egg-info；3 个 .bat 内部路径已改。**pytest 195 全过、离线体检 10/0/0、完整体检 16/2/0 与重构前基线一致。**踩坑 #78 #79 #80。 |
 | R2 | 切出 deepread / extract / paperdb / digitize | [x] | 四个工具已成包。`pipelines/{deepread,extract,paper_db,chart_digitize}` + `文献精读/`（12 脚本）+ `数据抽取/`（7 脚本）→ `tools/{deepread,extract,paperdb,digitize}`，两个中文文件夹**已删**。六个精读脚本并成 `deepread/batch.py`、三个抽取脚本并成 `extract/batch.py`；新增 `deepread/tags.py`（标签状态机从 watcher 独立）；`zotero_watcher.py`→`watcher.py`。**删了 5 个纯薄壳**（deepread_v4/si_deepread/merge_summary/zotero_upload_attachment/mineru_parse —— 最后一个是 `adapters/pdf_parse` 的第二份实现，违反「联网只在 adapters」）。`extract_library` 的裸 urllib 改走适配层。测试进 `tools/deepread/tests/`，`testpaths` 加 `tools`；`CODE_RINGS` 加 `'tools'`（否则体检不再跑这四个工具的自测）。改了 health_check（关键入口改成按**模块名**查）/ panel / update / auto_sync / 架构守卫 / 4 个 .bat。**pytest 195 全过、tools/ 37 全过、离线体检 10/0/0、完整体检 16/2/0 与 R1 基线一致。**踩坑 #81。留了两处 `tools` 调 `tools`（watcher→extract、extract→paperdb），已记进待办等 R7 定夺。 |
 | R3 | 切出 ask / askworld / discover / snowball / direction / curate | [x] | **根目录再无中文代码目录，也无 `pipelines/`。** 五个工具成包：`ask`（含两条向量化线合并）· `askworld`（问答 + 纯检索）· `discover`（paper_discovery + lib_match + discover/collect/import_by_doi/thesis）· `direction`（direction_map + 方向地图 + brainstorm）· `curate`（7 个脚本 → sync/junk/rename/backfill/tags 五模块）。**snowball 判定为纯 API 包装**（`_get`/`_norm` 全是转发 openalex，`expand()` 只有循环去重限速，无算法无跨块编排）→ 整块留 `shared/adapters/snowball/`，唯一那点编排留在 `discover.snowball_more()`，**不单独成工具，故共 9 个工具**。**两处偏离第四节映射表**（踩坑 #82）：`query_expand` → `shared/adapters/`（两个工具用，且 import llm_client 进不了 domain）、`lib_match` → `tools/discover/match.py`（只有一个使用者）——照映射表会逼出 `tools`→`tools` import，违反第三节硬规则 2，**规则优先于映射表**。顺手补掉四处「联网不在 adapters」：新建 `shared/adapters/crossref/`（三件套齐）、新增 `llm_client.chat_messages()` / `zotero_client.alive()+library_index()` / `embed.alive()`。删 `find_papers.py`（`search()` 的薄壳）。配套改 pyproject / paths / panel（删两处 sys.path 借用）/ health_check（KEY_MODULES 13 个，`find_script` 退休）/ handover 生成器 / README / CLAUDE.md。**两条联网守卫从 R1 起一直在空转**（踩坑 #83），当场改指新环路径并故意违反一次验证会红。**pytest 194 过 1 跳（同基线）· 离线体检 10/0/0 · 完整体检 16/2/0 · 真跑一次 discover 返回 14 篇。** 依赖方向守卫、docs 旧路径、sync 驱动两个工具 → 记进待办等 R7。 |
-| R4 | 每工具补齐五件套(tool.toml / README / SKILL / cli / mcp) | [ ] | |
+| R4 | 每工具补齐五件套(tool.toml / README / SKILL / cli / mcp) | [x] | **十个工具形状一致了，MCP 从「手写清单」变成「读 tool.toml 聚合」。** 五件套 ×10 全补齐；命令行统一成 `python -m tools.<名>`（`paperdb/query.py`、`discover/find.py` → `cli.py`；`ask/askworld/direction` 的 `__main__.py` → `cli.py`；`deepread/extract` 的 `main()` 从 `batch.py` 搬出；`curate` 新写子命令分发；`digitize` 新写命令行 + `digitize_file()`），`__main__.py` 一律退化成一行壳。**新建 `tools/library/`（第十个工具）**：`host/mcp/zotero_server.py` 解散，9 个只读查询成为它，`ping` 留给服务自己，拼 API 路径/读 Total-Results 头/压平条目**下沉进 `zotero_client`**（原先在 host 里裸 urlopen，是「联网只在 adapters」的破口）。**偏离第一节的 9 个工具清单**：第四节本就留了「新建 `tools/library/` 或并入 `ask`」两个选项 —— 并入 `ask` 会让这些免费只读查询跟着 ask 降级成 prompt（ask 花钱），**agent 从此不能自己检索文献库，是真实功能倒退**，所以单独成工具（同 R3 的「判据优先于映射表」）。`host/mcp/` 新增 `server.py`（聚合入口）+ `registry.py`（读 tool.toml、挂 mcp.py、校验自洽）；`stdio.py` 补齐 resources/prompts 两族方法，**报文形状核对过官方 schema 2024-11-05**。**安全铁律落地**：`costs_money` 或 `side_effects` 非空的切片**不许注册 tool 类**（tool 是模型可自己调的），`registry.check()` 强制 —— 现状 tool 只有 library×9 与 paperdb×4，resource 是 extract 的 3 张对比表，其余 8 个切片各 1 条 prompt。配套：`kernel/cli` 加 `wants_help()`（起因见踩坑 #85：`--help` 曾直接触发全库抽取）、新增 `kernel/mcp_prompt.py`（八条 prompt 共用同一段「先问用户」）、体检关键入口 15 个、`sync.py` 改调 `tools.extract`、`重跑精读PRO.bat` 改新入口。**pytest 194 过 1 跳（同基线）· MCP 自测 29/0 · `server.py --list` 三类齐全且自洽 · 离线体检 10/0/0 · 完整体检 16/2/0 与 R1~R3 基线一致。**踩坑 #84 #85 #86。工具的 `tests/`、`evals/`、`tool.toml` 的 `prompts` 字段、B 机 MCP 重新注册 → 记进待办等 R5/R7。 |
 | R5 | prompts 与 evals 归位到各工具 | [ ] | |
 | R6 | data/ 五层重排 + launch/ + 清死文件 | [ ] | |
 | R7 | 守卫重写 + .claude 全生成 + docs 归类 + 终验 | [ ] | |

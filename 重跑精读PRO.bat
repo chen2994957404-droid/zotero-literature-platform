@@ -12,11 +12,11 @@ echo （解析结果有缓存，重跑不再消耗 MineRU 额度）。
 echo.
 echo 密钥已存在系统凭据库，无需在这里设置。
 echo.
-python -m tools.deepread.batch --rerun-pro
+python -m tools.deepread --rerun-pro
 echo.
 set /p num=请输入要用PRO重跑的文献序号（直接回车退出）:
 if "%num%"=="" goto end
-python -m tools.deepread.batch --rerun-pro %num%
+python -m tools.deepread --rerun-pro %num%
 echo.
 echo 完成！结果在 workflow_data\library\ 对应文献目录下。
 :end

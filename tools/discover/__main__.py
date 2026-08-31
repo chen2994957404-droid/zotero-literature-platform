@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
-"""`python -m tools.discover "关键词"` = 找文献（见 find.py 的用法说明）。"""
-from tools.discover.find import main
+"""`python -m tools.discover` → cli.main()。真正的入口在 cli.py（R4 窗统一成这个形状）。"""
+import sys
+
+from tools.discover.cli import main
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

@@ -33,7 +33,7 @@ except Exception:
     pass
 
 from shared.kernel import paths
-from shared.kernel.cli import flag, opt, pos
+from shared.kernel.cli import flag, opt, pos, wants_help
 from tools.discover import run_discovery
 
 
@@ -67,6 +67,9 @@ def _print_contrib(contrib, n_items):
 
 
 def main():
+    if wants_help():
+        print(__doc__ or main.__doc__)
+        return 0
     query = pos(0)
     if not query:
         print(__doc__)

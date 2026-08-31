@@ -14,6 +14,7 @@
 | 入口 | 干什么 |
 |---|---|
 | `digitize(image_b64, hint='', provider, model, key) → dict` | 一张图 → `{chart_type, x_axis, y_axis, series, confidence, note}`，读不出时 `{'error': ...}` |
+| `digitize_file(path, hint='', ...) → dict` | 同上，但直接给图片文件路径（命令行用）|
 
 ⚠ **必须用云端大模型**：本地 7B 视觉模型会**编出看似合理的假数据**
 （宪法零号判据的反面教材 —— 编的数字最像事实）。
@@ -67,3 +68,14 @@ def digitize(image_b64, hint='', provider=None, model=None, key=None):
         return _parse_json_lenient(out)
     except Exception:
         return {'error': '视觉模型输出无法解析为 JSON', 'raw': out[:300]}
+
+
+def digitize_file(path, hint='', provider=None, model=None, key=None):
+    """同 `digitize`，但直接收图片文件路径（命令行/面板用，省得调用方自己 base64）。"""
+    import base64
+    try:
+        with open(path, 'rb') as fh:
+            b64 = base64.b64encode(fh.read()).decode('ascii')
+    except OSError as e:
+        return {'error': f'读不了图片文件：{e}'}
+    return digitize(b64, hint=hint, provider=provider, model=model, key=key)

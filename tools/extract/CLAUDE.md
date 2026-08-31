@@ -24,6 +24,10 @@ core.paths（去哪读、往哪写） + domain.schema（抽什么、怎么问、
 |---|---|
 | `__init__.py` | 抽一篇的编排：读料 → 调模型 → 自检重抽 → 落盘 → 出表 |
 | `batch.py` | 三条批量线：精层批量 / 缺 full.md 先解析 / 粗层全库（本地模型） |
+| `cli.py` | 命令行入口（`python -m tools.extract`），只解析参数 |
+| `tool.toml` | 工具清单（expose / 花不花钱 / 有什么副作用）—— MCP 服务照它挂 |
+| `mcp.py` | 给 agent 的 MCP 面（只做参数转换，不许有逻辑）|
+| `README.md` · `SKILL.md` | 给人的说明 · 给 agent 的手册（含**什么时候别用我**）|
 | `domain_filter.py` | 从全库筛出「本方向」的干净子表（剔除跑题与 N/A） |
 | `compare_models.py` | 本地 vs 云端 A/B 三指标对比，**只打印不写盘**（踩坑 #16） |
 | `wizard.py` | 给人双击的重抽向导（列清单 → 问模型 → 跑 → 报花了多少钱） |
@@ -78,8 +82,8 @@ extract.si_text(key)          # 这篇的 SI 全文（取过合成相关章节�
 ```
 python tools/extract/selftest.py                  # 8 条，不调 LLM、不碰真实数据
 python host/doctor/health_check.py --offline      # 离线体检，必须全绿
-python -m tools.extract.batch <KEY>               # 真抽一篇（花钱）
-python -m tools.extract.batch --si-pending --list # 只列清单，不花钱
+python -m tools.extract <KEY>                     # 真抽一篇（花钱）
+python -m tools.extract --si-pending --list       # 只列清单，不花钱
 ```
 
 ## 已知的架构欠账（R7 窗定夺，别在这里顺手改）

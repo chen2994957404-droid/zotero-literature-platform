@@ -46,7 +46,7 @@ python -m tools.curate.tags [apply]
 
 ## 为什么 `sync` 用子进程跑别的工具
 
-它要跑 `tools.ask.vectorize` 和 `tools.extract.batch`，但
+它要跑 `tools.ask.vectorize` 和 `tools.extract`，但
 `tools/*` **不许 import 别的 `tools/*`**（REBUILD 第三节硬规则 2）。
 子进程按**模块名**拉起：既不构成 import 边，又不怕别人搬家改路径。
 
@@ -57,3 +57,16 @@ python tools/curate/selftest.py     # 9 条，全离线（分组/改名/标签�
 python -m tools.curate.junk         # 只列清单，不写任何东西
 python -m tools.curate.tags         # 不带 apply = 预览
 ```
+
+## 五件套（R4 窗补，2026-08-31）
+
+| 文件 | 干什么 |
+|---|---|
+| `tool.toml` | 工具清单：`expose` / 花不花钱 / 有什么副作用 / 要哪档机器角色 |
+| `cli.py` | 人的命令行入口（`python -m tools.curate`），只解析参数 |
+| `mcp.py` | 给 agent 的 MCP 面（**只做参数转换，不许有逻辑**）|
+| `README.md` | 给人：这是什么、怎么用 |
+| `SKILL.md` | 给 agent：什么时候用我、怎么用、**什么时候别用我** |
+
+本工具在 MCP 上是 **prompt**（花钱/有副作用 → 由人在客户端里点，模型不能自己调）。
+判据与守卫见 `host/mcp/CLAUDE.md`。

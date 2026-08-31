@@ -1,0 +1,9 @@
+name          = "paperdb"
+one_line      = "抽取出来的结构化记录 → 可筛可查、能比大小的数值库"
+expose        = "tool"
+costs_money   = false
+# rebuild 只重建 papers.db 这个**可再生索引**（真相是 structured/*.json），
+# 不动任何用户数据，所以不算副作用。见 tools/paperdb/CLAUDE.md「库是索引，不是真相」。
+side_effects  = []
+requires_role = "none"
+prompts       = []

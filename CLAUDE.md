@@ -16,8 +16,8 @@ host/  ← 平台自身：让平台活着的东西（没人 import 它）（5 �
     codegen、deploy、doctor、mcp、panel
 launch/ （0 个脚本）
 shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
-    kernel/  ← 基础设施：谁都依赖它，它不依赖任何人（10 块）
-        cli、config、proc_lock、subproc、errors.py、heartbeat.py、jobs.py、log.py、paths.py、role.py
+    kernel/  ← 基础设施：谁都依赖它，它不依赖任何人（11 块）
+        cli、config、proc_lock、subproc、errors.py、heartbeat.py、jobs.py、log.py、mcp_prompt.py、paths.py、role.py
     domain/  ← 纯逻辑：不联网、不知道文件放在哪（4 块）
         bibliometrics、figure_crop、schema、si_filter
     adapters/  ← 外接口：唯一允许联网/用第三方库的一环（12 块）
@@ -25,15 +25,15 @@ shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
 specs/ （0 个脚本）
 tests/ （10 个脚本）
     test_adapters_vectordb.py、test_architecture.py、test_artifact_gaps.py、test_core_heartbeat.py、test_core_jobs.py、test_core_log_errors.py、test_core_paths.py、test_core_role.py…
-tools/  ← 工具切片：一个工具 = 一个自包含的包（9 块）
-    ask、askworld、curate、deepread、digitize、direction、discover、extract、paperdb
+tools/  ← 工具切片：一个工具 = 一个自包含的包（10 块）
+    ask、askworld、curate、deepread、digitize、direction、discover、extract、library、paperdb
 
 根目录文件：CLAUDE.md、LICENSE、README.md、REBUILD.md、pyproject.toml、requirements.txt、控制面板.bat、更新平台.bat、比一比两个模型.bat、精读监听.bat、诊断报告.bat、重抽缺SI的文献.bat、重跑精读PRO.bat
 
 （workflow_data/ 是数据目录，3000+ 文件，**不要去 glob 它**）
 ```
 
-**可枚举的块 29 个**（`tools/` 工具切片 + `shared/` 共用件，每个都有 `__init__.py` 与 `selftest.py`）
+**可枚举的块 30 个**（`tools/` 工具切片 + `shared/` 共用件，每个都有 `__init__.py` 与 `selftest.py`）
 
 进度、健康状况、下一步做什么 → 见 `HANDOVER.md`
 
@@ -69,7 +69,9 @@ glob 根目录会直接淹掉上下文（实测：前 100 个结果全是精读�
 tools/    工具切片：一个工具 = 一个自包含的包
           deepread 精读 · extract 抽取 · paperdb 查询库 · digitize 图表（R2 窗切好）
           ask 库内问答 · askworld 问全世界 · discover 找新文献 ·
-          direction 方向地图 · curate 库房维护（R3 窗切好，共 9 个）
+          direction 方向地图 · curate 库房维护（R3 窗切好）
+          library 查 Zotero 库（R4 窗从 MCP 的 zotero_server 切出来，共 10 个）
+          每个工具都有五件套：tool.toml / cli.py / mcp.py / README.md / SKILL.md
 shared/   共用件：kernel（基础设施）/ domain（纯逻辑）/ adapters（唯一能联网的一层）
 host/     平台自身：panel 面板 · doctor 体检 · deploy 部署 · codegen 生成器 · mcp 协议层
 ```
@@ -104,11 +106,12 @@ host/     平台自身：panel 面板 · doctor 体检 · deploy 部署 · codeg
 
 | 用户说 | 你怎么做 |
 |--------|---------|
-| "我库里关于XX有什么？" "帮我查查XX" | `python -m tools.ask "问题"`（RAG 问答，中文答+附来源）|
+| "库里有没有XX这篇" "最近加了什么" "有哪些标签" | `python -m tools.library search XX`（只读、免费、秒回；还有 item / pdf / fulltext / collections / tags / recent）|
+| "我库里关于XX有什么？" "帮我查查XX" | `python -m tools.ask "问题"`（RAG 问答，中文答+附来源；**只是找某篇在不在库里，用上面那条更便宜**）|
 | "帮我找XX方向的文献" "补充点XX的文献" | `python -m tools.discover "关键词"`（拆检索式+雪球+按「跟他多相关」排序）；只要一份简单列表用 `tools.discover.search(query)` |
 | "帮我横向比较XX" "这方向有什么规律/空白" | 读 `workflow_data/structured/compare.md`（研究论文横向对比表）；PBS 方向另有 `compare_PBS.md` |
 | "精读某篇文献" | 让他在 Zotero 打「待处理」标签即可。**状态机自动判断**：只有正文→精读正文→标「正文精读」；有SI→连SI一起精读并合并→标「全文精读」；已精读过的只补缺的部分不重跑。服务已开机自启。 |
-| "把某批文献的数据抽出来" | `python -m tools.extract.batch KEY1 KEY2 --parse`（自动 MineRU 解析+DeepSeek 精抽）|
+| "把某批文献的数据抽出来" | `python -m tools.extract KEY1 KEY2 --parse`（自动 MineRU 解析+DeepSeek 精抽）|
 | "全世界有没有人做过XX" "查查外面的文献" | `python -m tools.askworld "问题"`（Sciverse 取原文片段作答，**带出处**；要 SCIVERSE_KEY）|
 | "把论文图里的曲线变成数据" | `tools/digitize` 的 `digitize()`，**必须用云端大模型**（本地7B会编假数据）|
 | "帮我想想研究方向/idea" | 读 compare 表做横向关联分析（找机理×性能的空白格），或 `python -m tools.direction.brainstorm` |

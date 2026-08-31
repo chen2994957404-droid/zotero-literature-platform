@@ -338,8 +338,10 @@ KEY_MODULES = [
     'tools.extract', 'tools.extract.batch', 'tools.paperdb',
     'tools.ask', 'tools.ask.vectorize', 'tools.askworld',
     'tools.discover', 'tools.discover.importer', 'tools.direction', 'tools.curate.sync',
+    'tools.library', 'host.mcp.server',
 ]
 # R3 窗（2026-08-30）起十个工具全是包，散脚本入口连同 find_script 一起退休了。
+# R4 窗（2026-08-31）加 tools.library（新切片）与 host.mcp.server（聚合后的 MCP 入口）。
 
 
 def c_importable():

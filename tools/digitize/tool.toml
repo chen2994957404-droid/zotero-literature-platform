@@ -1,0 +1,7 @@
+name          = "digitize"
+one_line      = "论文图表图片 → 可用的 X-Y 数值"
+expose        = "prompt"
+costs_money   = true            # 必须用云端视觉大模型；本地 7B 会编假数据
+side_effects  = []
+requires_role = "none"
+prompts       = []
