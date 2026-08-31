@@ -49,7 +49,7 @@ def _one(provider, title, body, si):
     os.environ['EXTRACT_PROVIDER'] = provider
     t = time.time()
     try:
-        data = extract.llm_json(schema.SYS, schema.build_user_prompt(title, body, si))
+        data = extract.llm_json(extract.SYS, schema.build_user_prompt(title, body, si))
     finally:
         if old is None:
             os.environ.pop('EXTRACT_PROVIDER', None)

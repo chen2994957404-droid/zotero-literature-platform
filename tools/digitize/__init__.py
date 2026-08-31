@@ -24,15 +24,10 @@
 """
 import os, sys
 from shared.adapters.llm_client import chat_vision, _parse_json_lenient, LLMError
+from shared.kernel import prompts
 
 # All-English prompt (chart data is native machine data for downstream LLM/analysis).
-_SYS = (
-    "You are a scientific chart digitization engine. Given a figure from a paper "
-    "(line/scatter/bar/box plot, etc.), read out its data precisely. Rely strictly on "
-    "what is visible in the image; do not fabricate. First identify the axes (labels, units, "
-    "tick range, whether log-scale), then read each data series point by point. "
-    "Output exactly one JSON, no explanation, no code fences."
-)
+_SYS = prompts.load('digitize', 'main@v1')
 
 _USER_TMPL = (
     "Digitize this chart and output JSON with this structure:\n"

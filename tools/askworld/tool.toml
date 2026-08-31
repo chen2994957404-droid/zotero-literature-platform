@@ -4,4 +4,4 @@ expose        = "prompt"
 costs_money   = true            # Sciverse 检索 + 云端大模型作答
 side_effects  = []
 requires_role = "none"
-prompts       = []
+prompts       = ["main@v1"]

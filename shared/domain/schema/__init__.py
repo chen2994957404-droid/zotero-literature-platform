@@ -15,8 +15,8 @@
 
 对外接口：
   - SCHEMA / SCHEMA_VER      : 字段定义与版本
-  - build_user_prompt        : 抽取提示词
-  - build_eval_prompt        : 自检提示词（对照原文查漏抽/幻觉）
+  - build_user_prompt        : 抽取提问（字段清单 + 正文 + SI）
+  - build_eval_prompt        : 自检提问（对照原文查漏抽/幻觉）
   - hierarchical_body        : 层次化取正文（优于固定截断）
   - si_body                  : 层次化取 SI（合成配方就在这儿）
   - is_review                : 这篇是不是综述（决定进哪张表）
@@ -48,22 +48,9 @@ SCHEMA = {
 # 改了 SCHEMA 就 +1。见本文件开头「加字段的规矩」。
 SCHEMA_VER = 1
 
-SYS = (
-    "You are a materials-science literature structured-extraction engine. Extract information "
-    "only from the given text; never fabricate or extrapolate. Fill any field you cannot find "
-    "with \"N/A\". Always extract numbers together with their units, keep the original significant "
-    "figures, do not convert. Output exactly one JSON object, no explanation, no markdown code fences. "
-    "All values in English (native, machine-readable)."
-)
-
-EVAL_SYS = (
-    "You are a strict extraction QA checker. Given the source text, an extraction schema, "
-    "and an extracted JSON, check two things: (1) MISSED — fields marked N/A but whose data "
-    "actually appears in the source; (2) HALLUCINATED — values in the JSON that cannot be found "
-    "in the source. Output one JSON: {\"ok\": true/false, \"missed\": [\"field: what was missed\"], "
-    "\"hallucinated\": [\"field: the value not in source\"]}. If clean, ok=true and empty lists. "
-    "No explanation, no code fences."
-)
+# 系统提示词（「你是一台抽取引擎，不许编」那两段）不在这里 ——
+# R5 窗起它们住 tools/extract/prompts/{main,eval}_v<N>.txt，由 tools.extract 读进来。
+# 本块只回答「抽什么字段、怎么把字段拼进提问」，不回答「怎么跟模型说话」。
 
 
 def _field_list():

@@ -4,4 +4,4 @@ expose        = "prompt"
 costs_money   = true            # 每问一次调一次云端大模型
 side_effects  = ["写向量库（vectorize）"]
 requires_role = "prod"          # 全库向量化是全库作业，编程端不许跑
-prompts       = []
+prompts       = ["main@v1"]

@@ -4,4 +4,4 @@ expose        = "prompt"
 costs_money   = true            # MineRU 解析额度 + 云端大模型长文输出
 side_effects  = ["写Zotero（回写精读附件与状态标签）", "写 library/<key>/"]
 requires_role = "prod"
-prompts       = ["main@v2"]     # tools/deepread/_sys_prompt_v2.txt（R5 窗归位到 prompts/）
+prompts       = ["main@v2", "si@v1"]

@@ -4,4 +4,4 @@ expose        = "prompt"
 costs_money   = true            # 必须用云端视觉大模型；本地 7B 会编假数据
 side_effects  = []
 requires_role = "none"
-prompts       = []
+prompts       = ["main@v1"]

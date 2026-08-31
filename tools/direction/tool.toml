@@ -4,4 +4,4 @@ expose        = "prompt"
 costs_money   = true            # brainstorm 要大模型；建图本身走 OpenAlex（免费但很慢）
 side_effects  = ["写 direction/<窄带>.db"]
 requires_role = "none"
-prompts       = []
+prompts       = ["brainstorm@v1"]

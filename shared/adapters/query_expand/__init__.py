@@ -33,6 +33,7 @@ silly putty / shear stiffening gel / dilatant compound …
 import os, sys, re
 
 from shared.adapters.llm_client import chat
+from shared.kernel import prompts
 from shared.kernel.config import get_key, get_model
 from shared.kernel.log import get_logger
 
@@ -43,32 +44,12 @@ def looks_chinese(text):
     return any('一' <= c <= '鿿' for c in (text or ''))
 
 
-_SYS_EN = ('You translate scientific questions into concise English search queries. '
-           'Output ONLY the query itself: no quotes, no punctuation at the end, '
-           'no explanation, no numbering.')
+_OWNER = 'shared/adapters/query_expand'      # 共用件也可以有自己的 prompts/
+_SYS_EN = prompts.load(_OWNER, 'english@v1')
 
-_SYS_SURVEY = (
-    'You are a research librarian helping a materials scientist do an EXHAUSTIVE literature survey.\n'
-    'Given a research topic, produce {n} DIFFERENT English search queries that together '
-    'MAXIMISE COVERAGE of the topic. Cover:\n'
-    '  - the standard term AND its common synonyms/abbreviations/alternative spellings\n'
-    '  - broader (parent) and narrower (child) concepts\n'
-    '  - the same material/phenomenon as named in adjacent communities\n'
-    '  - the underlying mechanism, if it has its own name\n'
-    'Each query should be 3-8 words, suitable for an academic search engine.\n'
-    'Output ONLY the queries, one per line, no numbering, no explanation.')
+_SYS_SURVEY = prompts.load(_OWNER, 'survey@v1')
 
-_SYS_PROBLEM = (
-    'You are a research librarian helping a materials scientist SOLVE A CONCRETE PROBLEM.\n'
-    'Given the problem, produce {n} DIFFERENT English search queries that approach it '
-    'from COMPLEMENTARY ANGLES:\n'
-    '  - the phenomenon / failure mode itself\n'
-    '  - the underlying mechanism that causes it\n'
-    '  - known strategies or methods used to fix it\n'
-    '  - the measurable property or metric involved\n'
-    '  - the material system where it is most studied\n'
-    'Each query should be 3-8 words, suitable for an academic search engine.\n'
-    'Output ONLY the queries, one per line, no numbering, no explanation.')
+_SYS_PROBLEM = prompts.load(_OWNER, 'problem@v1')
 
 
 def _llm(system, user, max_tokens=400):

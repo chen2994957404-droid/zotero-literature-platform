@@ -17,16 +17,14 @@ import time
 
 from shared.adapters.llm_client import chat as _chat
 from shared.domain.figure_crop import crop_figures
+from shared.kernel import prompts
 
-# 提示词版本：改了 _sys_prompt_v2.txt 的范式就 +1。
+# 提示词版本：改范式 = 新建 prompts/main_v<N+1>.txt，再把这里 +1（提示词只增不改）。
 # 状态库据此回答「哪些精读该重跑」（jobs.stale('main_summary', prompt_ver=3)）。
 PROMPT_VER = 2
 PRODUCER = 'deepread_v4'
 
 MIN_OK = 3000   # 精读正文低于这个字数就是废品，不许静默写盘
-
-_PROMPT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                            '_sys_prompt_v2.txt')
 
 
 class DeepreadFailed(Exception):
@@ -34,7 +32,10 @@ class DeepreadFailed(Exception):
 
 
 def sys_prompt():
-    return open(_PROMPT_FILE, encoding='utf-8').read()
+    """精读的系统提示词。**版本跟着 PROMPT_VER 走** —— 二者不许各走各的，
+    否则状态库里记的 prompt_ver 和实际用的那一版对不上，「哪些该重跑」就成了假的。
+    """
+    return prompts.load('deepread', f'main@v{PROMPT_VER}')
 
 
 def _pick(mo_dir, suffix, what):

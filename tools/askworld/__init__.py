@@ -34,13 +34,10 @@ from shared.adapters.query_expand import to_english
 from shared.adapters.sciverse import (SciverseError, ask_evidence, available,
                                       looks_chinese, search_papers)
 from shared.adapters.zotero_client import library_index
+from shared.kernel import prompts
 from shared.kernel.config import get_key, get_model
 
-SYS = ('你是科研文献助手。请**只根据下面提供的文献片段**回答用户问题，用中文，准确专业。'
-       '每个关键论断后面用 [1] [2] 这样的编号标出依据来自哪条片段。'
-       '如果片段里没有足够信息，就直说「提供的文献片段中没有找到相关证据」，'
-       '**不要用你自己的知识补充**——本工具的价值在于可追溯。'
-       '回答末尾不用列来源，程序会另外附上。')
+SYS = prompts.load('askworld', 'main@v1')
 
 MIN_SCORE = 0.60      # 相关度低于此值的片段基本是噪声，实测 0.35~0.5 的全是跑题的
 

@@ -34,7 +34,9 @@
 | `tags.py` | Zotero 状态标签状态机（互斥规则在这里） |
 | `watcher.py` | 常驻服务：轮询标签 → 调度 → 回写 → 改标签 |
 | `watchdog.py` | 看门狗：watcher 真死了才重启它（**绝不打断正在干活的它**） |
-| `_sys_prompt_v2.txt` | **精读的系统提示词，改精读风格/结构就改这里**（R5 窗搬去 `prompts/`）|
+| `prompts/main_v2.txt` | **精读的系统提示词，改精读风格/结构就改这里**。改 = 新建 `main_v3.txt` 并把 `main_text.PROMPT_VER` 改成 3，**不许就地改** |
+| `prompts/si_v1.txt` | SI（补充材料）精读的系统提示词，规矩同上（`si.PROMPT_VER`）|
+| `evals/` | 精读质量评测集：客观快照 + 用户的好/差评价（R5 窗从 `adapters/evalset` 搬来）|
 | `selftest.py` | 离线自测（不花钱、不联网） |
 | `tests/` | 编排状态机 / watcher 判据 / 看门狗接线 的离线测试 |
 

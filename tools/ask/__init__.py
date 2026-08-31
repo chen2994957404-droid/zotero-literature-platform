@@ -34,14 +34,13 @@ import sys
 from shared.adapters import vectordb
 from shared.adapters.embed import embed as _embed_batch
 from shared.adapters.llm_client import chat as _chat
-from shared.kernel import paths
+from shared.kernel import paths, prompts
 from shared.kernel.config import get_key, get_model
 
 VECTOR_DB = paths.VECTOR_DB
 TOP_K = 6
 
-SYS = ('你是科研文献助手。请只根据下面提供的文献片段回答用户问题，用中文，准确专业。'
-       '如果片段里没有相关信息，就说明文献库里没有找到。回答末尾不用列来源，我会另外附上。')
+SYS = prompts.load('ask', 'main@v1')
 
 
 def _store():

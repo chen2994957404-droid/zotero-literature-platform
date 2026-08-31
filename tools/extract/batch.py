@@ -195,7 +195,7 @@ def coarse_all(rebuild=False, log=print):
             nofull += 1
             continue
         try:
-            data = extract.llm_json(schema.SYS,
+            data = extract.llm_json(extract.SYS,
                                     schema.build_user_prompt(title, schema.hierarchical_body(txt)))
         except Exception as e:
             log(f'[抽取失败] {title[:40]}: {e}')

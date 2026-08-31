@@ -21,7 +21,7 @@ except Exception:
 | `costs_money`        | 跑一次会不会花钱 |
 | `side_effects`       | 会改哪些外部状态（写 Zotero、写数据目录…）|
 | `requires_role`      | 需要哪档机器角色：none / test / prod |
-| `prompts`            | 用到的提示词版本（R5 窗归位后填）|
+| `prompts`            | 用到的提示词版本，如 `["main@v2"]`；`check()` 会核对文件真在 |
 
 **一条安全铁律，本文件负责执行**（`check()`）：
 **花钱的、有副作用的工具，不许注册成 MCP `tool`。**
@@ -34,6 +34,8 @@ tool 是模型可以自己调的，prompt 是人在客户端里点的 ——
   - check()               : 清单与实际注册是否一致 → 问题列表（空 = 全对）
 """
 import tomllib
+
+from shared.kernel import prompts as _prompts
 
 from shared.kernel import paths
 
@@ -121,6 +123,14 @@ def check(report=None):
         for f in ('cli.py', 'mcp.py', 'README.md', 'SKILL.md'):
             if not os.path.isfile(os.path.join(d, f)):
                 problems.append(f'{name}: 缺 {f}')
+        # R5：声明用了哪版提示词，那一版就得真的在盘上。
+        # 不查的话，`prompts = ["main@v3"]` 可以一直写着而文件只有 v2，
+        # 直到某天真去调模型才炸 —— 那时已经花了解析的钱。
+        for spec in man.get('prompts') or []:
+            try:
+                _prompts.load(name, spec)
+            except Exception as e:
+                problems.append(f'{name}: tool.toml 声明 prompts={spec!r}，但读不到 —— {e}')
 
     for name, man, got in report:
         if 'error' in got:

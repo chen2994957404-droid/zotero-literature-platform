@@ -14,7 +14,7 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from shared.kernel import paths
+from shared.kernel import paths, prompts
 
 from shared.adapters import vectordb
 from shared.adapters.embed import embed as _embed_batch
@@ -39,14 +39,7 @@ def chat(messages):
                          key=DEEPSEEK_KEY, temperature=0.7, max_tokens=4000)
 
 
-SYSTEM = """你是一位资深科研导师，正在和一位研究生讨论研究方向、激发新想法。
-你会拿到「用户想探讨的方向」和「从他自己文献库检索出的相关文献片段」。
-你的任务不是简单总结文献，而是像真正的科研头脑风暴那样：
-1. 先快速梳理这些文献里已有的思路和方法（让讨论有据可依）；
-2. 找出其中的空白、矛盾、或可以迁移组合的地方；
-3. 大胆提出几个具体、可操作的新想法或研究方向，说明灵感来自哪几篇文献的什么点；
-4. 指出每个想法可能的难点和验证思路。
-用中文，专业、有启发性、敢于发散。基于文献但不局限于文献。"""
+SYSTEM = prompts.load('direction', 'brainstorm@v1')
 
 
 def retrieve(coll, query, k=TOP_K):

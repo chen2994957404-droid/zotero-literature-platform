@@ -17,24 +17,18 @@ import zipfile
 from shared.adapters.llm_client import chat
 from shared.adapters.pdf_parse import parse_pdf, PDFParseError
 from shared.adapters.zotero_client import zget, USER_ID, STORAGE_DIR, SUPP_PAT
-from shared.kernel import paths
+from shared.kernel import paths, prompts
 from shared.kernel.config import get_key
 from shared.domain.figure_crop import crop_figures
 from shared.domain.si_filter import filtered_text
 
+# 提示词版本：改范式 = 新建 prompts/si_v<N+1>.txt，再把这里 +1（提示词只增不改）。
 PROMPT_VER = 1
 PRODUCER = 'si_deepread'
 
 DOCX_CT = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 
-SYS = """你是材料科学文献助手。下面是一篇论文【补充材料(SI)】的正文。
-请生成中文的"实验细节精读"，服务于"我要复现这个实验"的读者。要求：
-1. 【原料与规格】所有试剂及关键规格（尤其分子量、纯度、供应商）
-2. 【合成步骤】逐步写清：投料量(克数/摩尔数)、配比、溶剂、温度、时间、后处理。最重要，务必精确
-3. 【对照组设计】多个样品时说明设计逻辑与差异
-4. 【表征方法】一句话列出手段即可，不展开仪器型号
-5. 【补充数据要点】SI 图表说明的关键结论，按【图N】顺序简述
-讨论到某张补充图时用【图N】标记插图位置。用中文，专业准确，数值保留原文单位。"""
+SYS = prompts.load('deepread', f'si@v{PROMPT_VER}')
 
 
 class SIFailed(Exception):

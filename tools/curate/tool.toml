@@ -4,4 +4,4 @@ expose        = "prompt"
 costs_money   = true            # 自动打标签要大模型
 side_effects  = ["写Zotero（标签/改名/删除条目）", "写 library/<key>/meta.json"]
 requires_role = "prod"
-prompts       = []
+prompts       = ["autotag@v1"]
