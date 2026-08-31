@@ -141,5 +141,6 @@
  "zotero": {
   "query": "impact",
   "limit": 300
- }
+ },
+ "fields": "fields/25|fields/23"
 }

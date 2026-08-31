@@ -88,5 +88,6 @@
    "limit": 200,
    "mode": "strict"
   }
- ]
+ ],
+ "fields": "fields/25|fields/22"
 }

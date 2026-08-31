@@ -170,6 +170,14 @@ def seeds_from_openalex(band, spec=None, progress=None):
                 # 它们多是已发表版本的重复，会在引用网络里制造分身。
                 f = {'title_and_abstract.search': text, 'is_retracted': 'false',
                      'primary_location.source.type': 'journal'}
+                # 学科限制：术语是跨领域共用的，不加这条会招来别的学科。
+                # 实测「shear stiffening mechanism」不限学科命中 430 条，
+                # 里面混着火山碎屑流、活性物质、植物细胞壁、磁流体 ——
+                # 它们确实在讨论「剪切硬化」，只是不是我们这个体系。
+                # 限 Materials Science 后剩 66 条，全是 AM / Macromolecules / ACS AMI。
+                fields = spec.get('fields') or q.get('fields')
+                if fields:
+                    f['primary_topic.field.id'] = fields
                 if q.get('year_from'):
                     f['publication_year'] = '>%d' % (int(q['year_from']) - 1)
                 items, tot = openalex.works_by_filter(f, limit=limit)
