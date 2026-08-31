@@ -19,10 +19,10 @@ try:
 except Exception:
     pass
 
-from core import role
-from core.cli import opts, positionals, flag
-from core.config import get_key, get_site
-from adapters import zotero_client as zotero
+from shared.kernel import role
+from shared.kernel.cli import opts, positionals, flag
+from shared.kernel.config import get_key, get_site
+from shared.adapters import zotero_client as zotero
 
 UA = 'zotero-literature-platform/1.0'
 

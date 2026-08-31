@@ -14,12 +14,12 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths, role
-from core.paths import ROOT as _ROOT
+from shared.kernel import paths, role
+from shared.kernel.paths import ROOT as _ROOT
 
-from core.cli import opt, positionals, flag
-from core.config import get_key, get_model
-from core import jobs
+from shared.kernel.cli import opt, positionals, flag
+from shared.kernel.config import get_key, get_model
+from shared.kernel import jobs
 from pipelines import deepread
 from pipelines.deepread import main_text
 
@@ -46,7 +46,7 @@ def read_one(key, force=False):
             shutil.copy2(out_html, bak)
             print(f'  [备份] 旧版存为 summary.html.bak')
     # 阶段 3 起直接调函数，不再拉子进程 —— 失败拿得到原因，不只是退出码。
-    # 每次执行都记进 core.jobs（哪个模型、哪版提示词、失败原因）。
+    # 每次执行都记进 shared.kernel.jobs（哪个模型、哪版提示词、失败原因）。
     with jobs.track(key, deepread.STEP_MAIN, producer=main_text.PRODUCER,
                     model=MODEL, prompt_ver=main_text.PROMPT_VER):
         main_text.read_main(parsed, out_html, provider=PROVIDER, model=MODEL, key=KEY)

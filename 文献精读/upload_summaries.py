@@ -12,20 +12,20 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths, role
-from core.paths import ROOT as _ROOT
+from shared.kernel import paths, role
+from shared.kernel.paths import ROOT as _ROOT
 
-from core.cli import opt, positionals, flag
-from core.config import get_key, need_site
+from shared.kernel.cli import opt, positionals, flag
+from shared.kernel.config import get_key, need_site
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-from adapters import zotero_client as zotero
+from shared.adapters import zotero_client as zotero
 
 ROOT = _ROOT
 LIBRARY = paths.LIBRARY
-# 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
+# 本机配置（Zotero 用户ID / 附件目录）统一从 shared.kernel.config 读，换电脑只改 .env
 # 写 zotero.org 必须用真实数字 id（本地 API 的 0 在这里写不进去）
-from core.config import web_user_id
+from shared.kernel.config import web_user_id
 USER_ID = web_user_id() or need_site('ZOTERO_USER_ID')
 STORAGE_DIR = need_site('ZOTERO_STORAGE')
 WEB_API_KEY = get_key('ZOTERO_API_KEY')

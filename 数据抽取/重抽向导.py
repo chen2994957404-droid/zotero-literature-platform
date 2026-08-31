@@ -29,11 +29,11 @@ try:
 except Exception:
     pass
 
-from adapters.llm_client import usage_snapshot
-from core import paths, role
-from core.cli import flag, opt
-from core.config import drop_stale_env
-from domain import schema
+from shared.adapters.llm_client import usage_snapshot
+from shared.kernel import paths, role
+from shared.kernel.cli import flag, opt
+from shared.kernel.config import drop_stale_env
+from shared.domain import schema
 from pipelines import extract, paper_db
 
 LINE = '=' * 64
@@ -112,7 +112,7 @@ def main():
     # **先验一把再开跑**：上一版一头扎进去，烧了 28 次失败才发现密钥不对。
     # 「验证要验到事情真的发生」（踩坑 #66 的判据），这里就是那个验证点。
     if provider == 'deepseek':
-        from adapters.llm_client import check_key
+        from shared.adapters.llm_client import check_key
         ok, msg = check_key()
         print(f'\n 密钥自检：{msg}')
         if not ok:

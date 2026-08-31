@@ -10,7 +10,7 @@ import time
 
 import pytest
 
-from core import jobs, paths
+from shared.kernel import jobs, paths
 from pipelines import deepread
 from pipelines.deepread import main_text, merge as merge_mod
 

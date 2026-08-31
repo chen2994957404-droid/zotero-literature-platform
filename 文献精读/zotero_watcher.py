@@ -11,26 +11,26 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import heartbeat, paths, role
-from core.cli import flag
+from shared.kernel import heartbeat, paths, role
+from shared.kernel.cli import flag
 
-from core.config import get_key, need_site, get_site
+from shared.kernel.config import get_key, need_site, get_site
 
 # ===== 运行日志 =====
-# 走 core.log：带时间戳、同时打屏和落盘、超过 5MB 自动轮转。
+# 走 shared.kernel.log：带时间戳、同时打屏和落盘、超过 5MB 自动轮转。
 # （此前这里是「把内置 print 整个换掉」的 hack —— 读代码的人会以为只是打屏，
 #   实际在写文件；而且没有轮转，常驻服务的日志只会一直长下去。）
-from core.log import get_logger
+from shared.kernel.log import get_logger
 print = get_logger('zotero_watcher')       # 保留 print 这个名字，下方几十处调用不用改
 
 # ===== 配置 =====
 # Zotero 的读取能力全部走公理件 —— 重构前这里重复实现了 zget / find_pdf /
-# has_si / SUPP_PAT，与 adapters/zotero_client 里的同名实现并存（违反宪法铁律 1）。
-from adapters import zotero_client as zotero
-from adapters.zotero_client import (zget, find_pdf as _find_pdf, has_si,
+# has_si / SUPP_PAT，与 shared/adapters/zotero_client 里的同名实现并存（违反宪法铁律 1）。
+from shared.adapters import zotero_client as zotero
+from shared.adapters.zotero_client import (zget, find_pdf as _find_pdf, has_si,
                                     find_child_attachment, upload_attachment,
                                     USER_ID, WEB_USER_ID, STORAGE_DIR)
-# 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
+# 本机配置（Zotero 用户ID / 附件目录）统一从 shared.kernel.config 读，换电脑只改 .env
 # ── 标签状态机（用户定，2026-07-25）───────────────────────────────
 # 打「待处理」→ 自动检测有哪些附件、哪些还没精读 → 补做缺的 → 按结果换状态标签。
 # 状态互斥：一篇文献同一时间只有一个状态标签。
@@ -76,7 +76,7 @@ def process_item(item):
 
     # ── 精读流水线（原来是三段 subprocess，现在是一次函数调用）──
     # 「哪些步骤该跳过、哪个失败了不该拖累别的」全在 pipelines/deepread 里，
-    # 并且每一步都记进 core.jobs（谁产的、哪个模型、哪版提示词、失败原因）。
+    # 并且每一步都记进 shared.kernel.jobs（谁产的、哪个模型、哪版提示词、失败原因）。
     r = deepread.run(key, item=item, pdf_path=pdf_path, si_exists=si_exists,
                      provider=PROVIDER, model=MODEL, llm_key=DEEPSEEK_KEY, log=print)
 
@@ -146,7 +146,7 @@ def set_state_tag(item_key, web_uid, new_state):
 
     **策略在这里，写在适配层**：哪些标签互斥是本工作流的业务规则，
     而「怎么安全地写进 Zotero」（鉴权、版本冲突、机器角色守卫）是
-    `adapters.zotero_client` 的事。重构前这两件事搅在一起，
+    `shared.adapters.zotero_client` 的事。重构前这两件事搅在一起，
     于是同样的写实现被抄了三份（踩坑：守卫也要跟着抄三遍，漏一处闸就没了）。
     """
     try:
@@ -182,7 +182,7 @@ def should_process(key, version, seen, now):
       2. **距上次尝试超过 30 分钟** —— 给「上次没做完」一个自愈机会，
          而不是等到 watcher 重启
 
-    为什么不怕重跑烧钱：每一步都是幂等的（`core.jobs` + 产物检查），
+    为什么不怕重跑烧钱：每一步都是幂等的（`shared.kernel.jobs` + 产物检查），
     重跑一篇已完成的只花几百毫秒、零 API 调用。
     """
     last = seen.get(key)
@@ -207,9 +207,9 @@ def log_key_status():
     而且拒启会让「服务没了」和「密钥坏了」两件事长得一样。
     """
     try:
-        from adapters.llm_client import check_key as _ds
-        from adapters.pdf_parse import check_token as _mineru
-        from adapters.zotero_client import check_key as _zot
+        from shared.adapters.llm_client import check_key as _ds
+        from shared.adapters.pdf_parse import check_token as _mineru
+        from shared.adapters.zotero_client import check_key as _zot
         bad = []
         for name, fn in (('DeepSeek', _ds), ('MineRU', _mineru)):
             ok, msg = fn()
@@ -234,7 +234,7 @@ def main():
     # 单实例锁：任务计划自启一份、看门狗又启一份时，第二份直接退出（踩坑 #30）。
     # 两份同时轮询会抢同一篇文献，导致重复精读/重复上传。
     try:
-        from core.proc_lock import single_instance, holder
+        from shared.kernel.proc_lock import single_instance, holder
         if not single_instance('zotero_watcher'):
             print(f'已有一份 watcher 在跑（PID={holder("zotero_watcher")}），本次退出')
             return
@@ -248,11 +248,11 @@ def main():
     # 后台线程固定节奏报活：精读一篇要几分钟到几十分钟，期间主线程根本回不到
     # 循环顶部。原来把心跳写在循环开头，于是**正在干活的 watcher 会被看门狗当成
     # 卡死杀掉**（主力机一个月被误杀约 20 次，每次都白花一份 MineRU + DeepSeek）。
-    # 见 core/heartbeat.py 与踩坑记录。
+    # 见 shared/kernel/heartbeat.py 与踩坑记录。
     heartbeat.start('watcher')
     while True:
         # 「还活着」由后台线程报；这里只记「有进展」——
-        # 两个信号回答的是不同问题，见 core/heartbeat.py 开头的说明。
+        # 两个信号回答的是不同问题，见 shared/kernel/heartbeat.py 开头的说明。
         try:
             q = urllib.parse.quote(' || '.join(TRIGGER_TAGS))
             items = zget(f'/users/{USER_ID}/items?tag={q}&limit=25')
@@ -292,7 +292,7 @@ def main():
 if __name__ == '__main__':
     # 机器角色不对时给一句人话，而不是甩一坨 traceback 到日志里 ——
     # 这个失败在主力机首次部署时必然发生一次（ROLE 默认是最安全的 dev）。
-    from core import errors as _err
+    from shared.kernel import errors as _err
     try:
         main()
     except _err.WrongMachineError as _e:

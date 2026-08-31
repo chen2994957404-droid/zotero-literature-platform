@@ -13,7 +13,7 @@ try:
 except Exception:
     pass
 
-from core import jobs
+from shared.kernel import jobs
 from pipelines import deepread
 from pipelines.deepread import main_text, merge as merge_mod, si as si_mod
 

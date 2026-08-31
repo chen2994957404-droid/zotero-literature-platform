@@ -5,9 +5,9 @@
 """
 import sys, os
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from domain.figure_crop import crop_figures
+from shared.domain.figure_crop import crop_figures
 from pipelines.chart_digitize import digitize
-from core import paths
+from shared.kernel import paths
 
 def main():
     lib = paths.LIBRARY

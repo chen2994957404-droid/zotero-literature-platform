@@ -7,11 +7,11 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths
+from shared.kernel import paths
 
-from core.config import need_site, get_site
+from shared.kernel.config import need_site, get_site
 
-# 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
+# 本机配置（Zotero 用户ID / 附件目录）统一从 shared.kernel.config 读，换电脑只改 .env
 _UID = need_site('ZOTERO_USER_ID')
 _STORAGE = need_site('ZOTERO_STORAGE')
 base = get_site('ZOTERO_API_HOST') + f'/api/users/{_UID}'

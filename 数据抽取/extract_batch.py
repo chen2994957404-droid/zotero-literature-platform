@@ -16,11 +16,11 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths, role
-from core.paths import ROOT as _ROOT
+from shared.kernel import paths, role
+from shared.kernel.paths import ROOT as _ROOT
 
-from core.cli import opt, positionals, flag
-from core.config import need_site, get_site
+from shared.kernel.cli import opt, positionals, flag
+from shared.kernel.config import need_site, get_site
 
 # 同文件夹脚本互相 import（标准开头只把项目根加进 sys.path，兄弟脚本目录需自己加）
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -28,11 +28,11 @@ sys.path.insert(0, SCRIPT_DIR)
 
 # 字段与提示词来自纯逻辑环，调用来自编排环 —— 不再 import 兄弟脚本
 # （脚本既是程序又是库，是这次重构要根治的病）
-from domain.schema import SYS, build_user_prompt, hierarchical_body
+from shared.domain.schema import SYS, build_user_prompt, hierarchical_body
 from pipelines.extract import llm_json as deepseek_json, _model
 # 公理件：Zotero 定位 + PDF 解析（定理编排公理，符合架构宪法）
-from adapters.zotero_client import find_pdf
-from adapters.pdf_parse import parse_pdf, PDFParseError
+from shared.adapters.zotero_client import find_pdf
+from shared.adapters.pdf_parse import parse_pdf, PDFParseError
 
 LIBRARY = paths.LIBRARY
 OUT_DIR = paths.STRUCTURED
@@ -41,7 +41,7 @@ MINERU_SCRIPT = os.path.join(_ROOT, '文献精读', 'mineru_parse.py')
 # Zotero 本地读 + 存储路径（与 zotero_watcher.py 一致）
 ZOTERO_LOCAL = get_site('ZOTERO_API_HOST') + '/api'
 ZH = {'Zotero-Allowed-Request': 'true'}
-# 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
+# 本机配置（Zotero 用户ID / 附件目录）统一从 shared.kernel.config 读，换电脑只改 .env
 USER_ID = need_site('ZOTERO_USER_ID')
 STORAGE_DIR = need_site('ZOTERO_STORAGE')
 

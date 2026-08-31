@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""结构化抽取的命令行入口 —— **逻辑已搬进 `pipelines/extract` 与 `domain/schema`**。
+"""结构化抽取的命令行入口 —— **逻辑已搬进 `pipelines/extract` 与 `shared/domain/schema`**。
 
 用法:
   python extract_structured.py               # 抽取所有未处理的文献（增量）
@@ -25,10 +25,10 @@
 
 搬家原因（阶段 3 下半，2026-08-27）：这个脚本此前既是程序又是库 ——
 watcher 用 subprocess 拉它，另外两个脚本 `from extract_structured import ...`。
-现在字段 schema 在 `domain/schema`（纯逻辑，十年不变），
+现在字段 schema 在 `shared/domain/schema`（纯逻辑，十年不变），
 读写与编排在 `pipelines/extract`（需求一变就变），本文件只剩参数解析。
 
-**要改抽什么字段，去改 `domain/schema/__init__.py`，并把 `SCHEMA_VER` +1。**
+**要改抽什么字段，去改 `shared/domain/schema/__init__.py`，并把 `SCHEMA_VER` +1。**
 """
 import os
 import sys
@@ -40,10 +40,10 @@ try:
 except Exception:
     pass
 
-from core import paths, role
-from core.cli import flag, pos
-from core.config import drop_stale_env
-from domain import schema
+from shared.kernel import paths, role
+from shared.kernel.cli import flag, pos
+from shared.kernel.config import drop_stale_env
+from shared.domain import schema
 from pipelines import extract, paper_db
 
 

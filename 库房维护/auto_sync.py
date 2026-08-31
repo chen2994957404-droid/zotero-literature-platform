@@ -19,17 +19,17 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths, role
-from core.cli import flag
-from core.paths import ROOT as _ROOT
+from shared.kernel import paths, role
+from shared.kernel.cli import flag
+from shared.kernel.paths import ROOT as _ROOT
 
-from core.config import need_site, get_site
-from core.subproc import run as _sub_run   # 子进程统一走积木：不弹窗+超时+UTF-8
+from shared.kernel.config import need_site, get_site
+from shared.kernel.subproc import run as _sub_run   # 子进程统一走积木：不弹窗+超时+UTF-8
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
-from core.log import get_logger
+from shared.kernel.log import get_logger
 log = get_logger('auto_sync')   # 统一日志：时间戳 + 落盘 + 自动轮转
 
 
@@ -64,7 +64,7 @@ def _revive(task_name, disp, probe_url, headers=None, wait=30):
 
 def check_deps():
     """检查依赖服务。缺了就跳过本轮（下轮再来），不报错刷屏。"""
-    # 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
+    # 本机配置（Zotero 用户ID / 附件目录）统一从 shared.kernel.config 读，换电脑只改 .env
     _UID = need_site('ZOTERO_USER_ID')
     _STORAGE = need_site('ZOTERO_STORAGE')
     zot = _alive(get_site('ZOTERO_API_HOST') + f'/api/users/{_UID}/items/top?limit=1',

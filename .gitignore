@@ -72,7 +72,7 @@ workflow_data/_qwen_compare/
 build/
 dist/
 .pytest_cache/
-平台管理/*.log
+host/**/*.log
 
 # --- 生成物与运行时缓存：不进版本库（2026-08-26，两机冲突的根因）---
 # 判据：**进版本库的文件必须只有一个生产者。**

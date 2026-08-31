@@ -8,12 +8,12 @@ try:
 except Exception:
     pass
 
-from core import role
-from core.cli import flag
-from core.config import get_key, need_site
-from adapters import zotero_client as zotero
+from shared.kernel import role
+from shared.kernel.cli import flag
+from shared.kernel.config import get_key, need_site
+from shared.adapters import zotero_client as zotero
 
-# 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
+# 本机配置（Zotero 用户ID / 附件目录）统一从 shared.kernel.config 读，换电脑只改 .env
 USER_ID = need_site('ZOTERO_USER_ID')
 KEY = get_key('ZOTERO_API_KEY')
 STORAGE = need_site('ZOTERO_STORAGE')

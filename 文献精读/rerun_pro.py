@@ -11,7 +11,7 @@
 2026-08-27 重写：原版读的是 `workflow_data/zotero_work` 和 `workflow_data/summary`,
 这两个目录在现行数据契约下**根本不存在** —— 也就是说它已经死了很久，
 一运行就抛 FileNotFoundError，而根目录的 .bat 还在正常地把用户引过来。
-现在改为走 `core.paths` 与 `pipelines.deepread`，并且旧版自动备份成 .bak。
+现在改为走 `shared.kernel.paths` 与 `pipelines.deepread`，并且旧版自动备份成 .bak。
 """
 import os
 import shutil
@@ -25,9 +25,9 @@ except Exception:
 
 import json
 
-from core import jobs, paths, role
-from core.cli import flag, pos
-from core.config import get_key
+from shared.kernel import jobs, paths, role
+from shared.kernel.cli import flag, pos
+from shared.kernel.config import get_key
 from pipelines import deepread
 from pipelines.deepread import main_text
 

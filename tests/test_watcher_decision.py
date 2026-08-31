@@ -14,7 +14,7 @@ import sys
 
 import pytest
 
-from core import paths
+from shared.kernel import paths
 
 
 def _load():

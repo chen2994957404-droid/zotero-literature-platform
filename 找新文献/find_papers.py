@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """供Claude调用：按检索词去 OpenAlex 取真实文献，返回给Claude判断筛选。
 用法: python find_papers.py "检索词" [数量]
-（2026-08-11 按 docs/代码规范_标准脚本模板.md 统一：函数化 + core/cli 取参 + 标准开头）
+（2026-08-11 按 docs/代码规范_标准脚本模板.md 统一：函数化 + shared/kernel/cli 取参 + 标准开头）
 """
 import os, sys, re, json, urllib.request
 
@@ -11,9 +11,9 @@ try:
 except Exception:
     pass
 
-from core.cli import pos
-from adapters import openalex
-from core.config import need_site, get_site
+from shared.kernel.cli import pos
+from shared.adapters import openalex
+from shared.kernel.config import need_site, get_site
 
 
 def _norm(text):

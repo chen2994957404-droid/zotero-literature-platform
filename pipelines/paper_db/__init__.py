@@ -9,7 +9,7 @@
 为什么此前答不了：`key_properties` 存的是 `'tensile strength: 12 MPa'` 这种人话，
 人能看，机器比不了大小；而 `compare.md` 是一张给人竖着看的表，不能筛也不能分组。
 
-设计约定（与 `core.jobs` 一致，理由也一致）：
+设计约定（与 `shared.kernel.jobs` 一致，理由也一致）：
     · **库是索引，不是真相。**真相永远是 `structured/<key>.json`。
       删了随时 `rebuild()` 重建，代价是零 —— 所以本模块从不「增量维护」，
       只有整库重建，省掉一整类「库和文件不同步」的 bug。
@@ -17,8 +17,8 @@
     · **不做单位换算**：MPa 和 kPa 混着时宁可让人看见。查询按「名字 + 单位」一起筛。
 
 它组合了什么：
-    core.paths（库文件放哪、去哪读 JSON）
-  + domain.schema（有哪些字段、来源档次、性能字符串怎么拆成数）
+    shared.kernel.paths（库文件放哪、去哪读 JSON）
+  + shared.domain.schema（有哪些字段、来源档次、性能字符串怎么拆成数）
 
 两张表：
     papers      一篇一行，schema 的每个字段一列，外加 tier / source / si_used / schema_ver
@@ -36,8 +36,8 @@ import json
 import os
 import sqlite3
 
-from core import paths
-from domain import schema
+from shared.kernel import paths
+from shared.domain import schema
 
 # schema 的字段都存成 TEXT（列表字段 join 成一行文本，原样可读）
 _FIELDS = list(schema.SCHEMA.keys())

@@ -23,10 +23,10 @@
   - match_many(papers)     → 批量对照（批量向量化，省调用）
   - Ollama 没跑时自动降级为「只做精确去重」，不阻断主流程
 
-依赖：adapters.embed（本地 bge-m3，免费）、adapters.zotero_client、adapters.vectordb。
+依赖：shared.adapters.embed（本地 bge-m3，免费）、shared.adapters.zotero_client、shared.adapters.vectordb。
 """
 import os, sys, re, time
-from core import paths
+from shared.kernel import paths
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -51,7 +51,7 @@ def build_index(force=False):
         return _index_cache['titles'], _index_cache['dois']
     titles, dois = set(), set()
     try:
-        from adapters.zotero_client import zget, USER_ID
+        from shared.adapters.zotero_client import zget, USER_ID
         start = 0
         while True:
             d = zget(f'/users/{USER_ID}/items/top?limit=100&start={start}')
@@ -75,7 +75,7 @@ def build_index(force=False):
 def _collection():
     """取向量库。拿不到返回 None（降级为只做精确去重，而不是整个功能失效）。"""
     try:
-        from adapters import vectordb
+        from shared.adapters import vectordb
         return vectordb.open_store()
     except Exception:
         return None
@@ -114,7 +114,7 @@ def match_many(papers, top_n=3, topic=None):
     if coll is None or not pending:
         return results
     try:
-        from adapters.embed import embed as embed_batch
+        from shared.adapters.embed import embed as embed_batch
         texts = [_text_of(papers[i]) for i in pending]
         # topic 一并向量化：**只看「跟我的库像不像」是不够的**（踩坑 #38）。
         # 关键词检索的结果天然贴题（是搜出来的），但雪球来的只保证「跟种子有引用关系」，
@@ -195,7 +195,7 @@ def pick_seeds(topic, n=4):
     if coll is None:
         return []
     try:
-        from adapters.embed import embed as embed_batch
+        from shared.adapters.embed import embed as embed_batch
         qv = embed_batch([topic])[0]
         # 多取一些再按 DOI 去重 —— 向量库是按文本块存的，同一篇会命中多次
         hits = coll.query(qv, n=max(20, n * 6))

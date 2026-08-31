@@ -5,8 +5,8 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths
-from domain import schema
+from shared.kernel import paths
+from shared.domain import schema
 from pipelines import paper_db
 
 RECS = [

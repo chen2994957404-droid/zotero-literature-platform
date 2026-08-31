@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""core.paths 的单元测试 —— 纯离线、不碰真实数据、毫秒级。"""
+"""shared.kernel.paths 的单元测试 —— 纯离线、不碰真实数据、毫秒级。"""
 import os
 import pytest
 
-from core import paths
+from shared.kernel import paths
 
 
 class TestCheckKey:
@@ -97,15 +97,15 @@ class TestStateDB:
         assert paths.state_db() == os.path.join(paths.DATA, 'state.db')
 
     def test_算路径不产生副作用(self):
-        # 只是算个路径，不该真的建库（core.jobs 用到时才建）
+        # 只是算个路径，不该真的建库（shared.kernel.jobs 用到时才建）
         paths.state_db()
 
 
 class TestRoot:
     def test_ROOT指向项目根(self):
-        # 项目根的特征：有 pyproject.toml 和 modules/
+        # 项目根的特征：有 pyproject.toml 和 shared/
         assert os.path.isfile(os.path.join(paths.ROOT, 'pyproject.toml'))
-        assert os.path.isdir(os.path.join(paths.ROOT, 'core'))
+        assert os.path.isdir(os.path.join(paths.ROOT, 'shared'))
 
     def test_ROOT与当前工作目录无关(self, tmp_path, monkeypatch):
         before = paths.ROOT

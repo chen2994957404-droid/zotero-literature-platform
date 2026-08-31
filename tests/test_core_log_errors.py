@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
-"""core.log 与 core.errors 的单元测试 —— 纯离线。"""
+"""shared.kernel.log 与 shared.kernel.errors 的单元测试 —— 纯离线。"""
 import logging.handlers
 import os
 
 import pytest
 
-from core import errors, paths
-from core.log import Log, get_logger
+from shared.kernel import errors, paths
+from shared.kernel.log import Log, get_logger
 
 
 # ══════════════════════════════════════════════════════════════════════
-# core.errors
+# shared.kernel.errors
 # ══════════════════════════════════════════════════════════════════════
 class TestErrorTaxonomy:
     """分类的唯一目的是让调用方能决定「该拿它怎么办」，所以只测这一点。"""
@@ -64,7 +64,7 @@ class TestErrorTaxonomy:
 
 
 # ══════════════════════════════════════════════════════════════════════
-# core.log
+# shared.kernel.log
 # ══════════════════════════════════════════════════════════════════════
 @pytest.fixture
 def tmp_logger(tmp_path, monkeypatch):
@@ -124,7 +124,7 @@ class TestLog:
             h.close(); a._logger.removeHandler(h)
 
     def test_会轮转不会无限长(self, tmp_logger):
-        """常驻服务的日志此前只会一直长下去，这是引入 core.log 的原因之一。"""
+        """常驻服务的日志此前只会一直长下去，这是引入 shared.kernel.log 的原因之一。"""
         fh = [h for h in tmp_logger._logger.handlers
               if isinstance(h, logging.handlers.RotatingFileHandler)]
         assert fh, '没挂轮转 handler'

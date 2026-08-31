@@ -45,11 +45,11 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths
+from shared.kernel import paths
 
-from core.cli import pos, flag, opt
+from shared.kernel.cli import pos, flag, opt
 from pipelines.lib_match import match_many, rank
-from adapters import sciverse
+from shared.adapters import sciverse
 
 
 def fetch_one(query, limit, year_from, use_openalex, prefer):
@@ -155,7 +155,7 @@ def run_discovery(query, limit=25, n_queries=5, mode='survey', year_from=None,
     seeds, snow_added = [], 0
     if snowball_seeds > 0:
         from pipelines.lib_match import pick_seeds
-        from adapters.snowball import expand as snowball
+        from shared.adapters.snowball import expand as snowball
         # 同样用扩展式集合挑种子：原始输入可能是「PBS」这种无语义的缩写
         seeds = pick_seeds(' ; '.join(queries), n=snowball_seeds)
         if seeds:
@@ -255,7 +255,7 @@ def main():
     snow_stats = []
     if not flag('--不雪球'):
         from pipelines.lib_match import pick_seeds
-        from adapters.snowball import expand as snowball
+        from shared.adapters.snowball import expand as snowball
         seed_val = opt('--种子')
         seeds = pick_seeds(queries[0], n=int(seed_val) if seed_val and seed_val.isdigit() else 3)
         if seeds:

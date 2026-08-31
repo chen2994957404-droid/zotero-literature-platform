@@ -19,13 +19,13 @@ silly putty / shear stiffening gel / dilatant compound …
   - to_english(q)          → 单个英文检索式（中文问题转英文）
   - expand(q, mode, n)     → n 个互补的英文检索式（含原式）
 
-依赖：adapters.llm_client、core.config。LLM 不可用时降级为只返回原式。
+依赖：shared.adapters.llm_client、shared.kernel.config。LLM 不可用时降级为只返回原式。
 """
 import os, sys, re
 
-from adapters.llm_client import chat
-from core.config import get_key, get_model
-from core.log import get_logger
+from shared.adapters.llm_client import chat
+from shared.kernel.config import get_key, get_model
+from shared.kernel.log import get_logger
 
 _log = get_logger('query_expand')     # 降级原因要落盘，否则没人查得出来
 

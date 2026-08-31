@@ -20,10 +20,10 @@ try:
 except Exception:
     pass
 
-from core.cli import positionals, opt
-from adapters.sciverse import ask_evidence, available, SciverseError
-from adapters.llm_client import chat
-from core.config import get_key, get_model
+from shared.kernel.cli import positionals, opt
+from shared.adapters.sciverse import ask_evidence, available, SciverseError
+from shared.adapters.llm_client import chat
+from shared.kernel.config import get_key, get_model
 
 SYS = ('你是科研文献助手。请**只根据下面提供的文献片段**回答用户问题，用中文，准确专业。'
        '每个关键论断后面用 [1] [2] 这样的编号标出依据来自哪条片段。'

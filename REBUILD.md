@@ -245,7 +245,7 @@ watcher/watchdog 作为该工具的常驻服务放 `tools/deepread/watcher.py`
 
 | 窗 | 内容 | 状态 | 实际做了什么 |
 |---|---|---|---|
-| R1 | 开分支 + 建骨架 + 搬 shared/ 与 host/ | [ ] | |
+| R1 | 开分支 + 建骨架 + 搬 shared/ 与 host/ | [x] | `rebuild` 分支已开。`core/domain/adapters` → `shared/{kernel,domain,adapters}`；`平台管理`+`MCP服务` → `host/{panel,doctor,deploy,codegen,mcp}`，中文脚本名换成 ASCII；115 个文件批量改 import；`paths.py` 新增 `CODE_ROOTS`、`CODE_RINGS` 改成带斜杠相对路径；pyproject 改成 `tools*/shared*/host*/pipelines*` 并重装；删 `归档_旧版本`/pycache/egg-info；3 个 .bat 内部路径已改。**pytest 195 全过、离线体检 10/0/0、完整体检 16/2/0 与重构前基线一致。**踩坑 #78 #79 #80。 |
 | R2 | 切出 deepread / extract / paperdb / digitize | [ ] | |
 | R3 | 切出 ask / askworld / discover / snowball / direction / curate | [ ] | |
 | R4 | 每工具补齐五件套(tool.toml / README / SKILL / cli / mcp) | [ ] | |
@@ -297,6 +297,7 @@ watcher/watchdog 作为该工具的常驻服务放 `tools/deepread/watcher.py`
 做完之后 `pipelines/` 与全部中文文件夹应该是空的 → **删掉**。
 
 **验收**:`ls` 根目录不再有中文文件夹和 `pipelines/`;十个工具全部可 import。
+⚠ 删掉 `pipelines/` 之后，记得把 `pyproject.toml` 的 `packages.find` 里的 `"pipelines*"` 一并删掉，再重装一次包。
 
 ---
 

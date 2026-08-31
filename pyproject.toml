@@ -35,9 +35,12 @@ dependencies = [
 dev = ["pytest>=8.0"]
 
 [tool.setuptools.packages.find]
-# 只把「代码环」纳入包；中文文件夹是工作流脚本，阶段 3~4 才迁入 pipelines/
-# core / domain / adapters / pipelines 现在还不存在，写在这里是为了它们一出现就自动生效
-include = ["modules*", "core*", "domain*", "adapters*", "pipelines*"]
+# 重构后的三个顶层包（见 REBUILD.md 第一节）：
+#   tools*   一个工具一个自包含的包
+#   shared*  被 >=2 个工具用到的共用件（kernel / domain / adapters）
+#   host*    平台自身（面板 / 体检 / 部署 / 生成器 / MCP）
+# pipelines* 是搬家途中的临时住户：R2/R3 窗把它拆进 tools/ 之后就从这里删掉。
+include = ["tools*", "shared*", "host*", "pipelines*"]
 namespaces = true
 
 [tool.pytest.ini_options]

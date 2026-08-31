@@ -13,7 +13,7 @@ import os
 import re
 import pytest
 
-from core import paths
+from shared.kernel import paths
 
 ROOT = paths.ROOT
 
@@ -46,7 +46,8 @@ def _rel(p):
 # 守卫一：数据契约只有一个实现
 # ══════════════════════════════════════════════════════════════════════
 # 允许直接写 'workflow_data' 字面量的文件（数据契约的实现处 + 它的测试）
-PATHS_OWNERS = {'core/paths.py', 'tests/test_architecture.py', 'tests/test_core_paths.py'}
+PATHS_OWNERS = {'shared/kernel/paths.py', 'tests/test_architecture.py',
+                'tests/test_core_paths.py'}
 
 # 「这一行在拼路径」的特征
 _PATH_BUILDING = ('os.path.join', 'glob', 'open(', 'os.makedirs',
@@ -54,7 +55,7 @@ _PATH_BUILDING = ('os.path.join', 'glob', 'open(', 'os.makedirs',
 
 
 def test_数据目录路径只在core_paths里拼装():
-    """除 core/paths.py 外，谁都不许自己拼 workflow_data 的路径。
+    """除 shared/kernel/paths.py 外，谁都不许自己拼 workflow_data 的路径。
 
     为什么：路径散落各处 = 数据契约无法被保证。改一次目录布局要改几十处，
     漏一处就是一个只在运行时才暴露的 bug。
@@ -72,7 +73,7 @@ def test_数据目录路径只在core_paths里拼装():
             if any(t in line for t in _PATH_BUILDING):
                 offenders.append(f'{rel}:{i}: {line.strip()[:90]}')
     assert not offenders, (
-        '这些地方在自己拼数据目录路径，应改用 core.paths：\n  '
+        '这些地方在自己拼数据目录路径，应改用 shared.kernel.paths：\n  '
         + '\n  '.join(offenders)
         + '\n（确有必要的，行尾加 "# paths-exempt" 并写明理由）')
 
@@ -96,7 +97,7 @@ def _ring_of(rel_path):
 
 
 def test_依赖方向不许反向():
-    """core 不许 import domain/adapters/pipelines/apps，以此类推。"""
+    """shared.kernel 不许 import shared.domain/shared.adapters/tools/host，以此类推。"""
     violations = []
     for f in _py_files():
         rel = _rel(f)
@@ -162,7 +163,7 @@ def test_只有adapters环可以联网():
     assert not offenders, (
         '只有 adapters 环可以联网，其余环必须通过适配器：' + _NL
         + _NL.join(sorted(offenders))
-        + _NL + '做法：把这次外部调用包成 adapters/<服务名>，本环只调它。')
+        + _NL + '做法：把这次外部调用包成 shared/adapters/<服务名>，本环只调它。')
 
 
 def test_只有adapters环可以用外部服务客户端():
@@ -183,7 +184,7 @@ def test_纯逻辑环不许有IO也不许知道数据放在哪():
     """domain 的两条禁令，第二条最容易被忽略但最关键。
 
     ① 不许联网、不许起子进程 —— 保证它能离线、毫秒级地被测试
-    ② **不许 import core.paths** —— domain 永远不知道文件放在哪，
+    ② **不许 import shared.kernel.paths** —— domain 永远不知道文件放在哪，
        路径一律由调用方传进来
 
     第二条是关键：一旦 domain 知道了 workflow_data 的布局，它就跟我们的
@@ -200,8 +201,8 @@ def test_纯逻辑环不许有IO也不许知道数据放在哪():
         for bad in _NETWORK + _EXTERNAL + ['subprocess']:
             if bad in mods:
                 offenders.append(f'{rel}: 用了 {bad}（domain 不许有 I/O）')
-        if any(m == 'core.paths' or m.startswith('core.paths.') for m in mods):
-            offenders.append(f'{rel}: import 了 core.paths —— '
+        if any(m == 'shared.kernel.paths' or m.startswith('shared.kernel.paths.') for m in mods):
+            offenders.append(f'{rel}: import 了 shared.kernel.paths —— '
                              f'domain 不该知道文件放在哪，路径请由调用方传进来')
     assert not offenders, 'domain 是纯逻辑环：' + _NL + _NL.join(sorted(offenders))
 
@@ -246,7 +247,7 @@ def test_项目内的import都能解析到真实存在的包():
 
     这里连**函数体内的 import** 一起扫，就是为了堵住这种「只在特定操作下才发作」的洞。
     """
-    known = set(paths.CODE_RINGS)
+    known = set(paths.CODE_ROOTS)
     stale = {'modules'}          # 已经不存在的历史包名
     offenders = []
     for f in _py_files():
@@ -283,7 +284,7 @@ def test_项目内的import都能解析到真实存在的包():
 # ══════════════════════════════════════════════════════════════════════
 # 编程端（A 机）和运行端（B 机）**共用同一个 Zotero 账号**。
 # 编程端一旦回写，污染的是真实文献库，而且立刻同步到主力机。
-# 所以每个写 Zotero 的地方都必须先过 core.role.require_prod。
+# 所以每个写 Zotero 的地方都必须先过 shared.kernel.role.require_prod。
 
 _ZOTERO_WRITE_HOST = 'api.zotero.org'      # Zotero 本地 API 只读，写只能走这个域名
 _GUARD_CALL = 'role.require_prod'
@@ -292,10 +293,10 @@ _GUARD_CALL = 'role.require_prod'
 _GUARD_EXEMPT = {
     'tests/test_architecture.py',
     'tests/test_core_role.py',
-    'core/role.py',
+    'shared/kernel/role.py',
 }
 
-# 曾经有过一个「只读的云端封装」豁免名单（adapters/zotero_client 只读云端时）。
+# 曾经有过一个「只读的云端封装」豁免名单（shared/adapters/zotero_client 只读云端时）。
 # 2026-08-27 把三份 Zotero 写实现收进该适配层之后，它真的会写了，
 # 也真的带上了守卫 —— 豁免与配套的「必须保持只读」检查一并撤销。
 _READONLY_WEB = set()
@@ -471,7 +472,7 @@ def test_守卫必须在函数体里而不是模块顶层():
 
 # 这些文件由程序生成或运行时改写，必须保持「未跟踪」
 _MUST_NOT_TRACK = [
-    'HANDOVER.md',                       # 交接.py 生成，面板上有按钮，两台都会点
+    'HANDOVER.md',                       # handover.py 生成，面板上有按钮，两台都会点
     'workflow_data/_last_search.json',   # 每次「找新文献」都重写
 ]
 
@@ -518,13 +519,14 @@ def test_用户不可重建的数据仍在版本库里():
 # 「用来修好环境的工具」自己被环境卡死，是最难受的一类故障 ——
 # 用户拿不到任何有用信息，只有一行 ModuleNotFoundError。
 # 2026-08-26 真实发生：主力机从没装过包，而 更新平台.py 顶上写着
-# `from core import paths, role`，于是那个「第 2 步就是装包」的脚本自己起不来。
+# `from shared.kernel import paths, role`，于是那个「第 2 步就是装包」的脚本自己起不来。
 
 # 这些脚本必须能在「包还没装好」的机器上跑起来
 BOOTSTRAP_SCRIPTS = [
-    '平台管理/更新平台.py',      # 它要做的事情之一就是装包
-    '平台管理/诊断报告.py',      # 出问题时才用，不能要求环境是好的
-    '平台管理/打开面板.py',      # 面板起不来时要靠它定位，自己不能也起不来
+    'host/deploy/update.py',       # 它要做的事情之一就是装包
+    'host/doctor/report.py',       # 出问题时才用，不能要求环境是好的
+    'host/panel/open_panel.py',    # 面板起不来时要靠它定位，自己不能也起不来
+    'host/panel/launcher.py',      # 同上：它存在的意义就是接住 import 期的异常
 ]
 
 # 项目自己的顶层包

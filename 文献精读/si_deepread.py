@@ -18,7 +18,7 @@ try:
 except Exception:
     pass
 
-from core.cli import pos
+from shared.kernel.cli import pos
 from pipelines.deepread.si import read_si, SIFailed
 
 

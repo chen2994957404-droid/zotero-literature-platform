@@ -11,13 +11,13 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths
+from shared.kernel import paths
 
-from adapters import vectordb
+from shared.adapters import vectordb
 
-from core.cli import positionals
-from core.config import get_key, get_model
-from adapters.embed import embed as _embed_batch
+from shared.kernel.cli import positionals
+from shared.kernel.config import get_key, get_model
+from shared.adapters.embed import embed as _embed_batch
 
 VECTOR_DB = paths.VECTOR_DB
 DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')

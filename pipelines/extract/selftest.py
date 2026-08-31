@@ -5,8 +5,8 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import jobs, paths
-from domain import schema
+from shared.kernel import jobs, paths
+from shared.domain import schema
 from pipelines import extract
 
 KEY = 'ZZZZ0002'

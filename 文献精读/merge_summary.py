@@ -17,8 +17,8 @@ try:
 except Exception:
     pass
 
-from core import paths
-from core.cli import pos, flag
+from shared.kernel import paths
+from shared.kernel.cli import pos, flag
 from pipelines.deepread.merge import merge
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))

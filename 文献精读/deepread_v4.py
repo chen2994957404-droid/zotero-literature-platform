@@ -21,7 +21,7 @@ try:
 except Exception:
     pass
 
-from core.cli import pos
+from shared.kernel.cli import pos
 from pipelines.deepread.main_text import read_main, DeepreadFailed
 
 

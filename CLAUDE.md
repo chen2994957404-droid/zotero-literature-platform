@@ -3,7 +3,7 @@
 围绕 Zotero 的文献科研平台。用户是材料方向研究者（聚硼硅氧烷/动态键弹性体），**不懂编程**。
 本文件是**唯一入口**：想帮用户干活看【第一部分】，想改代码看【第二部分】。
 
-<!-- AUTO:结构 开始 · 由 平台管理/交接.py 生成，勿手改 -->
+<!-- AUTO:结构 开始 · 由 host/codegen/handover.py 生成，勿手改 -->
 
 ## 项目结构（自动同步，**不要 glob 根目录**）
 
@@ -11,40 +11,40 @@
 > 下面这棵树就是全部结构，不必再去扫。
 
 ```
-MCP服务/ （3 个脚本）
-    mcp_stdio.py、selftest.py、zotero_server.py
-adapters/  ← 外接口：唯一允许联网/用第三方库的一环（9 块）
-    embed、evalset、llm_client、openalex、pdf_parse、sciverse、snowball、vectordb、zotero_client
-core/  ← 内核：谁都依赖它，它不依赖任何人（10 块）
-    cli、config、proc_lock、subproc、errors.py、heartbeat.py、jobs.py、log.py、paths.py、role.py
 docs/                    ← 文档（16 份）
-domain/  ← 纯逻辑：不联网、不知道文件放在哪（3 块）
-    figure_crop、schema、si_filter
-pipelines/  ← 编排：把上面三者按顺序组合成能力（7 块）
-    chart_digitize、deepread、extract、lib_match、paper_db、paper_discovery、query_expand
+host/  ← 平台自身：让平台活着的东西（没人 import 它）（5 块）
+    codegen、deploy、doctor、mcp、panel
+launch/ （0 个脚本）
+pipelines/  ← 搬家途中的临时住户（R2/R3 窗拆进 tools/ 后删除）（8 块）
+    chart_digitize、deepread、direction_map、extract、lib_match、paper_db、paper_discovery、query_expand
+shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
+    kernel/  ← 基础设施：谁都依赖它，它不依赖任何人（10 块）
+        cli、config、proc_lock、subproc、errors.py、heartbeat.py、jobs.py、log.py、paths.py、role.py
+    domain/  ← 纯逻辑：不联网、不知道文件放在哪（4 块）
+        bibliometrics、figure_crop、schema、si_filter
+    adapters/  ← 外接口：唯一允许联网/用第三方库的一环（10 块）
+        embed、evalset、llm_client、openalex、pdf_parse、sciverse、snowball、vectordb、wechat_seed、zotero_client
+specs/ （0 个脚本）
 tests/ （13 个脚本）
     test_adapters_vectordb.py、test_architecture.py、test_artifact_gaps.py、test_core_heartbeat.py、test_core_jobs.py、test_core_log_errors.py、test_core_paths.py、test_core_role.py…
-平台管理/ （8 个脚本）
-    health_check.py、panel.py、panel_launch.py、交接.py、打开面板.py、更新平台.py、查产物缺口.py、诊断报告.py
+tools/  ← 工具切片：一个工具 = 一个自包含的包（0 块）
 库内问答/ （4 个脚本）
     ask.py、ask_world.py、vectorize.py、vectorize_library.py
 库房维护/ （7 个脚本）
     auto_sync.py、autotag.py、backfill_meta.py、delete_junk.py、list_junk.py、tag_to_nested.py、zotero_rename.py
-归档_旧版本/ （2 个脚本）
-    build_deepread_workflow.py、watcher.py
-找新文献/ （7 个脚本）
-    brainstorm.py、collect.py、discover.py、find_papers.py、import_by_doi.py、search_global.py、zotero_add_thesis.py
+找新文献/ （8 个脚本）
+    brainstorm.py、collect.py、discover.py、find_papers.py、import_by_doi.py、search_global.py、zotero_add_thesis.py、方向地图.py
 数据抽取/ （7 个脚本）
     extract_batch.py、extract_library.py、extract_structured.py、filter_domain.py、查询库.py、试一试本地模型.py、重抽向导.py
 文献精读/ （12 个脚本）
     deepread_batch.py、deepread_v4.py、merge_summary.py、mineru_parse.py、refresh_summary_file.py、rerun_pro.py、si_batch.py、si_deepread.py…
 
-根目录文件：CLAUDE.md、LICENSE、README.md、pyproject.toml、requirements.txt、控制面板.bat、更新平台.bat、比一比两个模型.bat、精读监听.bat、诊断报告.bat、重抽缺SI的文献.bat
+根目录文件：CLAUDE.md、LICENSE、README.md、REBUILD.md、pyproject.toml、requirements.txt、控制面板.bat、更新平台.bat、比一比两个模型.bat、精读监听.bat、诊断报告.bat、重抽缺SI的文献.bat
 
 （workflow_data/ 是数据目录，3000+ 文件，**不要去 glob 它**）
 ```
 
-**积木 23 块**（`modules/`，原子能力）· **工作流 8 个**（用积木搭出来的功能；`归档_旧版本` 是废弃代码，不计入）
+**积木 26 块**（`shared/` 与 `pipelines/`，原子能力）· **还没切进 `tools/` 的老文件夹 5 个**
 
 进度、健康状况、下一步做什么 → 见 `HANDOVER.md`
 
@@ -70,15 +70,18 @@ tests/ （13 个脚本）
 上面的目录树就是全部结构，不必再扫 —— `workflow_data/` 有 3000+ 个数据文件，
 glob 根目录会直接淹掉上下文（实测：前 100 个结果全是精读图片）。
 
-`HANDOVER.md` 由 `python 平台管理/交接.py` 自动生成，全部抓自系统真实状态：
+`HANDOVER.md` 由 `python host/codegen/handover.py` 自动生成，全部抓自系统真实状态：
 当前健康状况、最近十次改动、评测集进展、待办、最近踩的坑。
 **本文件说「这个项目是什么」，交接文件说「我们做到哪了」，两者缺一不可。**
 
-## 目录结构（2026-08-06 重组）
+## 目录结构（2026-08-30 重构，R1 窗）
 
 ```
-文献精读/  库内问答/  数据抽取/  找新文献/  库房维护/  平台管理/  归档_旧版本/
-core/  domain/  adapters/  pipelines/   ← 代码四环（重构 v2），每块也有自己的 CLAUDE.md
+tools/    工具切片：一个工具 = 一个自包含的包（R2/R3 窗往里填）
+shared/   共用件：kernel（基础设施）/ domain（纯逻辑）/ adapters（唯一能联网的一层）
+host/     平台自身：panel 面板 · doctor 体检 · deploy 部署 · codegen 生成器 · mcp 协议层
+pipelines/ 与 文献精读/ 库内问答/ 数据抽取/ 找新文献/ 库房维护/
+          ← 搬家途中的临时住户，R2/R3 窗拆进 tools/ 之后删除
 ```
 
 **每个文件夹里都有自己的 `CLAUDE.md`。** 用户只选中某个文件夹时，那份就是完整上下文；
@@ -109,11 +112,11 @@ core/  domain/  adapters/  pipelines/   ← 代码四环（重构 v2），每块
 | 用户说 | 你怎么做 |
 |--------|---------|
 | "我库里关于XX有什么？" "帮我查查XX" | `python 库内问答/ask.py "问题"`（RAG 问答，中文答+附来源）|
-| "帮我找XX方向的文献" "补充点XX的文献" | `pipelines/paper_discovery` 的 `search(query)`，返回文献列表并标记库里已有 |
+| "帮我找XX方向的文献" "补充点XX的文献" | `pipelines/paper_discovery` 的 `search(query)`（R3 窗搬去 `tools/discover/`），返回文献列表并标记库里已有 |
 | "帮我横向比较XX" "这方向有什么规律/空白" | 读 `workflow_data/structured/compare.md`（研究论文横向对比表）；PBS 方向另有 `compare_PBS.md` |
 | "精读某篇文献" | 让他在 Zotero 打「待处理」标签即可。**状态机自动判断**：只有正文→精读正文→标「正文精读」；有SI→连SI一起精读并合并→标「全文精读」；已精读过的只补缺的部分不重跑。服务已开机自启。 |
 | "把某批文献的数据抽出来" | `python 数据抽取/extract_batch.py KEY1 KEY2`（自动 MineRU 解析+DeepSeek 精抽）|
-| "把论文图里的曲线变成数据" | `pipelines/chart_digitize` 的 `digitize()`，**必须用云端大模型**（本地7B会编假数据）|
+| "把论文图里的曲线变成数据" | `pipelines/chart_digitize` 的 `digitize()`（R2 窗搬去 `tools/digitize/`），**必须用云端大模型**（本地7B会编假数据）|
 | "帮我想想研究方向/idea" | 读 compare 表做横向关联分析（找机理×性能的空白格），或 `python 找新文献/brainstorm.py` |
 
 ## 现成数据资产（在哪找什么）
@@ -131,10 +134,10 @@ core/  domain/  adapters/  pipelines/   ← 代码四环（重构 v2），每块
 
 | 环 | 什么会让它改 | 能联网 |
 |---|---|---|
-| `core/` | 几乎不会（路径/配置/日志/异常/参数/锁） | 否 |
-| `domain/` | 只有我们自己想法变了（算法、格式、schema） | 否，且不许知道文件放在哪 |
-| `adapters/` | 外部世界变了（API 换版本、模型换代、换向量库） | **只有这一环** |
-| `pipelines/` | 需求一变就变（把上面三者按顺序组合） | 否 |
+| `shared/kernel/` | 几乎不会（路径/配置/日志/异常/参数/锁） | 否 |
+| `shared/domain/` | 只有我们自己想法变了（算法、格式、schema） | 否，且不许知道文件放在哪 |
+| `shared/adapters/` | 外部世界变了（API 换版本、模型换代、换向量库） | **只有这一环** |
+| `tools/` | 需求一变就变（把上面三者按顺序组合成一个工具） | 否 |
 
 「只有 adapters 可以联网」就是**「换掉 MineRU 只改一个文件」的全部保证**，
 架构守卫会强制它。→ 细则见 `code-redlines` skill。
@@ -173,7 +176,7 @@ core/  domain/  adapters/  pipelines/   ← 代码四环（重构 v2），每块
 用户打「待处理」标签即自动精读）、`OllamaService`（本地 Ollama，带正确 `OLLAMA_MODELS`）。
 
 **密钥存在系统凭据库**（Windows 凭据管理器），硬盘上没有明文。
-统一走 `core/config` 的 `get_key()`，加载顺序：环境变量 → 系统凭据库 → `.env`。
+统一走 `shared/kernel/config` 的 `get_key()`，加载顺序：环境变量 → 系统凭据库 → `.env`。
 用户在**控制面板**里填写与切换。
 
 服务报错、Ollama 失明、面板改了不生效 → **读 `troubleshoot` skill**。
@@ -194,10 +197,9 @@ core/  domain/  adapters/  pipelines/   ← 代码四环（重构 v2），每块
 
 ## ⚠ 正在进行架构重构 v2（2026-08-26 起）
 
-**先读 `docs/架构重构_v2总体设计.md`**：项目正在往四环收敛，依赖只能从上往下。
-阶段 0/1/2/3 上半已完成（精读线与结构化抽取搬进 `pipelines/`、
-Zotero 写操作收进 `adapters/zotero_client`、`core/jobs` 状态库建好）。
-**做到哪一步、下一步谁做什么 → `HANDOVER.md` 与 `docs/测试端与阶段3路线.md`**（别在这里维护第二份）。
+v2（四环）已被本次「按工具切片」的重构取代 —— **现在的唯一施工文件是 `REBUILD.md`**，
+台账在它第五节。`docs/架构重构_v2总体设计.md` 只作历史参考，别照它施工。
+**做到哪一窗 → `REBUILD.md` 的台账**（别在这里维护第二份）。
 
 **装一次才能跑**（换电脑/重装后必做）：`pip install -e . --no-deps`
 

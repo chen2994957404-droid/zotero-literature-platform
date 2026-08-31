@@ -3,7 +3,7 @@
 
 **为什么这条值得单独一个文件**：
 
-重构阶段 1 把 `zotero_watcher` 里的日志改成 `core.log` 时，顺手删了 `_LOG_DIR`，
+重构阶段 1 把 `zotero_watcher` 里的日志改成 `shared.kernel.log` 时，顺手删了 `_LOG_DIR`，
 但函数体深处还有一行 `os.path.join(_LOG_DIR, 'watcher_heartbeat.txt')` 没改。
 
 那次的验证是「模块能不能 import」—— **它通过了**，因为函数体里的 NameError
@@ -27,10 +27,10 @@ import os
 
 import pytest
 
-from core import paths
+from shared.kernel import paths
 
 ROOT = paths.ROOT
-SKIP_DIRS = set(paths.NOISE_DIRS) | {'归档_旧版本'}
+SKIP_DIRS = set(paths.NOISE_DIRS)
 
 # 模块级本来就存在的名字
 _MODULE_DUNDERS = {'__file__', '__name__', '__doc__', '__package__',

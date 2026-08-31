@@ -22,23 +22,23 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths, role
+from shared.kernel import paths, role
 
-from core.cli import flag
-from core.config import get_key, get_site, need_site
+from shared.kernel.cli import flag
+from shared.kernel.config import get_key, get_site, need_site
 
 # 同文件夹脚本互相 import（标准开头只把项目根加进 sys.path，兄弟脚本目录需自己加）
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 
 # 复用同一份 schema 与提示词，保证粗细两层字段一致
-from domain.schema import SCHEMA, SYS, build_user_prompt, hierarchical_body
+from shared.domain.schema import SCHEMA, SYS, build_user_prompt, hierarchical_body
 from pipelines.extract import write_compare_table as build_compare_table
 
 OUT_DIR = paths.STRUCTURED
 os.makedirs(OUT_DIR, exist_ok=True)
 
-# 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
+# 本机配置（Zotero 用户ID / 附件目录）统一从 shared.kernel.config 读，换电脑只改 .env
 USER_ID = need_site('ZOTERO_USER_ID')
 LOCAL = get_site('ZOTERO_API_HOST') + '/api/users/' + USER_ID
 LH = {'Zotero-Allowed-Request': 'true'}

@@ -10,13 +10,13 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths
+from shared.kernel import paths
 
-from core.cli import positionals
-from core.config import get_key, get_model
-from adapters.embed import embed as _embed_batch
-from adapters.llm_client import chat as _chat
-from adapters import vectordb
+from shared.kernel.cli import positionals
+from shared.kernel.config import get_key, get_model
+from shared.adapters.embed import embed as _embed_batch
+from shared.adapters.llm_client import chat as _chat
+from shared.adapters import vectordb
 
 VECTOR_DB = paths.VECTOR_DB
 DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')
@@ -24,7 +24,7 @@ DEEPSEEK_MODEL = get_model('ASK_MODEL')      # 可在控制面板切换
 TOP_K = 6
 
 # embedding 与 LLM 调用走公理件
-coll = vectordb.open_store()          # 向量库走适配层，换库只改 adapters/vectordb
+coll = vectordb.open_store()          # 向量库走适配层，换库只改 shared/adapters/vectordb
 
 
 def embed(text):

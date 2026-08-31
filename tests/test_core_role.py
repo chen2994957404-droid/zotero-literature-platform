@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""core.role 的单元测试 —— 机器角色守卫。
+"""shared.kernel.role 的单元测试 —— 机器角色守卫。
 
 这道闸挡的是**真实数据被污染**：两台机器共用同一个 Zotero 账号，
 编程端一旦回写，改的就是用户的真实文献库，而且立刻同步到主力机。
@@ -7,7 +7,7 @@
 """
 import pytest
 
-from core import errors, role
+from shared.kernel import errors, role
 
 
 @pytest.fixture
@@ -23,23 +23,23 @@ class TestDefault:
     def test_未设置时按dev处理(self, monkeypatch):
         """两种默认的代价不对称：默认 prod 会让编程端静默污染真实数据，
         默认 dev 只会让主力机响亮地拒绝一次。所以必须默认 dev。"""
-        monkeypatch.setattr('core.config.get_site', lambda name: '')
+        monkeypatch.setattr('shared.kernel.config.get_site', lambda name: '')
         assert role.current() == role.DEV
 
     @pytest.mark.parametrize('bad', ['production', '主力机', 'true', '1', 'PRD'])
     def test_值非法时也按dev处理(self, monkeypatch, bad):
         """写错值不能变成「放行」—— 那是最危险的失败方式。"""
-        monkeypatch.setattr('core.config.get_site', lambda name: bad if name == 'ROLE' else '')
+        monkeypatch.setattr('shared.kernel.config.get_site', lambda name: bad if name == 'ROLE' else '')
         assert role.current() == role.DEV
 
     def test_读配置抛异常时仍按dev处理(self, monkeypatch):
         def boom(name):
             raise RuntimeError('凭据库炸了')
-        monkeypatch.setattr('core.config.get_site', boom)
+        monkeypatch.setattr('shared.kernel.config.get_site', boom)
         assert role.current() == role.DEV
 
     def test_大小写和空白不影响识别(self, monkeypatch):
-        monkeypatch.setattr('core.config.get_site', lambda name: '  PROD \n')
+        monkeypatch.setattr('shared.kernel.config.get_site', lambda name: '  PROD \n')
         assert role.current() == role.PROD
 
 
@@ -90,12 +90,12 @@ class TestConfigured:
     def test_吃默认值不算配过(self, monkeypatch):
         """get_site 会把内置默认值 'dev' 一起返回，
         用它判断就永远分不清「配成了 dev」和「压根没配」。"""
-        monkeypatch.setattr('core.config.get_key',
+        monkeypatch.setattr('shared.kernel.config.get_key',
                             lambda name, default='': default)
         assert role.is_configured() is False
 
     def test_显式配过才算(self, monkeypatch):
-        monkeypatch.setattr('core.config.get_key',
+        monkeypatch.setattr('shared.kernel.config.get_key',
                             lambda name, default='': 'prod' if name == 'ROLE' else default)
         assert role.is_configured() is True
 
@@ -122,7 +122,7 @@ class TestTestRole:
         def _set(**kw):
             cfg.clear()
             cfg.update(kw)
-            monkeypatch.setattr('core.config.get_site', lambda name: cfg.get(name, ''))
+            monkeypatch.setattr('shared.kernel.config.get_site', lambda name: cfg.get(name, ''))
         return _set
 
     def test_目标是测试库才放行(self, as_role, site):
@@ -165,13 +165,13 @@ class TestWebUserId:
     """写 zotero.org 的 id 与本地 API 的 id 不是一回事（拆分于 2026-08-27）。"""
 
     def test_没单独配时沿用旧值(self, monkeypatch):
-        monkeypatch.setattr('core.config.get_site',
+        monkeypatch.setattr('shared.kernel.config.get_site',
                             lambda n: '12345' if n == 'ZOTERO_USER_ID' else '')
-        from core.config import web_user_id
+        from shared.kernel.config import web_user_id
         assert web_user_id() == '12345'
 
     def test_配了就以它为准(self, monkeypatch):
         vals = {'ZOTERO_USER_ID': '0', 'ZOTERO_WEB_USER_ID': '12345'}
-        monkeypatch.setattr('core.config.get_site', lambda n: vals.get(n, ''))
-        from core.config import web_user_id
+        monkeypatch.setattr('shared.kernel.config.get_site', lambda n: vals.get(n, ''))
+        from shared.kernel.config import web_user_id
         assert web_user_id() == '12345'

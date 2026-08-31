@@ -23,7 +23,7 @@ try:
 except Exception:
     pass
 
-from core.cli import flag, opt
+from shared.kernel.cli import flag, opt
 from pipelines import paper_db
 
 

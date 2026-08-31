@@ -11,19 +11,19 @@
                                           cited/is_oa/in_library）
   - 未来可加 related(doi)（Semantic Scholar 引用网络）——按需扩展。
 
-依赖：adapters.openalex（检索）+ adapters.zotero_client（查库里已有）。
+依赖：shared.adapters.openalex（检索）+ shared.adapters.zotero_client（查库里已有）。
 """
 import os, sys, re, json
 
-from adapters import openalex
+from shared.adapters import openalex
 
 try:
-    from adapters.zotero_client import zget, USER_ID
+    from shared.adapters.zotero_client import zget, USER_ID
 except Exception:
-    # 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
+    # 本机配置（Zotero 用户ID / 附件目录）统一从 shared.kernel.config 读，换电脑只改 .env
     import os as _os, sys as _sys
     try:
-        from core.config import need_site as _site
+        from shared.kernel.config import need_site as _site
     except Exception:
         _site = lambda n: _os.environ.get(n) or (_ for _ in ()).throw(RuntimeError(f'缺少本机设置 {n}，请在控制面板或 .env 中配置'))
     _UID = _site('ZOTERO_USER_ID')
@@ -60,7 +60,7 @@ def _library_index():
 def search(query, limit=25, mailto='research@example.com'):
     """按检索词搜 OpenAlex，返回文献列表，并标出哪些库里已经有了。
 
-    这就是本块的全部职责 —— **检索本身交给 adapters.openalex**，
+    这就是本块的全部职责 —— **检索本身交给 shared.adapters.openalex**，
     这里只做「外部结果 × 我的库」这一步编排。
     """
     have_titles, have_dois = _library_index()

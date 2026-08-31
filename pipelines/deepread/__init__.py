@@ -11,7 +11,7 @@ provider、model、key —— 全靠位置区分）、再拉起 si_deepread.py�
 
 现在它是一个函数，由 step 组成，每个 step 都：
   · **幂等** —— 产物在且状态库说做成了，就跳过（省 MineRU + DeepSeek 的钱）
-  · **记账** —— 谁、哪个模型、哪版提示词、花了多久、失败原因，进 `core.jobs`
+  · **记账** —— 谁、哪个模型、哪版提示词、花了多久、失败原因，进 `shared.kernel.jobs`
   · **可单独失败** —— SI 失败不该让正文精读白做
 
 用法：
@@ -28,7 +28,7 @@ import json
 import os
 import time
 
-from core import jobs, paths
+from shared.kernel import jobs, paths
 
 from pipelines.deepread import main_text, merge as _merge, si as _si
 from pipelines.deepread.main_text import DeepreadFailed   # noqa: F401 —— 对外再导出
@@ -112,7 +112,7 @@ def run(key, item=None, pdf_path=_ASK, si_exists=_ASK, provider='deepseek',
     r = Result(key)
 
     if pdf_path is _ASK or si_exists is _ASK:
-        from adapters.zotero_client import find_pdf, has_si
+        from shared.adapters.zotero_client import find_pdf, has_si
         if pdf_path is _ASK:
             pdf_path = find_pdf(key)
         if si_exists is _ASK:
@@ -213,7 +213,7 @@ def _ensure_parsed(key, pdf_path, force=False, log=print):
     if not force and os.path.exists(paths.layout(key)):
         log('  [复用] 已有解析结果')
         return parsed
-    from adapters.pdf_parse import parse_pdf
+    from shared.adapters.pdf_parse import parse_pdf
     with jobs.track(key, STEP_PARSE, producer='mineru'):
         parse_pdf(pdf_path, parsed, reuse=not force)
     return parsed

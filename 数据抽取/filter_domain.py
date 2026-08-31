@@ -20,7 +20,7 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths
+from shared.kernel import paths
 
 DIR = paths.STRUCTURED
 

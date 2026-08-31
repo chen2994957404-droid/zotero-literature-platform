@@ -10,27 +10,27 @@
 哪些篇有 SI 却是「没读 SI 时抽的」→ `si_pending_keys()`，那就是该重抽的清单。
 
 它组合了什么：
-    core.paths（去哪读、往哪写）
-  + domain.schema（抽什么字段、怎么问、怎么摆成表）
-  + adapters.llm_client（谁来抽）
-  + core.jobs（谁抽的、哪版 schema、失败在哪）
+    shared.kernel.paths（去哪读、往哪写）
+  + shared.domain.schema（抽什么字段、怎么问、怎么摆成表）
+  + shared.adapters.llm_client（谁来抽）
+  + shared.kernel.jobs（谁抽的、哪版 schema、失败在哪）
 
 **自我评估循环**（借鉴 KnowMat，用自己的公理件实现，不引第三方框架）：
 抽完对照原文自检，发现漏抽/幻觉就带着反馈重抽一轮。
 `EXTRACT_NO_EVAL=1` 可关掉省钱；本地模型（ollama）自检不可靠，自动跳过。
 
 「加字段之后只重抽缺该字段的那些文献」怎么做到：
-    domain.schema.SCHEMA_VER +1 → `jobs.stale('extract', schema_ver=新版本)`
+    shared.domain.schema.SCHEMA_VER +1 → `jobs.stale('extract', schema_ver=新版本)`
     就是待重抽清单。不用翻文件系统，也不用人肉记得改过什么。
 """
 import io
 import json
 import os
 
-from adapters.llm_client import chat_json as _chat_json
-from core import jobs, paths
-from core.config import get_key, get_model
-from domain import schema
+from shared.adapters.llm_client import chat_json as _chat_json
+from shared.kernel import jobs, paths
+from shared.kernel.config import get_key, get_model
+from shared.domain import schema
 
 STEP = 'extract'
 PRODUCER = 'extract_structured'

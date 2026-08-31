@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""core.heartbeat 的单元测试。
+"""shared.kernel.heartbeat 的单元测试。
 
 **这些测试挡的是真金白银**：原来的单心跳让看门狗在精读中途把 watcher 杀掉，
 被杀那篇已经花掉的 MineRU / DeepSeek 调用作废，下一轮重来再花一次
@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from core import heartbeat
+from shared.kernel import heartbeat
 
 
 @pytest.fixture(autouse=True)

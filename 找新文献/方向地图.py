@@ -25,8 +25,8 @@ try:
 except Exception:
     pass
 
-from core import paths
-from core.cli import pos, opt
+from shared.kernel import paths
+from shared.kernel.cli import pos, opt
 from pipelines import direction_map as dm
 
 

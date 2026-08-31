@@ -14,7 +14,7 @@ import io
 import os
 import re
 
-from core import paths
+from shared.kernel import paths
 
 SI_CSS = ('.si-divider{margin:48px 0 8px;padding:14px 20px;'
           'background:linear-gradient(90deg,#e8934a,#d4703a);color:#fff;border-radius:10px;'

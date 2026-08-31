@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """看门狗的判断接线测试。
 
-`core.heartbeat.verdict` 的边界已在 `test_core_heartbeat.py` 测过；
+`shared.kernel.heartbeat.verdict` 的边界已在 `test_core_heartbeat.py` 测过；
 这里测的是**看门狗有没有把它接对** —— 阈值传对了吗、两个信号读对了吗。
 
 为什么值得单独测：接错的后果不是报错，而是**看门狗继续误杀正在干活的 watcher**，
@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from core import heartbeat, paths
+from shared.kernel import heartbeat, paths
 
 WATCHDOG_PY = os.path.join(paths.ROOT, '文献精读', 'watchdog.py')
 

@@ -14,13 +14,13 @@ import os
 import re
 import zipfile
 
-from adapters.llm_client import chat
-from adapters.pdf_parse import parse_pdf, PDFParseError
-from adapters.zotero_client import zget, USER_ID, STORAGE_DIR, SUPP_PAT
-from core import paths
-from core.config import get_key
-from domain.figure_crop import crop_figures
-from domain.si_filter import filtered_text
+from shared.adapters.llm_client import chat
+from shared.adapters.pdf_parse import parse_pdf, PDFParseError
+from shared.adapters.zotero_client import zget, USER_ID, STORAGE_DIR, SUPP_PAT
+from shared.kernel import paths
+from shared.kernel.config import get_key
+from shared.domain.figure_crop import crop_figures
+from shared.domain.si_filter import filtered_text
 
 PROMPT_VER = 1
 PRODUCER = 'si_deepread'

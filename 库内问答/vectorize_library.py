@@ -11,15 +11,15 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths, role
+from shared.kernel import paths, role
 
-from adapters import vectordb
-from core.cli import flag
-from core.config import need_site, get_site
-from adapters.embed import embed, chunk
-from adapters.zotero_client import get_fulltext
+from shared.adapters import vectordb
+from shared.kernel.cli import flag
+from shared.kernel.config import need_site, get_site
+from shared.adapters.embed import embed, chunk
+from shared.adapters.zotero_client import get_fulltext
 
-# 本机配置（Zotero 用户ID / 附件目录）统一从 core.config 读，换电脑只改 .env
+# 本机配置（Zotero 用户ID / 附件目录）统一从 shared.kernel.config 读，换电脑只改 .env
 _USER_ID = need_site('ZOTERO_USER_ID')
 need_site('ZOTERO_STORAGE')        # 附件目录本脚本用不到，但按原行为仍要求已配置
 LOCAL = get_site('ZOTERO_API_HOST') + '/api/users/' + _USER_ID
@@ -34,7 +34,7 @@ def lget(path):
 
 
 def get_collection():
-    """打开向量库。具体用哪家由 adapters.vectordb 决定。"""
+    """打开向量库。具体用哪家由 shared.adapters.vectordb 决定。"""
     return vectordb.open_store()
 
 

@@ -20,13 +20,13 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths
+from shared.kernel import paths
 
 # 同文件夹脚本互相 import（collect.py 要 from import_by_doi import import_dois）
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 
-from core.cli import flag, positionals
+from shared.kernel.cli import flag, positionals
 
 STASH = paths.last_search()
 

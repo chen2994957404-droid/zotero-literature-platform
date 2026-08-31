@@ -4,7 +4,7 @@
 
 build() 要联网，所以自测不跑它 —— 它的两个组成部分（wechat_seed / openalex）
 各有自己的 selftest。这里测的是**编排本身**：schema、聚类落库、报告生成。
-测试会临时改写 core.paths.DIRECTION 指向临时目录，**不碰真实数据**。
+测试会临时改写 shared.kernel.paths.DIRECTION 指向临时目录，**不碰真实数据**。
 """
 import os
 import shutil
@@ -16,7 +16,7 @@ try:
 except Exception:
     pass
 
-from core import paths
+from shared.kernel import paths
 
 TMP = tempfile.mkdtemp(prefix='dirmap_')
 _ORIG = paths.DIRECTION

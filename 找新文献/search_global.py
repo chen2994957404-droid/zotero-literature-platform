@@ -19,8 +19,8 @@ try:
 except Exception:
     pass
 
-from core.cli import pos, flag, opt
-from adapters.sciverse import search_papers, available, looks_chinese, SciverseError
+from shared.kernel.cli import pos, flag, opt
+from shared.adapters.sciverse import search_papers, available, looks_chinese, SciverseError
 
 
 def library_index():

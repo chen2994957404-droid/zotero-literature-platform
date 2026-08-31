@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """watcher 看门狗：watcher 真死了就重启它 —— **但绝不打断正在干活的它**。
 
-看两个信号（都由 `core.heartbeat` 维护，那里有完整说明）：
+看两个信号（都由 `shared.kernel.heartbeat` 维护，那里有完整说明）：
 
     watcher_heartbeat.txt   后台线程固定节奏写   → 进程还活着吗
     watcher_progress.txt    每完成一件实事时写   → 还在往前推进吗
@@ -23,16 +23,16 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import heartbeat, role
-from core.cli import flag
-from core.paths import ROOT as _ROOT
+from shared.kernel import heartbeat, role
+from shared.kernel.cli import flag
+from shared.kernel.paths import ROOT as _ROOT
 
-from core import subproc as _sp   # 统一走静默子进程调用，避免弹窗
+from shared.kernel import subproc as _sp   # 统一走静默子进程调用，避免弹窗
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = _ROOT
 WATCHER = os.path.join(SCRIPT_DIR, 'zotero_watcher.py')
-BEACON = 'watcher'          # core.heartbeat 里的名字
+BEACON = 'watcher'          # shared.kernel.heartbeat 里的名字
 
 CHECK = 60          # 每 60 秒查一次
 STALE = 300         # 超 300 秒没报活 = 进程死了/冻住了。后台线程每 30 秒写一次，很宽容
@@ -41,7 +41,7 @@ NO_PROGRESS = 2700  # 报活正常但 45 分钟毫无进展 = 卡在某个不返
 GRACE = 180         # 重启后给 watcher 的启动宽限期，期间不判死
 
 
-from core.log import get_logger
+from shared.kernel.log import get_logger
 log = get_logger('watchdog')   # 统一日志：时间戳 + 落盘 + 自动轮转
 
 
@@ -103,7 +103,7 @@ def main():
 if __name__ == '__main__':
     # 机器角色不对时给一句人话，而不是甩一坨 traceback 到日志里 ——
     # 这个失败在主力机首次部署时必然发生一次（ROLE 默认是最安全的 dev）。
-    from core import errors as _err
+    from shared.kernel import errors as _err
     try:
         main()
     except _err.WrongMachineError as _e:

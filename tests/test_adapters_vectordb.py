@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""adapters.vectordb 的测试。
+"""shared.adapters.vectordb 的测试。
 
 这些测试**建一个真的 Chroma 库**（在 pytest 的临时目录里，用假向量），
 所以是真验证而不是 mock 自嗨 —— 而且全程本地、不联网、不碰用户数据，
@@ -7,8 +7,8 @@
 """
 import pytest
 
-from adapters import vectordb
-from core import errors
+from shared.adapters import vectordb
+from shared.kernel import errors
 
 
 # ⚠ Chroma 只接受 3~512 位 ASCII 集合名，中文名会被拒（实测得出）。

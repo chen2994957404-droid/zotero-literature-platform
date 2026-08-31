@@ -11,18 +11,18 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from core import paths, role
+from shared.kernel import paths, role
 
-from adapters import vectordb
-from core.cli import flag
-from adapters.embed import embed, chunk as chunk_markdown
+from shared.adapters import vectordb
+from shared.kernel.cli import flag
+from shared.adapters.embed import embed, chunk as chunk_markdown
 
 LIBRARY = paths.LIBRARY
 VECTOR_DB = paths.VECTOR_DB
 
 
 def get_collection(rebuild):
-    """打开向量库；rebuild 时清空重建。具体用哪家向量库由 adapters.vectordb 决定。"""
+    """打开向量库；rebuild 时清空重建。具体用哪家向量库由 shared.adapters.vectordb 决定。"""
     return vectordb.open_store(rebuild=rebuild)
 
 

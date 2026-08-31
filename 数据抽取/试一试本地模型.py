@@ -33,10 +33,10 @@ try:
 except Exception:
     pass
 
-from core import paths
-from core.cli import flag, opt, positionals
-from core.config import get_key
-from domain import schema
+from shared.kernel import paths
+from shared.kernel.cli import flag, opt, positionals
+from shared.kernel.config import get_key
+from shared.domain import schema
 from pipelines import extract
 
 SHOW = ['material_system', 'dynamic_bond_type', 'precursors', 'synthesis_conditions',

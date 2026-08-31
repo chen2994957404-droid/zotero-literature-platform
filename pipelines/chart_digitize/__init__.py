@@ -16,7 +16,7 @@
 成本策略：先用云端验证效果；后接本地视觉模型（OLLAMA_VISION_MODEL）实现零成本大规模。
 """
 import os, sys
-from adapters.llm_client import chat_vision, _parse_json_lenient, LLMError
+from shared.adapters.llm_client import chat_vision, _parse_json_lenient, LLMError
 
 # All-English prompt (chart data is native machine data for downstream LLM/analysis).
 _SYS = (

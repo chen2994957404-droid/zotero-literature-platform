@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
-"""上传附件到 Zotero 的命令行入口 —— **实现已收进 `adapters/zotero_client`**。
+"""上传附件到 Zotero 的命令行入口 —— **实现已收进 `shared/adapters/zotero_client`**。
 
 用法: python zotero_upload_attachment.py <父条目Key> <文件路径> <显示名>
 
 搬家原因（阶段 3 下半，2026-08-27）：写 Zotero 的实现原来有三份，
 各自拼 URL、各自拼鉴权头、各自处理版本冲突 —— 更要命的是
 **机器角色守卫要在每一份里各写一遍，漏一处闸门就等于不存在**。
-现在只有 `adapters/zotero_client/_web.py` 一处会碰 api.zotero.org。
+现在只有 `shared/adapters/zotero_client/_web.py` 一处会碰 api.zotero.org。
 
-新代码请直接调 `adapters.zotero_client.upload_attachment(...)`。
+新代码请直接调 `shared.adapters.zotero_client.upload_attachment(...)`。
 """
 import sys
 
@@ -18,8 +18,8 @@ try:
 except Exception:
     pass
 
-from adapters.zotero_client import upload_attachment      # noqa: F401 —— 供老代码继续 import
-from core.cli import pos
+from shared.adapters.zotero_client import upload_attachment      # noqa: F401 —— 供老代码继续 import
+from shared.kernel.cli import pos
 
 
 def main():

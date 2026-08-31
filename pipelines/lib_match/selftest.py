@@ -41,7 +41,7 @@ def main():
 
     # 4. **核心承诺**：库里真实存在的文献必须被判成「已有」
     if titles:
-        from adapters.zotero_client import zget, USER_ID
+        from shared.adapters.zotero_client import zget, USER_ID
         sample = None
         for x in zget(f'/users/{USER_ID}/items/top?limit=25'):
             d = x['data']

@@ -5,7 +5,7 @@
 接口是「参数的先后顺序」。搬进来之后它是一个可以直接调、可以直接测的函数。
 
 **行为与 deepread_v4 完全一致**，只做了一处去重：裁图不再在这里重写一遍，
-改调 `domain.figure_crop`（两边算法与阈值本来就逐字相同，见宪法铁律 1）。
+改调 `shared.domain.figure_crop`（两边算法与阈值本来就逐字相同，见宪法铁律 1）。
 
 流程（顺序即数据流，别打乱）：
     元数据 → 裁完整 Figure → 拼 LLM 输入 → 调模型 → 确定性插图 → 渲染 HTML
@@ -15,8 +15,8 @@ import os
 import re
 import time
 
-from adapters.llm_client import chat as _chat
-from domain.figure_crop import crop_figures
+from shared.adapters.llm_client import chat as _chat
+from shared.domain.figure_crop import crop_figures
 
 # 提示词版本：改了 _sys_prompt_v2.txt 的范式就 +1。
 # 状态库据此回答「哪些精读该重跑」（jobs.stale('main_summary', prompt_ver=3)）。

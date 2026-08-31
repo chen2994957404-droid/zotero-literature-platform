@@ -21,7 +21,7 @@
 
 ## ⚠ 一切都按「窄带」分库
 
-`core.paths.direction_db(band)`，band 是必填、没有默认值。
+`shared.kernel.paths.direction_db(band)`，band 是必填、没有默认值。
 用户会陆续做多条窄带，**加一条窄带必须是「加一份 band.json」而不是「改代码」**。
 留默认值就会有人忘了传，然后两条窄带的数据混进同一个库。
 
@@ -44,8 +44,8 @@
 **为什么只给骨干拉元数据**：39218 篇要 1000 次请求，而其中 90% 只被一篇种子引用
 （各自的背景引用），对「领域长什么样」没有贡献。门槛卡 df>=3，量降到 1/13。
 
-依赖：adapters.wechat_seed / adapters.openalex / adapters.zotero_client /
-domain.bibliometrics / core。本环**不联网**（联网都在 adapters 里）。
+依赖：shared.adapters.wechat_seed / shared.adapters.openalex / shared.adapters.zotero_client /
+shared.domain.bibliometrics / core。本环**不联网**（联网都在 adapters 里）。
 """
 import collections
 import io
@@ -55,10 +55,10 @@ import re
 import sqlite3
 import time
 
-from core import errors, paths
-from core.log import get_logger
-from adapters import openalex, wechat_seed
-from domain import bibliometrics as bib
+from shared.kernel import errors, paths
+from shared.kernel.log import get_logger
+from shared.adapters import openalex, wechat_seed
+from shared.domain import bibliometrics as bib
 
 log = get_logger('direction_map')
 
@@ -240,7 +240,7 @@ def seeds_from_zotero(band, spec=None, progress=None):
         say('  [Zotero] band.json 里没配 zotero，跳过')
         return 0
     try:
-        from adapters import zotero_client
+        from shared.adapters import zotero_client
         items = zotero_client.search_items(conf.get('query', ''),
                                            limit=int(conf.get('limit', 300)),
                                            qmode=conf.get('qmode', 'everything'),

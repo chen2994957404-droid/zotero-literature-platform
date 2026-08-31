@@ -6,7 +6,7 @@ try:
 except Exception:
     pass
 from pipelines.query_expand import to_english, expand, looks_chinese, _clean_lines
-from core.config import get_key
+from shared.kernel.config import get_key
 
 def main():
     ok = 0; total = 5

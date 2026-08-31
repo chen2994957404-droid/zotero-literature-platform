@@ -10,9 +10,9 @@ import os
 
 import pytest
 
-from core import paths
+from shared.kernel import paths
 
-MODULE = os.path.join(paths.ROOT, '平台管理', '查产物缺口.py')
+MODULE = os.path.join(paths.ROOT, 'host', 'doctor', 'artifact_gaps.py')
 
 
 @pytest.fixture
