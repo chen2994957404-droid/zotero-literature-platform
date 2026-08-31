@@ -134,7 +134,7 @@ def main():
             print(' 然后**注销一次 Windows 再登录**（双击出来的程序继承的是登录时的环境）。')
             return
 
-    # 全库作业只允许在运行端跑（见 docs/两台机器的分工.md）
+    # 全库作业只允许在运行端跑（见 docs/howto/两台机器的分工.md）
     role.require_prod(f'批量重抽结构化字段（{name}）', force=flag('--force'))
 
     dest = extract.backup_records(keys)

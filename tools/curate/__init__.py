@@ -16,7 +16,7 @@
 | `tags`     | 标签改造（`dim:value` → `dim/value`）；`autotag` 已弃用 | 是（autotag）| **改标签** |
 
 **除 `sync`/`backfill` 外都写用户的真实 Zotero 库**，一律带机器角色守卫：
-A 机（编程端 `ROLE=dev`）默认拒绝执行，见 docs/两台机器的分工.md。
+A 机（编程端 `ROLE=dev`）默认拒绝执行，见 docs/howto/两台机器的分工.md。
 
 对外接口：每条线一个模块，各自的 `main()` 就是命令行入口：
 

@@ -154,7 +154,7 @@ def all_keys():
 # (键名, 显示名, 默认值, 说明)
 SITE_SETTINGS = [
     # ⚠ 角色放第一位：它决定这台机器**允许做什么**，是安全项不是偏好项。
-    #   见 docs/两台机器的分工.md 与 shared/kernel/role.py。默认 dev 是刻意的（fail safe）。
+    #   见 docs/howto/两台机器的分工.md 与 shared/kernel/role.py。默认 dev 是刻意的（fail safe）。
     ('ROLE', '机器角色', 'dev',
      'dev=编程端（不许写 Zotero、不许跑 watcher、不许跑全库作业）；'
      'prod=运行端（主力机，允许全部操作）；'

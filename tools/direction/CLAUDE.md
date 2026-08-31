@@ -75,7 +75,7 @@ python -m tools.direction stats
 
 ## 没有加机器角色守卫，为什么
 
-按 `docs/两台机器的分工.md`，「找新文献 / 外部检索」是两台都能做的
+按 `docs/howto/两台机器的分工.md`，「找新文献 / 外部检索」是两台都能做的
 （纯网络、免费、无副作用、不碰 Zotero）。OpenAlex 不要密钥也不花钱，
 所以不需要 `role.require_prod`。
 

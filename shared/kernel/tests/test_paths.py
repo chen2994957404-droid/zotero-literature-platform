@@ -31,7 +31,7 @@ class TestCheckKey:
 
 
 class TestPaperArtifacts:
-    """产物路径必须和 docs/数据契约.md 里写的完全一致。
+    """产物路径必须和 docs/reference/数据契约.md 里写的完全一致。
 
     这些断言就是数据契约本身 —— 谁改了目录布局而没改契约文档，这里会红。
     """

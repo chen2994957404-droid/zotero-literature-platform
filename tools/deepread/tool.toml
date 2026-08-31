@@ -2,6 +2,6 @@ name          = "deepread"
 one_line      = "一篇文献 → 中文图文精读报告（含 SI 合并）"
 expose        = "prompt"
 costs_money   = true            # MineRU 解析额度 + 云端大模型长文输出
-side_effects  = ["写Zotero（回写精读附件与状态标签）", "写 library/<key>/"]
+side_effects  = ["写Zotero（回写精读附件与状态标签）", "写 data/raw/<key>/ 与 data/curated/<key>/"]
 requires_role = "prod"
 prompts       = ["main@v2", "si@v1"]

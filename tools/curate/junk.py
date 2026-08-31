@@ -119,7 +119,7 @@ def main():
     if not flag('--删除') and not flag('--delete'):
         do_list()
         return
-    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/howto/两台机器的分工.md
     forced = flag('--force')
     role.require_prod('删除 Zotero 条目', force=forced)
     do_delete(only_a=flag('--只删A'), forced=forced)

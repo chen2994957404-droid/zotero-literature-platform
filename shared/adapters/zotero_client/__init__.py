@@ -71,7 +71,7 @@ def search_items(query='', limit=100, qmode='everything', tag=None,
     """按关键词/标签/类型/合集搜库内顶层条目，返回 Zotero 原始条目列表。
 
     **只服务本机**：Zotero 的本地 API 只监听 localhost，所以这个函数只能在
-    Zotero 正在跑的那台机器上用（见 docs/两台机器的分工.md）。
+    Zotero 正在跑的那台机器上用（见 docs/howto/两台机器的分工.md）。
     编程端调它会连不上 —— 那不是 bug，调用方应当捕获后跳过。
 
     qmode 默认 'everything'（连全文一起搜），比 'titleCreatorYear' 召回高得多；

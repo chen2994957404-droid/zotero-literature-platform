@@ -2,6 +2,6 @@ name          = "direction"
 one_line      = "方向地图：一条窄带里谁做了什么、有哪些簇、空白在哪"
 expose        = "prompt"
 costs_money   = true            # brainstorm 要大模型；建图本身走 OpenAlex（免费但很慢）
-side_effects  = ["写 direction/<窄带>.db"]
+side_effects  = ["写 data/serving/direction/<窄带>.db"]
 requires_role = "none"
 prompts       = ["brainstorm@v1"]

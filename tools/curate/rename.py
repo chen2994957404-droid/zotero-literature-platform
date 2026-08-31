@@ -63,7 +63,7 @@ def rename(att_key, new_title, forced=False):
 
 
 def main():
-    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/howto/两台机器的分工.md
     role.require_prod('附件改名（写回 Zotero）', force=flag('--force'))
     json_path = pos(0)
     apply = pos(1) == 'apply'

@@ -237,7 +237,7 @@ def check_unpushed():
     print('  处理办法（在项目文件夹里依次跑）：')
     if dirty and not data_only:
         print('    ⚠ 本机改到了数据以外的文件。按分工，运行端只读代码、不改代码',
-              '（见 docs/两台机器的分工.md）。')
+              '（见 docs/howto/两台机器的分工.md）。')
         print('    先把上面这几行发给 Claude，别急着提交。')
     else:
         if dirty:

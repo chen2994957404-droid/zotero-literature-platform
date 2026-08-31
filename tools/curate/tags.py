@@ -161,7 +161,7 @@ def autotag(apply=False, limit=None, forced=False):
 
 def main():
     """命令行入口：默认走「标签改嵌套写法」；`--autotag` 才碰那条已弃用的线。"""
-    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/howto/两台机器的分工.md
     forced = flag('--force')
     if flag('--autotag'):
         print('⚠ 自动打标签已于 2026-07-25 弃用（用户认为多余）。'

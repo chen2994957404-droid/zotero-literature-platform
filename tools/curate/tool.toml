@@ -2,6 +2,6 @@ name          = "curate"
 one_line      = "库房维护：自动打标签、附件改名、清重复、定时同步"
 expose        = "prompt"
 costs_money   = true            # 自动打标签要大模型
-side_effects  = ["写Zotero（标签/改名/删除条目）", "写 library/<key>/meta.json"]
+side_effects  = ["写Zotero（标签/改名/删除条目）", "写 data/curated/<key>/meta.json"]
 requires_role = "prod"
 prompts       = ["autotag@v1"]

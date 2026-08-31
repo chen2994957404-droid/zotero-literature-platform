@@ -176,7 +176,7 @@ def light_all(log=print):
 
 def main():
     """命令行入口：默认粗层增量；--deep 走精层；--rebuild 清空重建（只对精层有意义）。"""
-    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/howto/两台机器的分工.md
     role.require_prod('全库向量化', force=flag('--force'))
     os.makedirs(paths.VECTOR_DB, exist_ok=True)
     if flag('--deep'):

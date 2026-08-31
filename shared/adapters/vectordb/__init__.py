@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """shared.adapters.vectordb —— 向量库（当前实现：Chroma）。
 
-**为什么要包这一层**（见 docs/架构重构_v2总体设计.md 阶段 2 第 10 项）：
+**为什么要包这一层**（见 docs/explain/架构重构_v2总体设计.md 阶段 2 第 10 项）：
 
 重构前 `import chromadb` 出现在 **5 个地方**（ask / vectorize / vectorize_library /
 brainstorm / lib_match），每处都自己 `PersistentClient(...)`、自己写
@@ -47,7 +47,7 @@ store.all_metadatas()                       # 增量入库时用来看哪些已�
 3. 集合名与向量空间由本模块决定，调用方不需要知道
 
 ⚠ 换 embedding 模型必须全量重建：不同模型的向量在数学上不可比
-（见 `docs/数据契约.md`）。重建是本地免费的，所以这不构成障碍。
+（见 `docs/reference/数据契约.md`）。重建是本地免费的，所以这不构成障碍。
 """
 import os
 

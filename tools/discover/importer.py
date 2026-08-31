@@ -69,7 +69,7 @@ def import_dois(dois, tags=None, verbose=True, forced=False):
 
 
 def main():
-    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/两台机器的分工.md
+    # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/howto/两台机器的分工.md
     role.require_prod('按 DOI 导入 Zotero', force=flag('--force'))
     args = positionals()
     tags = opts('--tag')

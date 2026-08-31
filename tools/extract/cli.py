@@ -51,7 +51,7 @@ def main():
     drop_stale_env(log=print)      # 作废的旧密钥可能还躺在本进程的环境里（踩坑 #73）
 
     if flag('--coarse'):
-        # 全库作业只允许在运行端跑（见 docs/两台机器的分工.md）
+        # 全库作业只允许在运行端跑（见 docs/howto/两台机器的分工.md）
         role.require_prod('全库粗层结构化抽取（本地模型，不花钱但一样是全库作业）',
                           force=flag('--force'))
         coarse_all(rebuild=rebuild)
@@ -76,7 +76,7 @@ def main():
             return                       # 只看清单：不调模型、不花钱
 
     if not only_key:
-        # 全库作业：花钱且量大，只允许在运行端跑（见 docs/两台机器的分工.md）
+        # 全库作业：花钱且量大，只允许在运行端跑（见 docs/howto/两台机器的分工.md）
         role.require_prod('全库结构化抽取（云端每篇都花钱；--local 不花钱但一样是全库作业）',
                           force=flag('--force'))
 

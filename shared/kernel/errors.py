@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """shared.kernel.errors —— 异常分类。
 
-**为什么需要它**（见 docs/架构重构_v2总体设计.md 阶段 1 第 7 项）：
+**为什么需要它**（见 docs/explain/架构重构_v2总体设计.md 阶段 1 第 7 项）：
 
 重构前，一个步骤失败了，调用方**没有办法知道该怎么办**。
 `zotero_watcher` 拉起子进程，只拿得到退出码和一坨 stdout；
@@ -73,7 +73,7 @@ class DataError(PlatformError):
 
 
 class WrongMachineError(PlatformError):
-    """这台机器不该做这件事（见 docs/两台机器的分工.md）。
+    """这台机器不该做这件事（见 docs/howto/两台机器的分工.md）。
 
     典型场景：在编程端（A 机）试图写回 Zotero、启动 watcher、跑全库批量作业。
     两台机器共用同一个 Zotero 账号，编程端一回写就污染真实文献库，

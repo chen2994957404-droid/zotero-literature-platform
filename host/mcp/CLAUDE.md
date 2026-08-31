@@ -92,4 +92,4 @@ python host/mcp/server.py --list              # 清单必须自洽（末尾那�
 python host/doctor/health_check.py --offline  # 全局离线体检
 python host/codegen/handover.py               # 刷新 CLAUDE.md 结构树 / HANDOVER.md
 ```
-改动记 `docs/变更记录.md`，新坑记 `docs/踩坑记录.md`，**git commit**。
+改动记 `docs/变更记录.md`，新坑记 `docs/incidents/踩坑记录.md`，**git commit**。

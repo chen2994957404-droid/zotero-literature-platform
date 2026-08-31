@@ -351,7 +351,7 @@ def build():
 
     pf = recent_pitfalls()
     if pf:
-        a('## 最近踩的坑（全文见 `docs/踩坑记录.md`）')
+        a('## 最近踩的坑（全文见 `docs/incidents/踩坑记录.md`）')
         a('')
         for t in pf:
             a(f'- {t}')
@@ -359,9 +359,9 @@ def build():
 
     a('## 想深入时读哪份（**这两份是时间正序的长文件，用 tail 读末尾，别从头读**）')
     a('')
-    for f, why in (('docs/踩坑记录.md', '所有踩过的坑，含根因与解法'),
+    for f, why in (('docs/incidents/踩坑记录.md', '所有踩过的坑，含根因与解法'),
                    ('docs/变更记录.md', '每次改动的来龙去脉'),
-                   ('docs/架构宪法_第一性原理.md', '最高纲领：三条铁律 + 零号/首要判据'),
+                   ('docs/explain/架构宪法_第一性原理.md', '最高纲领：三条铁律 + 零号/首要判据'),
                    ('<某文件夹>/CLAUDE.md', '那一块的完整说明书，改哪块就读哪份')):
         size = ''
         p = os.path.join(ROOT, f)
@@ -376,7 +376,7 @@ def build():
       '涉及外部现状/具体数字/API 行为，必须查、必须测。')
     a('- 改完**先跑体检再重启服务**：`python host/doctor/health_check.py`')
     a('- 花钱、不可逆、影响 Zotero 库的操作，**先问用户**。')
-    a('- 每个改动记 `docs/变更记录.md`，踩坑记 `docs/踩坑记录.md`，并 git commit。')
+    a('- 每个改动记 `docs/变更记录.md`，踩坑记 `docs/incidents/踩坑记录.md`，并 git commit。')
     return '\n'.join(L)
 
 

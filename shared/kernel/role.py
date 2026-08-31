@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """shared.kernel.role —— 这台机器是什么角色。
 
-**为什么需要它**（见 `docs/两台机器的分工.md`）：
+**为什么需要它**（见 `docs/howto/两台机器的分工.md`）：
 
 本平台跑在两台机器上，**共用同一个 Zotero 账号**：
 
@@ -149,7 +149,7 @@ def require_prod(action, force=False):
             f'  现在两者对不上（或有一项没填）。\n'
             f'  这道闸就是防「配置切回真实账号却忘了改角色」——'
             f'那一下会把测试改动写进你真正的文献库。\n'
-            f'  详见 docs/两台机器的分工.md')
+            f'  详见 docs/howto/两台机器的分工.md')
     if force:
         print(f'⚠ 已用 --force 越过机器角色检查：在{label()}上执行「{action}」。'
               f'两台共用同一个 Zotero 账号，改动会同步过去。')
@@ -161,4 +161,4 @@ def require_prod(action, force=False):
         f'  · 如果这台是主力机：打开控制面板，把「机器角色」改成 运行端(prod)\n'
         f'  · 如果这台是编程端：这件事请到主力机上做\n'
         f'  · 确实知道自己在干什么：命令行加 --force\n'
-        f'  详见 docs/两台机器的分工.md')
+        f'  详见 docs/howto/两台机器的分工.md')

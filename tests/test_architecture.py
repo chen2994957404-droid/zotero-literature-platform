@@ -6,7 +6,7 @@
 
 这个文件就是那两条规则的执行者。它不测功能，只测**结构**。
 
-见 docs/架构重构_v2总体设计.md 第一节、第三节 B。
+见 docs/explain/架构重构_v2总体设计.md 第一节、第三节 B。
 """
 import ast
 import os
@@ -471,6 +471,56 @@ def test_下沉规则的豁免必须写着理由():
     assert not bad, '下沉规则的豁免名单有问题：' + _NL + _NL.join(bad)
 
 
+def test_claude目录必须是生成物而不是手写的():
+    """`.claude/` 里的每个文件都必须能从源重新生成出来，一个字节都不许差。
+
+    **为什么这条比它看起来重要**：`.claude/skills/` 是模型每次会话都会读到的东西。
+    手写它 = 同一件事在两处各写一遍（工具里一份 SKILL.md、`.claude/` 里一份），
+    然后其中一份开始过时 —— 而过时的偏偏是模型真正读到的那份。
+
+    R7 窗之前正是这样：四份手写 skill 里提着 `core/`、`平台管理/`、`workflow_data/`，
+    这些目录在 R1~R6 已经全没了，而模型每次会话都在读它们。
+
+    改源（`tools/<t>/SKILL.md`、`docs/howto/skills/`、`docs/howto/rules/`）之后，
+    跑一次 `python host/codegen/skills.py` 即可。
+    """
+    from host.codegen import skills as gen
+    want = gen.plan()
+    assert want, '一个产物都没生成 —— 源目录是不是空了？'
+    bad = [os.path.relpath(p, ROOT).replace(chr(92), '/')
+           for p, body in want if gen._read(p) != body]
+    stale = [os.path.relpath(p, ROOT).replace(chr(92), '/')
+             for p in gen._existing() - {p for p, _ in want}]
+    assert not (bad or stale), (
+        '.claude/ 与它的源不同步：' + _NL
+        + _NL.join([f'过时：{p}' for p in sorted(bad)]
+                   + [f'源没了但产物还在：{p}' for p in sorted(stale)])
+        + _NL + '跑一次：python host/codegen/skills.py'
+        + _NL + '（`.claude/` 全部是生成物，**手写即违规**）')
+
+
+def test_每个工具都有INCIDENTS且总目录是同步的():
+    """工具切片七件之外的第八件：`INCIDENTS.md`（这个工具特有的坑）。
+
+    为什么值得单独有一份：`docs/incidents/踩坑记录.md` 是 140 KB 的时间流水，
+    **它进不了上下文**。改 deepread 的人不会去通读 93 条记录，
+    但会看一眼自己文件夹里那张十几行的表 —— 那正是「省掉一整轮重新踩」的地方。
+    """
+    missing = [f'tools/{t}' for t in _tool_names()
+               if not os.path.isfile(os.path.join(TOOLS_DIR, t, 'INCIDENTS.md'))]
+    assert not missing, (
+        '这些工具没有 INCIDENTS.md：' + _NL + _NL.join(missing)
+        + _NL + '没踩过坑也要有 —— 写一句「还没有」，并写清下次踩到记在哪。')
+
+    from host.codegen import incidents as gen
+    cur = None
+    if os.path.isfile(gen.OUT):
+        cur = open(gen.OUT, encoding='utf-8').read()
+    assert cur == gen.build(), (
+        'docs/incidents/README.md 与各工具的 INCIDENTS.md 不同步'
+        + _NL + '跑一次：python host/codegen/incidents.py')
+
+
 # ══════════════════════════════════════════════════════════════════════
 # 守卫四：项目已经是 Python 包，不该再有 sys.path 补丁
 # ══════════════════════════════════════════════════════════════════════
@@ -544,7 +594,7 @@ def test_项目内的import都能解析到真实存在的包():
 
 
 # ══════════════════════════════════════════════════════════════════════
-# 守卫五：两台机器的分工（见 docs/两台机器的分工.md）
+# 守卫五：两台机器的分工（见 docs/howto/两台机器的分工.md）
 # ══════════════════════════════════════════════════════════════════════
 # 编程端（A 机）和运行端（B 机）**共用同一个 Zotero 账号**。
 # 编程端一旦回写，污染的是真实文献库，而且立刻同步到主力机。
