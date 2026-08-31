@@ -8,7 +8,7 @@ description: 要新增或修改本项目任何 .py 文件之前必须先读这�
 # 改代码红线
 
 **这些不是风格建议，是 `python -m pytest` 里的架构守卫会当场变红的硬约束**
-（21 条守卫在 `tests/test_architecture.py`）。完整原文见
+（守卫在 `tests/test_architecture.py`）。完整原文见
 `docs/howto/代码规范_标准脚本模板.md`；本页是执行清单。
 
 ## 一、七条红线
@@ -123,7 +123,7 @@ host  →  tools  →  shared.domain / shared.adapters  →  shared.kernel
 
 ```bash
 python <路径>/selftest.py                        # 改了哪块先验哪块
-python -m pytest -q                              # 离线测试 + 21 条架构守卫
+python -m pytest -q                              # 离线测试 + 架构守卫
 python host/doctor/health_check.py --offline     # 离线档体检（必须 10/0/0）
 python host/doctor/health_check.py               # 完整体检（A 机没主力机密钥会红，正常）
 python host/codegen/handover.py                  # 刷新 AGENTS.md 结构树 + HANDOVER.md

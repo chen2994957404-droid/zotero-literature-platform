@@ -137,7 +137,7 @@ A 机默认不写 Zotero、不跑常驻服务、不跑花钱的批量作业 —�
 
 **装一次才能跑**（换电脑/重装后必做）：`pip install -e . --no-deps`
 
-## 五层与四条硬规则（守卫强制，`tests/test_architecture.py` 24 条）
+## 五层与四条硬规则（`tests/test_architecture.py` 里的守卫会强制它们）
 
 ```
 host  →  tools  →  shared.domain / shared.adapters  →  shared.kernel
