@@ -18,7 +18,7 @@ from shared.kernel import paths
 ROOT = paths.ROOT
 
 # 不扫描的目录：数据、历史存档、构建产物
-SKIP_DIRS = {'workflow_data', '.git', '__pycache__', '归档_旧版本',
+SKIP_DIRS = {'data', 'workflow_data', '.git', '__pycache__', '归档_旧版本',
              '.venv', 'venv', 'build', 'dist', '.pytest_cache',
              'zotero_literature_platform.egg-info'}
 
@@ -45,20 +45,27 @@ def _rel(p):
 # ══════════════════════════════════════════════════════════════════════
 # 守卫一：数据契约只有一个实现
 # ══════════════════════════════════════════════════════════════════════
-# 允许直接写 'workflow_data' 字面量的文件（数据契约的实现处 + 它的测试）
+# 允许直接写数据根目录字面量的文件（数据契约的实现处 + 它的测试 + 搬家脚本）
 PATHS_OWNERS = {'shared/kernel/paths.py', 'tests/test_architecture.py',
-                'tests/test_core_paths.py'}
+                'tests/test_core_paths.py', 'host/deploy/migrate_data.py'}
 
 # 「这一行在拼路径」的特征
 _PATH_BUILDING = ('os.path.join', 'glob', 'open(', 'os.makedirs',
                   'os.path.exists', 'os.listdir', 'os.path.isdir', 'os.path.isfile')
 
+# 数据根目录的字面量。R6 之前这里写死的是 'workflow_data' 那一个词；改名成
+# `data/` 之后如果不跟着改，这条守卫会**一直空转**（踩坑 #83 就是这么来的：
+# 两条联网守卫在 R1 改完路径后静静地什么都不守了）。
+# 老名字一并留着：B 机切过来之前，任何还在拼老路径的代码照样要被揪出来。
+_DATA_ROOT = re.compile(r"""['"](?:workflow_)?data['"/]""")
+
 
 def test_数据目录路径只在core_paths里拼装():
-    """除 shared/kernel/paths.py 外，谁都不许自己拼 workflow_data 的路径。
+    """除 shared/kernel/paths.py 外，谁都不许自己拼 data/ 的路径。
 
     为什么：路径散落各处 = 数据契约无法被保证。改一次目录布局要改几十处，
-    漏一处就是一个只在运行时才暴露的 bug。
+    漏一处就是一个只在运行时才暴露的 bug。R6 窗把 `workflow_data/` 换成五层
+    `data/` 时，全系统**只改了 paths.py 一个文件**，靠的就是这条。
     """
     offenders = []
     for f in _py_files():
@@ -66,7 +73,8 @@ def test_数据目录路径只在core_paths里拼装():
         if rel in PATHS_OWNERS:
             continue
         for i, line in enumerate(open(f, encoding='utf-8', errors='replace'), 1):
-            if 'workflow_data' not in line or EXEMPT in line:
+            # 先把反斜杠归一成斜杠，正则里就不必处理 Windows 分隔符
+            if EXEMPT in line or not _DATA_ROOT.search(line.replace(os.sep, '/')):
                 continue
             # 只揪「真的在拼路径」的行。散文里提一句目录名（文档字符串、
             # 遍历时排除数据目录的集合字面量）不算违规，也没法在那儿加注释豁免。
@@ -187,7 +195,7 @@ def test_纯逻辑环不许有IO也不许知道数据放在哪():
     ② **不许 import shared.kernel.paths** —— domain 永远不知道文件放在哪，
        路径一律由调用方传进来
 
-    第二条是关键：一旦 domain 知道了 workflow_data 的布局，它就跟我们的
+    第二条是关键：一旦 domain 知道了 data/ 的布局，它就跟我们的
     数据组织方式绑死了，既不能独立测试，也不能被别的项目复用，
     而且改一次目录布局就会波及本该最稳定的一层。
     """
@@ -473,7 +481,7 @@ def test_守卫必须在函数体里而不是模块顶层():
 # 这些文件由程序生成或运行时改写，必须保持「未跟踪」
 _MUST_NOT_TRACK = [
     'HANDOVER.md',                       # handover.py 生成，面板上有按钮，两台都会点
-    'workflow_data/_last_search.json',   # 每次「找新文献」都重写
+    'data/state/_last_search.json',      # 每次「找新文献」都重写
 ]
 
 
@@ -508,7 +516,7 @@ def test_用户不可重建的数据仍在版本库里():
     tracked = _tracked_files()
     if not tracked:
         pytest.skip('拿不到 git 跟踪清单')
-    assert 'workflow_data/evalset.json' in tracked, (
+    assert 'data/state/evalset.json' in tracked, (
         'evalset.json（用户人工精读评价）必须留在版本库里 —— 它不可重建，'
         '而且只有运行端会产生它，版本库是它唯一的备份。')
 

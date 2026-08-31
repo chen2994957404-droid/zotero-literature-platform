@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-cd /d "%~dp0"
+cd /d "%~dp0.."
 set PYTHONIOENCODING=utf-8
 echo ============================================
 echo   用 PRO 模型重跑精读（更准，适合重要文献）
@@ -18,6 +18,6 @@ set /p num=请输入要用PRO重跑的文献序号（直接回车退出）:
 if "%num%"=="" goto end
 python -m tools.deepread --rerun-pro %num%
 echo.
-echo 完成！结果在 workflow_data\library\ 对应文献目录下。
+echo 完成！结果在 data\curated\ 对应文献目录下。
 :end
 pause

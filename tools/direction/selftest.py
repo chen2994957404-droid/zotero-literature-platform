@@ -20,7 +20,7 @@ from shared.kernel import paths
 
 TMP = tempfile.mkdtemp(prefix='dirmap_')
 _ORIG = paths.DIRECTION
-paths.DIRECTION = TMP           # 关键：绝不写真实 workflow_data
+paths.DIRECTION = TMP           # 关键：绝不写真实 data/
 
 from tools import direction as dm
 

@@ -10,7 +10,7 @@ from tools.digitize import digitize
 from shared.kernel import paths
 
 def main():
-    lib = paths.LIBRARY
+    lib = paths.RAW  # 解析产物住 raw 层（R6）
     parsed = None
     if os.path.isdir(lib):
         for k in os.listdir(lib):

@@ -15,8 +15,10 @@ KEY = 'ZZZZ0002'
 def main():
     ok = total = 0
     with tempfile.TemporaryDirectory() as d:
-        real_lib, real_struct, real_db = paths.LIBRARY, paths.STRUCTURED, jobs.db_path
-        paths.LIBRARY = os.path.join(d, 'library')
+        real_cur, real_raw = paths.CURATED, paths.RAW
+        real_struct, real_db = paths.STRUCTURED, jobs.db_path
+        paths.CURATED = os.path.join(d, 'curated')
+        paths.RAW = os.path.join(d, 'raw')
         paths.STRUCTURED = os.path.join(d, 'structured')
         jobs.db_path = lambda: os.path.join(d, 'state.db')
         jobs.close()
@@ -98,7 +100,8 @@ def main():
         finally:
             extract.llm_json = real_llm
             jobs.close()
-            paths.LIBRARY, paths.STRUCTURED, jobs.db_path = real_lib, real_struct, real_db
+            paths.CURATED, paths.RAW = real_cur, real_raw
+            paths.STRUCTURED, jobs.db_path = real_struct, real_db
 
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)

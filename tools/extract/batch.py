@@ -64,7 +64,7 @@ def _rebuild_index(log=print):
 # ───────────────────────── 精层：MineRU 全文 + 云端模型 ─────────────────────────
 
 def ensure_fullmd(key, log=print):
-    """确保 `library/<key>/parsed/full.md` 存在：有则复用，无则调一次 MineRU。
+    """确保 `raw/<key>/parsed/full.md` 存在：有则复用，无则调一次 MineRU。
 
     补的是 extract_structured 缺的一环 —— 缺 full.md 时它直接跳过。
     MineRU 有每日免费额度，解析零成本；解析结果与精读线共享，谁先跑谁生成。

@@ -33,13 +33,15 @@ def inspect(key):
     """
     missing, present = paths.missing_artifacts(key)
     size = 0
-    d = paths.paper_dir(key)
-    for dirpath, _dirs, files in os.walk(d):
-        for f in files:
-            try:
-                size += os.path.getsize(os.path.join(dirpath, f))
-            except OSError:
-                pass
+    # R6 起一篇文献占**两个**目录：raw（解析产物，占绝大部分体积）+ curated
+    # （精读产物）。只走一个的话报出来的「占多大」会小一个数量级。
+    for d in (paths.paper_raw_dir(key), paths.paper_dir(key)):
+        for dirpath, _dirs, files in os.walk(d):
+            for f in files:
+                try:
+                    size += os.path.getsize(os.path.join(dirpath, f))
+                except OSError:
+                    pass
     return missing, present, size / 1024 / 1024
 
 

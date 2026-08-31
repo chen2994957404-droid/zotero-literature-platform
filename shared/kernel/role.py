@@ -6,7 +6,7 @@
 本平台跑在两台机器上，**共用同一个 Zotero 账号**：
 
     A 机 = 编程端   有 Claude Code，改代码的唯一入口
-    B 机 = 运行端   Ollama、watcher、4 个自启任务、workflow_data 权威副本
+    B 机 = 运行端   Ollama、watcher、4 个自启任务、data/ 权威副本
 
 编程端做验证时如果回写 Zotero（打标签、传附件、改名），
 **污染的是真实文献库，而且立刻同步到主力机**。同理，在编程端误跑一次

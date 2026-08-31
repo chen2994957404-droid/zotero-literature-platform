@@ -123,7 +123,7 @@ def c_no_secrets():
     import re
     pat = re.compile(r"(sk-[a-zA-Z0-9]{24,}|['\"][A-Za-z0-9]{24}['\"]\s*#?\s*zotero)", re.I)
     hits = []
-    for f in code_files() + glob.glob('*.bat') + glob.glob('wf_backup/*.json'):
+    for f in code_files() + glob.glob('launch/*.bat') + glob.glob('wf_backup/*.json'):
         try:
             s = open(f, encoding='utf-8', errors='replace').read()
         except Exception:
@@ -380,7 +380,7 @@ def c_no_selftest():
 
 
 def c_data():
-    n_lib = len([d for d in glob.glob(os.path.join(paths.LIBRARY, '*') + os.sep) if os.path.isdir(d)])
+    n_lib = len([d for d in glob.glob(os.path.join(paths.CURATED, '*') + os.sep) if os.path.isdir(d)])
     n_struct = len(glob.glob(os.path.join(paths.STRUCTURED, '*.json')))
     vdb = os.path.exists(paths.VECTOR_DB)
     msg = f'library {n_lib} 篇 / structured {n_struct} 条 / 向量库{"在" if vdb else "缺失"}'

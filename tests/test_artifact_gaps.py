@@ -17,10 +17,15 @@ MODULE = os.path.join(paths.ROOT, 'host', 'doctor', 'artifact_gaps.py')
 
 @pytest.fixture
 def gaps(tmp_path, monkeypatch):
-    """加载脚本，并把 library 指到临时目录。"""
-    lib = tmp_path / 'library'
+    """加载脚本，并把两个数据层都指到临时目录。
+
+    R6 起一篇文献跨两层：解析产物在 raw、精读产物在 curated。
+    这里把 raw 也指过去，`make()` 造的 parsed/full.md 才落得进沙箱。
+    """
+    lib = tmp_path / 'curated'
     lib.mkdir()
-    monkeypatch.setattr(paths, 'LIBRARY', str(lib))
+    monkeypatch.setattr(paths, 'CURATED', str(lib))
+    monkeypatch.setattr(paths, 'RAW', str(lib))
     spec = importlib.util.spec_from_file_location('gaps_under_test', MODULE)
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
@@ -41,17 +46,17 @@ ALL = ['parsed/full.md', 'parsed/layout.json', 'meta.json', 'summary.html']
 
 class TestInspect:
     def test_产物齐全时不算缺(self, gaps, tmp_path):
-        make(tmp_path / 'library', 'AAAAAAAA', ALL)
+        make(tmp_path / 'curated', 'AAAAAAAA', ALL)
         missing, present, _size = gaps.inspect('AAAAAAAA')
         assert missing == [] and len(present) == 4
 
     def test_能认出缺哪些(self, gaps, tmp_path):
-        make(tmp_path / 'library', 'BBBBBBBB', ['parsed/full.md', 'meta.json'])
+        make(tmp_path / 'curated', 'BBBBBBBB', ['parsed/full.md', 'meta.json'])
         missing, present, _ = gaps.inspect('BBBBBBBB')
         assert 'summary' in missing and 'fulltext' in present
 
     def test_空目录算全缺(self, gaps, tmp_path):
-        os.makedirs(str(tmp_path / 'library' / 'CCCCCCCC'))
+        os.makedirs(str(tmp_path / 'curated' / 'CCCCCCCC'))
         missing, present, size = gaps.inspect('CCCCCCCC')
         assert len(missing) == 4 and present == [] and size == 0
 
@@ -78,7 +83,7 @@ class TestDiagnose:
 
 def test_只读不改任何东西(gaps, tmp_path):
     """这个脚本会在主力机上跑，**绝不能动数据**。"""
-    lib = tmp_path / 'library'
+    lib = tmp_path / 'curated'
     d = make(lib, 'DDDDDDDD', ['parsed/full.md'])
     before = sorted(os.walk(str(lib)))
     gaps.inspect('DDDDDDDD')

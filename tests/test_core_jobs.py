@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""shared.kernel.jobs 的离线测试 —— 全部用临时库，绝不碰真实的 workflow_data/state.db。
+"""shared.kernel.jobs 的离线测试 —— 全部用临时库，绝不碰真实的 data/state/state.db。
 
 这些断言就是状态库的契约本身：
 「只补缺的部分」「升级即查询」「状态库坏了也不许拖垮主流程」这三条承诺，

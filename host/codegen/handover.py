@@ -104,7 +104,7 @@ def tree():
 
     **为什么必须有这个（实测得出）**：让一个全新会话接手项目时，它的第一个动作
     通常是 glob 根目录 —— 结果返回 3318 个文件，前 100 个全是
-    `workflow_data/library/<KEY>/parsed/images/*.jpg`，**完全看不出项目长什么样**。
+    `data/raw/<KEY>/parsed/images/*.jpg`，**完全看不出项目长什么样**。
     在交接文件里直接给出目录树，新会话就不必去 glob，也就不会被数据淹没。
     """
     skip_dir = paths.NOISE_DIRS   # 树里要显示 shared/ tests/，只跳数据与缓存
@@ -119,6 +119,13 @@ def tree():
             elif d == 'docs':
                 n = len(glob.glob(os.path.join(p, '*.md')))
                 lines.append(f'{d}/                    ← 文档（{n} 份）')
+            elif d == 'launch':
+                # 这里装的是给人双击的 .bat（文件名 = 按钮标签），不是 .py。
+                # 按 .py 数会永远显示「0 个脚本」，等于没画。
+                bats = sorted(os.path.basename(f) for f in glob.glob(os.path.join(p, '*.bat')))
+                lines.append(f'{d}/  ← 给人双击的入口（{len(bats)} 个）')
+                if bats:
+                    lines.append('    ' + '、'.join(bats))
             else:
                 pys = sorted(os.path.basename(f) for f in glob.glob(os.path.join(p, '*.py')))
                 lines.append(f'{d}/ （{len(pys)} 个脚本）')
@@ -132,7 +139,7 @@ def tree():
     lines.append('')
     lines.append('根目录文件：' + '、'.join(files))
     lines.append('')
-    lines.append('（workflow_data/ 是数据目录，3000+ 文件，**不要去 glob 它**）')  # paths-exempt: 生成的文档正文
+    lines.append('（data/ 是数据目录（五层），3000+ 文件，**不要去 glob 它**）')  # paths-exempt: 生成的文档正文
     return lines
 
 
@@ -409,7 +416,7 @@ def sync_claude_md():
         return False
     body = ['', AUTO_BEGIN, '',
             '## 项目结构（自动同步，**不要 glob 根目录**）', '',
-            '> `workflow_data/` 有 3000+ 个数据文件，glob 根目录会直接淹掉你的上下文。',  # paths-exempt: 生成的文档正文
+            '> `data/` 有 3000+ 个数据文件，glob 根目录会直接淹掉你的上下文。',  # paths-exempt: 生成的文档正文
             '> 下面这棵树就是全部结构，不必再去扫。', '', '```']
     body += tree()
     body += ['```', '']

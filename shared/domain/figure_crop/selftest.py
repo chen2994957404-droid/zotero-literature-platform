@@ -9,7 +9,7 @@ from shared.domain.figure_crop import crop_figures
 from shared.kernel import paths
 
 def main():
-    lib = paths.LIBRARY
+    lib = paths.RAW  # 解析产物住 raw 层（R6）
     # 找第一个有 parsed/layout.json 的文献
     target = None
     if os.path.isdir(lib):
@@ -17,7 +17,7 @@ def main():
             if os.path.exists(os.path.join(lib, k, 'parsed', 'layout.json')):
                 target = os.path.join(lib, k, 'parsed'); break
     if not target:
-        print('  [SKIP] library 下没有已解析文献，无法测（非失败）'); sys.exit(0)
+        print('  [SKIP] raw 下没有已解析文献，无法测（非失败）'); sys.exit(0)
 
     figs = crop_figures(target)
     if figs and all('b64' in f and f['b64'].startswith('data:image') for f in figs):

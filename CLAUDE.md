@@ -7,14 +7,15 @@
 
 ## 项目结构（自动同步，**不要 glob 根目录**）
 
-> `workflow_data/` 有 3000+ 个数据文件，glob 根目录会直接淹掉你的上下文。
+> `data/` 有 3000+ 个数据文件，glob 根目录会直接淹掉你的上下文。
 > 下面这棵树就是全部结构，不必再去扫。
 
 ```
 docs/                    ← 文档（16 份）
 host/  ← 平台自身：让平台活着的东西（没人 import 它）（5 块）
     codegen、deploy、doctor、mcp、panel
-launch/ （0 个脚本）
+launch/  ← 给人双击的入口（7 个）
+    控制面板.bat、更新平台.bat、比一比两个模型.bat、精读监听.bat、诊断报告.bat、重抽缺SI的文献.bat、重跑精读PRO.bat
 shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
     kernel/  ← 基础设施：谁都依赖它，它不依赖任何人（12 块）
         cli、config、proc_lock、prompts、subproc、errors.py、heartbeat.py、jobs.py、log.py、mcp_prompt.py、paths.py、role.py
@@ -28,9 +29,9 @@ tests/ （10 个脚本）
 tools/  ← 工具切片：一个工具 = 一个自包含的包（10 块）
     ask、askworld、curate、deepread、digitize、direction、discover、extract、library、paperdb
 
-根目录文件：CLAUDE.md、LICENSE、README.md、REBUILD.md、pyproject.toml、requirements.txt、控制面板.bat、更新平台.bat、比一比两个模型.bat、精读监听.bat、诊断报告.bat、重抽缺SI的文献.bat、重跑精读PRO.bat
+根目录文件：CLAUDE.md、LICENSE、README.md、REBUILD.md、pyproject.toml、requirements.txt
 
-（workflow_data/ 是数据目录，3000+ 文件，**不要去 glob 它**）
+（data/ 是数据目录（五层），3000+ 文件，**不要去 glob 它**）
 ```
 
 **可枚举的块 30 个**（`tools/` 工具切片 + `shared/` 共用件，每个都有 `__init__.py` 与 `selftest.py`）
@@ -56,7 +57,7 @@ tools/  ← 工具切片：一个工具 = 一个自包含的包（10 块）
 
 ## 📌 新对话第一件事：读 `HANDOVER.md`（**别先 glob 根目录**）
 
-上面的目录树就是全部结构，不必再扫 —— `workflow_data/` 有 3000+ 个数据文件，
+上面的目录树就是全部结构，不必再扫 —— `data/` 有 3000+ 个数据文件，
 glob 根目录会直接淹掉上下文（实测：前 100 个结果全是精读图片）。
 
 `HANDOVER.md` 由 `python host/codegen/handover.py` 自动生成，全部抓自系统真实状态：
@@ -74,6 +75,9 @@ tools/    工具切片：一个工具 = 一个自包含的包
           每个工具都有五件套：tool.toml / cli.py / mcp.py / README.md / SKILL.md
 shared/   共用件：kernel（基础设施）/ domain（纯逻辑）/ adapters（唯一能联网的一层）
 host/     平台自身：panel 面板 · doctor 体检 · deploy 部署 · codegen 生成器 · mcp 协议层
+data/     数据五层（R6 窗，原 workflow_data/）：raw 解析产物 · curated 精读产物 ·
+          serving 对比表/向量库/方向地图 · state 索引 · logs · backup
+launch/   给人双击的 .bat（文件名保持中文 = 按钮标签）
 ```
 
 雪球（snowball）**不单独成工具**：读过代码后判定它是纯 API 包装，
@@ -82,7 +86,7 @@ host/     平台自身：panel 面板 · doctor 体检 · deploy 部署 · codeg
 **每个文件夹里都有自己的 `CLAUDE.md`。** 用户只选中某个文件夹时，那份就是完整上下文；
 在根目录（现在这里）你能看到全部，负责跨文件夹的改动与全局判断。
 
-用户的操作入口是根目录的 **控制面板.bat**（本地网页）。人看的地图在 `README.md`。
+用户的操作入口是 **`launch/控制面板.bat`**（本地网页；R6 窗起 .bat 都住 `launch/`）。人看的地图在 `README.md`。
 
 ## 🧰 按需加载的 skill（`.claude/skills/`）—— 别把它们的内容抄回本文件
 
@@ -109,7 +113,7 @@ host/     平台自身：panel 面板 · doctor 体检 · deploy 部署 · codeg
 | "库里有没有XX这篇" "最近加了什么" "有哪些标签" | `python -m tools.library search XX`（只读、免费、秒回；还有 item / pdf / fulltext / collections / tags / recent）|
 | "我库里关于XX有什么？" "帮我查查XX" | `python -m tools.ask "问题"`（RAG 问答，中文答+附来源；**只是找某篇在不在库里，用上面那条更便宜**）|
 | "帮我找XX方向的文献" "补充点XX的文献" | `python -m tools.discover "关键词"`（拆检索式+雪球+按「跟他多相关」排序）；只要一份简单列表用 `tools.discover.search(query)` |
-| "帮我横向比较XX" "这方向有什么规律/空白" | 读 `workflow_data/structured/compare.md`（研究论文横向对比表）；PBS 方向另有 `compare_PBS.md` |
+| "帮我横向比较XX" "这方向有什么规律/空白" | 读 `data/serving/structured/compare.md`（研究论文横向对比表）；PBS 方向另有 `compare_PBS.md` |
 | "精读某篇文献" | 让他在 Zotero 打「待处理」标签即可。**状态机自动判断**：只有正文→精读正文→标「正文精读」；有SI→连SI一起精读并合并→标「全文精读」；已精读过的只补缺的部分不重跑。服务已开机自启。 |
 | "把某批文献的数据抽出来" | `python -m tools.extract KEY1 KEY2 --parse`（自动 MineRU 解析+DeepSeek 精抽）|
 | "全世界有没有人做过XX" "查查外面的文献" | `python -m tools.askworld "问题"`（Sciverse 取原文片段作答，**带出处**；要 SCIVERSE_KEY）|
@@ -118,12 +122,12 @@ host/     平台自身：panel 面板 · doctor 体检 · deploy 部署 · codeg
 
 ## 现成数据资产（在哪找什么）
 
-- `workflow_data/structured/compare.md` — 研究论文横向对比表（2026-08-28 实测 175 条：39 精层 + 136 粗层）
-- `workflow_data/structured/compare_reviews.md` — 5 篇综述单列
-- `workflow_data/structured/compare_PBS.md` — 聚硼硅氧烷方向精层子表（10 篇，含真实数值）
-- `workflow_data/structured/<KEY>.json` — 每篇的结构化字段
-- `workflow_data/library/<KEY>/` — 精读过的文献（parsed/full.md 全文 + summary.html 中文精读）
-- `workflow_data/vector_db/` — 向量库（9105 块，供 `tools/ask` 检索）
+- `data/serving/structured/compare.md` — 研究论文横向对比表（2026-08-28 实测 175 条：39 精层 + 136 粗层）
+- `data/serving/structured/compare_reviews.md` — 5 篇综述单列
+- `data/serving/structured/compare_PBS.md` — 聚硼硅氧烷方向精层子表（10 篇，含真实数值）
+- `data/serving/structured/<KEY>.json` — 每篇的结构化字段
+- `data/raw/<KEY>/parsed/full.md` — 解析出的全文；`data/curated/<KEY>/summary.html` — 中文精读
+- `data/serving/vector_db/` — 向量库（9105 块，供 `tools/ask` 检索）
 
 ## 代码四环（可直接 import 复用）
 

@@ -68,7 +68,7 @@ class TestErrorTaxonomy:
 # ══════════════════════════════════════════════════════════════════════
 @pytest.fixture
 def tmp_logger(tmp_path, monkeypatch):
-    """把日志目录指到临时目录，避免污染真实 workflow_data/logs。"""
+    """把日志目录指到临时目录，避免污染真实 data/logs。"""
     monkeypatch.setattr(paths, 'LOGS', str(tmp_path))
     monkeypatch.setattr(paths, 'log', lambda name, create_dir=True: str(tmp_path / (name + '.log')))
     lg = Log('测试日志', to_stdout=False)

@@ -10,7 +10,7 @@ Claude **看不见那台机器的任何东西** —— 能拿到的只有用户�
 一次往返（你双击 → 把报告丢给 Claude）就能定位问题，而不是问五轮。
 
 用法：双击「诊断报告.bat」，或 `python host/doctor/report.py`
-产物：workflow_data/logs/诊断报告.txt（同时尝试复制到剪贴板）
+产物：data/logs/诊断报告.txt（同时尝试复制到剪贴板）
 """
 import io
 import os
@@ -169,7 +169,7 @@ def collect():
     # ── 日志尾巴 ──
     # 包没装好时读不到数据契约，退回到契约里写死的默认位置 ——
     # 这时候日志恰恰最该看，不能因为「读不到路径」就整段放弃。
-    logdir = paths.LOGS if CORE_OK else os.path.join(ROOT, 'workflow_data', 'logs')  # paths-exempt: 兜底
+    logdir = paths.LOGS if CORE_OK else os.path.join(ROOT, 'data', 'logs')  # paths-exempt: 兜底
     def _log(name):
         return (paths.log(name) if CORE_OK else os.path.join(logdir, name + '.log'))
     out.append(_section('watcher 日志（尾部）', _tail(_log('zotero_watcher'), 150)))
@@ -213,7 +213,7 @@ def main():
         dest = opt('--out') or paths.log('诊断报告', create_dir=True).replace('.log', '.txt')
     else:
         # 包没装好时也得把报告落盘，否则用户没东西可发给 Claude
-        d = os.path.join(ROOT, 'workflow_data', 'logs')   # paths-exempt: 包没装好时的兜底
+        d = os.path.join(ROOT, 'data', 'logs')   # paths-exempt: 包没装好时的兜底
         os.makedirs(d, exist_ok=True)
         dest = opt('--out') or os.path.join(d, '诊断报告.txt')
     print('正在收集…（完整体检要跑一会儿，请稍候）\n', flush=True)

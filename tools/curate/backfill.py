@@ -29,7 +29,7 @@ def item_data(key):
 
 def backfill_one(key):
     """补一篇。返回 'done' / 'skip'（已有）/ 'none'（不是文献目录）。失败抛异常。"""
-    d = os.path.join(paths.LIBRARY, key)
+    d = os.path.join(paths.CURATED, key)
     if not os.path.isdir(d):
         return 'none'
     if os.path.exists(paths.meta(key)):
@@ -44,7 +44,7 @@ def backfill_one(key):
 
 def main():
     done = skip = fail = 0
-    for key in sorted(os.listdir(paths.LIBRARY)):
+    for key in sorted(os.listdir(paths.CURATED)):
         try:
             r = backfill_one(key)
         except Exception as e:

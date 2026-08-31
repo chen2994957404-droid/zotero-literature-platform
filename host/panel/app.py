@@ -543,7 +543,7 @@ def collect_recent_reads(n=8):
     """最近处理过的文献：按 summary.html 修改时间排序，附正文字数用于识别废品。"""
     import glob, re
     rows = []
-    for f in glob.glob(os.path.join(paths.LIBRARY, '*', 'summary.html')):
+    for f in glob.glob(os.path.join(paths.CURATED, '*', 'summary.html')):
         try:
             st = os.path.getmtime(f)
             h = open(f, encoding='utf-8', errors='replace').read()

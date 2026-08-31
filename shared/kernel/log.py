@@ -28,7 +28,7 @@ log.error('MineRU 失败', exc)
 ```
 
 每行形如 `[2026-08-26 17:54:01] 开始处理 2T6H4S3D`，同时打到屏幕和
-`workflow_data/logs/<name>.log`；文件超过 5 MB 自动轮转，保留 3 份历史。
+`data/logs/<name>.log`；文件超过 5 MB 自动轮转，保留 3 份历史。
 
 ## 设计取舍
 

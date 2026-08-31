@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-cd /d "%~dp0"
+cd /d "%~dp0.."
 echo.
 echo   正在更新平台，请勿关闭窗口…
 echo.

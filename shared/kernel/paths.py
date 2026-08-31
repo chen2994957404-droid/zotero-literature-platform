@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 """shared.kernel.paths —— 数据契约的唯一实现。
 
-**全系统只有这个文件知道 workflow_data 里的目录长什么样。**
+**全系统只有这个文件知道 data/ 里的目录长什么样。**
 
 为什么需要它（见 docs/架构重构_v2总体设计.md 第三节 B）：
     `docs/数据契约.md` 把目录约定写得很清楚，但那只是散文。重构前，
-    `workflow_data/...` 的路径在全项目 **53 处**被手工拼装 ——
+    数据路径曾在全项目 **53 处**被手工拼装 ——
     意味着契约随时可能被某个脚本悄悄违反，而没有任何东西会发现。
 
     收进这一个文件之后：
       · 想改目录布局 = 改这一个文件 + 写一个迁移脚本
       · 可以写契约测试：扫全库，验证每篇文献都满足约定（见 tests/）
-      · 新写的代码不需要知道 'workflow_data' 这个字符串长什么样
+      · 新写的代码不需要知道 'data' 这个字符串长什么样
 
 用法：
     from shared.kernel import paths
@@ -35,16 +35,40 @@ from shared.kernel import errors
 # 那 40 处「往上走查 modules/ 目录」补丁的原因。
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# ── 一级目录 ──────────────────────────────────────────────────────────
-DATA = os.path.join(ROOT, 'workflow_data')
+# ── 五层数据（R6 窗，2026-08-31）──────────────────────────────────────
+# **数据单向流，每一层只从上一层构建。** 分层的判据是「重建它要付出什么」：
+#
+#   raw      解析器吐出来的东西 + 原始 PDF。重建 = 再花一次 MineRU 额度，
+#            而且得先有 PDF。**最贵的一层，也是唯一必须备份的一层。**
+#   curated  我们自己的流水线从 raw 造出来的：中文精读 HTML、元数据。
+#            重建 = 再花一次大模型的钱。
+#   serving  随时可重建：对比表、向量库、方向地图。删了跑一条命令就有。
+#   state    索引与进度，**不是真相**：state.db / papers.db / 上次检索结果。
+#            例外是 evalset.json（用户一条条打的人工评价，重建不了）。
+#   logs     运行日志与心跳。
+#   backup   快照（Zotero 标签、覆盖前的 structured）。
+#
+# ⚠ **偏离 REBUILD.md 第四节的映射表一处，理由如下**（同 R3/R4/R5 的
+# 「规则优先于表」）：那张表把 `full.md` 归进 curated。但 `full.md` 是 MineRU
+# 直接吐的，**没有经过我们任何一步加工**，按上面的判据它就是 raw；而且它与
+# `images/`（Markdown 里的相对图片链接）、`layout.json` + `*_origin.pdf`
+# （`figure_crop.crop_figures(parsed_dir)` 要求三者同目录）物理绑死。
+# 把它单独拎出来会**逼着改工具逻辑**，而 R6 明令「只动目录组织」。
+# 所以切口划在**目录边界**上：整个 `parsed/` 与 `si_parsed/` 进 raw，
+# 我们自己产出的 `meta.json` / `summary*.html` 进 curated。
+DATA = os.path.join(ROOT, 'data')
 
-LIBRARY = os.path.join(DATA, 'library')        # 核心数据区：按文献归档
-STRUCTURED = os.path.join(DATA, 'structured')  # 结构化抽取产物
-VECTOR_DB = os.path.join(DATA, 'vector_db')    # Chroma 向量库（可重建）
-LOGS = os.path.join(DATA, 'logs')              # 运行日志
-BACKUP = os.path.join(DATA, 'backup')          # 备份（如 Zotero 标签快照）
-INCOMING = os.path.join(DATA, '_incoming')     # 临时处理区（可清空）
-DIRECTION = os.path.join(DATA, 'direction')    # 方向地图：种子/引用网络/聚类（可重建）
+RAW = os.path.join(DATA, 'raw')            # 解析器原始产物 + 原始 PDF（最贵）
+CURATED = os.path.join(DATA, 'curated')    # 我们的流水线产出（精读、元数据）
+SERVING = os.path.join(DATA, 'serving')    # 随时可重建的服务层
+STATE = os.path.join(DATA, 'state')        # 索引与进度，不是真相
+LOGS = os.path.join(DATA, 'logs')          # 运行日志
+BACKUP = os.path.join(DATA, 'backup')      # 快照（Zotero 标签、structured 覆盖前）
+
+STRUCTURED = os.path.join(SERVING, 'structured')  # 结构化抽取产物
+VECTOR_DB = os.path.join(SERVING, 'vector_db')    # Chroma 向量库（可重建）
+DIRECTION = os.path.join(SERVING, 'direction')    # 方向地图：种子/引用网络/聚类
+INCOMING = os.path.join(RAW, '_incoming')         # 临时处理区（可清空）
 
 # ── 方向地图（领域全景，非单篇文献）────────────────────────────────
 # 与 library/ 的区别：library 按「我读过的文献」组织，direction 按「领域长什么样」
@@ -133,18 +157,52 @@ def check_key(key):
 
 # ── 单篇文献的产物（★ 标记的是下游可以依赖的稳定文件）────────────────
 def paper_dir(key, create=False):
-    """<library>/<key>/ —— 一篇文献的全部数据都在这里。"""
-    p = os.path.join(LIBRARY, check_key(key))
+    """★ curated/<key>/ —— 这篇文献里**我们自己造的**东西（精读、元数据）。
+
+    R6 之前它是 `library/<key>/`，解析产物也在里面。现在解析产物搬去了
+    `raw/<key>/`（见 `paper_raw_dir`）—— 一篇文献占两个目录，因为它跨两层。
+    """
+    p = os.path.join(CURATED, check_key(key))
     if create:
         os.makedirs(p, exist_ok=True)
     return p
 
 
-def parsed_dir(key, create=False):
-    """<library>/<key>/parsed/ —— PDF 解析器（现为 MineRU）的原始产物。"""
-    p = os.path.join(paper_dir(key), 'parsed')
+def paper_raw_dir(key, create=False):
+    """raw/<key>/ —— 这篇文献**解析器吐出来的**那一半（parsed/ 与 si_parsed/）。
+
+    要算「这篇一共占多大」得把它和 `paper_dir` 一起算（见 host/doctor/artifact_gaps）。
+    """
+    p = os.path.join(RAW, check_key(key))
     if create:
         os.makedirs(p, exist_ok=True)
+    return p
+
+
+def _open_paper(key):
+    """开工处理一篇文献 = 它在**两层里的目录都建好**。
+
+    R6 之前 `parsed/` 是 `library/<key>/` 的子目录，所以建解析目录顺手就把
+    这篇的目录建出来了，后面写 `meta.json` / `summary.html` 直接就能写。
+    分层之后这个隐含保证断了 —— 精读写 summary 时 `curated/<key>/` 还不存在，
+    只会在真跑一篇的时候炸（离线测试全绿也照样炸）。
+    与其让每个写产物的地方各自补一句 makedirs，不如把这个不变量钉在这里：
+    **这是唯一知道「一篇文献长什么样」的地方。**
+    """
+    os.makedirs(paper_dir(key), exist_ok=True)
+    os.makedirs(paper_raw_dir(key), exist_ok=True)
+
+
+def parsed_dir(key, create=False):
+    """raw/<key>/parsed/ —— PDF 解析器（现为 MineRU）的原始产物。
+
+    这一整个目录是**一个不可拆的单元**：`full.md` 用相对路径引 `images/`，
+    `crop_figures()` 要求 `layout.json` 与 `*_origin.pdf` 同目录。别只搬其中一个。
+    """
+    p = os.path.join(paper_raw_dir(key), 'parsed')
+    if create:
+        os.makedirs(p, exist_ok=True)
+        _open_paper(key)
     return p
 
 
@@ -168,10 +226,11 @@ def images_dir(key):
 
 
 def si_parsed_dir(key, create=False):
-    """<library>/<key>/si_parsed/ —— 补充材料（SI）的解析产物。"""
-    p = os.path.join(paper_dir(key), 'si_parsed')
+    """raw/<key>/si_parsed/ —— 补充材料（SI）的解析产物。"""
+    p = os.path.join(paper_raw_dir(key), 'si_parsed')
     if create:
         os.makedirs(p, exist_ok=True)
+        _open_paper(key)
     return p
 
 
@@ -211,12 +270,12 @@ def structured(key):
 
 
 def structured_backup(stamp):
-    """structured_bak_<stamp>/ —— 覆盖已有抽取结果之前的备份落点。
+    """backup/structured_<stamp>/ —— 覆盖已有抽取结果之前的备份落点。
 
     为什么要有（踩坑 #16）：曾经拿低档结果覆盖了高档结果，丢了真数据。
     重抽前先把旧的挪进这里，出事能原样搬回来。
     """
-    return os.path.join(DATA, 'structured_bak_' + str(stamp))
+    return os.path.join(BACKUP, 'structured_' + str(stamp))
 
 
 def compare(name='compare'):
@@ -243,45 +302,52 @@ def runtime(name):
 
 
 def state_db():
-    """workflow_data/state.db —— 任务状态库（谁做到哪一步，见 shared/kernel/jobs.py）。
+    """state/state.db —— 任务状态库（谁做到哪一步，见 shared/kernel/jobs.py）。
 
     **可重建**：删掉只丢历史与溯源，产物文件才是真相。
     """
-    return os.path.join(DATA, 'state.db')
+    return os.path.join(STATE, 'state.db')
 
 
 def papers_db():
-    """workflow_data/papers.db —— 文献查询库（结构化字段 + 能比大小的性能数值）。
+    """state/papers.db —— 文献查询库（结构化字段 + 能比大小的性能数值）。
 
     **可重建**：由 `structured/*.json` 整库生成（见 tools/paperdb），
     删掉零代价。真相永远是那些 JSON。
     """
-    return os.path.join(DATA, 'papers.db')
+    return os.path.join(STATE, 'papers.db')
 
 
 def evalset():
-    """workflow_data/evalset.json —— 精读质量评测集（用户的人工评价，不可重建）。"""
-    return os.path.join(DATA, 'evalset.json')
+    """state/evalset.json —— 精读质量评测集（用户的人工评价，**不可重建**）。
+
+    住在 state 层但**必须进版本库** —— 这一层别的东西都是索引，只有它是真相。
+    """
+    return os.path.join(STATE, 'evalset.json')
 
 
 def last_search():
-    """workflow_data/_last_search.json —— 上一次「找新文献」的结果暂存。"""
-    return os.path.join(DATA, '_last_search.json')
+    """state/_last_search.json —— 上一次「找新文献」的结果暂存。"""
+    return os.path.join(STATE, '_last_search.json')
 
 
 def junk_list(ext='json'):
-    """workflow_data/待删条目清单.<ext> —— 库房维护的待删清单。"""
-    return os.path.join(DATA, '待删条目清单.' + ext)
+    """state/待删条目清单.<ext> —— 库房维护的待删清单。"""
+    return os.path.join(STATE, '待删条目清单.' + ext)
 
 
 # ── 遍历 ──────────────────────────────────────────────────────────────
 def all_keys():
-    """列出 library/ 下所有已归档文献的 key（已按契约过滤掉非法目录名）。"""
-    if not os.path.isdir(LIBRARY):
+    """列出所有已归档文献的 key（已按契约过滤掉非法目录名）。
+
+    以 **curated/** 为准：只解析了没精读的半成品不算「已归档」，
+    要查那种半成品用 host/doctor/artifact_gaps。
+    """
+    if not os.path.isdir(CURATED):
         return []
     keys = []
-    for name in os.listdir(LIBRARY):
-        if KEY_RE.match(name.upper()) and os.path.isdir(os.path.join(LIBRARY, name)):
+    for name in os.listdir(CURATED):
+        if KEY_RE.match(name.upper()) and os.path.isdir(os.path.join(CURATED, name)):
             keys.append(name.upper())
     return sorted(keys)
 
@@ -308,7 +374,7 @@ def has(key, what='fulltext'):
 # ① 噪音目录：数据、缓存、构建产物。画目录树、扫源码时一律跳过，
 #    但它们**不是**「代码结构」的一部分。
 NOISE_DIRS = {
-    'workflow_data', 'n8n_data', 'wf_backup', 'b',
+    'data', 'workflow_data', 'n8n_data', 'wf_backup', 'b',
     '__pycache__', '.git', '.venv', 'venv', 'build', 'dist', '.pytest_cache',
     'zotero_literature_platform.egg-info',
 }

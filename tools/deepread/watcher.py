@@ -45,7 +45,7 @@ from tools.deepread.tags import (TRIGGER_TAG, TRIGGER_TAGS, TAG_NOPDF,
 WEB_API_KEY = get_key('ZOTERO_API_KEY')    # zotero.org 写权限key
 
 # 新的以文献为单元的库结构：library/<key>/{parsed/, summary.html}
-LIBRARY = paths.LIBRARY
+LIBRARY = paths.CURATED
 os.makedirs(LIBRARY, exist_ok=True)
 
 DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')

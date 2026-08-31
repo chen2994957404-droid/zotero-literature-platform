@@ -21,7 +21,7 @@ class TestCheckKey:
         '2T6H4S3',                # 7 位，太短
         '2T6H4S3DD',              # 9 位，太长
         '2T6H-S3D',               # 含非字母数字
-        'workflow_data',          # 有人把目录名当 key 传
+        'data',                   # 有人把目录名当 key 传
         'D:/x/library/2T6H4S3D',  # 有人把整条路径传进来
         None,
     ])
@@ -41,32 +41,32 @@ class TestPaperArtifacts:
         return os.path.relpath(p, paths.ROOT).replace('\\', '/')
 
     def test_文献目录(self):
-        assert self._rel(paths.paper_dir(self.KEY)) == 'workflow_data/library/2T6H4S3D'
+        assert self._rel(paths.paper_dir(self.KEY)) == 'data/curated/2T6H4S3D'
 
     def test_全文(self):
-        assert self._rel(paths.fulltext(self.KEY)).endswith('library/2T6H4S3D/parsed/full.md')
+        assert self._rel(paths.fulltext(self.KEY)) == 'data/raw/2T6H4S3D/parsed/full.md'
 
     def test_图坐标(self):
-        assert self._rel(paths.layout(self.KEY)).endswith('library/2T6H4S3D/parsed/layout.json')
+        assert self._rel(paths.layout(self.KEY)) == 'data/raw/2T6H4S3D/parsed/layout.json'
 
     def test_精读(self):
-        assert self._rel(paths.summary(self.KEY)).endswith('library/2T6H4S3D/summary.html')
+        assert self._rel(paths.summary(self.KEY)).endswith('curated/2T6H4S3D/summary.html')
 
     def test_SI精读(self):
-        assert self._rel(paths.si_summary(self.KEY)).endswith('library/2T6H4S3D/si_summary.html')
+        assert self._rel(paths.si_summary(self.KEY)).endswith('curated/2T6H4S3D/si_summary.html')
 
     def test_合并精读(self):
-        assert self._rel(paths.summary_full(self.KEY)).endswith('library/2T6H4S3D/summary_full.html')
+        assert self._rel(paths.summary_full(self.KEY)).endswith('curated/2T6H4S3D/summary_full.html')
 
     def test_元数据(self):
-        assert self._rel(paths.meta(self.KEY)).endswith('library/2T6H4S3D/meta.json')
+        assert self._rel(paths.meta(self.KEY)).endswith('curated/2T6H4S3D/meta.json')
 
     def test_结构化(self):
-        assert self._rel(paths.structured(self.KEY)) == 'workflow_data/structured/2T6H4S3D.json'
+        assert self._rel(paths.structured(self.KEY)) == 'data/serving/structured/2T6H4S3D.json'
 
     def test_对比表(self):
-        assert self._rel(paths.compare()) == 'workflow_data/structured/compare.md'
-        assert self._rel(paths.compare('compare_PBS')) == 'workflow_data/structured/compare_PBS.md'
+        assert self._rel(paths.compare()) == 'data/serving/structured/compare.md'
+        assert self._rel(paths.compare('compare_PBS')) == 'data/serving/structured/compare_PBS.md'
 
     def test_全都是绝对路径(self):
         for fn in (paths.paper_dir, paths.fulltext, paths.layout, paths.summary,
@@ -87,14 +87,14 @@ class TestNoSideEffects:
         assert not os.path.exists(p), '算一下路径就把目录建出来了，这是副作用'
 
     def test_create为真时才建(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(paths, 'LIBRARY', str(tmp_path / 'library'))
+        monkeypatch.setattr(paths, 'CURATED', str(tmp_path / 'curated'))
         p = paths.paper_dir('ZZZZZZZZ', create=True)
         assert os.path.isdir(p)
 
 
 class TestStateDB:
     def test_状态库在数据目录下且可重建(self):
-        assert paths.state_db() == os.path.join(paths.DATA, 'state.db')
+        assert paths.state_db() == os.path.join(paths.STATE, 'state.db')
 
     def test_算路径不产生副作用(self):
         # 只是算个路径，不该真的建库（shared.kernel.jobs 用到时才建）

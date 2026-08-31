@@ -90,9 +90,10 @@ def main():
 
     # ── 向量化：精层读 full.md，已入库的跳过 ───────────────────────
     with tempfile.TemporaryDirectory() as d:
-        real_lib = paths.LIBRARY
+        real_cur, real_raw = paths.CURATED, paths.RAW
         real_emb, real_coll = vectorize.embed, vectorize.get_collection
-        paths.LIBRARY = os.path.join(d, 'library')
+        paths.CURATED = os.path.join(d, 'curated')
+        paths.RAW = os.path.join(d, 'raw')
         store = FakeStore()
         vectorize.embed = lambda texts: [[0.0] for _ in texts]
         vectorize.get_collection = lambda rebuild=False: store
@@ -126,7 +127,7 @@ def main():
                 print(f'  [FAIL] 重复处理了 {again} 篇')
         finally:
             vectorize.embed, vectorize.get_collection = real_emb, real_coll
-            paths.LIBRARY = real_lib
+            paths.CURATED, paths.RAW = real_cur, real_raw
 
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)

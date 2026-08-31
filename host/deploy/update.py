@@ -241,7 +241,7 @@ def check_unpushed():
         print('    先把上面这几行发给 Claude，别急着提交。')
     else:
         if dirty:
-            print('      git add workflow_data/evalset.json')
+            print('      git add data/state/evalset.json')
             print('      git commit -m "主力机：精读评价更新"')
         print('      git push')
         print('  推完这一次，两边就合流了，以后不会再弹记事本。')

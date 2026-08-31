@@ -10,7 +10,7 @@
     ❌ 不许 import `shared.kernel.paths` —— **domain 永远不知道文件放在哪**，
        路径一律由调用方传进来
 
-第三条最容易被忽略，但它才是关键：一旦 domain 知道了 `workflow_data` 的布局，
+第三条最容易被忽略，但它才是关键：一旦 domain 知道了 `data/` 的布局，
 它就跟我们的数据组织方式绑死了，也就不能被独立测试和复用。
 
 允许的例外：`figure_crop` 依赖 PyMuPDF 读传入的 PDF 文件。

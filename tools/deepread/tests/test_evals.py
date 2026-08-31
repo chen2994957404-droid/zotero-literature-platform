@@ -20,7 +20,7 @@ from tools.deepread.evals.scorers import quality
 def sandbox(tmp_path, monkeypatch):
     """评测集与文献库都指到临时目录 —— 测试污染用户数据是不可接受的。"""
     monkeypatch.setattr(evals, 'EVALSET', str(tmp_path / 'evalset.json'))
-    monkeypatch.setattr(paths, 'LIBRARY', str(tmp_path / 'library'))
+    monkeypatch.setattr(paths, 'CURATED', str(tmp_path / 'curated'))
     return tmp_path
 
 

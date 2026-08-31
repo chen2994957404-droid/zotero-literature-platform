@@ -20,7 +20,8 @@ KEY = 'ABCD1234'
 @pytest.fixture
 def sandbox(tmp_path, monkeypatch):
     """把数据目录和状态库都指到临时目录。"""
-    monkeypatch.setattr(paths, 'LIBRARY', str(tmp_path / 'library'))
+    monkeypatch.setattr(paths, 'CURATED', str(tmp_path / 'curated'))
+    monkeypatch.setattr(paths, 'RAW', str(tmp_path / 'raw'))
     monkeypatch.setattr(paths, 'STRUCTURED', str(tmp_path / 'structured'))
     monkeypatch.setattr(jobs, 'db_path', lambda: str(tmp_path / 'state.db'))
     jobs.close()

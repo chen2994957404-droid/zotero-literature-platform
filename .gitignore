@@ -2,34 +2,33 @@
 # 原则：只版本管理「代码 + 文档 + 配置」，不管理「数据 + 临时 + 密钥」。
 # 数据是可再生的（重跑脚本能生成），且体积大、变动频繁，不适合进 Git。
 
-# --- 临时备份 / 回收（我们手动做的快照，Git 接管后不再需要）---
-workflow_data/structured_bak_*/
-workflow_data/_orphan_trash/
-workflow_data/*_bak*/
+# --- 数据目录（R6 窗 2026-08-31：workflow_data/ → 五层 data/）---
+# 整个 data/ 默认不进版本库，只把**重建不了**的三样用 ! 放回来：
+#   evalset.json          用户一条条打的精读评价
+#   */band.json           窄带定义（检索式 + 边界判据），丢了要重新想一遍
+#   zotero_tags_backup    改标签前的快照
+# 判据见 shared/kernel/paths.py 顶部的五层说明。
+data/*
+!data/state/
+data/state/*
+!data/state/evalset.json
+!data/serving/
+data/serving/*
+!data/serving/direction/
+data/serving/direction/*
+!data/serving/direction/*/
+data/serving/direction/*/*
+!data/serving/direction/*/band.json
+!data/backup/
+data/backup/*
+!data/backup/zotero_tags_backup.json
+
+# --- 老数据目录（B 机切过来之前还在，一律不进版本库）---
+workflow_data/
+
+# --- 临时备份 / 回收 ---
 *_bak/
 *.bak
-
-# --- 可再生的数据产物（重跑脚本能生成，不进版本库）---
-workflow_data/library/
-workflow_data/vector_db/
-workflow_data/structured/
-workflow_data/logs/
-workflow_data/_incoming/
-workflow_data/*.txt
-workflow_data/state.db
-
-# --- 方向地图 ---
-# map.db 与各种导出都能由 `方向地图.py build/cluster/report` 重建，不进仓库。
-# 但 band.json 是**窄带定义**（检索式 + 边界判据），是这个目录里唯一
-# 不可重建的东西 —— 丢了要重新想一遍边界怎么画，所以必须进仓库。
-workflow_data/direction/*
-!workflow_data/direction/*/
-workflow_data/direction/*/*
-!workflow_data/direction/*/band.json
-# 查询库同理：由 structured/*.json 秒级重建，不该进仓库
-workflow_data/papers.db
-workflow_data/papers.db-*
-workflow_data/state.db
 
 # --- n8n 运行数据（数据库/日志，非源码）---
 n8n_data/

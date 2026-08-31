@@ -12,7 +12,7 @@
 （`type/ mechanism/ topic/ method/ material/` 前缀，共 1500 次标记）。
 Zotero 现在只保留「待处理」「已精读」这类工作流标签。
 
-**如需重新启用，先与用户确认。** 备份见 `workflow_data/backup/zotero_tags_backup.json`。
+**如需重新启用，先与用户确认。** 备份见 `data/backup/zotero_tags_backup.json`。
 留着它不是为了跑，是因为「怎么给材料文献分维度」这套提示词还有参考价值。
 """
 import sys
