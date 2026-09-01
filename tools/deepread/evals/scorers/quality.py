@@ -12,9 +12,29 @@ import time
 # 精读模板应有的栏目。少一个就是模型没按范式写。
 SECTIONS = ('导读', '引言', '结果', '讨论', '机理', '总结', '文献信息')
 
+# 指标口径的版本号。**改了任何一条算法就 +1。**
+#
+# 为什么必须有：快照是存进 `evalset.json` 的历史数据，用来将来做「主观评分 ↔
+# 客观指标」的校准。口径一变，旧快照和新算的就不可比了 —— 而这种不可比
+# **不会报错**，只会让校准悄悄建立在两把不同的尺子上。
+# 有了版本号，`evals.stats()` 能一眼看出「这些数是两把尺子量出来的」，
+# `evals.recompute()` 能把旧的重算齐。
+METRICS_VER = 2
+
 # 材料文献的精读若没有带单位的数值，基本是空话。
-_NUM_RE = re.compile(r'\d+(?:\.\d+)?\s*(?:%|nm|μm|um|mm|cm|kPa|MPa|GPa|Pa·s|'
-                     r'°C|℃|K|g/mol|kJ|mol|wt%|s⁻¹|Hz|min|h)\b')
+#
+# ⚠ 分成两组是有原因的（v1 → v2 修的就是这个）：
+#   · 以字母结尾的单位（MPa、nm、min…）需要 `\b`，否则 "5 min" 会匹配 "5 mi" 之类
+#   · **以符号结尾的单位（%、℃、°C、wt%…）绝不能加 `\b`** ——
+#     `\b` 要求后面紧跟词字符，而中文正文里 "800 %" 后面通常是「，」或空格，
+#     于是整整一类百分数**从来没被数进去过**。
+#     实测「拉伸强度 12 MPa，断裂伸长率 800 %」v1 只数出 1 处，v2 数出 2 处。
+#   百分数在材料文献里恰恰是最常见的一类数值（伸长率、修复效率、保持率），
+#   漏掉它等于这个指标一直在低估「有没有真数据」。
+_UNITS_WORD = r'nm|μm|um|mm|cm|kPa|MPa|GPa|K|g/mol|kJ|mol|Hz|min|h'
+_UNITS_SYMBOL = r'wt%|Pa·s|°C|℃|s⁻¹|%'          # 长的排前面，别让 `%` 先吃掉 `wt%`
+_NUM_RE = re.compile(r'\d+(?:\.\d+)?\s*(?:(?:' + _UNITS_WORD + r')\b'
+                     r'|(?:' + _UNITS_SYMBOL + r'))')
 
 
 def metrics(html):
@@ -35,6 +55,7 @@ def metrics(html):
         'figures': html.count('<img'),
         'numbers': len(_NUM_RE.findall(body)),
         'sections': sum(1 for s in SECTIONS if s in body),
+        'metrics_ver': METRICS_VER,      # 这份数是用哪把尺子量的
     }
 
 

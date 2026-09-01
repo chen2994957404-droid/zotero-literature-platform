@@ -1066,6 +1066,13 @@ async function loadReview(){
       图 ${c.figures.good}/${c.figures.bad} · 数值 ${c.numbers.good}/${c.numbers.bad} ·
       章节 ${c.sections.good}/${c.sections.bad}</span>`;
   }
+  // 口径变了而旧快照没重算 —— 不说出来的话，将来的校准会建立在两把尺子上。
+  // 这个提示只在真有旧快照时出现，平时不占版面。
+  if((s.stale||[]).length){
+    sum+=`<br><span class="msg warn">有 ${s.stale.length} 条评价是用旧的指标口径算的`
+      +`（现在是 v${s.metrics_ver}）。精读文件还在的话，`
+      +`跑一次 <code>python -c "from tools.deepread import evals; evals.recompute()"</code> 刷齐。</span>`;
+  }
   $('#reviewsum').innerHTML=sum;
 
   if(d.error){ $('#review').innerHTML=`<div class="row"><span class="msg bad">${esc(d.error)}</span></div>`; return; }

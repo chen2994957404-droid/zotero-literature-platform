@@ -26,7 +26,9 @@
   - save(key, verdict, ...)  → 记录一条评价（含快照）
   - load() / get(key) / remove(key)
   - pending(read_keys)       → 「读完了但还没评价」的清单
-  - stats()                  → 好/差各多少、客观指标的差异、还差几篇才够校准
+  - stats()                  → 好/差各多少、客观指标的差异、还差几篇才够校准；
+                              `stale` 列出用旧口径算的快照
+  - recompute()              → 按当前口径重算所有快照（改了 METRICS_VER 就跑一次）
   - REASONS                  → 差评原因选项（面板上给用户勾）
   - THRESHOLDS               → thresholds.toml 的内容
 """
@@ -72,6 +74,36 @@ def snapshot(key):
     except paths.BadKeyError:
         return None
     return quality.snapshot_file(p)
+
+
+def recompute(log=print):
+    """按当前口径重算所有已存快照。返回 (重算成功数, 文件已不在的数)。
+
+    **什么时候要跑**：`scorers/quality.py` 的 `METRICS_VER` 一变就跑一次。
+    口径改了而不重算，`evalset.json` 里就同时躺着两把尺子量出来的数 ——
+    校准会安静地建立在错误的基础上，**不会有任何报错**。
+
+    精读 HTML 还在盘上就能原地重算，所以这件事是零成本的（不调模型、不花钱）。
+    文件已经不在的（B 机重建过、或条目被删了），保留旧快照并原样报出来 ——
+    宁可让人看见「这几条是旧口径」，也不要偷偷丢掉用户一条条打出来的评价。
+    """
+    data = load()
+    done = missing = 0
+    for key, v in data.items():
+        if not v.get('snapshot'):
+            continue
+        fresh = snapshot(key)
+        if fresh is None:
+            missing += 1
+            log(f'  [{key}] 精读 HTML 已不在，保留旧口径快照')
+            continue
+        v['snapshot'] = fresh
+        done += 1
+    if done:
+        _write(data)
+    log(f'重算完成：{done} 条已更新到口径 v{quality.METRICS_VER}'
+        + (f'，{missing} 条文件不在' if missing else ''))
+    return done, missing
 
 
 def load():
@@ -160,6 +192,12 @@ def stats():
         for r in v.get('reasons') or []:
             reason_count[r] = reason_count.get(r, 0) + 1
 
+    # 口径混着就不该直接拿去校准 —— 两把尺子量出来的数放在一起比，
+    # 差异可能全是口径造成的。这里只**报出来**，不擅自丢弃任何一条评价。
+    stale = sorted(k for k, v in data.items()
+                   if v.get('snapshot')
+                   and v['snapshot'].get('metrics_ver', 1) != quality.METRICS_VER)
+
     need_good, need_bad = max(0, MIN_GOOD - len(good)), max(0, MIN_BAD - len(bad))
     return {
         'total': len(data), 'good': len(good), 'bad': len(bad),
@@ -168,4 +206,6 @@ def stats():
         'need_good': need_good, 'need_bad': need_bad,
         'min_good': MIN_GOOD, 'min_bad': MIN_BAD,
         'ready': need_good == 0 and need_bad == 0,   # 样本够不够做校准
+        'metrics_ver': quality.METRICS_VER,
+        'stale': stale,        # 这些快照是旧口径算的，跑 evals.recompute() 可以刷齐
     }

@@ -394,11 +394,11 @@ SINK_EXEMPT_RINGS = ('shared/adapters',)
 # 「搬走会违反另一条规则」或「它的第二个使用者是契约而不是 import」。
 # 写不出这种理由的，就该老老实实搬进那个唯一的使用者里。
 SINK_EXEMPT = {
-    'shared/domain/figure_crop':
-        'digitize 的对外契约（SKILL.md / README / MCP 提示词）明写「先用它裁图，'
-        '再逐张数字化」，只是今天那一步由调用方手工完成、没有代码调用。'
-        '搬进 deepread 会让 digitize 的文档指向另一个工具的内部。'
-        '等 digitize 长出「从解析目录直接数字化」的入口，这条豁免自动消失（见待办）。',
+    # 目前是空的 —— 唯一那条（`shared/domain/figure_crop`）已经在 2026-09-01 消失：
+    # 当时 digitize 的文档写着「先用它裁图再逐张数字化」，但那一步是让调用方手工做的，
+    # 代码上只有 deepread 一个使用者。后来给 digitize 补了 `digitize_paper()`
+    # （它自己裁图），figure_crop 就真的有两个使用者了，豁免自然作废。
+    # **这才是豁免该有的下场**：要么变成真的合规，要么把块搬走 —— 不是一直挂着。
 }
 
 

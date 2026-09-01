@@ -12,7 +12,16 @@ r = digitize(image_b64, provider='ollama', model='qwen2.5vl:7b')  # 本地零成
 # → {chart_type, x_axis, y_axis, series:[{name, points:[[x,y]...]}], confidence, note}
 #   或 {error: ...}
 ```
-常配合 figure_crop 用：先 crop_figures 裁图，再 digitize 每张。
+已精读过的文献不用自己裁图：
+
+```python
+from tools.digitize import digitize_paper
+
+r = digitize_paper('ABCD1234', only=[2, 3])   # 只读第 2、3 张图
+# → {2: {...}, 3: {...}}；没图或没解析过就是 {}
+```
+
+不给 `only` 就是整篇每张都读 —— **每张各调一次云端模型，是要花钱的**。
 
 ## 技术路线（对标结论）
 用**视觉大模型**（VLM），不用传统 OpenCV。依据 PlotPick（2026, arXiv:2605.06021）：

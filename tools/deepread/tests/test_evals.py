@@ -68,11 +68,13 @@ def test_快照能算且不存在的返回None(sandbox):
     snap = evals.snapshot('AAAA1111')
     assert snap['chars'] > 0 and snap['figures'] == 1
     assert snap['sections'] == 2
-    # 只数出 1 处而不是 2 处：正则以 `` 收尾，而 `%` 后面跟的是中文标点，
-    # 构不成词边界 —— 于是**百分数几乎永远不被计入**。这是搬家前就有的老毛病，
-    # R5 是搬家窗不改逻辑，已记进 docs/待办与需求.md。这里先钉住现状，
-    # 免得将来修好了没人发现指标口径变了（历史快照会跟着变得不可比）。
-    assert snap['numbers'] == 1
+    # 2 处：`12 MPa` 与 `800 %`。
+    # **这里曾经断言的是 1** —— 正则以词边界收尾，而 `%` 后面跟的是中文标点，
+    # 于是百分数从来没被数进去过。R5 是搬家窗不改逻辑，就先把错的现状钉在这里，
+    # 并写明「将来修好了这条会红，那时记得指标口径变了、历史快照不可比」。
+    # 2026-09-01 真的修了（METRICS_VER 1 → 2），这条也真的红了 —— 安全网起作用了。
+    # 配套动作：快照带上 metrics_ver、stats() 点名旧口径的、recompute() 刷齐。
+    assert snap['numbers'] == 2
     assert 'size_kb' in snap and 'mtime' in snap
     assert evals.snapshot('EEEE0000') is None          # 合法 key，但没这份文件
     assert evals.snapshot('不是key') is None            # 怪 key 也只是 None，不许炸
@@ -110,3 +112,45 @@ def test_废品线只有一个出处():
     with open(p, 'rb') as f:
         t = tomllib.load(f)
     assert t['quality']['min_chars'] == main_text.MIN_OK
+
+
+# ────────────────────────── 指标口径（v2，2026-09-01）──────────────────────────
+
+def test_百分数要被数进去():
+    """v1 的正则以 `\b` 收尾，而 `%` 后面通常是中文标点 —— 于是整整一类数值
+    从来没被数进去过。百分数在材料文献里恰恰最常见（伸长率、修复效率、保持率）。
+    """
+    from tools.deepread.evals.scorers import quality
+    html = ('<p>拉伸强度 12 MPa，断裂伸长率 800 %，修复效率 95%，'
+            '模量 1.2 GPa，5 wt% 硼，120 °C 下 30 min</p>')
+    hits = quality._NUM_RE.findall(html)
+    assert quality.metrics(html)['numbers'] == 7, f'只数出 {hits}'
+    for want in ('800 %', '95%', '5 wt%', '120 °C'):
+        assert want in hits, f'漏了 {want}（{hits}）'
+
+
+def test_字母单位仍然要求词边界():
+    """放开 `%` 的边界之后，别把字母单位的边界也一起放开了。"""
+    from tools.deepread.evals.scorers import quality
+    assert quality._NUM_RE.findall('<p>5 minutes</p>') == [], '「5 minutes」不该算成 5 min'
+    assert quality._NUM_RE.findall('<p>反应 30 min。</p>') == ['30 min']
+
+
+def test_快照带着口径版本号(sandbox):
+    """没有版本号就没法知道两条快照是不是同一把尺子量的 —— 而这种不可比不会报错。"""
+    from tools.deepread.evals.scorers import quality
+    assert quality.metrics('<p>1 MPa</p>')['metrics_ver'] == quality.METRICS_VER
+
+
+def test_旧口径的快照会被点名(sandbox):
+    """`stats()` 要把旧口径的快照报出来，但**绝不擅自丢掉**用户的评价。"""
+    from tools.deepread import evals
+    evals.save('ABCD1234', 'good', title='假的')
+    data = evals.load()
+    data['ABCD1234']['snapshot'] = {'chars': 1, 'figures': 0, 'numbers': 0,
+                                    'sections': 0, 'metrics_ver': 1}
+    evals._write(data)
+
+    st = evals.stats()
+    assert st['stale'] == ['ABCD1234'], '旧口径的快照没被点名'
+    assert st['total'] == 1, '点名不等于丢掉 —— 评价必须还在'

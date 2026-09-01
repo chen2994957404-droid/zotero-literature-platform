@@ -3,6 +3,7 @@
 ## 什么时候用我
 
 - 用户说「把这张图里的曲线变成数据」「这条应力应变曲线的数值给我」
+- 用户指着**某篇已精读的文献**说「把它图 3 的数据给我」→ 走 `--key`，我自己裁图
 - 你已经有一张**图片文件**（曲线图/散点图/柱状图/箱线图）
 
 ## 怎么用
@@ -11,12 +12,13 @@
 
 ```
 python -m tools.digitize "<图片路径>" [--hint "只读红色那条曲线"]
+python -m tools.digitize --key <Zotero条目key> --figures 2,3   # 已精读的文献，直接指图号
 ```
 
 输出 JSON：`chart_type / x_axis / y_axis / series[{name, points}] / confidence / note`。
 
-要先从 PDF 里把图裁出来 → 用 `shared.domain.figure_crop`；
-精读过的文献，图已经裁好在 `library/<KEY>/parsed/images/`。
+**文献已经精读过就走 `--key`**，裁图那步我自己做（用 `shared.domain.figure_crop`，踩坑 #7 的智慧在那里面，别自己重写）。
+⚠ 不给 `--figures` 就是整篇每张图都读，**每张各花一次钱** —— 先问用户要哪几张。
 
 ## 什么时候**别**用我
 

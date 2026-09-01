@@ -15,6 +15,7 @@
 |---|---|
 | `digitize(image_b64, hint='', provider, model, key) → dict` | 一张图 → `{chart_type, x_axis, y_axis, series, confidence, note}`，读不出时 `{'error': ...}` |
 | `digitize_file(path, hint='', ...) → dict` | 同上，但直接给图片文件路径（命令行用）|
+| `digitize_paper(item_key, only=None, ...) → {图号: dict}` | **一篇已解析文献 → 每张图的数值**（自己裁图，不用调用方操心）|
 
 ⚠ **必须用云端大模型**：本地 7B 视觉模型会**编出看似合理的假数据**
 （宪法零号判据的反面教材 —— 编的数字最像事实）。
@@ -74,3 +75,37 @@ def digitize_file(path, hint='', provider=None, model=None, key=None):
     except OSError as e:
         return {'error': f'读不了图片文件：{e}'}
     return digitize(b64, hint=hint, provider=provider, model=model, key=key)
+
+
+def digitize_paper(item_key, only=None, hint='', provider=None, model=None, key=None):
+    """**一篇已解析文献 → 它每张图的数值**（`{图号: 结果}`）。
+
+    此前只有「给我一张图片文件」这个入口，而用户手里从来不是图片文件 ——
+    是一篇 Zotero 里的文献。中间那步「从解析产物里把 Figure 裁出来」
+    写在 README 和 MCP 提示词里让**调用方自己做**，等于把最容易做错的一步
+    （踩坑 #7 的全部智慧都在 `figure_crop` 里）留给了别人。
+
+    `only` 给图号列表就只做那几张（`[2, 3]`）；不给就整篇。
+    **每张图都要调一次云端视觉模型，整篇是要花钱的**，所以 `only` 是常用参数。
+
+    返回 `{图号: {chart_type, series, ...}}`；某张读不出来时那一项是 `{'error': ...}`，
+    不影响别的图 —— 与 `digitize()` 同一个契约。
+    **没图就返回 `{}`，不抛异常**：无论是「这篇没有曲线图」还是「这篇还没解析」，
+    对调用方都是同一件事（这次没东西可做），而 `digitize()` 一族的契约是不抛异常。
+    """
+    from shared.kernel import paths
+    from shared.domain.figure_crop import crop_figures
+
+    try:
+        figs = crop_figures(paths.parsed_dir(item_key))
+    except (OSError, paths.BadKeyError):
+        return {}
+    out = {}
+    for f in figs:
+        num = f.get('num')
+        if only and num not in only:
+            continue
+        r = digitize(f['b64'], hint=hint, provider=provider, model=model, key=key)
+        r['caption'] = f.get('caption', '')
+        out[num] = r
+    return out

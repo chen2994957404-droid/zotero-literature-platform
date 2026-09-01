@@ -1,0 +1,129 @@
+{
+  "_说明": [
+    "金标：一小撮**造出来的**结构化记录 + 一组查询与期望结果。",
+    "为什么用造的而不是真实数据：真实库每天都在变，用它当金标的话，",
+    "评测会因为『用户又加了一篇』而变红 —— 那种红没人会认真看，等于没有评测。",
+    "这里的记录刻意覆盖几个容易出错的点：单位混用、区间值、比较号、",
+    "N/A 的各种写法、综述与研究论文的区分、精层与粗层的档次。",
+    "字段名与 shared/domain/schema.SCHEMA 保持一致；加字段不用改这个文件。"
+  ],
+  "records": [
+    {
+      "key": "GOLD0001",
+      "title": "Boron-rich PBS elastomer with high tensile strength",
+      "doi": "10.1000/gold.1",
+      "source": "extract_structured",
+      "schema_ver": 2,
+      "si_used": true,
+      "material_system": "polyborosiloxane",
+      "dynamic_bond": "B-O dative bond",
+      "precursors": "PDMS-OH; boric acid",
+      "synthesis_conditions": "150 °C, 4 h, vacuum",
+      "characterization": "FTIR; 11B NMR; DMA",
+      "key_properties": "tensile strength: 12.5 MPa; elongation at break: 800 %; self-healing efficiency: 95 %",
+      "conclusion": "Dative B-O bonds give both strength and healing."
+    },
+    {
+      "key": "GOLD0002",
+      "title": "Weak silicone network with kPa-level modulus",
+      "doi": "10.1000/gold.2",
+      "source": "extract_structured",
+      "schema_ver": 2,
+      "si_used": false,
+      "material_system": "silicone",
+      "dynamic_bond": "hydrogen bond",
+      "precursors": "PDMS; urea unit",
+      "synthesis_conditions": "room temperature, 24 h",
+      "characterization": "rheology",
+      "key_properties": "tensile strength: 300 kPa; storage modulus: 50 kPa",
+      "conclusion": "Soft network, poor mechanical performance."
+    },
+    {
+      "key": "GOLD0003",
+      "title": "Thermal window of a vitrimer, reported as a range",
+      "doi": "10.1000/gold.3",
+      "source": "extract_library",
+      "schema_ver": 2,
+      "si_used": false,
+      "material_system": "vitrimer",
+      "dynamic_bond": "transesterification",
+      "precursors": "N/A",
+      "synthesis_conditions": "未提及",
+      "characterization": "TGA",
+      "key_properties": "processing temperature: 225–300 °C; recycling times: >20 times",
+      "conclusion": "Wide processing window."
+    },
+    {
+      "key": "GOLD0004",
+      "title": "A review of dynamic covalent elastomers",
+      "doi": "10.1000/gold.4",
+      "source": "extract_library",
+      "schema_ver": 2,
+      "si_used": false,
+      "material_system": "review of dynamic covalent networks",
+      "dynamic_bond": "various",
+      "precursors": "N/A",
+      "synthesis_conditions": "N/A",
+      "characterization": "N/A",
+      "key_properties": "N/A",
+      "conclusion": "Overview of the field.",
+      "is_review": true
+    }
+  ],
+  "cases": [
+    {
+      "name": "按体系搜文本能搜到",
+      "why": "最基本的一条：`find(text=...)` 要能跨字段搜到词",
+      "call": {"fn": "find", "args": {"text": "polyborosiloxane"}},
+      "expect_keys": ["GOLD0001"]
+    },
+    {
+      "name": "按性能比大小_MPa",
+      "why": "把 'tensile strength: 12.5 MPa' 拆成数值再比大小，是这块存在的理由",
+      "call": {"fn": "find", "args": {"prop": "tensile", "min_value": 10, "unit": "MPa"}},
+      "expect_keys": ["GOLD0001"]
+    },
+    {
+      "name": "不做单位换算_kPa不会被当成MPa",
+      "why": "300 kPa < 12.5 MPa，但数字 300 > 10。不筛单位就会把弱的那篇捞进来 —— 这正是「不做单位换算、查询时按名字+单位一起筛」的代价，必须钉住",
+      "call": {"fn": "find", "args": {"prop": "tensile", "min_value": 10}},
+      "expect_keys": ["GOLD0001", "GOLD0002"]
+    },
+    {
+      "name": "区间值按下界入库",
+      "why": "'225–300 °C' 要能被 min_value=200 捞到（下界 225），不是当成一整个字符串",
+      "call": {"fn": "find", "args": {"prop": "processing temperature", "min_value": 200, "unit": "°C"}},
+      "expect_keys": ["GOLD0003"]
+    },
+    {
+      "name": "有真值的字段才算有",
+      "why": "'N/A' / '未提及' / 空 都不算有值，否则覆盖率统计全是假的",
+      "call": {"fn": "find", "args": {"field": "synthesis_conditions"}},
+      "expect_keys": ["GOLD0001", "GOLD0002"]
+    },
+    {
+      "name": "综述能被单独筛出来",
+      "why": "综述没有自己的实验数据，混进对比表会污染横向比较",
+      "call": {"fn": "query", "args": {"sql": "SELECT key FROM papers WHERE is_review = 1"}},
+      "expect_keys": ["GOLD0004"]
+    },
+    {
+      "name": "精层与粗层分得开",
+      "why": "粗层是本地模型抽的，可信度低。分不开就没法只信精层",
+      "call": {"fn": "query", "args": {"sql": "SELECT key FROM papers WHERE source = 'extract_library'"}},
+      "expect_keys": ["GOLD0003", "GOLD0004"]
+    },
+    {
+      "name": "只允许只读查询",
+      "why": "查询库不是写入口。真相是 structured/*.json，改数据要去改 JSON 再 rebuild",
+      "call": {"fn": "query", "args": {"sql": "DELETE FROM papers"}},
+      "expect_error": true
+    },
+    {
+      "name": "一次只允许一条语句",
+      "why": "拼多条语句是把只读闸门绕过去的最简单办法",
+      "call": {"fn": "query", "args": {"sql": "SELECT key FROM papers; DROP TABLE papers"}},
+      "expect_error": true
+    }
+  ]
+}

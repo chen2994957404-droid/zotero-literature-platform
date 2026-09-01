@@ -52,7 +52,19 @@ namespaces = true
 # 四个根目录都要在这里列出来，**漏一个 = 那一片的测试静悄悄不再运行**
 # （踩坑 #83 的同一类事故：位置变了，跑它的人没跟着变）。
 testpaths = ["tests", "tools", "shared", "host"]
-addopts = "-q --strict-markers"
+# ⚠ `-m "not live"` 是这一行里最重要的部分。
+#   marker 的说明从一开始就写着「默认不跑」，但在 2026-09-01 之前**没有任何东西
+#   在执行它** —— 只是没人用过这个 marker，所以谁都没发现。第一次真的标了
+#   `@pytest.mark.live`（tools/library 的金标）就穿帮了：它们照跑不误。
+#   后果不是「多跑几条」：没开 Zotero 的机器上 `pytest` 会红，
+#   而「离线测试必须永远全绿」是本项目最重要的一条红线 —— 它一旦会因为
+#   「本机没开某个服务」变红，人就会开始习惯性忽略红色。
+# `--import-mode=importlib`：允许不同工具下有同名测试文件。
+#   `tools/{deepread,paperdb,library}/tests/test_evals.py` 三个同名，
+#   默认的 prepend 模式按「文件名 = 模块名」导入，于是三份互相顶掉，
+#   报的是 import file mismatch，**看起来完全不像是重名引起的**。
+#   工具切片就是要每个工具长得一样，同名测试文件只会越来越多。
+addopts = '-q --strict-markers -m "not live" --import-mode=importlib'
 markers = [
     "live: 需要真实外部服务（Zotero / Ollama / 各云 API），默认不跑；用 -m live 单独跑",
 ]

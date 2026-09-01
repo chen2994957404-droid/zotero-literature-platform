@@ -13,17 +13,39 @@ except Exception:
 from shared.kernel.mcp_prompt import card
 
 
+def _steps(a):
+    """两条入口二选一：已精读的文献给 itemKey，散图给 imagePath。
+
+    `itemKey` 排在前面是有原因的：用户手里通常是一篇文献，不是图片文件。
+    走 itemKey 时裁图那步由工具自己做（`shared.domain.figure_crop`，
+    踩坑 #7 的全部智慧在那里面），比让人先自己裁一遍可靠得多。
+    """
+    hint = ' --hint "%s"' % a['hint'] if a.get('hint') else ''
+    if a.get('itemKey'):
+        figs = ' --figures %s' % a['figures'] if a.get('figures') else ''
+        return ['python -m tools.digitize --key %s%s%s' % (a['itemKey'], figs, hint)]
+    return ['python -m tools.digitize "%s"%s' % (a.get('imagePath', ''), hint)]
+
+
 def register(server):
     server.register_prompt(
         'digitize', '把论文图里的曲线/散点/柱状图读成 X-Y 数值。',
-        [{'name': 'imagePath', 'description': '图片文件路径', 'required': True},
-         {'name': 'hint', 'description': '额外提示，如「只读红色那条曲线」', 'required': False}],
+        [{'name': 'itemKey',
+          'description': '已精读文献的 Zotero key（推荐；裁图由工具自己做）',
+          'required': False},
+         {'name': 'figures',
+          'description': '只读哪几张图，如「2,3」。不给就整篇每张都读（每张各花一次钱）',
+          'required': False},
+         {'name': 'imagePath',
+          'description': '图片文件路径（散图用；给了 itemKey 就不用它）',
+          'required': False},
+         {'name': 'hint', 'description': '额外提示，如「只读红色那条曲线」',
+          'required': False}],
         lambda a: card(
-            f'把图 {a["imagePath"]} 里的曲线读成数值',
-            cost='要调用云端视觉大模型',
-            steps=['python -m tools.digitize "%s"%s' % (
-                a['imagePath'],
-                ' --hint "%s"' % a['hint'] if a.get('hint') else '')],
+            ('读文献 %s 的图' % a['itemKey']) if a.get('itemKey')
+            else ('把图 %s 里的曲线读成数值' % a.get('imagePath', '')),
+            cost='要调用云端视觉大模型；**整篇的话每张图各花一次**',
+            steps=_steps(a),
             notes='⚠ **别为了省钱换本地 7B**：它会编出看似合理的假数据还标高置信度'
                   '（实测把 FTIR 光谱读成完美等差数列）。编的数字最像事实。\n'
-                  '要先从 PDF 里把图裁出来，用 `shared.domain.figure_crop`。'))
+                  '整篇之前先问用户要哪几张 —— `--figures 2,3` 比读十张便宜得多。'))

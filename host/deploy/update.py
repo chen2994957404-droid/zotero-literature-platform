@@ -23,6 +23,7 @@
 用法：双击「更新平台.bat」，或 `python host/deploy/update.py`
 """
 import os
+import re
 import subprocess
 import sys
 import time
@@ -58,6 +59,19 @@ PANEL_PORT = int(os.environ.get('PANEL_PORT', '8777'))
 
 # 更新后需要重启才能生效的计划任务（只在运行端有）
 RESTART_TASKS = ['ZoteroLiteratureWatcher']
+
+# 计划任务应该跑哪个模块。**搬家之后这里必须跟着改，否则任务会静默停摆。**
+#
+# 为什么值得专门修一遍（2026-09-01，R7 重构之后）：计划任务的命令行是**注册在
+# Windows 里的**，不在版本库里。代码搬了家，任务照旧去启动那个已经不存在的模块 ——
+# 任务本身「运行成功」（进程起来了、立刻 ModuleNotFoundError 退出），
+# Windows 只记录「上次运行结果 0」。于是**精读监听和每小时同步都不再工作，
+# 而任何地方都不会报错**。这正是踩坑 #81「按名字找东西，搬家时静默失效」的最坏形态：
+# 这次失效的不是一个函数，是整条自动化线。
+TASK_MODULES = {
+    'ZoteroLiteratureWatcher': 'host.watcher.watchdog',   # 曾是 tools.deepread.watchdog
+    'LiteratureAutoSync': 'host.autosync',                # 曾是 tools.curate.sync
+}
 
 
 def run(cmd, timeout=900, quiet=False):
@@ -166,6 +180,11 @@ def stop_watcher():
     清信号文件是关键一步：只杀不清的话，刚被杀的 watcher 留下的是**新鲜**心跳，
     新看门狗会认为「它还活着」，要等满 300 秒才发现没人干活。
     清掉之后看门狗一上来就判「信号缺失」，当场拉起。
+
+    ⚠ **认模块路径，不认单个词**（与 `host/watcher/watchdog.py` 里同一条判据）。
+    这里曾经匹配 `*deepread*watcher*`，R7 把服务搬去 `host/watcher/service.py`
+    之后就再也匹配不到 —— 「停掉旧 watcher」会安静地报「没有 watcher 在跑」，
+    然后老进程带着旧代码继续活着。**部署脚本自己失效，是最难发现的那一类。**
     """
     if os.name != 'nt':
         return '（非 Windows，跳过）'
@@ -173,7 +192,7 @@ def stop_watcher():
     script = (
         "$hit = Get-CimInstance Win32_Process -Filter "
         "\"Name='python.exe' or Name='pythonw.exe'\" | "
-        "Where-Object { $_.CommandLine -like '*deepread*watcher*' -and "
+        "Where-Object { $_.CommandLine -match 'watcher[\\\\./]service' -and "
         f"$_.ProcessId -ne {me} }}; "
         "if ($hit) { $hit | ForEach-Object { "
         "  Write-Output ('停掉旧 watcher PID=' + $_.ProcessId); "
@@ -192,6 +211,59 @@ def stop_watcher():
     except Exception as e:
         msgs.append(f'（信号文件没清掉：{e} —— 看门狗最多 5 分钟后也会发现）')
     return chr(10).join(msgs)
+
+
+def _task_action(task):
+    """这个计划任务现在到底在跑什么命令行？拿不到返回 None。"""
+    script = (f"$t = Get-ScheduledTask -TaskName '{task}' -ErrorAction SilentlyContinue; "
+              f"if ($t) {{ foreach ($a in $t.Actions) "
+              f"{{ Write-Output ($a.Execute + ' ' + $a.Arguments) }} }}")
+    ok, out = run(ps(script), timeout=120, quiet=True)
+    return out.strip() if ok and out.strip() else None
+
+
+def repair_tasks():
+    """计划任务还指着搬走前的模块吗？指着就修好它。只在运行端做。
+
+    **只修「确定已经坏了」的**：任务命令行里写着某个 `-m 模块`，而那个模块
+    在当前代码里根本 import 不到 —— 那不是风格问题，是这条线已经不工作了。
+    命令行长得不一样但模块存在（用户自己改过路径、加过参数）一律不碰。
+
+    修不成功不算致命：打印出人能照着做的话，让用户或 Claude 接手。
+    """
+    import importlib.util
+    msgs = []
+    for task, want in TASK_MODULES.items():
+        cur = _task_action(task)
+        if cur is None:
+            continue                      # 这台机器没注册这个任务（编程端就是这样）
+        if want in cur:
+            continue                      # 已经对了
+        # 它现在指着哪个模块？那个模块还在不在？
+        m = re.search(r'-m\s+([\w.]+)', cur)
+        old = m.group(1) if m else None
+        alive = False
+        if old:
+            try:
+                alive = importlib.util.find_spec(old) is not None
+            except Exception:
+                alive = False
+        if old and alive:
+            msgs.append(f'{task}: 命令行是 `-m {old}`，与预期的 `{want}` 不同，'
+                        f'但那个模块确实存在 —— 不动它（可能是你自己改的）')
+            continue
+        msgs.append(f'⚠ {task} 指着已经不存在的 `-m {old or "?"}` —— '
+                    f'这条线其实早就不工作了（任务照样显示「成功」）。正在改成 `-m {want}`…')
+        script = (
+            f"try {{ $t = Get-ScheduledTask -TaskName '{task}'; "
+            f"$a = New-ScheduledTaskAction -Execute '{sys.executable}' "
+            f"-Argument '-m {want}' -WorkingDirectory '{ROOT}'; "
+            f"Set-ScheduledTask -TaskName '{task}' -Action $a | Out-Null; "
+            f"Write-Output '{task} 已改好' }} "
+            f"catch {{ Write-Output '{task} 改不动：' + $_.Exception.Message }}")
+        _ok, out = run(ps(script), timeout=180, quiet=True)
+        msgs.append('  ' + out.strip())
+    return msgs
 
 
 def restart_tasks():
@@ -302,6 +374,10 @@ def main():
         # 先停 watcher（它是看门狗 spawn 出来的独立进程，重启任务换不掉它），
         # 再重启任务，让看门狗自己也换成新代码。
         print(stop_watcher())
+        # 先修命令行再重启：命令行还指着搬走前的模块的话，
+        # 重启只会让它再一次「成功地什么都没做」。
+        for m in repair_tasks():
+            print(m)
         for m in restart_tasks():
             print(m)
     else:

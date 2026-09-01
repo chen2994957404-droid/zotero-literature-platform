@@ -3,6 +3,8 @@
 
 用法:
     python -m tools.digitize <图片路径>
+    python -m tools.digitize --key <Zotero条目key>            整篇，每张图都读（**每张都花钱**）
+    python -m tools.digitize --key <key> --figures 2,3        只读第 2、3 张图
     python -m tools.digitize <图片路径> --hint "只读红色那条曲线"
     python -m tools.digitize <图片路径> --provider ollama --model qwen2.5vl:7b
     python -m tools.digitize <图片路径> --out 数据.json
@@ -29,16 +31,30 @@ def main():
     if wants_help():
         print(__doc__)
         return 0
+    item_key = opt('--key')
     path = pos(0)
-    if not path:
+    if not (item_key or path):
         print(__doc__)
         return 2
-    if not os.path.isfile(path):
-        print(f'找不到图片：{path}')
-        return 1
 
-    r = dg.digitize_file(path, hint=opt('--hint', ''),
-                         provider=opt('--provider'), model=opt('--model'))
+    if item_key:
+        # 整篇：图号从 --figures 取（'2,3'），不给就整篇。
+        # ⚠ 整篇 = 每张图各调一次云端视觉模型，**是要花钱的**，所以先把张数说清楚。
+        figs = opt('--figures')
+        only = [int(x) for x in figs.replace('，', ',').split(',') if x.strip()] if figs else None
+        r = dg.digitize_paper(item_key, only=only, hint=opt('--hint', ''),
+                              provider=opt('--provider'), model=opt('--model'))
+        if not r:
+            print(f'{item_key} 没有可裁的图 —— 是不是还没解析？'
+                  f'（先跑 python -m tools.deepread {item_key}）')
+            return 1
+        print(f'读了 {len(r)} 张图', file=sys.stderr)
+    else:
+        if not os.path.isfile(path):
+            print(f'找不到图片：{path}')
+            return 1
+        r = dg.digitize_file(path, hint=opt('--hint', ''),
+                             provider=opt('--provider'), model=opt('--model'))
     text = json.dumps(r, ensure_ascii=False, indent=2)
     out = opt('--out')
     if out:
