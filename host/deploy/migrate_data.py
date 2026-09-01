@@ -127,12 +127,33 @@ def copy_all(moves, log=print):
         log(f'  复制 {os.path.relpath(src, paths.ROOT)} → {os.path.relpath(dst, paths.ROOT)}')
 
 
+# 「搬完之后目标还会继续长」的那一类：日志。别处一律按字节严格核对。
+#
+# 为什么要有这个例外（2026-09-01 实测撞上）：R6 搬完之后平台照常在跑，
+# 新的日志行一直往**新位置**写。过一天再来核对，`data/logs` 比
+# `workflow_data/logs` 大了 44 KB —— 严格核对当然不过，
+# 而这恰恰说明搬对了（大家都在用新位置）。
+#
+# 但**不能因此就不核对**：文件数还是要一模一样（少一个文件 = 真的漏搬了），
+# 字节数只放宽一个方向（目标只许比源大，小了说明搬丢了内容）。
+_GROWS_AFTER_MOVE = ('logs',)
+
+
+def _loose(src):
+    return os.path.basename(src.rstrip(os.sep)) in _GROWS_AFTER_MOVE
+
+
 def verify(moves, log=print):
-    """逐条核对「文件数与总字节完全一致」。返回是否全过。"""
+    """逐条核对「文件数与总字节完全一致」（日志目录只要求「文件数一致且没变小」）。"""
     bad = []
     for src, dst in moves:
-        if _weigh(src) != _weigh(dst):
+        (sn, sb), (dn, db) = _weigh(src), _weigh(dst)
+        ok = (sn == dn and db >= sb) if _loose(src) else ((sn, sb) == (dn, db))
+        if not ok:
             bad.append((src, dst))
+        elif _loose(src) and db != sb:
+            log(f'  · {os.path.relpath(src, paths.ROOT)}：{sn} 个文件都在，'
+                f'新位置多了 {_mb(db - sb)}（搬完之后一直在往新位置写日志，正常）')
     for src, dst in bad:
         log(f'  ✗ 对不上：{os.path.relpath(src, paths.ROOT)}  {_weigh(src)} vs {_weigh(dst)}')
     return not bad
@@ -160,8 +181,24 @@ def main():
         print('\n这是预演，什么都没动。确认无误后加 --apply。')
         return 0
 
-    print('\n复制中…')
-    copy_all(moves)
+    # 已经搬过一轮、只是没删原目录 —— 这是最常见的一种「第二次运行」。
+    #
+    # ⚠ 这是设计上漏掉的一条路（R6 窗被它拦住了，原目录多留了一天）：
+    #   `copy_all()` 见到目标已存在就直接退出，于是**永远走不到核对与删除那两步** ——
+    #   而「先复制、再核对、核对全过才删」这套流程的最后一步恰恰只能靠它们。
+    #   结果就是：搬完之后想删原目录，唯一的正规入口是死路。
+    #   这里补上「全都搬过了 → 跳过复制，直接核对」，让流程能走完。
+    done = [d for _s, d in moves if os.path.exists(d)]
+    if done and len(done) == len(moves):
+        print('\n目标全部已存在 —— 上一轮搬过了，这次只核对（不重复复制）。')
+    elif done:
+        raise SystemExit(
+            f'✗ 搬了一半：{len(done)}/{len(moves)} 项的目标已存在。\n'
+            '  这种状态不该自动继续 —— 先人工确认已存在的那些是不是这次要的，'
+            '再决定删哪边。')
+    else:
+        print('\n复制中…')
+        copy_all(moves)
     print('\n核对中…')
     if not verify(moves):
         print('\n✗ 核对没过。**原目录一个字节都没动**，照上面的差异排查。')
