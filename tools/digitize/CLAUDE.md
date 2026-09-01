@@ -59,7 +59,7 @@ python host/doctor/health_check.py --offline     # 全局体检，确认没碰�
 | `README.md` | 给人：这是什么、怎么用 |
 | `SKILL.md` | 给 agent：什么时候用我、怎么用、**什么时候别用我** |
 | `prompts/` | 系统提示词（`<名>_v<N>.txt`）。**只增不改**：改措辞就新建下一版，旧版留着 |
-| `evals/` | 评测：金标 / 评分器 / 阈值。R5 窗建的骨架，**还是空的**，别当成已经验过 |
+| `evals/` | 评测：**仍是空的** —— 要几张已知真值的图 + 真调云端模型（花钱），见 `evals/README.md` |
 
 本工具在 MCP 上是 **prompt**（花钱/有副作用 → 由人在客户端里点，模型不能自己调）。
 判据与守卫见 `host/mcp/CLAUDE.md`。
