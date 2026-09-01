@@ -14,7 +14,7 @@
 > 下面这棵树就是全部结构，不必再去扫。
 
 ```
-docs/  ← 跨工具的档案（另有 2 份日志直接躺在下面）
+docs/  ← 跨工具的档案（另有 3 份日志直接躺在下面）
     explain/（5）、howto/（3）、reference/（5）、incidents/（2）  ← 为什么 / 怎么做 / 事实 / 坑
 host/  ← 平台自身：让平台活着的东西（没人 import 它）（7 块）
     autosync、codegen、deploy、doctor、mcp、panel、watcher
@@ -196,3 +196,4 @@ PowerShell 控制台中文乱码 → **先用 Read 工具确认真实内容**，
 **MCP 调用约 60 秒超时** → 精读、全库抽取、大模型读图会超时但后台继续，发起后轮询文件。
 文档：`docs/explain/` 为什么 · `docs/howto/` 怎么做 · `docs/reference/` 事实 ·
 `docs/incidents/` 坑 · `docs/变更记录.md` · `docs/待办与需求.md`
+· `docs/项目结构导览.md`（给人的结构地图，含**还没处理好的清单**）

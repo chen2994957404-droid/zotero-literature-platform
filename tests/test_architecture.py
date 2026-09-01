@@ -422,6 +422,36 @@ def _shared_block_users():
     return users
 
 
+def test_每个共用件都有三件套():
+    """`shared/` 里的每一块都要有 `__init__.py` / `selftest.py` / `CLAUDE.md`。
+
+    这三件各挡一种失败：
+      · 没 `__init__.py` —— 它根本不是一块，只是一堆散文件
+      · 没 `selftest.py` —— **体检按环枚举着跑自测，没有就是没人验它**
+      · 没 `CLAUDE.md`   —— 单独打开这个文件夹的人（人或模型）没有任何上下文，
+        而「一次只打开一块」正是这个结构存在的理由
+
+    这条守卫是 2026-09-01 补的：`shared/adapters/snowball/` 少了 `CLAUDE.md`，
+    从建立起就没人发现 —— 因为规范只写在文档里，**没有执行者的规范不是规范**。
+    """
+    offenders = []
+    for ring in ('shared/kernel', 'shared/domain', 'shared/adapters'):
+        d = os.path.join(ROOT, *ring.split('/'))
+        if not os.path.isdir(d):
+            continue
+        for name in sorted(os.listdir(d)):
+            p = os.path.join(d, name)
+            if not (os.path.isdir(p) and os.path.isfile(os.path.join(p, '__init__.py'))):
+                continue
+            missing = [f for f in ('selftest.py', 'CLAUDE.md')
+                       if not os.path.isfile(os.path.join(p, f))]
+            if missing:
+                offenders.append(f'{ring}/{name}: 缺 {missing}')
+    assert not offenders, (
+        '这些共用件的三件套不全（见 code-redlines skill「新增共用件」）：' + _NL
+        + _NL.join(offenders))
+
+
 def test_下沉规则_shared里不许住只有一个使用者的块():
     """REBUILD.md 第三节硬规则 1。
 
