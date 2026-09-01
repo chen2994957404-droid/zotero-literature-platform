@@ -55,7 +55,9 @@
     },
     {
       "key": "GOLD0004",
-      "title": "A review of dynamic covalent elastomers",
+      "title": "Dynamic covalent elastomers: state of the art",
+      "_为什么标题里没有 review": "这条要验的是 doc_type 字段起没起作用。原先标题里带 review，于是它靠标题兜底就蒙对了 —— 金标蒙对比挂掉更糟，它让人以为验过了。",
+      "doc_type": "review",
       "doi": "10.1000/gold.4",
       "source": "extract_library",
       "schema_ver": 2,
@@ -66,8 +68,7 @@
       "synthesis_conditions": "N/A",
       "characterization": "N/A",
       "key_properties": "N/A",
-      "conclusion": "Overview of the field.",
-      "is_review": true
+      "conclusion": "Overview of the field."
     }
   ],
   "cases": [
@@ -103,7 +104,7 @@
     },
     {
       "name": "综述能被单独筛出来",
-      "why": "综述没有自己的实验数据，混进对比表会污染横向比较",
+      "why": "综述没有自己的实验数据，混进对比表会污染横向比较。这条走的是模型给的 doc_type 字段（不是标题兜底）——标题里刻意不带 review",
       "call": {"fn": "query", "args": {"sql": "SELECT key FROM papers WHERE is_review = 1"}},
       "expect_keys": ["GOLD0004"]
     },

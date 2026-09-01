@@ -46,10 +46,20 @@ LOCAL_API = (os.environ.get('ZOTERO_LOCAL_API')
              or (_gsite('ZOTERO_API_HOST') or 'http://localhost:23119') + '/api')
 _H = {'Zotero-Allowed-Request': 'true'}
 
-# 补充材料/附录 命名特征（含踩坑#15 的 Springer MOESM/ESM 补丁）
+# 「这个附件是补充材料吗」——**全项目唯一的判据**（宪法铁律 1）。
+#
+# 2026-09-01 之前有两份：这一份，和 `tools/curate/rename.py` 里的 `SUPP`。
+# 两份内容还不一样：这份有踩坑 #15 的 Springer `MOESM/ESM` 补丁，那份没有；
+# 那份有中文命名，这份没有。后果是**同一个附件，精读线认得出是 SI，改名线认不出**
+# —— 于是 `41467_..._MOESM1_ESM.pdf` 会被改名线当成正文，而改名是**写用户真实库
+# 的不可逆操作**。是给 curate 补评测时实测出来的（`tools/curate/evals/`）。
+#
+# 现在是并集，`tools/curate/rename.py` 直接用它。**再发现新的命名只加在这里。**
 SUPP_PAT = re.compile(
-    r'suppmat|supp\b|supporting|supplement|-si-|_si_|\bsi\.pdf|appendix|'
-    r'moesm|_esm\b|electronic.?supplementary', re.I)
+    r'suppmat|supp\b|supp[_\-.]|supporting|supplement|-si-|_si_|_si\d|'
+    r'si[_\-]?\d{3}|\bsi\.pdf|appendix|'
+    r'moesm|_esm\b|electronic.?supplementary|'
+    r'支持信息|支持性信息|补充材料|补充信息', re.I)
 
 
 def zget(path):

@@ -1,0 +1,170 @@
+{
+  "_说明": [
+    "金标：一组「输入 → 应该做出的判断」。全部是**造出来的**输入，不碰真实库。",
+    "为什么 curate 的评测优先级高：它做的是**写用户真实 Zotero 库的不可逆操作**",
+    "（改附件名、删条目、改标签）。判错一次，用户得人工收拾。",
+    "这里覆盖的四个判断都是纯函数，可以毫秒级验完：",
+    "  classify   —— 这个附件是正文、SI、还是网页快照",
+    "  split_junk —— 没附件的条目里，哪些是重复残留（能删）、哪些是库里独一份（不能删）",
+    "  nested_of  —— 标签从 `dim:value` 改成 `dim/value`",
+    "  to_tags    —— 大模型的 JSON 结果变成标签"
+  ],
+
+  "classify": [
+    {"name": "普通正文 PDF",
+     "why": "最基本的一条：正文必须被认成正文，否则改名会把它当 SI",
+     "in": {"contentType": "application/pdf", "filename": "Zhang et al. - 2024 - Boron elastomer.pdf", "title": "Full Text PDF"},
+     "expect": "Full Text PDF"},
+
+    {"name": "Springer 的 SI（MOESM/ESM 命名）",
+     "why": "踩坑 #15。2026-09-01 实测：这条以前判成 Full Text PDF —— 因为改名线自己抄了一份 SI 判据，而那份没有 MOESM 补丁。改名是不可逆的写操作，判错就是把 SI 当正文改名",
+     "in": {"contentType": "application/pdf", "filename": "41467_2024_12345_MOESM1_ESM.pdf", "title": ""},
+     "expect": "SI"},
+
+    {"name": "ACS 的 SI（_si_001 命名）",
+     "why": "另一种常见的出版商命名",
+     "in": {"contentType": "application/pdf", "filename": "ja0c01234_si_001.pdf", "title": ""},
+     "expect": "SI"},
+
+    {"name": "英文全拼的 supporting information",
+     "why": "最直白的一种，不该漏",
+     "in": {"contentType": "application/pdf", "filename": "supporting-information.pdf", "title": ""},
+     "expect": "SI"},
+
+    {"name": "中文命名的补充材料",
+     "why": "中文期刊与用户自己下载重命名的情况",
+     "in": {"contentType": "application/pdf", "filename": "补充材料.pdf", "title": ""},
+     "expect": "SI"},
+
+    {"name": "文件名看不出来，但标题就叫 SI",
+     "why": "Zotero 里附件标题是用户/脚本设的，它比文件名更可信",
+     "in": {"contentType": "application/pdf", "filename": "anything.pdf", "title": "SI"},
+     "expect": "SI"},
+
+    {"name": "网页快照",
+     "why": "快照既不是正文也不是 SI，不该进改名流程",
+     "in": {"contentType": "text/html", "filename": "page.html", "title": "Snapshot"},
+     "expect": "Snapshot"},
+
+    {"name": "linkMode 说它是快照（哪怕后缀是 pdf）",
+     "why": "光看 contentType 会漏，Zotero 用 linkMode 记这件事",
+     "in": {"contentType": "application/pdf", "filename": "x.pdf", "title": "", "linkMode": "imported_url_snapshot"},
+     "expect": "Snapshot"},
+
+    {"name": "标题里含 si 的正文不许误判",
+     "why": "**误判方向反了更糟**：把正文当 SI，用户的正文附件会被改成 SI 的名字。`Silicon` 里有 si",
+     "in": {"contentType": "application/pdf", "filename": "Silicon-based composite elastomer.pdf", "title": ""},
+     "expect": "Full Text PDF"},
+
+    {"name": "标题里含 supp 的正文不许误判",
+     "why": "同上。`supply` 里有 supp —— 判据要求 supp 后面是词边界或分隔符",
+     "in": {"contentType": "application/pdf", "filename": "A study of supply chains.pdf", "title": ""},
+     "expect": "Full Text PDF"},
+
+    {"name": "既不是 PDF 也不像 SI 的附件",
+     "why": "认不出来就该返回 None，别硬塞进某一类",
+     "in": {"contentType": "application/zip", "filename": "dataset.zip", "title": ""},
+     "expect": null}
+  ],
+
+  "split_junk": [
+    {
+      "name": "标题撞上有附件的条目 → 算重复残留（A 组，可删）",
+      "why": "A 组是「同一篇已经有带 PDF 的版本了」，删掉不丢东西",
+      "tops": [
+        {"data": {"key": "HASPDF01", "itemType": "journalArticle", "title": "Boron Elastomer Study"}, "meta": {"numChildren": 2}},
+        {"data": {"key": "DUP00001", "itemType": "journalArticle", "title": "boron  elastomer study!"}, "meta": {"numChildren": 0}}
+      ],
+      "expect_A": ["DUP00001"],
+      "expect_B": []
+    },
+    {
+      "name": "DOI 撞上也算重复残留",
+      "why": "标题可能被改过，DOI 是更硬的同一性判据",
+      "tops": [
+        {"data": {"key": "HASPDF02", "itemType": "journalArticle", "title": "某个标题", "DOI": "10.1000/X.1"}, "meta": {"numChildren": 1}},
+        {"data": {"key": "DUP00002", "itemType": "journalArticle", "title": "完全不同的标题", "DOI": "10.1000/x.1"}, "meta": {"numChildren": 0}}
+      ],
+      "expect_A": ["DUP00002"],
+      "expect_B": []
+    },
+    {
+      "name": "库里独一份 → B 组，**删了就真没了**",
+      "why": "这是这个函数存在的全部理由：A 组和 B 组的代价完全不同，不该由同一条命令替人做完",
+      "tops": [
+        {"data": {"key": "ONLY0001", "itemType": "journalArticle", "title": "只有这一篇的标题"}, "meta": {"numChildren": 0}}
+      ],
+      "expect_A": [],
+      "expect_B": ["ONLY0001"]
+    },
+    {
+      "name": "有附件的条目自己不进任何一组",
+      "why": "它不是垃圾条目，压根不该出现在清单里",
+      "tops": [
+        {"data": {"key": "GOOD0001", "itemType": "journalArticle", "title": "有 PDF 的正常条目"}, "meta": {"numChildren": 3}}
+      ],
+      "expect_A": [],
+      "expect_B": []
+    },
+    {
+      "name": "附件类型的条目直接跳过",
+      "why": "附件本来就没有子条目，拿它当「无附件的垃圾条目」会把用户的 PDF 删掉",
+      "tops": [
+        {"data": {"key": "ATTA0001", "itemType": "attachment", "title": "Full Text PDF"}, "meta": {"numChildren": 0}}
+      ],
+      "expect_A": [],
+      "expect_B": []
+    }
+  ],
+
+  "nested_of": [
+    {"name": "冒号写法改成斜杠写法",
+     "why": "这是这个函数唯一要做的事",
+     "in": [{"tag": "topic:polyborosiloxane"}],
+     "expect": [{"tag": "topic/polyborosiloxane"}]},
+
+    {"name": "不认识的维度不动它",
+     "why": "用户自己打的标签（`待处理`、`读完`）不许被改",
+     "in": [{"tag": "待处理"}, {"tag": "随手记:一句话"}],
+     "expect": null},
+
+    {"name": "已经是斜杠写法的不重复改",
+     "why": "重复跑一次不该产生 `topic//x` 这种东西",
+     "in": [{"tag": "topic/already"}],
+     "expect": null},
+
+    {"name": "混着的只改该改的那条",
+     "why": "改一条不该动其余的",
+     "in": [{"tag": "material:silicone"}, {"tag": "读完"}],
+     "expect": [{"tag": "material/silicone"}, {"tag": "读完"}]},
+
+    {"name": "没有可改的返回 None",
+     "why": "返回 None 表示「这条不用写回 Zotero」—— 写回是要打 API 的，白写一次就是白撞一次限流（踩坑 #10）",
+     "in": [{"tag": "读完"}],
+     "expect": null}
+  ],
+
+  "to_tags": [
+    {"name": "四个维度加类型都变成标签",
+     "why": "维度漏一个，那一类就永远打不上标签",
+     "in": {"topic": ["self-healing"], "material": ["PDMS"], "mechanism": ["B-O bond"],
+            "method": ["DMA"], "type": "research"},
+     "expect": ["topic:self-healing", "material:pdms", "mechanism:b-o bond",
+                "method:dma", "type:research"]},
+
+    {"name": "统一转小写并去空白",
+     "why": "大小写不统一会让同一个概念变成两个标签，用户的标签栏会越来越乱",
+     "in": {"topic": ["  Self-Healing  "]},
+     "expect": ["topic:self-healing"]},
+
+    {"name": "空值和非字符串直接丢掉",
+     "why": "模型偶尔会吐 null / 数字，塞进标签就是往用户库里写垃圾",
+     "in": {"topic": ["", null, 123, "ok"]},
+     "expect": ["topic:ok"]},
+
+    {"name": "什么都没有就返回空列表",
+     "why": "空列表意味着不写回 Zotero，不该变成一次白打的 API 调用",
+     "in": {},
+     "expect": []}
+  ]
+}

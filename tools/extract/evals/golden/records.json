@@ -1,0 +1,91 @@
+{
+  "_说明": [
+    "金标：造出来的抽取记录 → 这些记录应该被怎么理解。",
+    "",
+    "**这一组不验「模型抽得准不准」** —— 那要拿几篇人工核对过的真实",
+    "`structured/<KEY>.json` 当金标，而人工核对得用户来做，而且要花钱重抽才能比。",
+    "见 evals/README.md 里写的「还缺的那一半」。",
+    "",
+    "这里验的是抽完之后那一整套**确定性的理解**：这条是不是综述、属于哪一档、",
+    "哪些字段算「有值」、性能字符串怎么拆成能比大小的数。",
+    "它们全是纯函数，而且**对比表和查询库的正确性全建在它们上面** ——",
+    "档次判错，用户就分不清空格是「本来就没有」还是「粗层没抽到」，",
+    "对比表的价值当场归零（这正是 2026-08-28 加档次标记的原因）。"
+  ],
+
+  "is_review": [
+    {"name": "模型说了是综述就是综述",
+     "why": "doc_type 是模型直接给的判断，比标题猜可靠。**这条是真正的机制**",
+     "in": {"doc_type": "review", "title": "Dynamic covalent elastomers: state of the art"},
+     "expect": true},
+    {"name": "标题带 review 的兜底",
+     "why": "模型没给 doc_type 时的退路。有兜底才不会漏，漏了综述就会混进数值对比表",
+     "in": {"title": "A Review of Boron Chemistry"},
+     "expect": true},
+    {"name": "正常研究论文不是综述",
+     "why": "误判方向反了更糟：把研究论文当综述会把它从对比表里踢出去，用户以为没抽到",
+     "in": {"title": "Healable polyborosiloxane elastomer via B-O bonds"},
+     "expect": false},
+    {"name": "体系描述里出现 review 不算",
+     "why": "只看标题和 doc_type。正文字段里出现这个词是常事，跟着判会误伤一片",
+     "in": {"material_system": "a review of dynamic covalent networks was cited"},
+     "expect": false}
+  ],
+
+  "tier_label": [
+    {"name": "云端模型 + 读了 SI → 精+SI",
+     "why": "最高档：料最全、模型最好。用户竖着比字段时最该信这一档",
+     "in": {"source": "fine", "si_used": true}, "expect": "精+SI"},
+    {"name": "云端模型、没 SI → 精层",
+     "why": "料少了 SI 那一半，合成条件常常就在 SI 里（踩坑 #68）",
+     "in": {"source": "fine"}, "expect": "精层"},
+    {"name": "本地模型 + SI → 本地+SI",
+     "why": "**料和模型是两件事**。本地+SI 的料和精+SI 一样好，差的只是模型档次 —— 分开标才知道这一格该不该花钱升级",
+     "in": {"source": "local", "si_used": true}, "expect": "本地+SI"},
+    {"name": "本地模型、没 SI → 本地",
+     "why": "本地模型这一档也要分「有没有读 SI」——合成条件常常只在 SI 里（踩坑 #68），少了它这一格的空白性质完全不同",
+     "in": {"source": "local"}, "expect": "本地"},
+    {"name": "Zotero 全文索引 + 本地小模型 → 粗层",
+     "why": "料最差的一档，空格多得多。跟精层混在一张表里且看不出区别，对比表就废了",
+     "in": {"source": "coarse"}, "expect": "粗层"},
+    {"name": "老记录没有 source 字段 → 算精层",
+     "why": "粗层从来都带标记，所以没标记的一定是早期的精层记录。这条兜底错了会让全部历史数据被降级",
+     "in": {}, "expect": "精层"}
+  ],
+
+  "has_value": [
+    {"name": "真数值算有值", "why": "正例的锚点。它要是判成没值，有值率会整体偏低，用户会去重抽本来已经抽好的东西——白花钱", "in": "12 MPa", "expect": true},
+    {"name": "N/A 不算", "why": "最常见的一种「没有」", "in": "N/A", "expect": false},
+    {"name": "中文「未提及」不算",
+     "why": "模型不总是老老实实写 N/A，中文提示词下常常吐这个",
+     "in": "未提及", "expect": false},
+    {"name": "空串不算", "why": "字段在但值是空的，和字段整个缺失是一回事，都算没抽到", "in": "", "expect": false},
+    {"name": "None 不算", "why": "字段整个缺失时就是它", "in": null, "expect": false},
+    {"name": "一个横杠不算",
+     "why": "模型偷懒的写法。当成有值的话，有值率会虚高 —— 而有值率正是判断「要不要花钱重抽」的依据",
+     "in": "-", "expect": false},
+    {"name": "not specified 不算", "why": "英文提示词下的常见写法", "in": "not specified", "expect": false},
+    {"name": "非空列表算有值", "why": "多值字段（表征手段之类）是列表", "in": ["DMA"], "expect": true},
+    {"name": "空列表不算", "why": "多值字段一个值都没有时是空列表。当成有值的话，「表征手段」那一列会显示 100% 有值而实际全是空的", "in": [], "expect": false}
+  ],
+
+  "parse_properties": [
+    {"name": "带单位的单值",
+     "why": "最基本的一条。拆不出来就没法比大小 —— 那正是这个库存在的理由",
+     "in": "tensile strength: 12.5 MPa",
+     "expect": [{"name": "tensile strength", "value": 12.5, "value_max": null, "unit": "MPa", "cmp": ""}]},
+    {"name": "区间值拆成上下界",
+     "why": "「225–300 °C」按下界入库才能被 min_value=200 捞到。当成字符串就永远查不到",
+     "in": "processing temperature: 225–300 °C",
+     "expect": [{"name": "processing temperature", "value": 225.0, "value_max": 300.0, "unit": "°C", "cmp": ""}]},
+    {"name": "带比较号的记下比较号",
+     "why": "「>20 次」不等于「20 次」。丢掉比较号会让「至少 20 次」被当成精确值",
+     "in": "recycling times: >20 times",
+     "expect": [{"name": "recycling times", "value": 20.0, "value_max": null, "unit": "times", "cmp": ">"}]},
+    {"name": "一行里的多条各拆各的",
+     "why": "模型常把几个性能写在一行，只拆第一个会丢掉其余的",
+     "in": "tensile strength: 12 MPa; elongation at break: 800 %",
+     "expect": [{"name": "tensile strength", "value": 12.0, "value_max": null, "unit": "MPa", "cmp": ""},
+                {"name": "elongation at break", "value": 800.0, "value_max": null, "unit": "%", "cmp": ""}]}
+  ]
+}

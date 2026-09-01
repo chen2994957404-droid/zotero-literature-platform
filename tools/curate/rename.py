@@ -24,7 +24,14 @@ from shared.adapters import zotero_client as zotero
 # 鉴权、用户 id、限流退避全在适配层里，这里一个都不用自己拿。
 # 取参也放进 main()：模块顶层解析 argv 会让 import 本身带上副作用。
 
-SUPP = re.compile(r'suppmat|supp[_\-\.]|supporting|supplement|[_\-]si[_\-\.]|_si_?\d|si[_\-]?\d{3}|appendix|支持信息|支持性信息|补充材料|补充信息', re.I)
+# 「这个附件是不是补充材料」的判据**不在这里** —— 它在 `zotero_client.SUPP_PAT`，
+# 全项目唯一一份（宪法铁律 1）。
+#
+# 这里曾经有第二份，而且和那份**内容不一样**：那份带踩坑 #15 的 Springer
+# `MOESM/ESM` 补丁，这份没有。于是同一个 `41467_..._MOESM1_ESM.pdf`，
+# 精读线认得出是 SI，改名线把它当正文 —— **而改名是写用户真实库的不可逆操作。**
+# 2026-09-01 给本工具补评测时实测出来，两份并成一份。
+SUPP = zotero.SUPP_PAT
 
 
 def classify(d):
