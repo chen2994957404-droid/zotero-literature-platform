@@ -142,7 +142,11 @@ def _cloud_chat(messages, model, key, temperature, json_mode, max_tokens,
         if provider == 'deepseek':
             body['thinking'] = {'type': 'enabled' if thinking else 'disabled'}
         elif provider == 'gemini' and not thinking:
-            body['reasoning_effort'] = 'minimal'
+            # ⚠ 用 `low`，**别用文档里列的 `minimal`**：文档把 minimal 列成合法值，
+            #   但 gemini-3.8-flash 实测回 400
+            #   `Thinking level MINIMAL is not supported for this model`。
+            #   又一次「文档说的和它实际接受的不一样」—— 以实测为准。
+            body['reasoning_effort'] = 'low'
     if json_mode:
         body['response_format'] = {'type': 'json_object'}
     if max_tokens:
