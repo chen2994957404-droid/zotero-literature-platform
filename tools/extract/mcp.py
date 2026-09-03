@@ -31,10 +31,43 @@ def _read(name):
     return io.open(p, encoding='utf-8', errors='replace').read()
 
 
+def _one(a):
+    """抽一篇 → 给模型看的文本。
+
+    ⚠ **可能超过 MCP 约 60 秒的调用上限**（长文过一次大模型）。超时也不要紧：
+    产物照样会落盘，而且这一步是幂等的（抽过就跳过），重调一次几乎不花钱。
+    这句话也写进了返回文本里 —— 模型看到超时才知道该怎么办。
+    """
+    import json
+    from tools import extract as E
+    rec = E.run(a['itemKey'])
+    if not rec:
+        return (f'{a["itemKey"]} 没抽出来 —— 多半是还没解析过（缺 full.md）。'
+                f'先让用户在 Zotero 里给它打「待处理」标签走一遍精读。')
+    keep = ('material_system', 'dynamic_bond', 'synthesis_conditions',
+            'characterization', 'key_properties', 'conclusion')
+    brief = {k: rec.get(k) for k in keep if rec.get(k)}
+    tail = ('（已并入对比表。若刚才调用超时，产物其实已经落盘了 ——'
+            '这一步幂等，再调一次就能拿到结果，几乎不花钱。）')
+    return json.dumps(brief, ensure_ascii=False, indent=2) + '\n\n' + tail
+
+
 def register(server):
     for name, desc in TABLES:
         server.register_resource(f'paper://{name}.md', f'{name}.md', desc,
                                  (lambda n: lambda: _read(n))(name))
+
+    server.register_tool(
+        'extract_one',
+        '把**一篇**文献抽成统一 schema 的结构化字段，并刷新横向对比表。'
+        '**要花钱**：这一篇过一次云端大模型，调用时会先弹窗让用户确认。'
+        '⚠ 只是想看表就别抽 —— 直接读资源 `paper://compare.md`，免费。'
+        '全库增量抽取要用 extract 那条提示词（人点）。',
+        {'type': 'object',
+         'properties': {'itemKey': {'type': 'string', 'description': 'Zotero 条目 key'}},
+         'required': ['itemKey']},
+        _one,
+        confirm=True)      # ← 每次都弹窗，且没有「不再询问」
 
     server.register_prompt(
         'extract', '把文献抽成统一 schema 的结构化字段，并刷新横向对比表。',

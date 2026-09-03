@@ -77,3 +77,14 @@ python tools/ask/selftest.py                  # 7 条，全离线
 python host/doctor/health_check.py --offline  # 离线体检，必须全绿
 python -m tools.ask "我的库里关于自修复有什么"   # 真问一次（要 Ollama + DEEPSEEK_KEY）
 ```
+
+## MCP 上的两面（2026-09-01 起）
+
+`ask_library` 是 **tool** —— 模型可以自己发起，但**每次都会弹窗让用户点头**
+（`confirm=True`，客户端不给「不再询问」的选项）。问一次库是单次、几分钱、
+不写任何东西，属于「可以放开」那一档。
+
+`ask_vectorize`（全库向量化）仍是 **prompt**，只能人点 —— 那是全库作业。
+
+放开哪几个入口写在 `tool.toml` 的 `agent_tools` 白名单里，
+判据与两道闸的守卫见 `host/mcp/CLAUDE.md`。

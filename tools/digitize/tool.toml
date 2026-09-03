@@ -5,3 +5,11 @@ costs_money   = true            # 必须用云端视觉大模型；本地 7B 会
 side_effects  = []
 requires_role = "none"
 prompts       = ["main@v1"]
+
+# ── 允许模型自己发起的入口（2026-09-01 加）─────────────────────────────
+# **留空 = 一个都不许**，模型只能通过 prompt 请你来点。
+# 判据是**代价的量级与可逆性**，不是「花不花钱」：
+#   单次、便宜、可重来        → 可以进这里（调用时客户端强制弹窗，且没有「不再询问」）
+#   全库作业 / 不可逆写 Zotero → 一律不许，留给人点
+# 注册成 tool 的名字必须都在这张表里，且必须带 confirm —— registry.check() 强制。
+agent_tools   = ["digitize_figure"]  # 读一张图：单次一次视觉调用；整篇仍是 prompt

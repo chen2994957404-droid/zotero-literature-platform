@@ -62,7 +62,7 @@ def print_list(s):
         kinds = ' '.join(f'{k}×{len(v)}' for k, v in got.items() if v) or '（没注册东西）'
         print(f"    {name:<12} expose={man.get('expose'):<9} {kinds}")
 
-    problems = registry.check(s._report)
+    problems = registry.check(s._report, server=s)
     if problems:
         print('\n✗ 清单不自洽：')
         for p in problems:

@@ -61,5 +61,6 @@ python host/doctor/health_check.py --offline     # 全局体检，确认没碰�
 | `prompts/` | 系统提示词（`<名>_v<N>.txt`）。**只增不改**：改措辞就新建下一版，旧版留着 |
 | `evals/` | 评测：**仍是空的** —— 要几张已知真值的图 + 真调云端模型（花钱），见 `evals/README.md` |
 
-本工具在 MCP 上是 **prompt**（花钱/有副作用 → 由人在客户端里点，模型不能自己调）。
+本工具在 MCP 上有**两面**（2026-09-01 起）：`digitize_figure`（读**一张**图）是 tool，
+每次调用都弹窗确认；整篇每张都读仍是 prompt（每张各花一次钱，得人点）。
 判据与守卫见 `host/mcp/CLAUDE.md`。

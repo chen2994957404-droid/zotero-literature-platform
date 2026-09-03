@@ -160,8 +160,11 @@ host  →  tools  →  shared.domain / shared.adapters  →  shared.kernel
 
 `tool.toml` · `__init__.py` · `cli.py` · `mcp.py` · `SKILL.md` · `README.md` · `tests/`
 （另有 `selftest.py` · `INCIDENTS.md` · `prompts/` · `evals/`）。
-`expose` 判据：**只读且便宜 → `tool`；只读数据 → `resource`；花钱或有副作用 → `prompt`**
-（花钱的注册成 `tool` 等于把钱包交给模型，踩坑 #86，守卫会拦）。
+`expose` 判据按**代价量级 + 可不可逆**分三档（2026-09-01 改，踩坑 #95）：
+只读且便宜 → `tool`；只读数据 → `resource`；**全库作业 / 不可逆写 Zotero → `prompt`**。
+其中「单次、便宜、可重来」的入口（问一次库 / 抽一篇 / 读一张图）可以逐个写进
+`tool.toml` 的 `agent_tools` 白名单放开成 tool，但必须 `confirm=True`
+（客户端每次弹窗且无「不再询问」）。**两道闸缺一不可，守卫双向查。**
 提示词进 `prompts/<名>_v<N>.txt`，**只增不改**，版本在 `tool.toml` 里声明。
 
 ## `.claude/` 全部是生成物，**手写即违规**（有守卫）

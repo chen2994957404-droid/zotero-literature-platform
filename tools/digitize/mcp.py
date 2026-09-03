@@ -27,7 +27,36 @@ def _steps(a):
     return ['python -m tools.digitize "%s"%s' % (a.get('imagePath', ''), hint)]
 
 
+def _one(a):
+    """读一张图 → 给模型看的文本。**一次只读一张**，所以代价是可预期的。"""
+    import json
+    from tools import digitize as D
+    r = D.digitize_paper(a['itemKey'], only=[int(a['figure'])])
+    if not r:
+        return (f'{a["itemKey"]} 没有可裁的图 —— 多半是还没解析过。'
+                f'先让用户在 Zotero 里给它打「待处理」标签走一遍精读。')
+    out = r.get(int(a['figure']))
+    if out is None:
+        return f'这篇没有第 {a["figure"]} 张图。它有的图号：{sorted(r)}'
+    if out.get('error'):
+        return f'读不出来：{out["error"]}'
+    return json.dumps(out, ensure_ascii=False, indent=2)
+
+
 def register(server):
+    server.register_tool(
+        'digitize_figure',
+        '把一篇**已精读文献**里的某一张图读成 X-Y 数值（曲线/散点/柱状/箱线）。'
+        '**要花钱**：调一次云端视觉大模型，调用时会先弹窗让用户确认。'
+        '⚠ 一次只读一张 —— 整篇每张都读要用 digitize 那条提示词（人点）。',
+        {'type': 'object',
+         'properties': {
+             'itemKey': {'type': 'string', 'description': '已精读文献的 Zotero key'},
+             'figure': {'type': 'integer', 'description': '图号，如 3'}},
+         'required': ['itemKey', 'figure']},
+        _one,
+        confirm=True)      # ← 每次都弹窗，且没有「不再询问」
+
     server.register_prompt(
         'digitize', '把论文图里的曲线/散点/柱状图读成 X-Y 数值。',
         [{'name': 'itemKey',

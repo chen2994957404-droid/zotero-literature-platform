@@ -58,18 +58,31 @@ class MCPStdioServer:
 
     # ── 注册 ──────────────────────────────────────────────────────────
 
-    def register_tool(self, name, description, input_schema, handler):
+    def register_tool(self, name, description, input_schema, handler, confirm=False):
         """注册一个工具。input_schema 是 JSON Schema（type='object'）。
 
-        **工具是模型可以自己调的**，所以只许注册只读且不花钱的东西。
-        花钱的、有副作用的一律注册成 prompt（由人来点）——
-        这条判据写在 REBUILD.md R4，R7 窗会有守卫强制。
+        **工具是模型可以自己调的**，所以默认只许注册只读且不花钱的东西。
+
+        `confirm=True` 用于「花钱但代价是单篇级、可重来」的入口（精读一篇、
+        抽一篇、读一张图）：它会给这个工具打上 `anthropic/requiresUserInteraction`，
+        于是 Claude Code **每次调用都弹权限窗，而且不给「不再询问」的选项** ——
+        allow 规则绕不过去，`dontAsk` 模式下直接拒绝而不是偷偷跑。
+        （2026-09-01 查证：Claude Code ≥ 2.1.199 支持；本机 2.1.246。）
+
+        ⚠ 这个标记是 **Claude Code 专有的**（`anthropic/` 前缀），不是 MCP 标准。
+        换客户端会被忽略、退化成普通 tool。所以它**不是唯一防线** ——
+        `shared.kernel.role.require_prod` 那道闸必须继续留着。
+
+        全库级作业（全库重抽/向量化）与不可逆写库（删条目/批量改名）**仍然只能是
+        prompt**：弹窗防得住「未经同意」，防不住「同意了但没看懂代价」。
+        判据与白名单见 `host/mcp/registry.py` 与各 `tool.toml` 的 `agent_tools`。
         """
         self._tools.append({
             'name': name,
             'description': description,
             'inputSchema': input_schema,
             'handler': handler,
+            'confirm': bool(confirm),
         })
 
     def register_resource(self, uri, name, description, reader,
@@ -153,13 +166,7 @@ class MCPStdioServer:
             self._respond(req_id, {})
             return
         if method == 'tools/list':
-            self._respond(req_id, {
-                'tools': [{
-                    'name': t['name'],
-                    'description': t['description'],
-                    'inputSchema': t['inputSchema'],
-                } for t in self._tools],
-            })
+            self._respond(req_id, {'tools': [self._tool_entry(t) for t in self._tools]})
             return
         if method == 'tools/call':
             self._handle_call(req_id, params)
@@ -228,6 +235,20 @@ class MCPStdioServer:
             'description': p['description'],
             'messages': [{'role': 'user', 'content': {'type': 'text', 'text': str(text)}}],
         })
+
+    def _tool_entry(self, t):
+        """一个工具在 `tools/list` 里的样子。
+
+        `confirm` 的工具带上 `_meta["anthropic/requiresUserInteraction"] = true`：
+        **值必须是 JSON 的 true**，别的值客户端一律忽略（查证 2026-09-01）。
+        写错类型不会报错，只会安静地退回成「可以不再询问」——
+        那正是这条防线要防的情况。
+        """
+        entry = {'name': t['name'], 'description': t['description'],
+                 'inputSchema': t['inputSchema']}
+        if t.get('confirm'):
+            entry['_meta'] = {'anthropic/requiresUserInteraction': True}
+        return entry
 
     def _handle_call(self, req_id, params):
         name = params.get('name') if isinstance(params, dict) else None

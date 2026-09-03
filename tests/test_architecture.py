@@ -359,6 +359,11 @@ def test_花钱或有副作用的工具不许暴露成MCP的tool():
 
     `host/mcp/registry.check()` 在服务启动时查同一件事（查的是**实际注册了什么**）；
     这里查的是**清单自己自洽不自洽**，不用起服务就能拦住，改 tool.toml 的当场就红。
+
+    2026-09-01 从「花钱的一律不许」改成**三档**（判据见 `host/mcp/registry.py` 顶部）：
+    单次便宜可重来的可以是 tool（客户端强制弹窗），全库作业与不可逆写库仍然只能是 prompt。
+    这里守的是清单侧：`expose` 仍不许是 `tool`（那是「整个工具都免检」的意思），
+    放开的是 `agent_tools` 白名单里逐个点名的入口。
     """
     offenders = []
     for t, man in sorted(_manifests().items()):
@@ -375,9 +380,90 @@ def test_花钱或有副作用的工具不许暴露成MCP的tool():
                 f"side_effects={man.get('side_effects')} —— 这样的不许 expose='tool'")
         if man.get('requires_role') not in ('none', 'test', 'prod'):
             offenders.append(f"{t}: requires_role={man.get('requires_role')!r} 不是三档之一")
+        # 白名单必须是列表，且**花钱的工具必须显式写出来**（哪怕是空的）——
+        # 「没写」和「写了空的」在代码里都是空，但在人眼里差别很大：
+        # 前者是漏了，后者是想过之后决定一个都不放。让它必须显式。
+        at = man.get('agent_tools')
+        if risky and at is None:
+            offenders.append(
+                f'{t}: 花钱/有副作用，但 tool.toml 里没有 agent_tools —— '
+                f'必须显式写出来（一个都不放就写 `agent_tools = []` 并说明理由）')
+        elif at is not None and not isinstance(at, list):
+            offenders.append(f'{t}: agent_tools 必须是列表，现在是 {type(at).__name__}')
     assert not offenders, (
         'tool.toml 与安全铁律对不上：' + _NL + _NL.join(offenders)
-        + _NL + "判据：只读且便宜 → tool；只读数据 → resource；花钱或有副作用 → prompt。")
+        + _NL + '判据：只读且便宜 → tool；只读数据 → resource；花钱或有副作用 → prompt，'
+        + _NL + '其中「单次、便宜、可重来」的那几个入口可以逐个写进 agent_tools 放开成 tool。')
+
+
+def test_能让模型自己发起的入口必须带强制弹窗():
+    """白名单里的入口，注册时必须 `confirm=True`。
+
+    **两道闸缺一不可**：
+      · `agent_tools` 白名单 —— 给人看的那道。加一个是显式动作，review 时一眼能看见。
+      · `confirm=True` —— 给运行时的那道。它会打上
+        `anthropic/requiresUserInteraction`，客户端于是每次都弹窗，
+        **且不给「不再询问」的选项**（这才是原规则真正在防的那个洞）。
+
+    只有白名单没有 confirm，等于把「花钱的入口」变成了普通 tool ——
+    用户点一次「总是允许」之后，它就再也不问了。
+    """
+    from host.mcp import registry
+    from host.mcp.stdio import MCPStdioServer
+    srv = MCPStdioServer('guard', '0')
+    registry.register_all(srv)
+    by_name = {t['name']: t for t in srv._tools}
+
+    # 这个工具注册了哪些 tool（按名字前缀分不出来，所以照 registry 的报告来）
+    from host.mcp.stdio import MCPStdioServer as _S
+    srv2 = _S('guard2', '0')
+    report = registry.register_all(srv2)
+    registered = {name: (got.get('tool') or []) for name, _man, got in report}
+
+    offenders = []
+    for t, man in sorted(_manifests().items()):
+        if '_error' in man:
+            continue
+        allowed = set(man.get('agent_tools') or [])
+        risky = bool(man.get('costs_money')) or bool(man.get('side_effects'))
+
+        # ① 白名单里的，必须真存在且带 confirm
+        for entry in sorted(allowed):
+            tool = by_name.get(entry)
+            if tool is None:
+                offenders.append(f'{t}: agent_tools 里写着 {entry!r}，但没有这个 tool')
+            elif not tool.get('confirm'):
+                offenders.append(f'{t}: {entry} 在白名单里，却没带 confirm=True')
+
+        # ② **反向**：花钱的工具注册了 tool，就必须都在白名单里。
+        #    只查①的话，「偷偷多注册一个 tool」根本不会红 —— 而那正是最该拦的方向。
+        #    这条 `registry.check()` 也查，但那要起服务才跑到；
+        #    **pytest 才是人真会跑的那个**，所以这里必须也有一份。
+        if risky:
+            outside = [x for x in registered.get(t, []) if x not in allowed]
+            if outside:
+                offenders.append(
+                    f'{t}: 注册了 tool {outside}，但不在 agent_tools 白名单里 —— '
+                    f'放开花钱的入口必须是显式动作')
+
+    assert not offenders, (
+        '放开给模型的入口没关好：' + _NL + _NL.join(offenders)
+        + _NL + '两道闸缺一不可：agent_tools 白名单（给人看）+ confirm=True（给运行时）')
+
+
+def test_强制弹窗标记的值必须是布尔真():
+    """客户端只认 JSON 的 `true`，别的值一律忽略（查证 2026-09-01）。
+
+    写错类型不会报错，只会**安静地退回成「可以不再询问」** ——
+    那正是这条防线要防的情况，而且不会有任何迹象。
+    """
+    from host.mcp.stdio import MCPStdioServer
+    srv = MCPStdioServer('t', '0')
+    srv.register_tool('要确认的', 'x', {'type': 'object'}, lambda a: '', confirm=True)
+    srv.register_tool('不用确认的', 'y', {'type': 'object'}, lambda a: '')
+    a, b = [srv._tool_entry(t) for t in srv._tools]
+    assert a['_meta']['anthropic/requiresUserInteraction'] is True, '必须是布尔 True，不是 1 也不是 "true"'
+    assert '_meta' not in b, '不花钱的工具不该被强制弹窗（那只会让人习惯性点确认）'
 
 
 # ── 下沉规则：被 ≥2 个使用者用到才配住 shared/ ──────────────────────────
