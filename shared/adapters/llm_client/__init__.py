@@ -75,10 +75,27 @@ class LLMError(Exception):
 
 
 def _cfg(provider, model, key):
-    """把 (provider, model, key) 补全。**模型名说了算**：给了 `gemini-*`
-    就去 Gemini，不必另外再说一次用哪家。"""
-    provider = (provider or provider_of(model)
-                or os.environ.get('LLM_PROVIDER', 'deepseek'))
+    """把 (provider, model, key) 补全。**模型名是权威**：给了 `gemini-*`
+    就去 Gemini，哪怕调用方同时说了 provider='deepseek'。
+
+    ⚠ 为什么模型名要能**推翻**显式传进来的 provider（2026-09-03 实测撞出来）：
+      `tools/deepread/batch.py` 里写着 `provider='deepseek'` 和
+      `key=get_key('DEEPSEEK_KEY')` —— 那是写死在下游的默认值。
+      于是用户在面板把精读模型改成 `gemini-3.8-flash` 之后，请求照样发去
+      DeepSeek，得到一句 `The supported API model names are deepseek-...`。
+      **上游加了新能力，下游的写死默认值让它静默失效** —— 而且症状出现在
+      离改动最远的地方。
+
+      挡住这类问题的办法不是去改每一个调用方（漏一个就复发），
+      而是让唯一知道「谁家是谁家」的这一层说了算。
+    """
+    owner = provider_of(model)
+    if owner and provider != 'ollama' and owner != provider:
+        # 连 key 一起丢掉：调用方递来的是**另一家的钥匙**，
+        # 拿去开这扇门只会换来一句莫名其妙的 401/400。
+        provider, key = owner, ''
+    elif not provider:
+        provider = os.environ.get('LLM_PROVIDER', 'deepseek')
     if model is None:
         # 走 config（环境变量→.env 三级），不能用裸 os.environ：
         # 否则 .env 里配的 OLLAMA_MODEL 对 llm_client 永远不生效（踩坑：404）
@@ -244,8 +261,12 @@ def chat_vision(system, user, image_b64, provider=None, model=None, key=None,
 
     云端走 OpenAI 兼容的 image_url 格式；本地 Ollama 走其 images 字段。
     """
-    provider = (provider or provider_of(model)
-                or os.environ.get('VISION_PROVIDER', 'deepseek'))
+    # 同 _cfg：模型名能推翻调用方说的家，并把另一家的钥匙一起丢掉。
+    _owner = provider_of(model)
+    if _owner and provider != 'ollama' and _owner != provider:
+        provider, key = _owner, ''
+    elif not provider:
+        provider = os.environ.get('VISION_PROVIDER', 'deepseek')
     if model is None and provider == 'ollama':
         model = _cfg_get('OLLAMA_VISION_MODEL') or 'qwen2.5vl:7b'
     # 规范化 base64（去掉 data:image 前缀取纯数据；同时保留完整 data uri 供云端用）

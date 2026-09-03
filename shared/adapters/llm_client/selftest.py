@@ -61,10 +61,16 @@ def main():
                  ('Qwen/Qwen2.5-72B-Instruct', 'siliconflow'), ('随便写的名字', '')]
         bad = [(m, provider_of(m)) for m, want in cases if provider_of(m) != want]
         prov, _model, _key = _cfg(None, 'gemini-3.8-flash', None)
+        # **模型名要能推翻显式传进来的 provider 和 key** —— 这条是实测撞出来的：
+        # deepread 里写死了 provider='deepseek' + DeepSeek 的 key，
+        # 于是面板上改了模型也没用，请求照样发去 DeepSeek（踩坑 #105）。
+        prov2, _m2, key2 = _cfg('deepseek', 'gemini-3.8-flash', 'sk-别人家的钥匙')
         if bad:
             print(f'  [FAIL] 模型名认错了家: {bad}')
         elif prov != 'gemini' or PROVIDERS['gemini'][1] != 'GEMINI_KEY':
             print(f'  [FAIL] gemini 模型没走到 gemini（得到 {prov}）')
+        elif prov2 != 'gemini' or key2 == 'sk-别人家的钥匙':
+            print(f'  [FAIL] 显式 provider/key 没被模型名推翻（得到 {prov2}）')
         else:
             print('  [PASS] 模型名能认出是哪家，且 gemini 去拿 GEMINI_KEY'); ok += 1
     except Exception as e:
