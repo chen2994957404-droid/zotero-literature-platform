@@ -129,10 +129,20 @@ def _cloud_chat(messages, model, key, temperature, json_mode, max_tokens,
     if not key:
         raise LLMError(f'未提供 {key_env}')
     body = {'model': model, 'temperature': temperature, 'messages': messages}
-    # `thinking` 是 DeepSeek 自家的字段。别家**会静默忽略不认识的参数**
-    # （Gemini 兼容层的文档原话），静默忽略比报错难查，所以只发给认它的那家。
-    if thinking is not None and provider == 'deepseek':
-        body['thinking'] = {'type': 'enabled' if thinking else 'disabled'}
+    # 「少想一点」这件事，两家的说法不一样，得各说各的话。
+    #
+    # ⚠ 而且 **Gemini 3 的思考关不掉**（官方原话：2.5 之后的模型不支持
+    #   `reasoning_effort="none"`），只能调到最低。所以 `thinking=False` 在这里
+    #   不是「关掉」而是「尽量少想」—— 名字骗人，但行为是对的：
+    #   调用方要的本来就是「别让推理链吃掉正文额度」。
+    #
+    # 这条是实测撞出来的（2026-09-03）：max_tokens=300 的一次试探直接
+    # 「输出被截断且正文近乎为空」—— 300 全被思考吃光了，一个字没留给答案。
+    if thinking is not None:
+        if provider == 'deepseek':
+            body['thinking'] = {'type': 'enabled' if thinking else 'disabled'}
+        elif provider == 'gemini' and not thinking:
+            body['reasoning_effort'] = 'minimal'
     if json_mode:
         body['response_format'] = {'type': 'json_object'}
     if max_tokens:
@@ -167,8 +177,11 @@ def _cloud_chat(messages, model, key, temperature, json_mode, max_tokens,
     # 输出被 max_tokens 截断时明确报错，避免静默产出半截/空结果
     if ch.get('finish_reason') == 'length' and len(out) < 200:
         raise LLMError(
-            f'输出被 max_tokens={max_tokens} 截断且正文近乎为空'
-            f'（V4 推理链计入额度）。请调大 max_tokens 或关闭 thinking。')
+            f'输出被 max_tokens={max_tokens} 截断且正文近乎为空 —— '
+            f'{model} 的推理链计入这个额度，被它吃光了。\n'
+            f'  DeepSeek：thinking=False 可以真的关掉。\n'
+            f'  Gemini 3：**关不掉**，只能 reasoning_effort=minimal 调到最低，'
+            f'所以额度要给得比 DeepSeek 更宽。')
     return out
 
 
