@@ -10,6 +10,9 @@
     python host/deploy/remote.py deploy               # git pull + 装包 + 修任务 + 重启 + 体检
     python host/deploy/remote.py task <任务名>        # 触发一个已注册的计划任务
     python host/deploy/remote.py push <本地文件> <远端相对路径>   # 传个脚本过去
+    python host/deploy/remote.py job --install        # 装「作业通道」（只做一次）
+    python host/deploy/remote.py job "<PowerShell>"   # 让 B 用自己的身份跑（**能读密钥**）
+                                                      #   --async 不等它 / --tail 看进展
 
 ## 为什么值得包一层，而不是每次现敲 ssh
 
@@ -42,8 +45,11 @@
 同一时刻从 SSH 会话里读 `DEEPSEEK_KEY` 拿到的是空串。
 
 所以 `task <已注册任务名>` 触发的作业**能**花钱、能写 Zotero。
-它的边界是「只能做那个任务本来就做的事」——
-想让它做别的，得先让工作出现在它会捡起来的地方（比如给文献打上触发标签）。
+它的边界是「只能做那个任务本来就做的事」。
+
+**`job` 子命令就是把这条绕法一般化**（2026-09-03 加）：注册一个按需触发的
+计划任务，它跑什么由 A 机现写。于是上面那条「不能远程发起」的限制没了 ——
+A 机能让 B 做任何事，包括花钱的和写 Zotero 的。详见下面 JOB_TASK 那一段。
 """
 import io
 import os
@@ -351,24 +357,195 @@ def cmd_task(name):
     return 0 if ok else 1
 
 
+def scp_to(local, remote_abs):
+    """把一个本地文件传到 B 的**绝对路径**。返回 (成功?, 输出)。
+
+    ⚠ 逐个候选地址试，跟 `call()` 一样 —— 早先这里写死了 `HOST`，
+    于是「ssh 连得上、scp 连不上」：check 用的是记住的那个好地址，
+    push 用的却永远是列表里的第一个。同一台机器，两条路不一致最难查。
+    """
+    out = ''
+    for host in candidates():
+        r = _sp.run(['scp', '-i', KEY, '-o', 'BatchMode=yes',
+                     '-o', f'ConnectTimeout={CONNECT_TIMEOUT}',
+                     local, f'{USER}@{host}:{remote_abs}'], timeout=300)
+        out = ((r.stdout or '') + (r.stderr or '')).strip()
+        if r.returncode == 0:
+            _remember_good(host)
+            return True, out
+    return False, out
+
+
 def cmd_push(local, remote_rel):
     """把一个本地文件传到 B 的项目目录下（复杂脚本别硬拼引号，传过去再跑）。"""
     if not os.path.isfile(local):
         print(f'找不到本地文件：{local}')
         return 2
-    dst = f'{USER}@{HOST}:{ROOT_B}/{remote_rel}'
-    r = _sp.run(['scp', '-i', KEY, '-o', 'BatchMode=yes',
-                 '-o', f'ConnectTimeout={CONNECT_TIMEOUT}', local, dst], timeout=300)
-    out = (r.stdout or '') + (r.stderr or '')
-    if r.returncode != 0:
-        print(out.rstrip())
+    ok, out = scp_to(local, f'{ROOT_B}/{remote_rel}')
+    if not ok:
+        print(out)
         tip = diagnose(out)
         if tip:
-            print('\n' + tip)
+            print(_NL + tip)
         return 1
     print(f'已传到 {ROOT_B}/{remote_rel}')
     print('⚠ 跑完记得删掉临时文件 —— B 机上别留一地的 _tmp。')
     return 0
+
+
+# ── 作业通道：让 B 用「它自己的身份」干活 ────────────────────────────
+# 为什么要有这一段（2026-09-03 实测出来的边界，不是推断）：
+#   公钥 SSH 建立的是**网络登录会话**，Windows 凭据管理器在这种会话里打不开 ——
+#   实测报的是 `CredRead: 指定的登录会话不存在。可能已被终止。`
+#   所以从 SSH 直接发起的作业，`get_key('DEEPSEEK_KEY')` 拿到空串，
+#   跑到第一次调模型才废，白花前面的解析额度。
+#
+#   而**计划任务**跑在交互登录会话里（B 上 watcher 的 principal 就是
+#   `LogonType=Interactive`），那个会话解得开凭据库 —— watcher 天天在花钱、
+#   天天在写 Zotero，就是活证据。
+#
+#   于是这条通道的做法是：**不新起常驻进程**，只注册一个按需触发的计划任务，
+#   它执行一个固定的外壳；外壳读同目录下的 payload，跑完把输出和退出码落盘。
+#   A 机写 payload → 触发 → 等 done 文件 → 取输出。
+#   等于「让 B 自己去跑」，而不是「我在 B 上跑」—— 差的就是那把凭据。
+JOB_TASK = 'ZoteroAgentJob'
+# 放在仓库外：B 机迟早要换成重构后的目录，这条通道不该跟着一起搬
+JOB_DIR = 'C:/ProgramData/zotero-agent'
+JOB_WRAPPER = JOB_DIR + '/job.ps1'
+JOB_PAYLOAD = JOB_DIR + '/payload.ps1'
+JOB_OUT = JOB_DIR + '/job.out'
+JOB_DONE = JOB_DIR + '/job.done'
+
+
+def wrapper_source():
+    """外壳脚本的内容。
+
+    由这里生成而不是另存一个 .ps1，是为了让它和上面那几个常量、和 `ROOT_B`
+    **只有一处定义** —— 两份迟早不一致，而不一致的那天看起来像「任务没触发」。
+    """
+    return _NL.join([
+        "$ErrorActionPreference = 'Continue'",
+        '$OutputEncoding = [System.Text.Encoding]::UTF8',
+        '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
+        "$env:PYTHONIOENCODING = 'utf-8'",
+        f"Remove-Item '{JOB_DONE}' -ErrorAction SilentlyContinue",
+        f"Set-Location '{ROOT_B}'",
+        '$code = 0',
+        'try {',
+        f"  & '{JOB_PAYLOAD}' *>&1 | Out-File -FilePath '{JOB_OUT}' -Encoding utf8",
+        '  if ($null -ne $LASTEXITCODE) { $code = $LASTEXITCODE }',
+        '} catch {',
+        f"  $_ | Out-File -FilePath '{JOB_OUT}' -Encoding utf8 -Append",
+        '  $code = 1',
+        '}',
+        f"Set-Content -Path '{JOB_DONE}' -Value $code -Encoding utf8",
+        '',
+    ])
+
+
+def _write_temp(text, suffix='.ps1'):
+    """写一个临时脚本，**带 BOM**。
+
+    ⚠ `utf-8-sig` 不是洁癖：Windows PowerShell 5.1 读 `.ps1` **文件**时，
+    没有 BOM 就按系统代码页（GBK）解，脚本里的中文在**执行之前**就已经烂了 ——
+    实测第一版的输出是 `DEEPSEEK_KEY 闀垮害: 35`。
+    这是编码咬人的第四个地方：前三个是控制台输出、子进程、读文件（踩坑 #60/#99），
+    这个是**读脚本自身**。顶上那层 UTF-8 外壳管不到它，因为壳是在脚本被解析之后才生效的。
+    """
+    import tempfile
+    fd, tmp = tempfile.mkstemp(suffix=suffix)
+    os.close(fd)
+    with io.open(tmp, 'w', encoding='utf-8-sig') as fh:
+        fh.write(text)
+    return tmp
+
+
+def cmd_job_install():
+    """在 B 上装好这条通道（只需要做一次）。
+
+    ⚠ `LogonType` 必须是 `Interactive` —— **能读凭据库的正是这一档**，
+    照抄的是 watcher 那份被实践验证过的配置。改成 S4U / ServiceAccount
+    就又读不到密钥了，而且失败的样子跟现在的 SSH 一模一样
+    （空密钥、跑到一半才废），极难查。
+    """
+    ok, out = call(f"New-Item -ItemType Directory -Force -Path '{JOB_DIR}' | Out-Null; "
+                   "Write-Output 'ok'", timeout=60)
+    if not ok:
+        print(out)
+        return 1
+
+    tmp = _write_temp(wrapper_source())
+    ok, out = scp_to(tmp, JOB_WRAPPER)
+    os.remove(tmp)
+    if not ok:
+        print('外壳脚本传不过去：' + out)
+        return 1
+
+    ok, out = call(
+        "$a = New-ScheduledTaskAction -Execute 'powershell.exe' "
+        # 路径里没有空格，所以**不给它套引号** —— 这条命令要穿过
+        # ssh → PowerShell 两层解析，每多一层引号就多一个能咬人的地方。
+        "-Argument '-NoProfile -NonInteractive -WindowStyle Hidden "
+        f"-ExecutionPolicy Bypass -File {JOB_WRAPPER}'; "
+        f"$p = New-ScheduledTaskPrincipal -UserId '{USER}' "
+        '-LogonType Interactive -RunLevel Limited; '
+        '$s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries '
+        '-DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 6) '
+        '-MultipleInstances IgnoreNew; '
+        f"Register-ScheduledTask -TaskName '{JOB_TASK}' -Action $a -Principal $p "
+        "-Settings $s -Description 'A 机按需触发的作业通道' -Force | Out-Null; "
+        f"$t = Get-ScheduledTask -TaskName '{JOB_TASK}'; "
+        "Write-Output ('已注册: ' + $t.TaskName + ' / LogonType=' "
+        "+ $t.Principal.LogonType + ' / ' + $t.State)", timeout=90)
+    print(out)
+    if ok:
+        print(_NL + '⚠ 装完先验一次能不能读到密钥，别默认它成了。')
+    return 0 if ok else 1
+
+
+def cmd_job(script, wait=True, timeout=1800):
+    """把一段 PowerShell 交给 B，用它自己的身份跑。
+
+    等待放在 **B 那边**（一条 ssh 里 `Start-Sleep` 轮询），不是 A 这边反复发 ssh ——
+    每次连接都要重新握手，长作业轮询下来光握手就是几百秒。
+    """
+    tmp = _write_temp(script + _NL)
+    ok, out = scp_to(tmp, JOB_PAYLOAD)
+    os.remove(tmp)
+    if not ok:
+        print('作业内容传不过去（是不是还没 job --install？）：' + out)
+        return 1
+
+    ok, out = call(
+        f"$t = Get-ScheduledTask -TaskName '{JOB_TASK}' -ErrorAction SilentlyContinue; "
+        "if (-not $t) { Write-Output '还没装通道：先跑 remote.py job --install'; exit 9 }; "
+        "if ($t.State -eq 'Running') { "
+        "Write-Output '上一个作业还在跑（这条通道一次只跑一个）'; exit 9 }; "
+        f"Remove-Item '{JOB_DONE}','{JOB_OUT}' -ErrorAction SilentlyContinue; "
+        f"Start-ScheduledTask -TaskName '{JOB_TASK}'; Write-Output '已交给 B'",
+        timeout=90)
+    print(out)
+    if not ok:
+        return 1
+    if not wait:
+        print('（没等它跑完 —— 用 remote.py job --tail 看进展）')
+        return 0
+    return cmd_job_tail(timeout)
+
+
+def cmd_job_tail(timeout=1800):
+    """等作业结束并取回输出；超时就先把已有的输出给出来。"""
+    ok, out = call(
+        f'$d = (Get-Date).AddSeconds({int(timeout)}); '
+        f"while (-not (Test-Path '{JOB_DONE}') -and (Get-Date) -lt $d) "
+        '{ Start-Sleep -Seconds 2 }; '
+        f"if (Test-Path '{JOB_OUT}') {{ Get-Content '{JOB_OUT}' -Encoding utf8 }}; "
+        f"if (Test-Path '{JOB_DONE}') {{ "
+        f"Write-Output ('[退出码] ' + (Get-Content '{JOB_DONE}' -Encoding utf8)) }} "
+        "else { Write-Output '[还没跑完] 上面是目前为止的输出' }",
+        timeout=int(timeout) + 60)
+    print(out)
+    return 0 if ok else 1
 
 
 def main():
@@ -402,6 +579,17 @@ def main():
             print('用法：remote.py push <本地文件> <远端相对路径>')
             return 2
         return cmd_push(args[1], args[2])
+    if action == 'job':
+        if flag('--install'):
+            return cmd_job_install()
+        wait_s = int(opt('--timeout') or 1800)
+        if flag('--tail'):
+            return cmd_job_tail(wait_s)
+        if len(args) < 2:
+            print('要给一段 PowerShell：remote.py job "<命令>"'
+                  + _NL + '（第一次用先 remote.py job --install）')
+            return 2
+        return cmd_job(args[1], wait=not flag('--async'), timeout=wait_s)
 
     print(__doc__)
     return 2
