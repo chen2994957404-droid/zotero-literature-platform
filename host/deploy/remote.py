@@ -3,6 +3,7 @@
 
 用法:
     python host/deploy/remote.py check                # 连得上吗、是谁、代码到哪一版
+                                                      #（多个地址按顺序试，见 HOSTS）
     python host/deploy/remote.py wake                 # 睡着了就发个网络唤醒包
     python host/deploy/remote.py run "<PowerShell>"   # 跑一条只读命令
     python host/deploy/remote.py logs [名字] [行数]   # 看日志尾部（默认 zotero_watcher）
@@ -44,6 +45,7 @@
 它的边界是「只能做那个任务本来就做的事」——
 想让它做别的，得先让工作出现在它会捡起来的地方（比如给文献打上触发标签）。
 """
+import io
 import os
 import socket
 import sys
@@ -59,7 +61,40 @@ from shared.kernel.cli import flag, opt, positionals, wants_help
 
 # ── 连接参数 ──────────────────────────────────────────────────────────
 # ⚠ `Administrator` 是**账号**；`吧啦吧啦` 是**计算机名**，不是账号（踩坑 #74）。
-HOST = os.environ.get('B_HOST', '192.168.123.216')
+# B 机可能有两个地址：同一局域网时的内网 IP，和装了组网软件之后的虚拟 IP。
+# **两个都留着，按顺序试** —— 笔记本到处跑，哪个能通取决于此刻在哪个网。
+#   B_HOSTS  逗号分隔，前面的先试（局域网直连更快，所以排前面）
+_DEFAULT_HOSTS = '192.168.123.216'
+HOSTS = [h.strip() for h in
+         os.environ.get('B_HOSTS', os.environ.get('B_HOST', _DEFAULT_HOSTS)).split(',')
+         if h.strip()]
+HOST = HOSTS[0]          # 兼容旧写法（诊断文案里还会引用它）
+
+# 上次连通的是哪个地址。**记住它是为了省时间**：一个连不上的地址要等满
+# ConnectTimeout 才放弃，候选多了每次都从头试会让每条命令都慢十几秒。
+LAST_GOOD = os.path.join(os.path.expanduser('~'), '.ssh', 'b_last_good_host.txt')
+
+
+def candidates():
+    """按「最可能通」的顺序给出候选地址。"""
+    order = list(HOSTS)
+    try:
+        last = io.open(LAST_GOOD, encoding='utf-8').read().strip()
+    except OSError:
+        last = ''
+    if last in order:
+        order.remove(last)
+        order.insert(0, last)
+    return order
+
+
+def _remember_good(host):
+    try:
+        os.makedirs(os.path.dirname(LAST_GOOD), exist_ok=True)
+        with io.open(LAST_GOOD, 'w', encoding='utf-8') as fh:
+            fh.write(host + _NL)
+    except OSError:
+        pass
 USER = os.environ.get('B_USER', 'Administrator')
 KEY = os.path.expanduser(os.environ.get('B_KEY', '~/.ssh/id_ed25519_zotero_b'))
 ROOT_B = os.environ.get('B_ROOT', 'D:/02_AI/Projects/zotero-literature-platform')
@@ -76,11 +111,11 @@ CONNECT_TIMEOUT = 10
 _NL = chr(10)
 
 
-def ssh_argv(script, timeout=None):
+def ssh_argv(script, timeout=None, host=None):
     """组一条 ssh 命令行。script 是要在 B 上跑的 PowerShell。"""
     return ['ssh', '-i', KEY, '-o', 'BatchMode=yes',
             '-o', f'ConnectTimeout={timeout or CONNECT_TIMEOUT}',
-            f'{USER}@{HOST}', _UTF8 + script]
+            f'{USER}@{host or HOST}', _UTF8 + script]
 
 
 def diagnose(stderr):
@@ -92,12 +127,17 @@ def diagnose(stderr):
     """
     e = (stderr or '').lower()
     if 'kex_exchange_identification' in e or 'connection closed by' in e:
+        # ⚠ 这一条有**两种**根因，实测都见过。别只报一种 ——
+        #   2026-09-03 我第一版只写了「睡眠」，结果连一个根本不存在的地址
+        #   也被诊断成「机器在睡眠」。**言之凿凿的错判比不给判断更糟。**
         return ('TCP 连上了，但 sshd **还没打招呼就断开** —— 密钥交换都没开始，' + _NL
-                + '  所以跟账号、公钥全无关（别往那查）。' + _NL
-                + '  实测最常见的原因：**B 机在睡眠，刚好被网络活动短暂唤醒又睡回去**。' + _NL
-                + '  判据：这时 ping 不通、ARP 是 Unreachable，但 TCP 22 偶尔能连上。' + _NL
-                + '  解法：`python host/deploy/remote.py wake` 发唤醒包（要先知道 MAC），' + _NL
-                + '  或者让用户在主力机上把睡眠关掉 —— 那台本来就该常开。')
+                + '  所以跟账号、公钥全无关（别往那查）。两种可能：' + _NL
+                + '  ① 那台机器在睡眠，被网络活动短暂唤醒又睡回去；' + _NL
+                + '  ② 本机的代理/VPN 接管了这个连接，自己应答后又断开' + _NL
+                + '     （判据：连一个**确定不存在**的 IP 的 22 端口，'
+                + '如果它也「连上」了，就是这一种）。' + _NL
+                + '  ①的解法：wake 发唤醒包，或让那台机器别睡（它本来就该常开）。' + _NL
+                + '  ②的解法：把这个地址加进代理的直连/绕过规则。')
     if 'connection timed out' in e or 'no route to host' in e:
         return ('B 机没应答 —— 多半是**关机或睡眠**（也可能换了 IP）。\n'
                 f'  先确认：ping {HOST}；还可以看看它是不是换了地址。\n'
@@ -119,13 +159,28 @@ def diagnose(stderr):
 
 
 def call(script, timeout=180):
-    """在 B 上跑一段 PowerShell。返回 (成功?, 输出)。"""
-    r = _sp.run(ssh_argv(script), timeout=timeout)
-    out = (r.stdout or '') + (r.stderr or '')
-    if r.returncode != 0:
+    """在 B 上跑一段 PowerShell。逐个候选地址试，返回 (成功?, 输出)。
+
+    只有**全部**候选都失败才算失败 —— 报错时把每个地址各自的原因都列出来，
+    因为它们可能完全不同（局域网那个是「不在同一个网」，
+    组网那个可能是「组网软件没开」），只报最后一个会把人带偏。
+    """
+    tried = []
+    for host in candidates():
+        r = _sp.run(ssh_argv(script, host=host), timeout=timeout)
+        out = (r.stdout or '') + (r.stderr or '')
+        if r.returncode == 0:
+            _remember_good(host)
+            return True, out.rstrip()
+        tried.append((host, out.strip()))
+
+    lines = []
+    for host, out in tried:
         tip = diagnose(out)
-        return False, out.rstrip() + (('\n\n' + tip) if tip else '')
-    return True, out.rstrip()
+        lines.append(f'[{host}] ' + (out.splitlines()[-1] if out else '（无输出）'))
+        if tip:
+            lines.append(tip)
+    return False, _NL.join(lines)
 
 
 # ── 各条子命令 ────────────────────────────────────────────────────────
@@ -141,7 +196,7 @@ def remember_mac():
     """
     from shared.kernel import subproc as sp
     out = sp.powershell(
-        f"(Get-NetNeighbor -IPAddress {HOST} -ErrorAction SilentlyContinue | "
+        f"(Get-NetNeighbor -IPAddress {candidates()[0]} -ErrorAction SilentlyContinue | "
         f"Where-Object {{$_.State -ne 'Unreachable'}}).LinkLayerAddress", timeout=30)
     mac = (out or '').strip().splitlines()[0].strip() if (out or '').strip() else ''
     if len(mac) == 17 and mac.count('-') == 5 and not mac.startswith('00-00-00'):

@@ -82,3 +82,49 @@ def test_不知道MAC时不假装发了(monkeypatch, tmp_path, capsys):
     assert remote.cmd_wake() == 2
     out = capsys.readouterr().out
     assert '不知道 B 的 MAC' in out and '已向' not in out
+
+
+# ───────── 多候选地址（2026-09-03 加：笔记本到处跑，B 可能有两个地址）─────────
+
+def test_多个候选地址按顺序试(monkeypatch):
+    """局域网地址排前面 —— 直连比走组网中继快得多。"""
+    monkeypatch.setattr(remote, 'HOSTS', ['10.0.0.1', '10.0.0.2'])
+    monkeypatch.setattr(remote, 'LAST_GOOD', '/nonexistent/nope.txt')
+    assert remote.candidates() == ['10.0.0.1', '10.0.0.2']
+
+
+def test_上次通的那个排到最前面(monkeypatch, tmp_path):
+    """**这是为了省时间**：一个连不上的地址要等满 ConnectTimeout 才放弃，
+    候选多了每次都从头试，会让每条命令都白等十几秒。
+    """
+    f = tmp_path / 'last.txt'
+    f.write_text('10.0.0.2\n', encoding='utf-8')
+    monkeypatch.setattr(remote, 'HOSTS', ['10.0.0.1', '10.0.0.2'])
+    monkeypatch.setattr(remote, 'LAST_GOOD', str(f))
+    assert remote.candidates() == ['10.0.0.2', '10.0.0.1']
+
+
+def test_记着的地址已经不在候选里就忽略它(monkeypatch, tmp_path):
+    """换了组网方案之后，旧的虚拟地址不该还被优先试。"""
+    f = tmp_path / 'last.txt'
+    f.write_text('192.168.99.99\n', encoding='utf-8')
+    monkeypatch.setattr(remote, 'HOSTS', ['10.0.0.1'])
+    monkeypatch.setattr(remote, 'LAST_GOOD', str(f))
+    assert remote.candidates() == ['10.0.0.1']
+
+
+def test_ssh命令行认得出指定的地址():
+    argv = remote.ssh_argv('x', host='10.9.9.9')
+    assert f'{remote.USER}@10.9.9.9' in argv
+
+
+def test_断开的诊断要把两种可能都说出来():
+    """**言之凿凿的错判比不给判断更糟。**
+
+    2026-09-03 第一版只写了「机器在睡眠」，结果连一个根本不存在的地址
+    也被诊断成睡眠 —— 而真相是本机代理接管了连接。
+    """
+    tip = remote.diagnose('kex_exchange_identification: Connection closed by remote host')
+    assert '睡眠' in tip, '少了「对面在睡」这一种'
+    assert '代理' in tip, '少了「本机代理接管」这一种'
+    assert '不存在' in tip, '少了那条能分清两者的判据'
