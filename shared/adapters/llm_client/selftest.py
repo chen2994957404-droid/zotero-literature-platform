@@ -9,7 +9,7 @@ import sys, os
 from shared.adapters.llm_client import chat, chat_json, LLMError
 
 def main():
-    ok = 0; total = 3
+    ok = 0; total = 4
 
     # 1. 本地 chat 纯文本（英文 system，避免 qwen3.5 中文 system 卡 40s+）
     try:
@@ -50,6 +50,25 @@ def main():
                 print('  [PASS] 无密钥时正确报 LLMError'); ok += 1
     except Exception as e:
         print(f'  [FAIL] 密钥链路异常: {type(e).__name__}: {e}')
+
+    # 4. 模型名 → 该找哪家（**离线纯逻辑，不打网络**）
+    #    这条守的是「一个设置项推不出两种真相」：用户在面板里改的是模型名，
+    #    去哪家必须完全由模型名推出来。推错了的症状是「模型不存在」——
+    #    那看起来像名字写错了，没人会想到是走错了家，所以要在离线就锁死。
+    try:
+        from shared.adapters.llm_client import PROVIDERS, _cfg, provider_of
+        cases = [('gemini-3.8-flash', 'gemini'), ('deepseek-v4-pro', 'deepseek'),
+                 ('Qwen/Qwen2.5-72B-Instruct', 'siliconflow'), ('随便写的名字', '')]
+        bad = [(m, provider_of(m)) for m, want in cases if provider_of(m) != want]
+        prov, _model, _key = _cfg(None, 'gemini-3.8-flash', None)
+        if bad:
+            print(f'  [FAIL] 模型名认错了家: {bad}')
+        elif prov != 'gemini' or PROVIDERS['gemini'][1] != 'GEMINI_KEY':
+            print(f'  [FAIL] gemini 模型没走到 gemini（得到 {prov}）')
+        else:
+            print('  [PASS] 模型名能认出是哪家，且 gemini 去拿 GEMINI_KEY'); ok += 1
+    except Exception as e:
+        print(f'  [FAIL] provider 推断异常: {type(e).__name__}: {e}')
 
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)

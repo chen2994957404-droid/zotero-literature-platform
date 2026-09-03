@@ -49,6 +49,9 @@ KEY_NAMES = [
     ('ZOTERO_API_KEY',  'Zotero（回写附件与标签）',   True),
     ('MINERU_TOKEN',    'MineRU（PDF 解析）',         True),
     ('SILICONFLOW_KEY', '硅基流动（图表数字化，可空）', False),
+    # 免费档的代价不是钱是数据：Google 明说免费档「内容会用于改进产品」。
+    # 所以这一项永远是可选的，且这句提示要留在用户看得见的地方。
+    ('GEMINI_KEY',      'Google Gemini（可空；免费档，内容会被 Google 用于改进产品）', False),
     ('SCIVERSE_KEY',    'Sciverse（全球文献检索，可空）', False),
     # OpenAlex 2026-02 起按量计费：无 key 只有 $0.10/天，免费 key 有 $1/天（10 倍）。
     # 不填也能跑，只是方向地图那类批量作业一天就把额度打光（踩坑 #77）。
