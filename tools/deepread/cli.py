@@ -1,13 +1,18 @@
 # -*- coding: utf-8 -*-
 """精读的命令行入口（只解析参数，逻辑在 tools/deepread 与 batch.py）。
 
+⚠ **key 要写在选项前面**（`shared.kernel.cli.positionals()` 到第一个 `--` 就停）。
+   写成 `--si KEY` 的话，key 根本不会被看见 —— 你会得到一份用法说明和退出码 2，
+   而那看起来像「参数写错了」，不像「顺序反了」。
+   这份文档自己就写错过（2026-09-03 实测撞上），所以下面每一条都按正确顺序重排。
+
 用法:
     python -m tools.deepread KEY1 KEY2          批量正文精读
+    python -m tools.deepread KEY1 --force       强制重跑（旧版自动备份 .bak）
+    python -m tools.deepread KEY1 KEY2 --si     批量补 SI 精读 + 合并 + 回写
+    python -m tools.deepread KEY1 --upload      批量回写 summary 附件 + 打标签
+    python -m tools.deepread KEY1 --refresh     只把新版铺进本地 storage
     python -m tools.deepread --file keys.txt    从文件读 key（每行一个）
-    python -m tools.deepread --force ...        强制重跑（旧版自动备份 .bak）
-    python -m tools.deepread --si KEY1 KEY2     批量补 SI 精读 + 合并 + 回写
-    python -m tools.deepread --upload KEY1      批量回写 summary 附件 + 打标签
-    python -m tools.deepread --refresh KEY1     只把新版铺进本地 storage
     python -m tools.deepread --rerun-pro        列出可用 pro 重跑的文献
     python -m tools.deepread --rerun-pro 3      用 pro 重跑第 3 篇
 
