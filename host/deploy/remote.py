@@ -33,10 +33,16 @@
 改计划任务 / 重启服务。
 不能远程发起：任何调付费 API 的作业。
 
-**可能的绕法（还没验过）**：计划任务跑得起来花钱的作业（watcher 就是这么工作的），
-说明任务的登录会话能读凭据库。那么 `task <任务名>` 触发一个**已注册**的任务，
-也许能绕过这个限制 —— 但这是推断，**B 机开机后要实测一次才能当结论**。
-在验证之前，别把它写进任何文档当事实。
+**绕法（2026-09-03 已实测证实）**：计划任务的登录会话**能**读凭据库。
+
+证据不是推断，是 B 机 `zotero_watcher.log` 里的真实记录：那天 11:43–11:45，
+由计划任务拉起的 watcher 完整跑完一篇 —— 读 .docx SI、精读、合并、
+结构化抽取（**做了两轮自检重抽，那是付费云端模型**）、回写 Zotero 附件、改标签。
+同一时刻从 SSH 会话里读 `DEEPSEEK_KEY` 拿到的是空串。
+
+所以 `task <已注册任务名>` 触发的作业**能**花钱、能写 Zotero。
+它的边界是「只能做那个任务本来就做的事」——
+想让它做别的，得先让工作出现在它会捡起来的地方（比如给文献打上触发标签）。
 """
 import os
 import socket
@@ -208,11 +214,48 @@ def cmd_run(script):
     return 0 if ok else 1
 
 
+def log_paths(name):
+    """一个日志名 → 两种布局下它可能在的位置。
+
+    B 机可能还在重构前的老布局上（`workflow_data/logs/`），A 机是新的
+    （`data/logs/`）。写死一个的话，连上去只会看到「文件不存在」，
+    而那看起来像「服务没在写日志」—— 一个足以让人查错方向的假象。
+    """
+    return [f'{ROOT_B}/data/logs/{name}.log',          # R6 之后的五层布局
+            f'{ROOT_B}/workflow_data/logs/{name}.log']  # 重构前
+
+
+def log_paths(name):
+    """一个日志名 → 两种布局下它可能在的位置。
+
+    B 机可能还在重构前的老布局上（`workflow_data/logs/`），A 机是新的
+    （`data/logs/`）。写死一个的话，连上去只会看到「文件不存在」，
+    而那看起来像「服务没在写日志」—— 一个足以让人查错方向的假象。
+    """
+    return [f'{ROOT_B}/data/logs/{name}.log',          # R6 之后的五层布局
+            f'{ROOT_B}/workflow_data/logs/{name}.log']  # 重构前
+
+
 def cmd_logs(name='zotero_watcher', lines=40):
+    """看日志尾部。
+
+    ⚠ **`-Encoding utf8` 一个都不能少。** 日志文件是 UTF-8，而 B 的
+    PowerShell 默认按系统代码页（GBK）读文件 —— 顶上那层 UTF-8 外壳只管
+    **输出**编码，管不到**读文件**这一步。少了它中文全是
+    `[蹇冭烦] 杞姝ｅ父` 这种乱码（2026-09-03 实测撞到；踩坑 #60 说的
+    「编码在三个地方分别咬人」，这是第三个地方）。
+    """
+    tried = ' , '.join(f"'{p}'" for p in log_paths(name))
     ok, out = call(
-        f'Get-Content "{ROOT_B}/data/logs/{name}.log" -Tail {int(lines)} '
-        f'-ErrorAction SilentlyContinue', timeout=90)
-    print(out or f'（{name}.log 是空的或不存在）')
+        f'$found = $false; '
+        f'foreach ($p in @({tried})) {{ '
+        f'  if (Test-Path $p) {{ '
+        f'    Write-Output ("--- " + $p + " ---"); '
+        f'    Get-Content $p -Tail {int(lines)} -Encoding utf8; '
+        f'    $found = $true; break }} }} '
+        f'if (-not $found) {{ Write-Output "两种布局下都没有这个日志：{name}" }}',
+        timeout=120)
+    print(out)
     return 0 if ok else 1
 
 
