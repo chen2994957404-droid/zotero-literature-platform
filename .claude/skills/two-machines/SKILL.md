@@ -62,6 +62,14 @@ description: 涉及写回 Zotero、跑花钱的批量作业、起常驻服务（
 ## 四、连 B 机（A 能直接连了，2026-08-28）
 
 ```bash
+python host/deploy/remote.py check     # ← 用这个，别手敲 ssh
+```
+
+它把三个用血换来的细节包好了：**用户名是 `Administrator` 不是计算机名**（踩坑 #74）、
+中文要套 UTF-8 外壳、连不上时把「该往哪查、不该往哪查」直接打出来（踩坑 #97）。
+
+底层就是这条，需要时可以自己敲：
+```bash
 ssh -i ~/.ssh/id_ed25519_zotero_b -o BatchMode=yes Administrator@192.168.123.216 "hostname"
 ```
 
