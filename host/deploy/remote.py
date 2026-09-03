@@ -278,23 +278,15 @@ def cmd_run(script):
 def log_paths(name):
     """一个日志名 → 两种布局下它可能在的位置。
 
-    B 机可能还在重构前的老布局上（`workflow_data/logs/`），A 机是新的
-    （`data/logs/`）。写死一个的话，连上去只会看到「文件不存在」，
+    B 机 2026-09-03 已经切到新布局（`data/logs/`），老布局这条本可以删了 ——
+    **留着是因为 `workflow_data/` 那 1.22 GB 原目录还在**，
+    真要回滚就又得读老位置。等原目录删掉那天，这里可以只留第一条。
+
+    为什么当初要两条：写死一个的话，连上去只会看到「文件不存在」，
     而那看起来像「服务没在写日志」—— 一个足以让人查错方向的假象。
     """
-    return [f'{ROOT_B}/data/logs/{name}.log',          # R6 之后的五层布局
-            f'{ROOT_B}/workflow_data/logs/{name}.log']  # 重构前
-
-
-def log_paths(name):
-    """一个日志名 → 两种布局下它可能在的位置。
-
-    B 机可能还在重构前的老布局上（`workflow_data/logs/`），A 机是新的
-    （`data/logs/`）。写死一个的话，连上去只会看到「文件不存在」，
-    而那看起来像「服务没在写日志」—— 一个足以让人查错方向的假象。
-    """
-    return [f'{ROOT_B}/data/logs/{name}.log',          # R6 之后的五层布局
-            f'{ROOT_B}/workflow_data/logs/{name}.log']  # 重构前
+    return [f'{ROOT_B}/data/logs/{name}.log',          # R6 之后的五层布局（现行）
+            f'{ROOT_B}/workflow_data/logs/{name}.log']  # 重构前（回滚时才用得到）
 
 
 def cmd_logs(name='zotero_watcher', lines=40):
