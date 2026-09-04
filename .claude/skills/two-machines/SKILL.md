@@ -1,6 +1,6 @@
 ---
 name: two-machines
-description: 涉及写回 Zotero、跑花钱的批量作业、起常驻服务（`host/watcher/`）、部署代码到主力机、连 B 机排查、或需要知道 B 机真实状态时读这份。A/B 两台机器的分工与硬约束、ROLE 三档（dev/test/prod）各自允许什么、SSH 连 B 的正确姿势与它的两个陷阱、以及「部署≠换文件」的重启纪律。
+description: 涉及写回 Zotero、跑花钱的批量作业、起常驻服务（`host/watcher/`）、部署代码到主力机、连 B 机排查、或需要知道 B 机真实状态时读这份。A/B 两台机器的分工与硬约束、ROLE 三档（dev/test/prod）各自允许什么、SSH 连 B 的正确姿势与它的两个陷阱、以及「部署≠换文件」的重启纪律。（连机器的**机械细节**已拆到全局技能 `remote-machine`，那份任何项目都能用。）
 ---
 
 <!-- 本文件由 host/codegen/skills.py 生成，**别手改**。改源：docs/howto/skills/two-machines.md -->
@@ -61,12 +61,20 @@ description: 涉及写回 Zotero、跑花钱的批量作业、起常驻服务（
 
 ## 四、连 B 机（A 能直接连了，2026-08-28）
 
+⚠ **工具不在本仓库里** —— 2026-09-04 拆走了：它讲的是「怎么操作另一台 Windows」，
+跟文献毫无关系，现在住在独立项目 `D:\dev
+emote-machine`，
+并装成**全局技能 `remote-machine`**（任何项目都能用）。
+连 B 的姿势、四种「连不上」怎么分、编码在哪四个地方咬人 —— **全在那份技能里，读它**。
+本节只留下「本项目特有」的那部分。
+
 ```bash
-python host/deploy/remote.py check     # ← 用这个，别手敲 ssh
+python D:/dev/remote-machine/remote.py check     # ← 用这个，别手敲 ssh
 ```
 
 它把三个用血换来的细节包好了：**用户名是 `Administrator` 不是计算机名**（踩坑 #74）、
 中文要套 UTF-8 外壳、连不上时把「该往哪查、不该往哪查」直接打出来（踩坑 #97）。
+B 机的地址、账号、任务名、日志位置都在 `~/.remote-machine/machines.toml` 里（机器名 `zotero-b`）。
 
 底层就是这条，需要时可以自己敲：
 ```bash
@@ -92,8 +100,8 @@ ssh -i ~/.ssh/id_ed25519_zotero_b -o BatchMode=yes Administrator@192.168.123.216
 **`job` 通道**（2026-09-03 打通，已实测）：**没有这个限制**。
 
 ```bash
-python host/deploy/remote.py job --install        # 只做一次
-python host/deploy/remote.py job "<PowerShell>"   # B 用自己的身份跑，密钥读得到
+python D:/dev/remote-machine/remote.py job --install        # 只做一次（B 上已经装过了）
+python D:/dev/remote-machine/remote.py job "<PowerShell>"   # B 用自己的身份跑，密钥读得到
 ```
 
 原理：它触发一个 `LogonType=Interactive` 的计划任务，那个会话跑在 `SessionId=1`，

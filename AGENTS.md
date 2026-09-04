@@ -70,7 +70,7 @@ A 机默认不写 Zotero、不跑常驻服务、不跑花钱的批量作业 —�
 | `troubleshoot` | 报错 / 卡住 / 没反应 / 数字不对 / 明明改了却没变 |
 | `code-redlines` | **要动任何 .py 之前**（七条红线 + 四条硬规则 + 验证顺序）|
 | `research-first` | 要做新东西、选技术路线、或要断言外部世界现状 |
-| `two-machines` | 写 Zotero / 部署 / 连 B / 起常驻服务 |
+| `two-machines` | 写 Zotero / 部署 / 连 B / 起常驻服务（连机器的机械细节在**全局**技能 `remote-machine`，源在 `D:/dev/remote-machine`）|
 | 十个工具各一份 | 要用某个工具时（含**什么时候别用我**）|
 
 ---
