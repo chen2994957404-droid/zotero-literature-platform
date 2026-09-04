@@ -70,7 +70,16 @@ from shared.kernel.cli import flag, opt, positionals, wants_help
 # B 机可能有两个地址：同一局域网时的内网 IP，和装了组网软件之后的虚拟 IP。
 # **两个都留着，按顺序试** —— 笔记本到处跑，哪个能通取决于此刻在哪个网。
 #   B_HOSTS  逗号分隔，前面的先试（局域网直连更快，所以排前面）
-_DEFAULT_HOSTS = '192.168.123.216'
+# 局域网地址在前（直连更快），Tailscale 虚拟地址兜底。
+#
+# **为什么真的需要兜底**（2026-09-04 实测逼出来的）：B 机的无线一周里天天在抖
+# （08-31 那天 114 条断连事件），断的只是局域网这一段 —— 同一时刻 B 正常在跟
+# Google 的 API 通信。也就是说「B 上不了网」是假象，真相是「A 找不到 B」。
+# Tailscale 走的是另一条路（直连不通就自动经中继绕互联网），
+# 那二十分钟里它本可以一直连着。
+#
+# Tailscale 的 100.x 地址是**按节点固定分配**的，不会像 DHCP 那样变，所以能写死。
+_DEFAULT_HOSTS = '192.168.123.216,100.105.75.103'
 HOSTS = [h.strip() for h in
          os.environ.get('B_HOSTS', os.environ.get('B_HOST', _DEFAULT_HOSTS)).split(',')
          if h.strip()]
@@ -175,6 +184,20 @@ def diagnose(stderr):
     return ''
 
 
+# ssh 客户端自己刷的告警，跟我们要做的事无关，但它**每条命令都出现，而且在最后**。
+# 后果不只是刷屏：`call()` 失败时只打印最后一行，于是真正的错误被这句挡住 ——
+# 2026-09-04 装 Tailscale 时，脚本报的错整段看不见，只看到「服务器该升级了」。
+# **噪音盖住信号，就不只是噪音了。**
+_SSH_NOISE = ('post-quantum', 'store now, decrypt later', 'openssh.com/pq.html',
+              'The server may need to be upgraded')
+
+
+def clean(out):
+    """滤掉 ssh 客户端的固定告警，只留真正的输出。"""
+    return _NL.join(l for l in (out or '').splitlines()
+                    if not any(n in l for n in _SSH_NOISE)).strip()
+
+
 def call(script, timeout=180):
     """在 B 上跑一段 PowerShell。逐个候选地址试，返回 (成功?, 输出)。
 
@@ -188,13 +211,17 @@ def call(script, timeout=180):
         out = (r.stdout or '') + (r.stderr or '')
         if r.returncode == 0:
             _remember_good(host)
-            return True, out.rstrip()
-        tried.append((host, out.strip()))
+            return True, clean(out)
+        tried.append((host, clean(out)))
 
     lines = []
     for host, out in tried:
         tip = diagnose(out)
-        lines.append(f'[{host}] ' + (out.splitlines()[-1] if out else '（无输出）'))
+        # 给最后 8 行，不是最后 1 行 —— 报错常常是一整段（traceback、msiexec 的多行输出），
+        # 只给一行等于把诊断信息扔掉。
+        tail = out.splitlines()[-8:] if out else []
+        lines.append(f'[{host}] ' + (_NL + '  ').join(['(以下是它的输出)'] + tail)
+                     if tail else f'[{host}] （无输出）')
         if tip:
             lines.append(tip)
     return False, _NL.join(lines)
@@ -380,7 +407,7 @@ def scp_to(local, remote_abs):
         r = _sp.run(['scp', '-i', KEY, '-o', 'BatchMode=yes',
                      '-o', f'ConnectTimeout={CONNECT_TIMEOUT}',
                      local, f'{USER}@{host}:{remote_abs}'], timeout=300)
-        out = ((r.stdout or '') + (r.stderr or '')).strip()
+        out = clean((r.stdout or '') + (r.stderr or ''))
         if r.returncode == 0:
             _remember_good(host)
             return True, out
