@@ -14,8 +14,8 @@
 （机构订阅靠出口 IP 自动生效，不用登录；人机验证的通行证跟着浏览器的用户资料走）。
 专开一个就行，别跟日常那个抢 —— 双击 `launch/取全文用的浏览器.bat`，或者：
 
-    msedge  --remote-debugging-port=9222 --user-data-dir=<给它单独一个文件夹>
-    chrome  --remote-debugging-port=9222 --user-data-dir=<给它单独一个文件夹>
+    msedge  --remote-debugging-port=9333 --user-data-dir=<给它单独一个文件夹>
+    chrome  --remote-debugging-port=9333 --user-data-dir=<给它单独一个文件夹>
 
 默认很慢（每篇间隔 20 秒、单次最多 25 篇），这是**故意的**：
 出版商封的是整个机构的 IP，代价全校担。要快请自己显式加 --gap / --limit。
@@ -54,7 +54,7 @@ def main():
         print(f'浏览器连不上：{p["cdp"]}')
         print(f'  原因：{p.get("error", "")}')
         print('  它需要带调试口启动，专门开一个就行（双击 launch/取全文用的浏览器.bat）：')
-        print('    msedge --remote-debugging-port=9222')
+        print('    msedge --remote-debugging-port=9333')
         return 1
 
     dois = list(positionals())

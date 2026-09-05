@@ -4,7 +4,7 @@ title 取全文用的浏览器
 
 REM 开一个"专门给取全文用"的浏览器窗口。
 REM
-REM 为什么要单独一个：取全文的程序要接管一个浏览器（走调试口 9222）。
+REM 为什么要单独一个：取全文的程序要接管一个浏览器（走调试口 9333）。
 REM 用你平时那个的话，你一关窗口程序就断，你开新标签它也可能受影响。
 REM 单独一个互不打扰，而且它记得住"人机验证已经过了"这件事，下次不用再点。
 REM
@@ -19,9 +19,9 @@ echo   正在打开"取全文专用"的浏览器窗口...
 echo.
 
 if exist "%EDGE%" (
-  start "" "%EDGE%" --remote-debugging-port=9222 --user-data-dir="%PROFILE%" --no-first-run --no-default-browser-check "https://www.sciencedirect.com/"
+  start "" "%EDGE%" --remote-debugging-port=9333 --user-data-dir="%PROFILE%" --no-first-run --no-default-browser-check "https://www.sciencedirect.com/"
 ) else if exist "%CHROME%" (
-  start "" "%CHROME%" --remote-debugging-port=9222 --user-data-dir="%PROFILE%" --no-first-run --no-default-browser-check "https://www.sciencedirect.com/"
+  start "" "%CHROME%" --remote-debugging-port=9333 --user-data-dir="%PROFILE%" --no-first-run --no-default-browser-check "https://www.sciencedirect.com/"
 ) else (
   echo   [x] 没找到 Edge 也没找到 Chrome。
   echo       如果装在别的位置，请告诉 Claude。

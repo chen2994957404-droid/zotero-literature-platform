@@ -26,7 +26,7 @@ python -m tools.getpdf --file dois.txt            # 一批
 ```
 
 跑之前：那台机器出口 IP 要是机构的（别开全局代理），
-浏览器要带调试口启动：`msedge --remote-debugging-port=9222`。
+浏览器要带调试口启动：`msedge --remote-debugging-port=9333`。
 
 ## 慢是故意的
 

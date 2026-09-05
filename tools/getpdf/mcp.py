@@ -32,7 +32,7 @@ def _one(a):
     if not p['ok']:
         return ('浏览器连不上（' + p['cdp'] + '）。取全文要借一个**带调试口启动、'
                 '而且里面过过一次人机验证的**浏览器 —— 机构订阅权限和人机验证的通行证'
-                '都在它身上。请主人先这样启动它：msedge --remote-debugging-port=9222')
+                '都在它身上。请主人先这样启动它：msedge --remote-debugging-port=9333')
 
     r = getpdf.fetch_one(doi)
     if r['reason'] == 'exists':

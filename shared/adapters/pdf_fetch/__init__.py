@@ -37,8 +37,12 @@ from shared.kernel.log import get_logger
 
 log = get_logger('pdf_fetch')
 
-# 浏览器的调试口。默认值是 Chromium 系的惯例端口；用户可在控制面板改。
-DEFAULT_CDP = 'http://127.0.0.1:9222'
+# 浏览器的调试口。**故意不用 Chromium 的惯例端口 9222** —— 运行端实测那个口
+# 被一个普通 Chrome 进程占着（它的命令行里根本没有 --remote-debugging-port，
+# 多半是某个扩展），对 /json/version 回 404。撞上它的后果很阴：
+# 浏览器起得来、端口也「通」，只是永远连不上，看着像代码坏了。
+# 需要时用户可在控制面板改 BROWSER_CDP_URL。
+DEFAULT_CDP = 'http://127.0.0.1:9333'
 
 # 单篇 PDF 的上限。base64 过 CDP 桥要膨胀 ~1/3，太大的（整期合订本）不该走这条路。
 MAX_PDF_BYTES = 80 * 1024 * 1024

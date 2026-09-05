@@ -44,7 +44,7 @@ python -m tools.getpdf --file dois.txt --gap 30 --limit 10
    开了全局代理/VPN 会把出口换掉，权限当场失效。
 2. **浏览器要带调试口启动，而且里面得有人过过一次人机验证**：
    ```
-   msedge --remote-debugging-port=9222
+   msedge --remote-debugging-port=9333
    ```
    为什么必须是那一个：人机验证的通行证在它身上。新开一个干净的浏览器一样会被拦，
    而且拦住的时候没人在旁边点。
