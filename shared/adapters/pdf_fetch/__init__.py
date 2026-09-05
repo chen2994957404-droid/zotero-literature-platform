@@ -47,6 +47,11 @@ DEFAULT_CDP = 'http://127.0.0.1:9333'
 # 单篇 PDF 的上限。base64 过 CDP 桥要膨胀 ~1/3，太大的（整期合订本）不该走这条路。
 MAX_PDF_BYTES = 80 * 1024 * 1024
 
+# 一篇最多试几个候选地址。**必须有上限** —— 候选会在过程中长出新的
+# （阅读器页面里嵌的东西也算候选），没有上限就可能在一堆嵌套里绕下去，
+# 而每绕一次都是一次真实的出版商请求。
+MAX_TRIES = 8
+
 # fetch 的 reason 取值 —— 每一种的处置都不同，别合并
 REASONS = {
     'ok': '拿到了',
@@ -131,11 +136,20 @@ _JS_STATE = """() => {
   const sels = ['a.download-link', 'a[href*="/pdfft"]', 'a[data-test="pdf-link"]',
                 'a[href*="/doi/pdf/"]', 'a[href*="/content/pdf/"]',
                 'a[href*="articlepdf"]', 'a[href$=".pdf"]'];
+  // 图片要滤掉：ScienceDirect 的 a.download-link 也用在「下载这张图」上，
+  // 不滤的话第一个候选会是 gr1_lrg.jpg，白跑一趟还会因为跨域报错。
+  const isImg = u => /\\.(jpg|jpeg|png|gif|svg|webp|tif)(\\?|#|$)/i.test(u);
+  // **补充材料必须滤掉**，这是最阴的一种错：文件下来了、大小也正常，
+  // 内容却是 SI 不是正文。2026-09-05 实测 Wiley 就这么中过一次。
+  const isSupp = u => /downloadSupplement|suppl_file|[-_]sup[-_]|SuppMat|supplementary/i.test(u);
   const hits = [];
-  if (meta && meta.content) hits.push(meta.content);
+  const push = u => {
+    if (u && !isImg(u) && !isSupp(u) && hits.indexOf(u) < 0) hits.push(u);
+  };
+  if (meta && meta.content) push(meta.content);
   for (const s of sels) {
     const a = document.querySelector(s);
-    if (a && a.href) hits.push(a.href);
+    if (a && a.href) push(a.href);
   }
   return {
     url: location.href,
@@ -165,6 +179,23 @@ _JS_GRAB = """async (u) => {
 }""" % MAX_PDF_BYTES
 
 
+_JS_GRAB_HERE = """async () => {
+  try {
+    const r = await fetch(location.href, {credentials: 'include'});
+    if (!r.ok) return {ok: false, status: r.status};
+    const b = await r.blob();
+    if (b.size > %d) return {ok: false, tooBig: b.size};
+    const buf = await b.arrayBuffer();
+    let s = ''; const bytes = new Uint8Array(buf);
+    const CH = 0x8000;
+    for (let i = 0; i < bytes.length; i += CH) {
+      s += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+    }
+    return {ok: true, type: b.type, size: b.size, b64: btoa(s)};
+  } catch (e) { return {ok: false, err: String(e)}; }
+}""" % MAX_PDF_BYTES
+
+
 def pdf_url_of(page):
     """当前页面上的 PDF 直链候选（按可信度排序）。排查时单独用得上。"""
     return page.evaluate(_JS_STATE).get('candidates') or []
@@ -173,6 +204,36 @@ def pdf_url_of(page):
 def _looks_like_pdf(head, mime):
     """PDF 的magic number 是 %PDF —— 比 MIME 可信，出版商常把类型写错。"""
     return head[:4] == b'%PDF' or 'pdf' in (mime or '')
+
+
+# 阅读器页面里嵌着的东西 —— 很多出版商把真身藏在 iframe 里（Wiley 实测）
+_JS_EMBEDS = """() => Array.from(
+    document.querySelectorAll('iframe[src], embed[src], object[data]'))
+  .map(e => e.src || e.data)
+  .filter(u => u && !/^(about|blob|data):/.test(u))"""
+
+# 明显不是正文的东西，进候选队列之前先滤掉
+_JUNK_RE = re.compile(
+    r'\.(jpg|jpeg|png|gif|svg|webp|tif)(\?|#|$)'
+    r'|downloadSupplement|suppl_file|[-_]sup[-_]|SuppMat|supplementary'
+    r'|teaser|/cookie|/consent|doubleclick|googletag', re.I)
+
+
+def _worth_trying(url):
+    """这个地址值不值得试。滤的是图片、补充材料、广告/同意书之类的杂物。"""
+    return bool(url) and url.startswith('http') and not _JUNK_RE.search(url)
+
+
+def _decode(got):
+    """浏览器那边取回来的东西 → PDF 字节；不是 PDF 就返回 None。
+
+    两趟取字节的收尾一模一样，抽出来，免得两处判断走散
+    （走散的后果是「一趟严一趟松」，而松的那趟会赢）。
+    """
+    if not got or not got.get('ok') or not got.get('b64'):
+        return None
+    raw = base64.b64decode(got['b64'])
+    return raw if _looks_like_pdf(raw[:4], got.get('type')) else None
 
 
 def fetch(doi, url=None, timeout=90, settle=6):
@@ -213,17 +274,74 @@ def fetch(doi, url=None, timeout=90, settle=6):
                 out['reason'] = 'no_access' if st.get('paywall') else 'no_pdf_link'
                 return out
 
-            for cand in cands:
+            # **一个候选走完两趟，再换下一个** —— 顺序不是形式。
+            # 早先写成「先把所有候选直取一遍，再把所有候选导航一遍」，
+            # 结果排在后面的差候选靠「这一趟更容易」抢在了好候选前面：
+            # Wiley 那篇的正文 PDF 直取会被阅读器包一层（不是 PDF、跳过），
+            # 而补充材料是直链 PDF，直取就成 —— 于是**下回来的是 SI 不是正文**。
+            # 文件大小正常、格式也对，错得毫无迹象（2026-09-05 实测中过）。
+            queue = [c for c in cands if _worth_trying(c)]
+            tried = set()
+            while queue and len(tried) < MAX_TRIES:
+                cand = queue.pop(0)
+                if cand in tried:
+                    continue
+                tried.add(cand)
+
+                # 第一趟：直接取。RSC / Springer 这类 citation_pdf_url
+                # 多半指的就是真身，同源时一次就成。
                 got = page.evaluate(_JS_GRAB, cand)
+                raw = _decode(got)
                 if got.get('tooBig'):
                     out['reason'], out['pdf_url'] = 'too_big', cand
                     return out
-                if not got.get('ok'):
-                    continue
-                raw = base64.b64decode(got['b64'])
-                if _looks_like_pdf(raw[:4], got.get('type')):
+                if raw:
                     out.update(ok=True, reason='ok', pdf=raw, pdf_url=cand)
                     return out
+
+                # 第二趟：**导航过去再同源取**（2026-09-05 实测才发现要这么干）。
+                # Elsevier 的 /pdfft 不直接给 PDF，它先回一张 HTML 中转页，
+                # 再自己跳一次校验（`?crasolve=1`），最后才落到
+                # pdf.sciencedirectassets.com 上那个带签名的真身。
+                # 这条链**只有真导航能走完** —— 四种办法实测过：
+                #   - `fetch(pdfft)`                    → 中转页的 HTML
+                #   - `context.request.get()`           → 403（没有浏览器指纹）
+                #   - 普通 HTTP 取签名直链              → 403
+                #   - 导航过去 + `fetch(location.href)` → ✅ 真身
+                # 截响应也不行：Chrome 把 PDF 交给内置阅读器，
+                # `response.body()` 只能拿到 348 字节的壳。
+                # 导航还顺带解决跨域：`citation_pdf_url` 常在另一个子域上，
+                # 直取会 CORS 失败，导航过去就没这问题。
+                try:
+                    page.goto(cand, wait_until='domcontentloaded',
+                              timeout=timeout * 1000)
+                except Exception:
+                    pass    # 导航到 PDF 常抛 ERR_ABORTED，不代表失败
+                page.wait_for_timeout(settle * 1000)
+                got = page.evaluate(_JS_GRAB_HERE)
+                raw = _decode(got)
+                if got.get('tooBig'):
+                    out['reason'], out['pdf_url'] = 'too_big', cand
+                    return out
+                if raw:
+                    out.update(ok=True, reason='ok', pdf=raw,
+                               pdf_url=page.url or cand)
+                    return out
+
+                # 第三趟：**这一页要是个阅读器，真身多半嵌在它里面**。
+                # 2026-09-05 实测：Wiley 的 `/doi/pdf/<DOI>` 是它自家的阅读器
+                # 页面（HTML），里面一个 iframe 指向 `/doi/pdfdirect/<DOI>`，
+                # 那个才是 application/pdf 的真身。
+                # 与其给 Wiley 写死一条 URL 规则，不如把「页面里嵌着的东西」
+                # 一律当作新候选 —— 别家用阅读器包 PDF 的也一并解决了，
+                # 而且出版商改 URL 形式的时候这条不用跟着改。
+                try:
+                    for u in page.evaluate(_JS_EMBEDS):
+                        if _worth_trying(u) and u not in tried:
+                            queue.append(u)
+                except Exception:
+                    pass
+
             out['reason'] = 'not_pdf'
             return out
         finally:

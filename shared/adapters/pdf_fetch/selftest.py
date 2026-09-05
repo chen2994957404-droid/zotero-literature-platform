@@ -44,6 +44,30 @@ def main():
         print('  [FAIL] PDF 识别不对')
 
     total += 1
+    import base64
+    # _decode 是两趟取字节共用的收尾。它松一点，SI 就会冒充正文（2026-09-05 中过）
+    pdf_ok = {'ok': True, 'type': 'application/pdf',
+              'b64': base64.b64encode(b'%PDF-1.7 x').decode()}
+    html = {'ok': True, 'type': 'text/html',
+            'b64': base64.b64encode(b'<!doctype html>').decode()}
+    if (pdf_fetch._decode(pdf_ok) == b'%PDF-1.7 x'
+            and pdf_fetch._decode(html) is None
+            and pdf_fetch._decode({'ok': False}) is None
+            and pdf_fetch._decode(None) is None):
+        print('  [PASS] 取回来的东西不是 PDF 就当没拿到'); ok += 1
+    else:
+        print('  [FAIL] _decode 放行了不该放的东西')
+
+    total += 1
+    # 补充材料必须在候选阶段就被滤掉 —— 这是最阴的一种错：
+    # 文件下来了、格式也对，内容却是 SI 不是正文
+    js = pdf_fetch._JS_STATE
+    if all(w in js for w in ('downloadSupplement', 'suppl_file', 'SuppMat')):
+        print('  [PASS] 候选里排除了补充材料的链接'); ok += 1
+    else:
+        print('  [FAIL] 没有排除补充材料，SI 会冒充正文')
+
+    total += 1
     # reason 表和代码走散过一次就再也对不上了 —— 让自测盯着
     used = {'ok', 'captcha', 'no_access', 'no_pdf_link',
             'not_pdf', 'too_big', 'navigate_failed'}
