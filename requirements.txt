@@ -7,8 +7,13 @@ PyMuPDF==1.27.2
 
 # 说明：
 # - chromadb  : 向量库（问答检索）
+# - playwright: 驱动一个已经开着的真实浏览器取付费全文（tools/getpdf）。
+#               只有运行端要装；编程端不装也能 import、能跑测试（延迟 import）。
+#               装完还要 `python -m playwright install chromium`（虽然我们连的是
+#               系统浏览器，但 playwright 自己要那份运行时）。
 # - python-docx: 读 .docx 格式的 SI（Elsevier 常用）
 # - PyMuPDF   : 从 PDF 按坐标裁图（精读的完整 Figure）
 # 其余全部使用 Python 标准库。
 # 外部服务：Zotero（本地API+Web API）、MineRU（PDF解析）、DeepSeek（LLM）、Ollama（本地模型）
 keyring==25.7.0
+playwright==1.62.0

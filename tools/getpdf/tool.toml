@@ -1,0 +1,19 @@
+# 工具清单（格式见 REBUILD.md 第二节；读它的是 host/mcp/registry.py）
+#   costs_money / side_effects / requires_role 描述**这个工具最危险的那条路径**，
+#   哪怕那条路径只在命令行上有、没暴露给 MCP —— 写清楚才有意义。
+name          = "getpdf"
+one_line      = "一批 DOI → 把正文 PDF 取到手（借真实浏览器，用机构订阅权限）"
+expose        = "prompt"
+costs_money   = false           # 不调任何付费 API
+side_effects  = [
+  "向出版商网站发真实请求 —— 量大会触发风控，被封的是整个机构的 IP",
+  "写 data/raw/_incoming/getpdf/*.pdf",
+]
+requires_role = "none"          # 不写 Zotero、不花钱；风险在对外请求的量，靠默认值兜
+prompts       = []
+
+# ── 允许模型自己发起的入口 ─────────────────────────────────────────────
+# 判据是**代价的量级与可逆性**：
+#   取一篇 = 单次、不花钱、可重来 → 可以放开，但客户端每次必须弹窗
+#   一整批 = 量能堆到触发出版商风控 → 留给人点，走 prompt
+agent_tools   = ["getpdf_one"]
