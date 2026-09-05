@@ -10,11 +10,12 @@
     python -m tools.getpdf --file dois.txt --limit 10    # 这次最多取 10 篇
     python -m tools.getpdf 10.1016/xxx --out D:/somewhere
 
-**跑之前**：那台机器上要有一个带调试口启动的浏览器，而且得是**你平时看文献的那个**
-（机构订阅靠出口 IP、人机验证的通行证也在它身上）。启动方式：
+**跑之前**：那台机器上要有一个带调试口启动的浏览器，**里面得有人过过一次人机验证**
+（机构订阅靠出口 IP 自动生效，不用登录；人机验证的通行证跟着浏览器的用户资料走）。
+专开一个就行，别跟日常那个抢 —— 双击 `launch/取全文用的浏览器.bat`，或者：
 
-    msedge  --remote-debugging-port=9222
-    chrome  --remote-debugging-port=9222
+    msedge  --remote-debugging-port=9222 --user-data-dir=<给它单独一个文件夹>
+    chrome  --remote-debugging-port=9222 --user-data-dir=<给它单独一个文件夹>
 
 默认很慢（每篇间隔 20 秒、单次最多 25 篇），这是**故意的**：
 出版商封的是整个机构的 IP，代价全校担。要快请自己显式加 --gap / --limit。
@@ -52,7 +53,7 @@ def main():
             return 0
         print(f'浏览器连不上：{p["cdp"]}')
         print(f'  原因：{p.get("error", "")}')
-        print('  它需要带调试口启动，而且要用你平时看文献的那个浏览器：')
+        print('  它需要带调试口启动，专门开一个就行（双击 launch/取全文用的浏览器.bat）：')
         print('    msedge --remote-debugging-port=9222')
         return 1
 

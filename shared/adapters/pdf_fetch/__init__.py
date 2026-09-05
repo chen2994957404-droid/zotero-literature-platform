@@ -188,7 +188,7 @@ def fetch(doi, url=None, timeout=90, settle=6):
         except Exception as e:
             raise BrowserUnavailable(
                 f'连不上浏览器（{url or cdp_url()}）：{e}。'
-                '它需要带着调试口启动，而且是你平时看文献的那个 —— '
+                '它需要带着调试口启动，而且里面有人过过一次人机验证 —— '
                 '订阅权限和已经通过的人机验证都在它身上。')
         ctx = browser.contexts[0] if browser.contexts else browser.new_context()
         page = ctx.new_page()
