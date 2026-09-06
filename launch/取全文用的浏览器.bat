@@ -9,6 +9,10 @@ REM 用你平时那个的话，你一关窗口程序就断，你开新标签它�
 REM 单独一个互不打扰，而且它记得住"人机验证已经过了"这件事，下次不用再点。
 REM
 REM 里面不用登录任何账号 —— 学校订阅认的是这台机器的上网出口，不是账号。
+REM
+REM --no-proxy-server 是关键的一条：**这个窗口永远直连，不走任何代理**。
+REM 学校订阅认的是"你从教育网出来"，一走代理出口就变了，权限当场失效。
+REM 有了这条，你可以在这台机器上照常开代理上外网，两边互不打扰。
 
 set PROFILE=%LOCALAPPDATA%\zotero-getpdf-browser
 set EDGE=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
@@ -19,9 +23,9 @@ echo   正在打开"取全文专用"的浏览器窗口...
 echo.
 
 if exist "%EDGE%" (
-  start "" "%EDGE%" --remote-debugging-port=9333 --user-data-dir="%PROFILE%" --no-first-run --no-default-browser-check "https://www.sciencedirect.com/"
+  start "" "%EDGE%" --remote-debugging-port=9333 --user-data-dir="%PROFILE%" --no-proxy-server --no-first-run --no-default-browser-check "https://www.sciencedirect.com/"
 ) else if exist "%CHROME%" (
-  start "" "%CHROME%" --remote-debugging-port=9333 --user-data-dir="%PROFILE%" --no-first-run --no-default-browser-check "https://www.sciencedirect.com/"
+  start "" "%CHROME%" --remote-debugging-port=9333 --user-data-dir="%PROFILE%" --no-proxy-server --no-first-run --no-default-browser-check "https://www.sciencedirect.com/"
 ) else (
   echo   [x] 没找到 Edge 也没找到 Chrome。
   echo       如果装在别的位置，请告诉 Claude。
