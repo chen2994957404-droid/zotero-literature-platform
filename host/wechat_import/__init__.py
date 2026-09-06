@@ -273,9 +273,18 @@ def _ensure_pdf(key, doi, log=print):
     临时区随时可清空。
     """
     from tools import getpdf
+    from shared.adapters import zotero_client as Z
     dst = paths.local_pdf(key)
     if os.path.exists(dst) and os.path.getsize(dst) > 1024:
         log('  [正文PDF] 本地已有 %d MB' % (os.path.getsize(dst) // 1048576))
+        return dst
+    # Zotero 里已经有这篇的 PDF（用户自己存的、或早先传上去的）就拷过来。
+    # **再去敲一次出版商是白敲** —— 封的是整个机构的 IP，代价全校担。
+    had = _try(lambda: Z.find_pdf(key), '问 Zotero 有没有 PDF', log)
+    if had and os.path.exists(had):
+        paths.paper_raw_dir(key, create=True)
+        shutil.copy2(had, dst)
+        log('  [正文PDF] Zotero 里已有，拷进本地库')
         return dst
     # 取件是**最容易出岔子**的一步（浏览器会跳转、出版商会变卦），但它岔了
     # 不该连累后面 —— 推文精读本来就不需要 PDF。实测撞到过
