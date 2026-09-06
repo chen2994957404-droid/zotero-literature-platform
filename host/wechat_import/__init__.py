@@ -199,13 +199,16 @@ def import_one(md_path, purpose='建库', with_pdf=False, with_si=None,
     key = idx.get(doi.strip().lower())
     pdf_path, si_path = None, None
     if with_pdf and not key:
-        got = getpdf.fetch_one(doi)
+        # 取件是**最容易出岔子**的一步（浏览器会跳转、出版商会变卦），
+        # 但它岔了不该连累后面 —— 推文精读本来就不需要 PDF。实测撞到过
+        # `Page.evaluate: Execution context was destroyed`（2026-09-06）。
+        got = _try(lambda: getpdf.fetch_one(doi), '取正文PDF', log) or {}
         pdf_path = got.get('path') if got.get('ok') else None
         if not pdf_path:
             log('  [没取到正文PDF] %s —— 条目照建，PDF 以后再补'
                 % got.get('reason', ''))
         elif with_si:
-            si = getpdf.fetch_si_one(doi)
+            si = _try(lambda: getpdf.fetch_si_one(doi), '取SI', log) or {}
             si_path = si.get('path') if si.get('ok') else None
             log('  [SI] %s' % ('%d KB' % (si['bytes'] // 1024) if si_path
                                else '没取到（%s）—— 正文照走' % si.get('reason', '')))
@@ -223,13 +226,33 @@ def import_one(md_path, purpose='建库', with_pdf=False, with_si=None,
 
     out['key'] = key
     if si_path:
-        done, why = getpdf.attach_si(key, si_path)
-        log('  [SI 附件] %s' % ('挂上了' if done else why))
+        # 实测撞到过 SI 是 23 MB 的 docx，Zotero 直接 413（2026-09-06）。
+        # 传不上去只是少一份附件，**不该让这一篇的精读也白做**。
+        r_si = _try(lambda: getpdf.attach_si(key, si_path), '挂SI附件', log)
+        if r_si:
+            log('  [SI 附件] %s' % ('挂上了' if r_si[0] else r_si[1]))
+        else:
+            out['note'] = 'SI 没挂上（文件在 %s）' % os.path.basename(si_path)
     built = build_local(key, article, force=force, log=log)
     out['summary'] = built['path']
-    dr_batch.upload_one(key, force=force, log=log)
-    dr_tags.set_state_tag(key, dr_tags.TAG_MAIN_WX, log=log)
+    _try(lambda: dr_batch.upload_one(key, force=force, log=log), '传精读附件', log)
+    _try(lambda: dr_tags.set_state_tag(key, dr_tags.TAG_MAIN_WX, log=log),
+         '打标签', log)
     return out
+
+
+def _try(fn, what, log):
+    """跑一步，出岔子只记一行、返回 None。
+
+    这条线由五六个独立的小步骤串成（取正文、取SI、建条目、挂附件、打标签），
+    照 `deepread` 的老规矩：**单步失败不拖累别的步骤**。
+    早先没这么写，结果一份 23 MB 的 SI 传不上去，连带那篇的精读也没装上。
+    """
+    try:
+        return fn()
+    except Exception as e:
+        log('  [%s失败] %s' % (what, str(e)[:120]))
+        return None
 
 
 def import_many(paths_, purpose='建库', with_pdf=False, force=False, log=print):

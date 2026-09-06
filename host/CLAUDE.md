@@ -21,6 +21,7 @@
 | `watcher/` | **常驻服务**：盯 Zotero 标签 → 精读 → 抽取 → 回写 → 改标签 | 打个标签，剩下不用管 |
 | `mcp/` | MCP 协议层：读各 `tools/*/tool.toml` 聚合暴露面 | 在 Claude 里直接用工具 |
 | `codegen/` | 所有生成器：`HANDOVER.md` · `.claude/` · `docs/incidents/` | 不直接碰 |
+| `wechat_import/` | 公众号推送 → Zotero 条目 + **推文本身当正文精读**（串 `getpdf` 与 `deepread`） | 双击 `launch/导入公众号精读.bat` |
 
 ## panel 的设计铁律
 
