@@ -257,13 +257,17 @@ def _worth_trying(url):
 # 按序号排根本分不开；而且它的 URL 是 `downloadSupplement?...` 看不出扩展名 ——
 # **扩展名只出现在链接文字里**。所以判断要把 URL 和链接文字**合起来看**。
 
-SI_GOOD_RE = re.compile(r'\.(pdf|docx?|txt)(\?|#|$)', re.I)
+# ⚠ 结尾用 `(?![A-Za-z0-9])` 而不是 `$`：我们搜的是 **URL 和链接文字拼起来的一串**，
+# 扩展名后面往往还跟着别的内容（`mmc1.docx Download: Download Word document`）。
+# 用 `$` 的话只有正好在末尾才匹配得上 —— 这个错曾被「挑不出好的就退而求其次」
+# 掩盖着，直到把「退而求其次」关掉才露出来（2026-09-06）。
+SI_GOOD_RE = re.compile(r'\.(pdf|docx?|txt)(?![A-Za-z0-9])', re.I)
 SI_BAD_RE = re.compile(
-    r'\.(mp4|avi|mov|wmv|mkv|webm|mp3|wav|zip|rar|7z|tar|gz)(\?|#|$)'
+    r'\.(mp4|avi|mov|wmv|mkv|webm|mp3|wav|zip|rar|7z|tar|gz)(?![A-Za-z0-9])'
     r'|movie|video|animation', re.I)
 
 
-def pick_si(cands):
+def pick_si(cands, loose=False):
     """一堆 SI 链接 → 最可能是「实验部分」的那一个（没有就返回 None）。
 
     `cands` 是 [{url, text}, ...]。返回同样的 dict。
@@ -279,8 +283,32 @@ def pick_si(cands):
         if SI_BAD_RE.search(blob):
             continue                      # 视频、压缩包：直接不要
         (good if SI_GOOD_RE.search(blob) else rest).append(c)
-    pool = good or rest
+    # 默认**只认像文档的**。放宽会把「跳到补充材料那一节」的锚点当成文件 ——
+    # 2026-09-06 实测 ACS 就这样：`?goto=supporting-info` 也被收进了候选，
+    # 取回来是 391 KB 的 HTML。锚点不是文件，宁可说「没有」也别下错。
+    pool = good if good else (rest if loose else [])
     return pool[0] if pool else None
+
+
+def _via_request(ctx, url):
+    """用浏览器上下文自己的 request 去取 → 字节，或 None。
+
+    它共享浏览器的 cookie，但**不受页面的同源策略限制** ——
+    这正是跨域附件（Elsevier 的 SI 挂在 ars.els-cdn.com 上）唯一够得着的办法。
+
+    ⚠ 对**正文**不管用：实测 ScienceDirect 的正文签名直链用它取是 403
+    （少了真实浏览器的指纹）。所以它只当 SI 的第三招，不是万能钥匙。
+    """
+    try:
+        r = ctx.request.get(url, timeout=120000)
+        if not r.ok:
+            return None
+        body = r.body()
+        ctype = (r.headers or {}).get('content-type', '')
+        return _decode({'ok': True, 'type': ctype,
+                        'b64': base64.b64encode(body).decode()}, 'si')
+    except Exception:
+        return None
 
 
 def _si_name(pick):
@@ -362,7 +390,7 @@ def fetch(doi, url=None, timeout=90, settle=6, kind='fulltext'):
                 out['reason'] = 'captcha'
                 return out
             if kind == 'si':
-                pick = pick_si(st.get('si'))
+                pick = pick_si(st.get('si'))          # 只认像文档的
                 if not pick and st.get('suppPage'):
                     # ACS 不在文章页列文件，只给一个 /doi/suppl/<doi> 入口，
                     # 要再进一层才看得到（2026-09-06 实测）。
@@ -391,7 +419,11 @@ def fetch(doi, url=None, timeout=90, settle=6, kind='fulltext'):
             # Wiley 那篇的正文 PDF 直取会被阅读器包一层（不是 PDF、跳过），
             # 而补充材料是直链 PDF，直取就成 —— 于是**下回来的是 SI 不是正文**。
             # 文件大小正常、格式也对，错得毫无迹象（2026-09-05 实测中过）。
-            queue = [c for c in cands if _worth_trying(c)]
+            # ⚠ `_worth_trying` 是**给正文候选用的**，它专门排除 SuppMat 这类词。
+            # 拿它去滤 SI 候选，等于把 SI 自己滤没了（2026-09-06 实测：
+            # Wiley 的 SI 直取明明成功了，却因为这一步被丢掉，报成 not_pdf）。
+            queue = [c for c in cands
+                     if (c.startswith('http') if kind == 'si' else _worth_trying(c))]
             tried = set()
             while queue and len(tried) < MAX_TRIES:
                 cand = queue.pop(0)
@@ -439,7 +471,17 @@ def fetch(doi, url=None, timeout=90, settle=6, kind='fulltext'):
                                pdf_url=page.url or cand)
                     return out
 
-                # 第三趟：**这一页要是个阅读器，真身多半嵌在它里面**。
+                # 第三趟（只在取 SI 时）：**跨域文件用浏览器上下文的 request 取**。
+                # Elsevier 的 SI 挂在另一个域（ars.els-cdn.com）上，
+                # 从文章页 fetch 它会被 CORS 挡（实测 ok=False 连状态码都没有）；
+                # 而导航过去只会触发下载、页面不变，所以前两趟都够不着。
+                if kind == 'si':
+                    raw = _via_request(ctx, cand)
+                    if raw:
+                        out.update(ok=True, reason='ok', pdf=raw, pdf_url=cand)
+                        return out
+
+                # 第四趟：**这一页要是个阅读器，真身多半嵌在它里面**。
                 # 2026-09-05 实测：Wiley 的 `/doi/pdf/<DOI>` 是它自家的阅读器
                 # 页面（HTML），里面一个 iframe 指向 `/doi/pdfdirect/<DOI>`，
                 # 那个才是 application/pdf 的真身。

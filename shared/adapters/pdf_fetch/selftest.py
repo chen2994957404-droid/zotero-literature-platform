@@ -103,7 +103,13 @@ def main():
     if (pdf_fetch.pick_si(els)['url'].endswith('mmc1.docx')
             and pdf_fetch.pick_si(wil)['text'].endswith('SuppMat.pdf')
             and pdf_fetch.pick_si([{'url': 'a.mp4', 'text': 'video'}]) is None
-            and pdf_fetch.pick_si([]) is None):
+            and pdf_fetch.pick_si([]) is None
+            # ACS 那种「跳到补充材料那一节」的锚点不是文件，必须挑不出来 ——
+            # 挑出来的话会下回 391 KB 的 HTML（2026-09-06 实测中过）
+            and pdf_fetch.pick_si([{
+                'url': 'https://pubs.acs.org/mamobx/article/doi/10.1021/x/54'
+                       '1623?goto=supporting-info',
+                'text': 'Supporting Information'}]) is None):
         print('  [PASS] SI 挑得对：要文档不要视频（拿真机数据验的）'); ok += 1
     else:
         print('  [FAIL] SI 挑错了 —— 会把演示视频当成实验数据下回来')
