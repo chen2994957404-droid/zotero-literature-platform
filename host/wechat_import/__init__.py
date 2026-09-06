@@ -109,10 +109,35 @@ def fetch_images(article, log=log.info):
     urls = [b['url'] for b in article.get('blocks', []) if b['kind'] == 'img']
     for i, u in enumerate(urls, 1):
         try:
-            got[u] = wechat_seed.fetch_image(u)
+            got[u] = shrink(*wechat_seed.fetch_image(u))
         except Exception as e:
             log('  [跳过第%d张图] %s' % (i, e))
     return got
+
+
+JPEG_QUALITY = 82
+
+
+def shrink(data, ctype):
+    """一张图 → 体积小得多的 JPEG（尺寸不变，只换编码）。压不动就还用原图。
+
+    **为什么必须压**：推文的配图是 1080 宽的 PNG，一篇十几张就是好几 MB，
+    内嵌成 base64 还要再涨三分之一。实测（2026-09-06）Zotero 传 4.1 MB 的
+    附件能过、5.1 MB 就 413 —— 不压的话十几张图的那些篇根本传不上去。
+
+    实测压缩比：2.12 MB → 0.56 MB，尺寸一个像素没动，只是 PNG → JPEG q82。
+    """
+    try:
+        import fitz
+        pix = fitz.Pixmap(data)
+        if pix.colorspace is None or pix.n > 3:
+            pix = fitz.Pixmap(fitz.csRGB, pix)     # CMYK / 灰度等 → RGB
+        if pix.alpha:
+            pix = fitz.Pixmap(pix, 0)              # JPEG 不能带透明通道
+        out = pix.tobytes('jpeg', jpg_quality=JPEG_QUALITY)
+    except Exception:
+        return data, ctype
+    return (out, 'image/jpeg') if len(out) < len(data) else (data, ctype)
 
 
 def build_local(key, article, images=None, force=False, log=print):
