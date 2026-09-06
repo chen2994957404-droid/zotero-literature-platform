@@ -243,6 +243,34 @@ def si_fulltext(key):
     return os.path.join(si_parsed_dir(key), 'full.md')
 
 
+def local_pdf(key):
+    """★ raw/<key>/main.pdf —— 正文 PDF 的**本地正本**。
+
+    2026-09-06 加。在它之前，正文 PDF 的唯一存放处是 Zotero 的 storage ——
+    于是「取一批文献」必须同时「传一批附件」，而附件传不上去（体积、配额）
+    就整条线卡住。用户的判断：**建库本来就不需要 Zotero**，
+    先把文献落到本地，需要哪篇再传。所以正本在这里，Zotero 是它的一份拷贝。
+    """
+    return os.path.join(paper_raw_dir(key), 'main.pdf')
+
+
+def local_si(key, ext='pdf'):
+    """★ raw/<key>/si.<ext> —— 补充材料原件的本地正本（pdf 或 docx）。"""
+    return os.path.join(paper_raw_dir(key), 'si.' + ext.lstrip('.').lower())
+
+
+def find_local_si(key):
+    """本地有没有 SI 原件？有就返回路径，没有返回 ''。
+
+    扩展名不定（Wiley 常给 .docx，RSC 给 .pdf），所以只能去看一眼。
+    """
+    for ext in ('pdf', 'docx'):
+        p = local_si(key, ext)
+        if os.path.exists(p):
+            return p
+    return ''
+
+
 def summary(key):
     """★ summary.html —— 正文的中文图文精读（图已内嵌 base64，可独立打开）。"""
     return os.path.join(paper_dir(key), 'summary.html')

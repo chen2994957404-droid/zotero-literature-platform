@@ -5,11 +5,17 @@
 「高分子学人」的推送学的 —— 那份是人写的，质量更高。既然取 PDF 的通道已经打通，
 就该反过来用：**推送本身当正文精读**，我们只补它没有的东西（SI）。
 
-所以一篇推送进来会变成三样东西：
+所以一篇推送进来会变成四样东西：
 
-    1. Zotero 里一个条目（按 Crossref 元数据建，可选连正文 PDF 一起挂）
-    2. `data/curated/<KEY>/summary.html` —— 推送正文，图内嵌，样式与我们的精读一致
-    3. 状态库里一条 `main_summary` 完成记录，producer=`wechat`
+    1. Zotero 里一个条目（按 Crossref 元数据建）—— 只有元数据，很轻
+    2. `data/raw/<KEY>/main.pdf` · `si.pdf|docx` —— 正文与补充材料的**本地正本**
+    3. `data/curated/<KEY>/summary.html` —— 推送正文，图内嵌，样式与我们的精读一致
+    4. 状态库里一条 `main_summary` 完成记录，producer=`wechat`
+
+**附件默认不传 Zotero**（用户 2026-09-06 定）：Zotero 官方存储免费只有 300 MB，
+单个附件还有体积上限（实测 4.1 MB 过、5.1 MB 就 413）。建库本来就不需要 Zotero ——
+先把文献落到本地，需要哪篇再 `upload_attachments(key)` 传上去。
+卡在配额上的应该只是「传」，不该是「取」和「读」。
 
 第 3 条是关键：有了它，`tools.deepread.run()` 会**跳过正文精读**（省钱、也不覆盖
 人写的那份），只去做 SI，然后把 SI 合并进来 —— 「全文精读 = 公众号正文 + 我们的 SI」
@@ -20,8 +26,11 @@
 
 对外接口：
     parse_md(path)                  → 一篇 md → article（不联网、不写盘）
+    list_dir(dir)                   → 目录里的 md，按推送日期从新到旧
     build_local(key, article)       → 落地 summary.html + meta.json + 状态记录
-    import_one(path, ...)           → 全套（**会写 Zotero**，要 role 守卫）
+    import_one(path, ...)           → 一篇走完：建条目 → 取原件到本地 → 装精读
+    import_many(paths, ...)         → 一批（单篇失败不拖累整批）
+    upload_attachments(key)         → 把本地原件与精读传进 Zotero（按需，另一步）
 
 **图为什么内嵌成 base64**：跟 `deepread` 的产物保持同一形状 —— 一个 HTML 文件
 自带全部图，扔进 Zotero 附件就能看，也不怕微信图床哪天失效。
@@ -30,6 +39,7 @@ import base64
 import io
 import json
 import os
+import shutil
 import time
 
 from shared.adapters import wechat_seed
@@ -191,11 +201,14 @@ def _write_meta(key, article):
 
 # ── 写 Zotero 的那一段（调用方必须先过 role 守卫）────────────────────
 def import_one(md_path, purpose='建库', with_pdf=False, with_si=None,
-               force=False, log=print):
-    """一篇 md → Zotero 条目 + 正文精读附件 + 状态标签。**会写 Zotero。**
+               upload=False, force=False, log=print):
+    """一篇 md → Zotero 条目 + 本地原件 + 正文精读。**会写 Zotero**（建条目、打标签）。
 
-    返回 dict(file, doi, key, action, summary, note)。`action` 沿用 getpdf 的说法
-    （created / exists / skipped / failed），好跟那条线对得上。
+    返回 dict(file, doi, key, action, summary, pdf, si, note)。`action` 沿用
+    getpdf 的说法（created / exists / skipped / failed），好跟那条线对得上。
+
+    `upload=False`（默认）时**一个附件都不传** —— 原件与精读只落本地。
+    要传的时候单独调 `upload_attachments(key)`。
 
     **库里已经有的条目不动它的合集** —— 用户的 178 个合集是按来源（大学→导师）
     分的，把已收藏的文献又塞进「LLM导入」会打乱他自己的心智模型。
@@ -205,10 +218,10 @@ def import_one(md_path, purpose='建库', with_pdf=False, with_si=None,
     公众号的正文 + 我们做的 SI」，取了正文却不取 SI，那一半永远补不上。
     """
     from tools import getpdf
-    from tools.deepread import batch as dr_batch, tags as dr_tags
+    from tools.deepread import tags as dr_tags
 
     out = {'file': os.path.basename(md_path), 'doi': '', 'key': '',
-           'action': 'failed', 'summary': '', 'note': ''}
+           'action': 'failed', 'summary': '', 'pdf': '', 'si': '', 'note': ''}
     article = parse_md(md_path)
     doi = article.get('doi')
     out['doi'] = doi
@@ -220,50 +233,103 @@ def import_one(md_path, purpose='建库', with_pdf=False, with_si=None,
 
     if with_si is None:
         with_si = with_pdf
+
+    # ① 先拿到 key。条目只有元数据，很轻 —— 贵的是附件，那是第 ③ 步的事。
     idx = getpdf.doi_index()
     key = idx.get(doi.strip().lower())
-    pdf_path, si_path = None, None
-    if with_pdf and not key:
-        # 取件是**最容易出岔子**的一步（浏览器会跳转、出版商会变卦），
-        # 但它岔了不该连累后面 —— 推文精读本来就不需要 PDF。实测撞到过
-        # `Page.evaluate: Execution context was destroyed`（2026-09-06）。
-        got = _try(lambda: getpdf.fetch_one(doi), '取正文PDF', log) or {}
-        pdf_path = got.get('path') if got.get('ok') else None
-        if not pdf_path:
-            log('  [没取到正文PDF] %s —— 条目照建，PDF 以后再补'
-                % got.get('reason', ''))
-        elif with_si:
-            si = _try(lambda: getpdf.fetch_si_one(doi), '取SI', log) or {}
-            si_path = si.get('path') if si.get('ok') else None
-            log('  [SI] %s' % ('%d KB' % (si['bytes'] // 1024) if si_path
-                               else '没取到（%s）—— 正文照走' % si.get('reason', '')))
     if key:
         out['action'] = 'exists'
         log('  [已在库里] %s' % key)
     else:
-        r = getpdf.stash(doi, pdf_path, purpose=purpose, index=idx, force=force)
+        r = getpdf.stash(doi, None, purpose=purpose, index=idx, force=force)
         if not r['ok']:
             out['note'] = r['note']
             log('  [建条目失败] %s' % r['note'])
             return out
         key, out['action'] = r['item'], r['action']
-        log('  [%s] %s %s' % (r['action'], key, r['note']))
-
+        log('  [%s] %s' % (r['action'], key))
     out['key'] = key
-    if si_path:
-        # 实测撞到过 SI 是 23 MB 的 docx，Zotero 直接 413（2026-09-06）。
-        # 传不上去只是少一份附件，**不该让这一篇的精读也白做**。
-        r_si = _try(lambda: getpdf.attach_si(key, si_path), '挂SI附件', log)
-        if r_si:
-            log('  [SI 附件] %s' % ('挂上了' if r_si[0] else r_si[1]))
-        else:
-            out['note'] = 'SI 没挂上（文件在 %s）' % os.path.basename(si_path)
+
+    # ② 原件落到**本地正本**（raw/<key>/），Zotero 传不传是另一回事
+    if with_pdf:
+        out['pdf'] = _ensure_pdf(key, doi, log) or ''
+        if out['pdf'] and with_si:
+            out['si'] = _ensure_si(key, doi, log) or ''
     built = build_local(key, article, force=force, log=log)
     out['summary'] = built['path']
-    _try(lambda: dr_batch.upload_one(key, force=force, log=log), '传精读附件', log)
+
+    # ③ 传 Zotero —— **默认不传**（用户 2026-09-06 定：先下到本地，需要的再传）
+    if upload:
+        upload_attachments(key, log=log)
     _try(lambda: dr_tags.set_state_tag(key, dr_tags.TAG_MAIN_WX, log=log),
          '打标签', log)
     return out
+
+
+def _ensure_pdf(key, doi, log=print):
+    """正文 PDF 的本地正本，没有就去取 → 路径或 ''。
+
+    幂等判据是**本地正本在不在**，不是临时下载区里有没有 —— 取回来就搬走，
+    临时区随时可清空。
+    """
+    from tools import getpdf
+    dst = paths.local_pdf(key)
+    if os.path.exists(dst) and os.path.getsize(dst) > 1024:
+        log('  [正文PDF] 本地已有 %d MB' % (os.path.getsize(dst) // 1048576))
+        return dst
+    # 取件是**最容易出岔子**的一步（浏览器会跳转、出版商会变卦），但它岔了
+    # 不该连累后面 —— 推文精读本来就不需要 PDF。实测撞到过
+    # `Page.evaluate: Execution context was destroyed`（2026-09-06）。
+    got = _try(lambda: getpdf.fetch_one(doi), '取正文PDF', log) or {}
+    if not (got.get('ok') and got.get('path')):
+        log('  [没取到正文PDF] %s —— 精读照做，PDF 以后再补' % got.get('reason', ''))
+        return ''
+    paths.paper_raw_dir(key, create=True)
+    shutil.move(got['path'], dst)
+    log('  [正文PDF] %.1f MB → 本地库' % (os.path.getsize(dst) / 1048576))
+    return dst
+
+
+def _ensure_si(key, doi, log=print):
+    """SI 原件的本地正本，没有就去取 → 路径或 ''。扩展名跟着来源走。"""
+    from tools import getpdf
+    have = paths.find_local_si(key)
+    if have:
+        log('  [SI] 本地已有')
+        return have
+    si = _try(lambda: getpdf.fetch_si_one(doi), '取SI', log) or {}
+    if not (si.get('ok') and si.get('path')):
+        log('  [SI] 没取到（%s）—— 正文照走' % si.get('reason', ''))
+        return ''
+    ext = os.path.splitext(si['path'])[1] or '.pdf'
+    dst = paths.local_si(key, ext)
+    paths.paper_raw_dir(key, create=True)
+    shutil.move(si['path'], dst)
+    log('  [SI] %d KB → 本地库' % (os.path.getsize(dst) // 1024))
+    return dst
+
+
+def upload_attachments(key, log=print):
+    """把这篇的本地原件与精读传进 Zotero。**每一份各自失败，互不牵连。**
+
+    这是「先下到本地，需要的再传」里的**传**那一半。为什么要分开：
+    Zotero 官方存储免费只有 300 MB，而一篇正文 PDF 就 1～10 MB；
+    附件还有单个体积上限（实测 4.1 MB 过、5.1 MB 就 413）。
+    卡在这些限制上的应该只是「传」，不该是「取」和「读」。
+    """
+    from tools import getpdf
+    from tools.deepread import batch as dr_batch
+
+    pdf, si = paths.local_pdf(key), paths.find_local_si(key)
+    if os.path.exists(pdf):
+        r = _try(lambda: getpdf.attach_pdf(key, pdf), '传正文PDF', log)
+        if r:
+            log('  [正文PDF] %s' % ('传上去了' if r[0] else r[1]))
+    if si:
+        r = _try(lambda: getpdf.attach_si(key, si), '传SI', log)
+        if r:
+            log('  [SI] %s' % ('传上去了' if r[0] else r[1]))
+    _try(lambda: dr_batch.upload_one(key, log=log), '传精读', log)
 
 
 def _try(fn, what, log):
@@ -280,7 +346,8 @@ def _try(fn, what, log):
         return None
 
 
-def import_many(paths_, purpose='建库', with_pdf=False, force=False, log=print):
+def import_many(paths_, purpose='建库', with_pdf=False, upload=False,
+                force=False, log=print):
     """一批 md。**单篇失败不拖累整批**，最后返回每篇的结果列表。
 
     取正文 PDF 时每篇之间**照 `getpdf.GAP` 等一会儿**：出版商封的是整个机构的
@@ -297,9 +364,10 @@ def import_many(paths_, purpose='建库', with_pdf=False, force=False, log=print
             time.sleep(getpdf.GAP)
         try:
             out.append(import_one(p, purpose=purpose, with_pdf=with_pdf,
-                                  force=force, log=log))
+                                  upload=upload, force=force, log=log))
         except Exception as e:
             log('  [失败] %s' % e)
             out.append({'file': os.path.basename(p), 'doi': '', 'key': '',
-                        'action': 'failed', 'summary': '', 'note': str(e)[:200]})
+                        'action': 'failed', 'summary': '', 'pdf': '', 'si': '',
+                        'note': str(e)[:200]})
     return out

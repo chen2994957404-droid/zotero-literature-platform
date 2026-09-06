@@ -49,6 +49,13 @@ class TestPaperArtifacts:
     def test_图坐标(self):
         assert self._rel(paths.layout(self.KEY)) == 'data/raw/2T6H4S3D/parsed/layout.json'
 
+    def test_正文PDF正本(self):
+        assert self._rel(paths.local_pdf(self.KEY)) == 'data/raw/2T6H4S3D/main.pdf'
+
+    def test_SI原件正本(self):
+        assert self._rel(paths.local_si(self.KEY)) == 'data/raw/2T6H4S3D/si.pdf'
+        assert self._rel(paths.local_si(self.KEY, '.DOCX')) == 'data/raw/2T6H4S3D/si.docx'
+
     def test_精读(self):
         assert self._rel(paths.summary(self.KEY)).endswith('curated/2T6H4S3D/summary.html')
 

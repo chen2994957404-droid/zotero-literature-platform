@@ -296,6 +296,25 @@ def fetch_si_one(doi, where=None):
             'bytes': len(r['pdf'])}
 
 
+def attach_pdf(item_key, pdf_path, force=False):
+    """把正文 PDF 挂到已有条目下 → (做了没, 说明)。
+
+    `stash()` 建条目时顺手就挂了，所以这个函数是给**另一条路**用的：
+    文献先落在本地（`paths.local_pdf`），过些天才决定要传进 Zotero
+    （2026-09-06 加，用户定的「先下到本地，需要的再传」）。
+    """
+    from shared.adapters import zotero_client as Z
+    from shared.adapters.zotero_client import _web
+    if not (pdf_path and os.path.exists(pdf_path)):
+        return False, '没有 PDF 文件可挂'
+    if _has_pdf_child(item_key):
+        return False, '已有 PDF 附件，没重复挂'
+    att = _web.upload_attachment(item_key, pdf_path, 'Full Text PDF',
+                                 action='挂正文 PDF', force=force)
+    Z.put_local(att, pdf_path, os.path.basename(pdf_path))
+    return True, ''
+
+
 def attach_si(item_key, si_path, force=False):
     """把 SI 挂到已有条目下 → (做了没, 说明)。
 

@@ -2,16 +2,22 @@
 """把公众号推送导进 Zotero，并把推文本身当正文精读装上。
 
 用法:
-    python -m host.wechat_import --dir <公众号md目录> --dry-run       # 先看会导哪些
-    python -m host.wechat_import --file <某篇.md>                     # 导一篇
-    python -m host.wechat_import --dir <目录> --limit 5               # 导前 5 篇
-    python -m host.wechat_import --dir <目录> --limit 5 --with-pdf    # 连正文PDF一起取
+    python -m host.wechat_import --dry-run              # 先看会导哪些（什么都不写）
+    python -m host.wechat_import --limit 5              # 最近 5 篇：建条目 + 装精读
+    python -m host.wechat_import --limit 5 --with-pdf   # 连正文 PDF 与 SI 一起取到本地
+    python -m host.wechat_import --limit 5 --with-pdf --upload   # 再把附件传进 Zotero
+    python -m host.wechat_import --file <某篇.md>       # 只导指定的一篇
 
-**会写 Zotero**（建条目、传附件、打标签），所以要么在主力机上跑，
-要么在配了测试账号的编程端跑。`--dry-run` 不写任何东西，只告诉你会发生什么。
+目录默认取配置里的「公众号推送下载目录」，也可以用 `--dir` 指定。
+
+**会写 Zotero**（建条目、打标签），所以要么在主力机上跑，要么在配了测试账号的
+编程端跑。`--dry-run` 不写任何东西，只告诉你会发生什么。
+
+**附件默认不传**：正文 PDF、SI、精读都先落在本地 `data/` 里 ——
+Zotero 免费存储只有 300 MB，够不了几十篇。想传哪些再加 `--upload`。
 
 `--with-pdf` 需要那台机器上开着「取全文用的浏览器」（见 tools/getpdf）。
-不开也能跑，只是条目先没有正文 PDF，以后随时能补。
+不开也能跑，只是先没有正文 PDF，以后随时能补。
 """
 import os, sys
 # 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
@@ -63,12 +69,16 @@ def main():
     role.require_prod('把公众号精读导进 Zotero（建条目、传附件、打标签）',
                       force=flag('--force'))
     res = wi.import_many(files, purpose=opt('--purpose') or '建库',
-                         with_pdf=flag('--with-pdf'), force=flag('--force'))
+                         with_pdf=flag('--with-pdf'), upload=flag('--upload'),
+                         force=flag('--force'))
     ok = [r for r in res if r['key']]
     print('\n完成：%d/%d 篇进库（新建 %d，本来就有 %d）'
           % (len(ok), len(res),
              sum(1 for r in res if r['action'] == 'created'),
              sum(1 for r in res if r['action'] == 'exists')))
+    print('正文PDF %d 篇、SI %d 篇已落到本地 data/ 里%s'
+          % (sum(1 for r in res if r.get('pdf')), sum(1 for r in res if r.get('si')),
+             '' if flag('--upload') else '（附件没传 Zotero —— 要传加 --upload）'))
     for r in res:
         if not r['key']:
             print('  未处理 %s —— %s' % (r['file'][:40], r['note']))
