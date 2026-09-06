@@ -154,7 +154,8 @@ def _write_meta(key, article):
 
 
 # ── 写 Zotero 的那一段（调用方必须先过 role 守卫）────────────────────
-def import_one(md_path, purpose='建库', with_pdf=False, force=False, log=print):
+def import_one(md_path, purpose='建库', with_pdf=False, with_si=None,
+               force=False, log=print):
     """一篇 md → Zotero 条目 + 正文精读附件 + 状态标签。**会写 Zotero。**
 
     返回 dict(file, doi, key, action, summary, note)。`action` 沿用 getpdf 的说法
@@ -163,6 +164,9 @@ def import_one(md_path, purpose='建库', with_pdf=False, force=False, log=print
     **库里已经有的条目不动它的合集** —— 用户的 178 个合集是按来源（大学→导师）
     分的，把已收藏的文献又塞进「LLM导入」会打乱他自己的心智模型。
     只有我们新建的条目才归到 `LLM导入/<用途>` 下。
+
+    `with_si` 不传时**跟着 `with_pdf` 走**：这条线的整个意义就是「全文精读 =
+    公众号的正文 + 我们做的 SI」，取了正文却不取 SI，那一半永远补不上。
     """
     from tools import getpdf
     from tools.deepread import batch as dr_batch, tags as dr_tags
@@ -178,15 +182,22 @@ def import_one(md_path, purpose='建库', with_pdf=False, force=False, log=print
         log('  [跳过] %s' % out['note'])
         return out
 
+    if with_si is None:
+        with_si = with_pdf
     idx = getpdf.doi_index()
     key = idx.get(doi.strip().lower())
-    pdf_path = None
+    pdf_path, si_path = None, None
     if with_pdf and not key:
         got = getpdf.fetch_one(doi)
         pdf_path = got.get('path') if got.get('ok') else None
         if not pdf_path:
             log('  [没取到正文PDF] %s —— 条目照建，PDF 以后再补'
                 % got.get('reason', ''))
+        elif with_si:
+            si = getpdf.fetch_si_one(doi)
+            si_path = si.get('path') if si.get('ok') else None
+            log('  [SI] %s' % ('%d KB' % (si['bytes'] // 1024) if si_path
+                               else '没取到（%s）—— 正文照走' % si.get('reason', '')))
     if key:
         out['action'] = 'exists'
         log('  [已在库里] %s' % key)
@@ -200,6 +211,9 @@ def import_one(md_path, purpose='建库', with_pdf=False, force=False, log=print
         log('  [%s] %s %s' % (r['action'], key, r['note']))
 
     out['key'] = key
+    if si_path:
+        done, why = getpdf.attach_si(key, si_path)
+        log('  [SI 附件] %s' % ('挂上了' if done else why))
     built = build_local(key, article, force=force, log=log)
     out['summary'] = built['path']
     dr_batch.upload_one(key, force=force, log=log)
@@ -208,10 +222,20 @@ def import_one(md_path, purpose='建库', with_pdf=False, force=False, log=print
 
 
 def import_many(paths_, purpose='建库', with_pdf=False, force=False, log=print):
-    """一批 md。**单篇失败不拖累整批**，最后返回每篇的结果列表。"""
+    """一批 md。**单篇失败不拖累整批**，最后返回每篇的结果列表。
+
+    取正文 PDF 时每篇之间**照 `getpdf.GAP` 等一会儿**：出版商封的是整个机构的
+    IP，代价全校担。这条线一次只导几篇，慢一点无所谓。
+    """
+    import time
+
+    from tools import getpdf
+
     out = []
     for i, p in enumerate(paths_, 1):
         log('[%d/%d] %s' % (i, len(paths_), os.path.basename(p)))
+        if with_pdf and i > 1:
+            time.sleep(getpdf.GAP)
         try:
             out.append(import_one(p, purpose=purpose, with_pdf=with_pdf,
                                   force=force, log=log))
