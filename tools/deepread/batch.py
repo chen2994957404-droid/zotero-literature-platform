@@ -50,26 +50,6 @@ def _model():
 
 # ───────────────────────── 回写 Zotero ─────────────────────────
 
-def _storage_filename(att_key):
-    """Zotero 记录的附件文件名。取不到就用 summary.html。
-
-    按它写，用户点开附件才不会「找不到文件」（si_batch 的老教训）。
-    """
-    try:
-        info = zotero.zget(f'/users/{zotero.USER_ID}/items/{att_key}')
-        return info['data'].get('filename') or 'summary.html'
-    except Exception:
-        return 'summary.html'
-
-
-def _put_local(att_key, src):
-    """把产物铺进 Zotero 本地 storage —— 用户点开即最新。"""
-    d = os.path.join(zotero.STORAGE_DIR, att_key)
-    os.makedirs(d, exist_ok=True)
-    shutil.copy(src, os.path.join(d, _storage_filename(att_key)))
-    return d
-
-
 def upload_one(key, html=None, force=False, log=print):
     """把某篇的精读回写成 Zotero 的 summary 附件，返回附件 key。
 
@@ -86,7 +66,7 @@ def upload_one(key, html=None, force=False, log=print):
     att_key = zotero.find_child_attachment(key, 'summary')
     if not att_key:
         att_key = zotero.upload_attachment(key, src, 'summary')
-    _put_local(att_key, src)
+    zotero.put_local(att_key, src, 'summary.html')
     return att_key
 
 
@@ -135,7 +115,7 @@ def refresh_local_file(key):
     att_key = zotero.find_child_attachment(key, 'summary')
     if not att_key:
         return False, 'Zotero 里没有 summary 附件（需走 watcher 首次上传）'
-    _put_local(att_key, src)
+    zotero.put_local(att_key, src, 'summary.html')
     return True, f'-> storage/{att_key}/ ({round(os.path.getsize(src) / 1024)} KB)'
 
 

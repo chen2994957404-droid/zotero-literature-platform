@@ -225,8 +225,14 @@ def stash(doi, pdf_path, purpose='建库', col_key=None, index=None, force=False
         elif _has_pdf_child(key):
             out['note'] = '已有 PDF 附件，没重复挂'
         else:
-            _web.upload_attachment(key, pdf_path, 'Full Text PDF',
-                                   action=f'给 {doi} 挂正文 PDF', force=force)
+            att = _web.upload_attachment(key, pdf_path, 'Full Text PDF',
+                                         action=f'给 {doi} 挂正文 PDF', force=force)
+            # ⚠ **上传完必须再铺一份到本地 storage**，这不是优化（2026-09-05 踩过）。
+            # 上传进的是 Zotero 官方存储，而用户的文件同步走 WebDAV（坚果云），
+            # 桌面端只去 WebDAV 找 —— 于是条目有了、点开却是「找不到附件」。
+            # 铺本地还顺带让 `find_pdf` 找得到，下游解析/精读才有正文可读。
+            from shared.adapters import zotero_client as Z
+            Z.put_local(att, pdf_path, os.path.basename(pdf_path))
             if out['action'] == 'exists':
                 out['action'] = 'attached'
 

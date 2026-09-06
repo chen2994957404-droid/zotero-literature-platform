@@ -99,6 +99,19 @@ def main():
         print('  [FAIL] 查重没走索引 —— 按篇搜会漏掉刚写进去的，于是建重复条目')
 
     total += 1
+    # 上传附件之后**必须**再铺一份到本地 storage。少了这一步，用户点开附件是
+    # 「在此路径无法找到附件」—— 因为上传进的是 Zotero 官方存储，而他的文件同步
+    # 走 WebDAV，桌面端只去 WebDAV 找。2026-09-05 真的这么坏过一次。
+    src = io.open(os.path.join(os.path.dirname(__file__), '__init__.py'),
+                  encoding='utf-8').read()
+    i_up = src.find('upload_attachment(')
+    i_put = src.find('put_local(')
+    if i_up >= 0 and i_put > i_up:
+        print('  [PASS] 上传之后有铺本地 storage 这一步'); ok += 1
+    else:
+        print('  [FAIL] 上传完没铺本地 —— 用户点开会「找不到附件」')
+
+    total += 1
     c = getpdf.summarize([{'reason': 'ok'}, {'reason': 'ok'}, {'reason': 'no_access'}])
     if c == {'ok': 2, 'no_access': 1}:
         print('  [PASS] 结果汇总'); ok += 1

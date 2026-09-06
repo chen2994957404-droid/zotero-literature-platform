@@ -140,6 +140,45 @@ def find_child_attachment(item_key, title):
     return None
 
 
+def storage_filename(att_key, default='attachment'):
+    """Zotero 给这个附件记的文件名。
+
+    **必须按它写**，不能自己起名：用户点开附件时，Zotero 找的是它记下的那个名字，
+    名字对不上就是「在此路径无法找到附件」（si_batch 的老教训）。
+    """
+    try:
+        info = zget(f'/users/{USER_ID}/items/{att_key}')
+        return info['data'].get('filename') or default
+    except Exception:
+        return default
+
+
+def put_local(att_key, src, default_name='attachment'):
+    """把文件铺进 Zotero 的**本地 storage** → 落地后的完整路径。
+
+    ⚠ **上传附件之后必须做这一步**，不是可选的优化（2026-09-05 又踩了一次）：
+
+    `upload_attachment` 传的是 **Zotero 官方存储**。而用户的文件同步如果配的是
+    WebDAV（坚果云之类），桌面端**只会去 WebDAV 找文件** —— 官方存储里那份它不看。
+    于是条目有了、点开却是「在此路径无法找到附件」。
+
+    铺一份到本地 storage 就同时解决三件事：
+      1. 用户点开立刻能用（不用等同步）
+      2. `find_pdf` 找得到 —— 整条下游流水线（解析/精读/向量化）都从这里读
+      3. 桌面端会把这个本地文件同步到用户自己的 WebDAV，跟他手动加的文献同一套
+
+    这段原来只住在 `tools/deepread/batch.py` 里（叫 `_put_local`）。
+    2026-09-05 `getpdf` 成了第二个使用者，按下沉规则搬到这里，
+    省得同一个坑在两处各踩一遍 —— 事实上正是这么踩的。
+    """
+    import shutil
+    d = os.path.join(STORAGE_DIR, att_key)
+    os.makedirs(d, exist_ok=True)
+    dst = os.path.join(d, storage_filename(att_key, default_name))
+    shutil.copy(src, dst)
+    return dst
+
+
 def find_pdf(item_key, return_att_key=False):
     """定位文献正文 PDF 的本地路径（踩坑 #15、find_pdf 工单的单一实现）。
 

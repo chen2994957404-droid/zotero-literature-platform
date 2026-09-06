@@ -79,11 +79,25 @@ python -m tools.getpdf 10.1016/xxx --to-zotero --purpose 精读    # 标成重�
 | `not_pdf` | 拿回来的不是 PDF | 多半是 captcha 的变种 |
 | `exists` | 盘上已经有了 | 正常，跳过 |
 
-## 存储上的一条硬约束
+## 附件必须走两步，少一步用户就打不开
 
-附件走的是 **Zotero 官方存储，免费只有 300 MB**（用户的文件同步虽然走坚果云 WebDAV，
-但 API 上传进的是 Zotero 存储）。PDF 一篇 1～9 MB，**几十篇就满**。
+```
+upload_attachment(...)   ① 建附件条目，文件传进 Zotero 官方存储
+put_local(att, pdf)      ② **把文件铺一份到本地 Zotero storage**
+```
 
-所以批量导入之前值得先看一眼用户的存储余量（zotero.org → Settings → Storage）。
-满了的长期解法有两条：升级 Zotero 存储，或者改成「链接文件 + 云盘同步文件夹」
-（后者不占任何云配额，但手机 App 看不到 PDF）。
+**②不是优化，是必需的。** 用户的文件同步走 WebDAV（坚果云），
+桌面端**只会去 WebDAV 找文件**，官方存储里那份它不看 ——
+少了②，条目有了、点开却是「在此路径无法找到附件」（2026-09-05 真坏过一次）。
+
+②还顺带解决另外两件事：`find_pdf` 从本地 storage 读，下游解析/精读才有正文可读；
+桌面端会把这个本地文件同步到用户自己的 WebDAV，跟他手动加的文献同一套。
+
+`put_local` 住在 `shared.adapters.zotero_client`（`deepread` 也用它）。
+
+## 存储余量
+
+附件同时占 **Zotero 官方存储（免费 300 MB）**。PDF 一篇 1～9 MB，**几十篇就满**。
+批量之前值得看一眼余量（zotero.org → Settings → Storage）。
+满了的长期解法：升级 Zotero 存储，或者改成只铺本地、不传官方存储
+（省配额，但要确认桌面端能把它同步出去）。
