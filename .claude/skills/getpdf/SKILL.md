@@ -49,6 +49,10 @@ python -m tools.getpdf --file dois.txt --to-zotero --with-si    # 连补充材�
 **投料量、配比、温度时间几乎只写在 SI 里**。建库只灌正文的话，
 向量库里搜「硼酸配比多少」搜不出数。用户库里 60 篇抽样有 32 篇带 SI。
 
+⚠ **取 SI 之前会先滚一遍页面** —— ACS 的 SI 链接是懒加载的，不滚根本不在 DOM 里。
+（2026-09-06 栽过：没滚就搜，搜不到，下了「ACS 取不到」的错结论。
+**说「页面上没有」之前，先确认「页面已经长全了」。**）
+
 **只要「实验那份」，视频一律不下。** 判据是**类型不是顺序**
 （2026-09-06 实测：Wiley 的正文 SI 和演示视频**编号都是 sup-0001**，按序号排分不开；
 而且它的 URL 是 `downloadSupplement?...`，**扩展名只在链接文字里**）。
@@ -59,7 +63,7 @@ python -m tools.getpdf --file dois.txt --to-zotero --with-si    # 连补充材�
 |---|---|---|
 | Elsevier | `mmc1.docx`(12MB) · `mmc2.mp4` · `mmc3.mp4` | mmc1 |
 | Wiley | `...sup-0001-SuppMat.pdf` · `...sup-0001-MovieS1.mp4` | SuppMat |
-| ACS | 文章页只给一个锚点，二级页会重定向回文章页 | **⚠ 目前取不到**（见 INCIDENTS 10）|
+| ACS | `/article-supplement/<id>/<格式>/<名>/`，**懒加载，要滚到底才出现** | 滚完就能取 |
 
 附件标题固定用 **`SI`** —— 跟库里已有的一致，而且 `deepread` 找 SI 认的就是这个名字。
 SI 允许 `.docx`（实测库里 19 pdf + 13 docx，docx 占四成），但永远不收 HTML。
