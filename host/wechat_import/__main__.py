@@ -69,8 +69,9 @@ def main():
                                             a['title'][:40]))
         return 0
 
-    role.require_prod('把公众号精读导进 Zotero（建条目、传附件、打标签）',
-                      force=flag('--force'))
+    # 这里**故意不接 --force**：那个开关的意思是「产物重做一遍」，
+    # 不该顺带把「这台机器允不允许写 Zotero」的保护也一起关掉。
+    role.require_prod('把公众号精读导进 Zotero（建条目、传附件、打标签）')
     res = wi.import_many(files, purpose=opt('--purpose') or '建库',
                          with_pdf=flag('--with-pdf'),
                          upload=('all' if flag('--upload')

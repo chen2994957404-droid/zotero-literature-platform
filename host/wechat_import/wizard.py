@@ -83,8 +83,9 @@ def main():
         print('好，什么都没做。')
         return 0
 
-    role.require_prod('把公众号精读导进 Zotero（建条目、传附件、打标签）',
-                      force=flag('--force'))
+    # 这里**故意不接 --force**：那个开关的意思是「产物重做一遍」，
+    # 不该顺带把「这台机器允不允许写 Zotero」的保护也一起关掉。
+    role.require_prod('把公众号精读导进 Zotero（建条目、传附件、打标签）')
     # 精读传进 Zotero（它小，而且是你要看的那份）；正文 PDF 与 SI 留在本地。
     res = wi.import_many(todo, with_pdf=True,
                          upload='all' if flag('--upload') else 'summary')
