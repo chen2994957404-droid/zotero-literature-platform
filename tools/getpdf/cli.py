@@ -97,6 +97,17 @@ def main():
         # 写 Zotero 是不可逆的副作用 —— 守卫写在函数体里，不能写模块顶层（红线 #7）
         role.require_prod('把文献收进你的 Zotero 库（建条目、挂 PDF、归合集）',
                           force=flag('--force'))
+        # **先确认拿得到密钥再动手**，别等 PDF 都下完了才在入库那步炸出 traceback。
+        # 最常见的原因不是「没配」，而是**远程 SSH 会话打不开 Windows 凭据库** ——
+        # 密钥明明存着，`get_key` 却返回空串（2026-09-06 就这么炸过一次）。
+        from shared.kernel.config import get_key
+        if not get_key('ZOTERO_API_KEY'):
+            print('读不到 Zotero 的密钥，没法写库 —— 先不下载了，省得白跑一趟。')
+            print('  ① 如果你是**远程连过来**跑的：SSH 会话打不开 Windows 凭据库，')
+            print('     密钥存着也读不到。换成 `job` 通道跑，或者直接在那台机器上跑。')
+            print('  ② 如果是在本机跑：去控制面板把 Zotero 的密钥填上。')
+            print('  （不带 --to-zotero 只取 PDF 不受影响。）')
+            return 1
 
     p = getpdf.probe()
     if not p['ok']:
