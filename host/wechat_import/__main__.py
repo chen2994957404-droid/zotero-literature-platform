@@ -22,31 +22,33 @@ except Exception:
 
 from shared.kernel import role
 from shared.kernel.cli import flag, opt, wants_help
+from shared.kernel.config import get_site
 
 from host import wechat_import as wi
 
 
 def _targets():
-    d, f = opt('--dir'), opt('--file')
+    """要处理哪些 md。目录不传就用配置里的「公众号推送下载目录」。"""
+    f = opt('--file')
     if f:
         return [f]
-    if not d:
+    d = opt('--dir') or get_site('WECHAT_DIR')
+    if not d or not os.path.isdir(d):
         return []
-    return [os.path.join(d, n) for n in sorted(os.listdir(d))
-            if n.lower().endswith('.md')]
+    return wi.list_dir(d)          # 从新到旧，--limit 才是「最近几篇」
 
 
 def main():
-    if wants_help() or not (opt('--dir') or opt('--file')):
+    if wants_help():
         print(__doc__)
         return 0
     files = _targets()
+    if not files:
+        print('没找到 .md —— 传 --dir，或在控制面板里填「公众号推送下载目录」')
+        return 1
     limit = int(opt('--limit') or 0)
     if limit:
         files = files[:limit]
-    if not files:
-        print('没找到 .md 文件')
-        return 1
 
     if flag('--dry-run'):
         print('【试跑】不写任何东西。共 %d 篇：' % len(files))

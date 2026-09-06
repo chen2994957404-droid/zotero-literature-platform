@@ -62,6 +62,17 @@ def parse_md(path):
     return a
 
 
+def list_dir(directory):
+    """一个下载目录 → md 路径列表，**按推送日期从新到旧**。
+
+    不能按文件名排 —— 下载工具的文件名是「期刊名+中文标题」，**不带日期**
+    （wechat_seed 的第 2 号坑）。所以日期只能从正文里读。
+    """
+    seeds = wechat_seed.scan(directory)
+    seeds.sort(key=lambda s: s['pubdate'] or '', reverse=True)
+    return [os.path.join(directory, s['file']) for s in seeds]
+
+
 def render_html(article, images):
     """article + 已下好的图 → 一份自带全部图的 HTML。纯字符串处理。
 

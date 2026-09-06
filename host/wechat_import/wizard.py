@@ -47,21 +47,20 @@ def main():
         print('没有目录可读，退出。')
         return 1
 
-    files = [os.path.join(d, n) for n in sorted(os.listdir(d))
-             if n.lower().endswith('.md')]
+    files = wi.list_dir(d)          # 从新到旧（日期在正文里，不在文件名里）
     print('\n这个文件夹里有 %d 篇推送。' % len(files))
     if not files:
         return 1
 
     n = _ask('这次导几篇？（默认 5 篇，从最新的往回数；输入 all 表示全部）：', '5')
     if n.lower() == 'all':
-        pick = list(reversed(files))
+        pick = files
     else:
         try:
-            pick = list(reversed(files))[:max(1, int(n))]
+            pick = files[:max(1, int(n))]
         except ValueError:
             print('看不懂「%s」，按 5 篇算。' % n)
-            pick = list(reversed(files))[:5]
+            pick = files[:5]
 
     print('\n先试跑一遍，看看会导哪些（这一步什么都不写）：\n')
     todo = []
