@@ -207,8 +207,8 @@ def import_one(md_path, purpose='建库', with_pdf=False, with_si=None,
     返回 dict(file, doi, key, action, summary, pdf, si, note)。`action` 沿用
     getpdf 的说法（created / exists / skipped / failed），好跟那条线对得上。
 
-    `upload=False`（默认）时**一个附件都不传** —— 原件与精读只落本地。
-    要传的时候单独调 `upload_attachments(key)`。
+    `upload` 三档：`False`（默认，一个附件都不传）· `'summary'`（只传精读，
+    它小、而且是你天天要看的）· `'all'`（连正文 PDF 与 SI 一起传，很占配额）。
 
     **库里已经有的条目不动它的合集** —— 用户的 178 个合集是按来源（大学→导师）
     分的，把已收藏的文献又塞进「LLM导入」会打乱他自己的心智模型。
@@ -260,7 +260,7 @@ def import_one(md_path, purpose='建库', with_pdf=False, with_si=None,
 
     # ③ 传 Zotero —— **默认不传**（用户 2026-09-06 定：先下到本地，需要的再传）
     if upload:
-        upload_attachments(key, log=log)
+        upload_attachments(key, pdf=(upload == 'all'), si=(upload == 'all'), log=log)
     _try(lambda: dr_tags.set_state_tag(key, dr_tags.TAG_MAIN_WX, log=log),
          '打标签', log)
     return out
@@ -318,8 +318,12 @@ def _ensure_si(key, doi, log=print):
     return dst
 
 
-def upload_attachments(key, log=print):
+def upload_attachments(key, pdf=True, si=True, summary=True, log=print):
     """把这篇的本地原件与精读传进 Zotero。**每一份各自失败，互不牵连。**
+
+    三样可以分开传，因为它们的性质不一样：**精读是人天天看的，而且小**
+    （0.5~4 MB）；正文 PDF 与 SI 是给解析器吃的，动辄几十 MB
+    （实测撞到过 34.9 MB 的综述）。所以默认的用法是「精读传上去、原件留本地」。
 
     这是「先下到本地，需要的再传」里的**传**那一半。为什么要分开：
     Zotero 官方存储免费只有 300 MB，而一篇正文 PDF 就 1～10 MB；
@@ -329,16 +333,17 @@ def upload_attachments(key, log=print):
     from tools import getpdf
     from tools.deepread import batch as dr_batch
 
-    pdf, si = paths.local_pdf(key), paths.find_local_si(key)
-    if os.path.exists(pdf):
-        r = _try(lambda: getpdf.attach_pdf(key, pdf), '传正文PDF', log)
+    pdf_path, si_path = paths.local_pdf(key), paths.find_local_si(key)
+    if pdf and os.path.exists(pdf_path):
+        r = _try(lambda: getpdf.attach_pdf(key, pdf_path), '传正文PDF', log)
         if r:
             log('  [正文PDF] %s' % ('传上去了' if r[0] else r[1]))
-    if si:
-        r = _try(lambda: getpdf.attach_si(key, si), '传SI', log)
+    if si and si_path:
+        r = _try(lambda: getpdf.attach_si(key, si_path), '传SI', log)
         if r:
             log('  [SI] %s' % ('传上去了' if r[0] else r[1]))
-    _try(lambda: dr_batch.upload_one(key, log=log), '传精读', log)
+    if summary:
+        _try(lambda: dr_batch.upload_one(key, log=log), '传精读', log)
 
 
 def _try(fn, what, log):

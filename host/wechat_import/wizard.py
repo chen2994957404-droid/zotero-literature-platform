@@ -85,7 +85,9 @@ def main():
 
     role.require_prod('把公众号精读导进 Zotero（建条目、传附件、打标签）',
                       force=flag('--force'))
-    res = wi.import_many(todo, with_pdf=True, upload=flag('--upload'))
+    # 精读传进 Zotero（它小，而且是你要看的那份）；正文 PDF 与 SI 留在本地。
+    res = wi.import_many(todo, with_pdf=True,
+                         upload='all' if flag('--upload') else 'summary')
     ok = [r for r in res if r['key']]
     print('\n完成：%d/%d 篇进库（新建 %d，本来就有 %d）'
           % (len(ok), len(res),
