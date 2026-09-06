@@ -258,3 +258,60 @@ def _has_pdf_child(item_key):
         if 'pdf' in (d.get('contentType') or '').lower():
             return True
     return False
+
+
+def fetch_si_one(doi, where=None):
+    """取一篇的补充材料 → dict(doi, ok, reason, path, bytes)。
+
+    只要**实验那份**，视频一律不要（挑法见 `pdf_fetch.pick_si`）。
+    已经在盘上的直接跳过，跟正文一个道理。
+
+    为什么值得取：本项目 2026-07-25 验证过 ——
+    **投料量、配比、温度时间几乎只写在 SI 里**。
+    只灌正文的话，向量库里搜「硼酸配比多少」是搜不出数的。
+    """
+    where = where or out_dir(create=True)
+    stem = safe_name(doi) + '_SI'
+    for ext in ('.pdf', '.docx', '.doc', '.txt'):
+        p = os.path.join(where, stem + ext)
+        if os.path.exists(p) and os.path.getsize(p) > 1024:
+            return {'doi': doi, 'ok': True, 'reason': 'exists', 'path': p,
+                    'bytes': os.path.getsize(p)}
+
+    r = pdf_fetch.fetch(doi, kind='si')
+    if not r['ok']:
+        log.info(f'{doi} 的 SI 没拿到：{r["reason"]}')
+        return {'doi': doi, 'ok': False, 'reason': r['reason'], 'path': '',
+                'bytes': 0}
+
+    ext = os.path.splitext(r.get('filename') or '')[1].lower() or '.pdf'
+    if ext not in ('.pdf', '.docx', '.doc', '.txt'):
+        ext = '.pdf'
+    path = os.path.join(where, stem + ext)
+    os.makedirs(where, exist_ok=True)
+    with io.open(path, 'wb') as fh:
+        fh.write(r['pdf'])
+    log.info(f'{doi} 的 SI → {path}（{len(r["pdf"])} 字节）')
+    return {'doi': doi, 'ok': True, 'reason': 'ok', 'path': path,
+            'bytes': len(r['pdf'])}
+
+
+def attach_si(item_key, si_path, force=False):
+    """把 SI 挂到已有条目下 → (做了没, 说明)。
+
+    附件标题固定用 **`SI`** —— 跟库里已有的 32 篇一致，
+    而且 `deepread` 找 SI 就是认这个名字。改名等于让精读线找不到它。
+    """
+    from shared.adapters import zotero_client as Z
+    from shared.adapters.zotero_client import _web
+    if not (si_path and os.path.exists(si_path)):
+        return False, '没有 SI 文件可挂'
+    for c in (_web.zweb(f'/items/{item_key}/children?format=json') or []):
+        d = c.get('data') or c
+        if d.get('itemType') == 'attachment' and (d.get('title') or '').strip().upper() == 'SI':
+            return False, '已有 SI 附件，没重复挂'
+    att = _web.upload_attachment(item_key, si_path, 'SI',
+                                 action='挂补充材料（SI）', force=force)
+    # 跟正文一样，**上传完必须铺一份到本地**（踩坑 #120），否则用户点开是「找不到附件」
+    Z.put_local(att, si_path, os.path.basename(si_path))
+    return True, ''

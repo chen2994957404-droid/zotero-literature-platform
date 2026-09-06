@@ -13,6 +13,7 @@
   收进 Zotero（会写你的库）:
     python -m tools.getpdf --file dois.txt --to-zotero             # 默认「建库」用途
     python -m tools.getpdf 10.1016/xxx --to-zotero --purpose 精读   # 标成重点文章
+    python -m tools.getpdf --file dois.txt --to-zotero --with-si   # 连补充材料一起
 
 **跑之前**：那台机器上要有一个带调试口启动的浏览器，**里面得有人过过一次人机验证**
 （机构订阅靠出口 IP 自动生效，不用登录；人机验证的通行证跟着浏览器的用户资料走）。
@@ -28,6 +29,10 @@
 查库里有没有 → 没有就按 Crossref 元数据建条目 → 挂正文 PDF（已有就不重复挂）
 → 放进「<顶层合集>/建库用」或「/重点精读」。
 **不打精读标签、不触发精读** —— 那是花钱的事，什么时候开始由你决定。
+
+`--with-si` 连补充材料一起取。**值得开** —— 本项目验证过：投料量、配比、
+温度时间几乎只写在 SI 里。只要「实验那份」，演示视频一律不下
+（既省配额，解析器也拿视频没办法）。
 """
 import os, sys
 # 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
@@ -88,6 +93,7 @@ def main():
     limit = int(opt('--limit') or getpdf.LIMIT)
 
     to_zotero = flag('--to-zotero')
+    with_si = flag('--with-si')
     purpose = opt('--purpose') or '建库'
     if to_zotero:
         if purpose not in getpdf.PURPOSES:
@@ -138,12 +144,35 @@ def main():
         print('\n⚠ 停在人机验证上了。去那个浏览器里点一下通过，再跑一次同样的命令 ——'
               '\n  已经拿到的不会重下，会接着没取到的往下走。')
 
+    if with_si:
+        _fetch_si_all(results, where, gap)
     if to_zotero:
-        _stash_all(results, purpose)
+        _stash_all(results, purpose, with_si=with_si)
     return 0
 
 
-def _stash_all(results, purpose):
+def _fetch_si_all(results, where, gap):
+    """给拿到正文的那些补上 SI。"""
+    import time
+    got = [r for r in results if r['ok'] and r['path']]
+    if not got:
+        return
+    print('\n再取补充材料（只要实验那份，视频不下）：')
+    for i, r in enumerate(got, 1):
+        si = getpdf.fetch_si_one(r['doi'], where)
+        r['si'] = si
+        if si['reason'] == 'exists':
+            note = '盘上已经有了，跳过'
+        elif si['ok']:
+            note = f'拿到了  {si["bytes"] // 1024} KB'
+        else:
+            note = pdf_fetch.REASONS.get(si['reason'], si['reason'])
+        print(f'  [{i}/{len(got)}] {"✓" if si["ok"] else "×"} {r["doi"]}  {note}')
+        if i < len(got) and si['reason'] != 'exists':
+            time.sleep(gap)
+
+
+def _stash_all(results, purpose, with_si=False):
     """把拿到的那些收进 Zotero，逐篇报告。"""
     got = [r for r in results if r['ok'] and r['path']]
     if not got:
@@ -165,8 +194,16 @@ def _stash_all(results, purpose):
         counts[s['action']] = counts.get(s['action'], 0) + 1
         mark = '✓' if s['ok'] else '×'
         note = f'  （{s["note"]}）' if s['note'] else ''
-        print(f'  [{i}/{len(got)}] {mark} {s["doi"]}  '
-              f'{words.get(s["action"], s["action"])}{note}')
+        line = (f'  [{i}/{len(got)}] {mark} {s["doi"]}  '
+                f'{words.get(s["action"], s["action"])}{note}')
+        if with_si and s['ok'] and s['item']:
+            si = r.get('si') or {}
+            if si.get('ok') and si.get('path'):
+                did, why = getpdf.attach_si(s['item'], si['path'])
+                line += '  + SI 挂上了' if did else f'  + SI：{why}'
+            else:
+                line += '  + 没有 SI'
+        print(line)
 
     print('\n入库结果：')
     for a, n in sorted(counts.items(), key=lambda kv: -kv[1]):

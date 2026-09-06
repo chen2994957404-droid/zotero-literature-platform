@@ -61,6 +61,7 @@ REASONS = {
     'not_pdf': '拿到了东西但不是 PDF（多半被挡回了登录页或验证页）',
     'too_big': '文件超过上限，没往回传',
     'navigate_failed': '页面根本打不开',
+    'no_si': '这篇没挂补充材料，或者挂的全是视频之类（那种我们不要）',
 }
 
 
@@ -139,9 +140,10 @@ _JS_STATE = """() => {
   // 图片要滤掉：ScienceDirect 的 a.download-link 也用在「下载这张图」上，
   // 不滤的话第一个候选会是 gr1_lrg.jpg，白跑一趟还会因为跨域报错。
   const isImg = u => /\\.(jpg|jpeg|png|gif|svg|webp|tif)(\\?|#|$)/i.test(u);
-  // **补充材料必须滤掉**，这是最阴的一种错：文件下来了、大小也正常，
+  // **补充材料必须从正文候选里滤掉**，这是最阴的一种错：文件下来了、大小也正常，
   // 内容却是 SI 不是正文。2026-09-05 实测 Wiley 就这么中过一次。
-  const isSupp = u => /downloadSupplement|suppl_file|[-_]sup[-_]|SuppMat|supplementary/i.test(u);
+  // 但滤掉不等于扔掉 —— 它们收进 si 那一列，取 SI 的时候正好用。
+  const isSupp = u => /downloadSupplement|suppl_file|[-_]sup[-_]|SuppMat|supplementary|mmc\\d|MOESM/i.test(u);
   const hits = [];
   const push = u => {
     if (u && !isImg(u) && !isSupp(u) && hits.indexOf(u) < 0) hits.push(u);
@@ -151,6 +153,25 @@ _JS_STATE = """() => {
     const a = document.querySelector(s);
     if (a && a.href) push(a.href);
   }
+
+  // ── 补充材料：连同链接文字一起收，光看 URL 分不出「实验数据」还是「视频」──
+  // 2026-09-06 实测：Wiley 那篇的正文 SI 和演示视频**编号都是 sup-0001**，
+  // 靠编号排序根本分不开；Elsevier 是 mmc1.docx / mmc2.mp4 / mmc3.mp4。
+  // 所以判据是**类型**，不是顺序。
+  const si = [];
+  const seen = new Set();
+  for (const a of document.querySelectorAll('a[href]')) {
+    if (!isSupp(a.href)) continue;
+    if (seen.has(a.href)) continue;
+    seen.add(a.href);
+    si.push({url: a.href,
+             text: (a.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 90)});
+  }
+  // ACS 不直接列文件，只给一个 /doi/suppl/<doi> 的入口，要再进一层
+  let suppPage = '';
+  for (const a of document.querySelectorAll('a[href*="/doi/suppl/"]')) {
+    suppPage = a.href; break;
+  }
   return {
     url: location.href,
     title: (document.querySelector('h1') || {}).innerText || document.title || '',
@@ -159,6 +180,8 @@ _JS_STATE = """() => {
     paywall: has('Get Access') || has('Purchase PDF') || has('Get rights and content')
              && !hits.length,
     candidates: hits,
+    si: si,
+    suppPage: suppPage,
   };
 }"""
 
@@ -224,27 +247,96 @@ def _worth_trying(url):
     return bool(url) and url.startswith('http') and not _JUNK_RE.search(url)
 
 
-def _decode(got):
-    """浏览器那边取回来的东西 → PDF 字节；不是 PDF 就返回 None。
+# ── 补充材料：挑出「实验那份」 ──────────────────────────────────────────
+# 2026-09-06 实测三家出版商的真实 SI 清单：
+#   Elsevier : mmc1.docx（12MB，要的）· mmc2.mp4 · mmc3.mp4
+#   Wiley    : ...sup-0001-SuppMat.pdf（要的）· ...sup-0001-MovieS1.mp4
+#   ACS      : 页面上只给一个 /doi/suppl/<doi> 入口，要再进一层
+#
+# 判据必须是**类型**，不是顺序：Wiley 那两个的编号**都是 sup-0001**，
+# 按序号排根本分不开；而且它的 URL 是 `downloadSupplement?...` 看不出扩展名 ——
+# **扩展名只出现在链接文字里**。所以判断要把 URL 和链接文字**合起来看**。
 
-    两趟取字节的收尾一模一样，抽出来，免得两处判断走散
+SI_GOOD_RE = re.compile(r'\.(pdf|docx?|txt)(\?|#|$)', re.I)
+SI_BAD_RE = re.compile(
+    r'\.(mp4|avi|mov|wmv|mkv|webm|mp3|wav|zip|rar|7z|tar|gz)(\?|#|$)'
+    r'|movie|video|animation', re.I)
+
+
+def pick_si(cands):
+    """一堆 SI 链接 → 最可能是「实验部分」的那一个（没有就返回 None）。
+
+    `cands` 是 [{url, text}, ...]。返回同样的 dict。
+
+    排序办法：先扔掉明显是视频/压缩包的，再优先扩展名像文档的，
+    同档保持页面上的原顺序（第一个通常就是正文 SI）。
+    **宁可少下一个也不要下错** —— 下错的代价是几十 MB 视频占掉 Zotero 配额，
+    而且解析器拿它没办法。
+    """
+    good, rest = [], []
+    for c in (cands or []):
+        blob = (c.get('url', '') + ' ' + c.get('text', ''))
+        if SI_BAD_RE.search(blob):
+            continue                      # 视频、压缩包：直接不要
+        (good if SI_GOOD_RE.search(blob) else rest).append(c)
+    pool = good or rest
+    return pool[0] if pool else None
+
+
+def _si_name(pick):
+    """给这份 SI 起个像样的文件名 —— 优先用出版商自己的名字。
+
+    Wiley 的 URL 是 `downloadSupplement?...`，扩展名**只在链接文字里**
+    （`adfm202009017-sup-0001-SuppMat.pdf`），所以两个地方都要看。
+    起不出来就返回空串，让调用方自己定。
+    """
+    import os
+    import urllib.parse
+    for cand in (pick.get('text', ''), urllib.parse.unquote(pick.get('url', ''))):
+        for tok in re.split(r'[\s/\?&=]+', cand):
+            if SI_GOOD_RE.search(tok) and len(tok) > 4:
+                return os.path.basename(tok)
+    return ''
+
+
+def _decode(got, want='pdf'):
+    """浏览器那边取回来的东西 → 字节；不合格就返回 None。
+
+    几趟取字节的收尾一模一样，抽出来，免得判断走散
     （走散的后果是「一趟严一趟松」，而松的那趟会赢）。
+
+    `want='pdf'` 只认 PDF（正文必须是 PDF，后面要送去解析）。
+    `want='si'` 放宽到 **PDF 或 Office 文档** —— 实测库里的 SI
+    是 19 个 .pdf + 13 个 .docx，docx 占了四成，只认 PDF 等于扔掉四成。
+    但**永远不认 HTML**：那多半是被挡回了登录页或验证页。
     """
     if not got or not got.get('ok') or not got.get('b64'):
         return None
     raw = base64.b64decode(got['b64'])
-    return raw if _looks_like_pdf(raw[:4], got.get('type')) else None
+    if _looks_like_pdf(raw[:4], got.get('type')):
+        return raw
+    if want == 'si':
+        mime = (got.get('type') or '').lower()
+        if 'html' in mime or raw[:9].lower().startswith(b'<!doctype'):
+            return None
+        # .docx/.xlsx 都是 zip 包，魔数是 PK
+        if raw[:4] == b'PK' or 'officedocument' in mime or 'msword' in mime:
+            return raw
+    return None
 
 
-def fetch(doi, url=None, timeout=90, settle=6):
-    """一个 DOI → dict(ok, reason, pdf, landing, title, pdf_url)。
+def fetch(doi, url=None, timeout=90, settle=6, kind='fulltext'):
+    """一个 DOI → dict(ok, reason, pdf, landing, title, pdf_url, filename)。
+
+    `kind='fulltext'` 取正文；`kind='si'` 取补充材料里**实验那份**
+    （挑法见 `pick_si`：按类型不按顺序，视频一律不要）。
 
     `settle` 是落地后多等几秒：出版商页面普遍是前端渲染，
-    `domcontentloaded` 时 PDF 链接还没长出来。宁可多等，重试更贵。
+    `domcontentloaded` 时链接还没长出来。宁可多等，重试更贵。
     """
     sync_playwright = _sync_api()
     out = {'ok': False, 'reason': 'navigate_failed', 'doi': doi,
-           'pdf': b'', 'landing': '', 'title': '', 'pdf_url': ''}
+           'pdf': b'', 'landing': '', 'title': '', 'pdf_url': '', 'filename': ''}
     pw = None
     try:
         pw = sync_playwright().start()
@@ -269,10 +361,29 @@ def fetch(doi, url=None, timeout=90, settle=6):
             if st.get('captcha'):
                 out['reason'] = 'captcha'
                 return out
-            cands = st.get('candidates') or []
-            if not cands:
-                out['reason'] = 'no_access' if st.get('paywall') else 'no_pdf_link'
-                return out
+            if kind == 'si':
+                pick = pick_si(st.get('si'))
+                if not pick and st.get('suppPage'):
+                    # ACS 不在文章页列文件，只给一个 /doi/suppl/<doi> 入口，
+                    # 要再进一层才看得到（2026-09-06 实测）。
+                    try:
+                        page.goto(st['suppPage'], wait_until='domcontentloaded',
+                                  timeout=timeout * 1000)
+                        page.wait_for_timeout(settle * 1000)
+                        pick = pick_si(page.evaluate(_JS_STATE).get('si'))
+                    except Exception:
+                        pass
+                if not pick:
+                    out['reason'] = 'no_si'
+                    return out
+                cands = [pick['url']]
+                out['filename'] = _si_name(pick)
+            else:
+                cands = st.get('candidates') or []
+                if not cands:
+                    out['reason'] = ('no_access' if st.get('paywall')
+                                     else 'no_pdf_link')
+                    return out
 
             # **一个候选走完两趟，再换下一个** —— 顺序不是形式。
             # 早先写成「先把所有候选直取一遍，再把所有候选导航一遍」，
@@ -291,7 +402,7 @@ def fetch(doi, url=None, timeout=90, settle=6):
                 # 第一趟：直接取。RSC / Springer 这类 citation_pdf_url
                 # 多半指的就是真身，同源时一次就成。
                 got = page.evaluate(_JS_GRAB, cand)
-                raw = _decode(got)
+                raw = _decode(got, 'si' if kind == 'si' else 'pdf')
                 if got.get('tooBig'):
                     out['reason'], out['pdf_url'] = 'too_big', cand
                     return out
@@ -319,7 +430,7 @@ def fetch(doi, url=None, timeout=90, settle=6):
                     pass    # 导航到 PDF 常抛 ERR_ABORTED，不代表失败
                 page.wait_for_timeout(settle * 1000)
                 got = page.evaluate(_JS_GRAB_HERE)
-                raw = _decode(got)
+                raw = _decode(got, 'si' if kind == 'si' else 'pdf')
                 if got.get('tooBig'):
                     out['reason'], out['pdf_url'] = 'too_big', cand
                     return out

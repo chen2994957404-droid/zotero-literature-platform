@@ -70,7 +70,7 @@ def main():
     total += 1
     # reason 表和代码走散过一次就再也对不上了 —— 让自测盯着
     used = {'ok', 'captcha', 'no_access', 'no_pdf_link',
-            'not_pdf', 'too_big', 'navigate_failed'}
+            'not_pdf', 'too_big', 'navigate_failed', 'no_si'}
     if used == set(pdf_fetch.REASONS):
         print(f'  [PASS] reason 表与代码一致（{len(used)} 种）'); ok += 1
     else:
@@ -89,6 +89,40 @@ def main():
             print(f'  [PASS] 没装 playwright，给的是人话：{str(e)[:30]}…'); ok += 1
         except Exception as e:
             print(f'  [FAIL] 抛的不是 PlaywrightMissing，是 {type(e).__name__}')
+
+    total += 1
+    # SI 要按**类型**挑，不是按顺序取第一个（2026-09-06 实测：Wiley 的正文 SI
+    # 和演示视频编号都是 sup-0001，按序号排根本分不开）。这两组是真机抓的数据。
+    els = [{'url': 'x/1-s2.0-S1385894725049277-mmc1.docx',
+            'text': 'Download: Download Word document (12MB)'},
+           {'url': 'x/mmc2.mp4', 'text': 'Download: Download video (7MB)'}]
+    wil = [{'url': 'x/downloadSupplement?a=1',
+            'text': 'adfm202009017-sup-0001-SuppMat.pdf'},
+           {'url': 'x/downloadSupplement?a=2',
+            'text': 'adfm202009017-sup-0001-MovieS1.mp4'}]
+    if (pdf_fetch.pick_si(els)['url'].endswith('mmc1.docx')
+            and pdf_fetch.pick_si(wil)['text'].endswith('SuppMat.pdf')
+            and pdf_fetch.pick_si([{'url': 'a.mp4', 'text': 'video'}]) is None
+            and pdf_fetch.pick_si([]) is None):
+        print('  [PASS] SI 挑得对：要文档不要视频（拿真机数据验的）'); ok += 1
+    else:
+        print('  [FAIL] SI 挑错了 —— 会把演示视频当成实验数据下回来')
+
+    total += 1
+    # SI 允许 docx（库里实测 19 pdf + 13 docx，docx 占四成），
+    # 但**永远不许**放行 HTML —— 那是被挡回登录页/验证页的样子
+    docx = {'ok': True,
+            'type': 'application/vnd.openxmlformats-officedocument'
+                    '.wordprocessingml.document',
+            'b64': base64.b64encode(b'PKrest').decode()}
+    htm = {'ok': True, 'type': 'text/html',
+           'b64': base64.b64encode(b'<!doctype html>').decode()}
+    if (pdf_fetch._decode(docx, 'si') is not None
+            and pdf_fetch._decode(docx, 'pdf') is None
+            and pdf_fetch._decode(htm, 'si') is None):
+        print('  [PASS] SI 收 docx、正文只收 PDF、两者都不收 HTML'); ok += 1
+    else:
+        print('  [FAIL] SI/正文的格式判断不对')
 
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)
