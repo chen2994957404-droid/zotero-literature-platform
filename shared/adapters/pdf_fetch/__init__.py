@@ -143,7 +143,8 @@ _JS_STATE = """() => {
   // **补充材料必须从正文候选里滤掉**，这是最阴的一种错：文件下来了、大小也正常，
   // 内容却是 SI 不是正文。2026-09-05 实测 Wiley 就这么中过一次。
   // 但滤掉不等于扔掉 —— 它们收进 si 那一列，取 SI 的时候正好用。
-  const isSupp = u => /downloadSupplement|suppl_file|[-_]sup[-_]|SuppMat|supplementary|mmc\\d|MOESM/i.test(u);
+  // `article-supplement` 是 ACS 2026 换到 Silverchair 之后的新规则
+  const isSupp = u => /downloadSupplement|suppl_file|[-_]sup[-_]|SuppMat|supplementary|mmc\\d|MOESM|article-supplement/i.test(u);
   const hits = [];
   const push = u => {
     if (u && !isImg(u) && !isSupp(u) && hits.indexOf(u) < 0) hits.push(u);
@@ -262,9 +263,33 @@ def _worth_trying(url):
 # 用 `$` 的话只有正好在末尾才匹配得上 —— 这个错曾被「挑不出好的就退而求其次」
 # 掩盖着，直到把「退而求其次」关掉才露出来（2026-09-06）。
 SI_GOOD_RE = re.compile(r'\.(pdf|docx?|txt)(?![A-Za-z0-9])', re.I)
+# ACS 2026 换到 Silverchair 之后的新规则：
+#   /<刊代码>/article-supplement/<资源id>/<格式>/<文件名>/
+#   例：/mamobx/article-supplement/5416232/docx/ma-2026-01758h_si_001/
+# **格式写在路径里，文件名后面没有扩展名** —— 只看扩展名的判据认不出它。
+SI_PATH_FMT_RE = re.compile(r'/article-supplement/\d+/(pdf|docx?|txt)/', re.I)
 SI_BAD_RE = re.compile(
     r'\.(mp4|avi|mov|wmv|mkv|webm|mp3|wav|zip|rar|7z|tar|gz)(?![A-Za-z0-9])'
     r'|movie|video|animation', re.I)
+
+
+def si_format(c):
+    """这个 SI 候选是什么格式 → 'pdf' / 'docx' / 'txt'，判不出返回空串。
+
+    两种写法都要认：
+      - 扩展名在名字里（Elsevier `mmc1.docx`、Wiley 链接文字 `...SuppMat.pdf`）
+      - **格式写在路径里**（ACS 新规则 `/article-supplement/5416232/docx/xxx_si_001/`，
+        文件名后面根本没有扩展名）
+
+    「判得出格式」正是「这是个文件而不是锚点」的判据 ——
+    比「名字里有没有点号」可靠得多。
+    """
+    url, text = c.get('url', ''), c.get('text', '')
+    m = SI_PATH_FMT_RE.search(url)
+    if m:
+        return m.group(1).lower()
+    m = SI_GOOD_RE.search(url + ' ' + text)
+    return m.group(1).lower() if m else ''
 
 
 def pick_si(cands, loose=False):
@@ -282,7 +307,7 @@ def pick_si(cands, loose=False):
         blob = (c.get('url', '') + ' ' + c.get('text', ''))
         if SI_BAD_RE.search(blob):
             continue                      # 视频、压缩包：直接不要
-        (good if SI_GOOD_RE.search(blob) else rest).append(c)
+        (good if si_format(c) else rest).append(c)
     # 默认**只认像文档的**。放宽会把「跳到补充材料那一节」的锚点当成文件 ——
     # 2026-09-06 实测 ACS 就这样：`?goto=supporting-info` 也被收进了候选，
     # 取回来是 391 KB 的 HTML。锚点不是文件，宁可说「没有」也别下错。
@@ -324,6 +349,11 @@ def _si_name(pick):
         for tok in re.split(r'[\s/\?&=]+', cand):
             if SI_GOOD_RE.search(tok) and len(tok) > 4:
                 return os.path.basename(tok)
+    # ACS 新规则：名字和格式分在路径的两段里，拼起来
+    m = SI_PATH_FMT_RE.search(pick.get('url', ''))
+    if m:
+        stem = [t for t in pick.get('url', '').rstrip('/').split('/') if t][-1]
+        return f'{stem}.{m.group(1).lower()}'
     return ''
 
 
@@ -390,7 +420,18 @@ def fetch(doi, url=None, timeout=90, settle=6, kind='fulltext'):
                 out['reason'] = 'captcha'
                 return out
             if kind == 'si':
-                pick = pick_si(st.get('si'))          # 只认像文档的
+                # ⚠ **先滚一遍页面**：ACS 的 SI 链接是懒加载的，不滚到底
+                # 根本不出现在 DOM 里。2026-09-06 头一回就栽在这 ——
+                # 在 127 万字符的源码里搜了半天，得出「ACS 取不到」的结论，
+                # 而真相只是那一段还没渲染出来。
+                # **说「页面上没有」之前，先确认「页面已经长全了」。**
+                for _ in range(6):
+                    page.evaluate('() => window.scrollBy(0, '
+                                  'document.body.scrollHeight / 5)')
+                    page.wait_for_timeout(1000)
+                page.wait_for_timeout(2000)
+                st = page.evaluate(_JS_STATE)
+                pick = pick_si(st.get('si'))          # 只认判得出格式的
                 if not pick and st.get('suppPage'):
                     # ACS 不在文章页列文件，只给一个 /doi/suppl/<doi> 入口，
                     # 要再进一层才看得到（2026-09-06 实测）。
