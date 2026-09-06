@@ -64,6 +64,13 @@ CSS = ('body{max-width:820px;margin:0 auto;padding:24px;font-family:-apple-syste
        'border-bottom:1px solid #e5e5e5}.src a{color:#5a6ec0}')
 
 
+JPEG_QUALITY = 82
+# Zotero 会拒收太大的附件（实测 413）。综述那种 30 张图的推文，
+# 按默认质量压完仍有 4 MB —— 超过这条线就降质量重来一次。
+MAX_HTML_BYTES = 2_400_000
+FALLBACK_QUALITY = 55
+
+
 def parse_md(path):
     """一篇公众号 md → article dict。不联网、不写盘，纯读文件。"""
     text = io.open(path, encoding='utf-8', errors='replace').read()
@@ -83,8 +90,8 @@ def list_dir(directory):
     return [os.path.join(directory, s['file']) for s in seeds]
 
 
-def render_html(article, images):
-    """article + 已下好的图 → 一份自带全部图的 HTML。纯字符串处理。
+def render_html(article, images, quality=JPEG_QUALITY):
+    """article + 已下好的图 → 一份自带全部图的 HTML（图压成 JPEG 内嵌）。
 
     `images` 是 {url: (bytes, content_type)}；**取不到的图直接略过**
     （宁可少一张图，也不要在 Zotero 里留一个红叉）。
@@ -101,7 +108,7 @@ def render_html(article, images):
         if b['kind'] == 'p':
             out.append('<p>%s</p>' % _esc(b['text']))
         elif b['url'] in images:
-            data, ctype = images[b['url']]
+            data, ctype = shrink(*images[b['url']], quality=quality)
             out.append('<img src="data:%s;base64,%s">'
                        % (ctype, base64.b64encode(data).decode()))
     return ('<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">'
@@ -114,21 +121,22 @@ def _esc(s):
 
 
 def fetch_images(article, log=log.info):
-    """把一篇里的图都下下来 → {url: (bytes, ctype)}。单张失败只跳过它。"""
+    """把一篇里的图都下下来（**原样，不压**）→ {url: (bytes, ctype)}。
+
+    压缩留到渲染那一步做 —— 一篇太大要降质量重来时，得从原图重压，
+    对着压过一遍的图再压一遍只会越压越糊。
+    """
     got = {}
     urls = [b['url'] for b in article.get('blocks', []) if b['kind'] == 'img']
     for i, u in enumerate(urls, 1):
         try:
-            got[u] = shrink(*wechat_seed.fetch_image(u))
+            got[u] = wechat_seed.fetch_image(u)
         except Exception as e:
             log('  [跳过第%d张图] %s' % (i, e))
     return got
 
 
-JPEG_QUALITY = 82
-
-
-def shrink(data, ctype):
+def shrink(data, ctype, quality=JPEG_QUALITY):
     """一张图 → 体积小得多的 JPEG（尺寸不变，只换编码）。压不动就还用原图。
 
     **为什么必须压**：推文的配图是 1080 宽的 PNG，一篇十几张就是好几 MB，
@@ -144,7 +152,7 @@ def shrink(data, ctype):
             pix = fitz.Pixmap(fitz.csRGB, pix)     # CMYK / 灰度等 → RGB
         if pix.alpha:
             pix = fitz.Pixmap(pix, 0)              # JPEG 不能带透明通道
-        out = pix.tobytes('jpeg', jpg_quality=JPEG_QUALITY)
+        out = pix.tobytes('jpeg', jpg_quality=quality)
     except Exception:
         return data, ctype
     return (out, 'image/jpeg') if len(out) < len(data) else (data, ctype)
@@ -165,6 +173,14 @@ def build_local(key, article, images=None, force=False, log=print):
     if images is None:
         images = fetch_images(article, log=log)
     html = render_html(article, images)
+    if len(html) > MAX_HTML_BYTES and images:
+        # 图特别多的（综述能有 30 张）按默认质量压完还是太大，Zotero 会拒收。
+        # 从**原图**降质量重压一次，不是对着压过的再压。
+        smaller = render_html(article, images, quality=FALLBACK_QUALITY)
+        log('  [太大了] %d KB → %d KB（图片质量从 %d 降到 %d）'
+            % (len(html) // 1024, len(smaller) // 1024,
+               JPEG_QUALITY, FALLBACK_QUALITY))
+        html = smaller
     paths.paper_dir(key, create=True)
     with jobs.track(key, 'main_summary', producer=PRODUCER,
                     prompt_ver=PROMPT_VER, model=PRODUCER):
