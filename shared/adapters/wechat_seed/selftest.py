@@ -88,6 +88,52 @@ try:
 finally:
     shutil.rmtree(d, ignore_errors=True)
 
+print('== 8. 取正文：头尾的平台噪音与品牌图要被剥掉 ==')
+ART = """#  【ACS AMI】某某策略：某某弹性体！
+
+原创  PolyScientist  高分子学人
+
+_2026年08月17日 08:34_ __ _ _ 江苏  _
+
+在小说阅读器读本章
+
+去阅读
+
+![](https://mmbiz.qpic.cn/head/640?wx_fmt=png)
+
+近期，Xiaobo Wei, Dong
+Wang 等开发出一条温和路线，解决了强度与拉伸
+无法兼顾的老问题。
+
+![](https://mmbiz.qpic.cn/fig1/640?wx_fmt=png)
+
+总之，本论文的创新点在于某某。
+
+![](https://mmbiz.qpic.cn/card/640?wx_fmt=png)
+
+https://doi.org/  10.1021/acsami.6c10893
+
+![](https://mmbiz.qpic.cn/qrcode/640?wx_fmt=png)
+
+预览时标签不可点
+
+知道了
+"""
+a = ws.parse_article(ART)
+check('标题去掉井号', a['title'].startswith('【ACS AMI】'), a['title'])
+check('DOI 中间有空格也认得', a['doi'] == '10.1021/acsami.6c10893', a['doi'])
+check('推送日期', a['pubdate'] == '2026-08-17', a['pubdate'])
+imgs = [b['url'] for b in a['blocks'] if b['kind'] == 'img']
+check('头图被剥掉', not any('head' in u for u in imgs), str(imgs))
+check('二维码被剥掉（在 DOI 行之后）', not any('qrcode' in u for u in imgs), str(imgs))
+check('文献配图留下了', any('fig1' in u for u in imgs), str(imgs))
+ps = [b['text'] for b in a['blocks'] if b['kind'] == 'p']
+check('署名/日期/平台按钮都不算正文', all('去阅读' not in t and '原创' not in t for t in ps))
+check('英文折行用空格接回', 'Xiaobo Wei, Dong Wang' in ps[0], ps[0][:40])
+check('中文折行不加空格', '强度与拉伸无法兼顾' in ps[0], ps[0][-30:])
+check('段落按图切开', len(ps) == 2, str(len(ps)))
+
+
 print('')
 print('全部通过' if ok else '有失败项')
 sys.exit(0 if ok else 1)

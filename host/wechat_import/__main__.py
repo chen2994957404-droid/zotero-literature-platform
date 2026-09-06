@@ -1,0 +1,77 @@
+# -*- coding: utf-8 -*-
+"""把公众号推送导进 Zotero，并把推文本身当正文精读装上。
+
+用法:
+    python -m host.wechat_import --dir <公众号md目录> --dry-run       # 先看会导哪些
+    python -m host.wechat_import --file <某篇.md>                     # 导一篇
+    python -m host.wechat_import --dir <目录> --limit 5               # 导前 5 篇
+    python -m host.wechat_import --dir <目录> --limit 5 --with-pdf    # 连正文PDF一起取
+
+**会写 Zotero**（建条目、传附件、打标签），所以要么在主力机上跑，
+要么在配了测试账号的编程端跑。`--dry-run` 不写任何东西，只告诉你会发生什么。
+
+`--with-pdf` 需要那台机器上开着「取全文用的浏览器」（见 tools/getpdf）。
+不开也能跑，只是条目先没有正文 PDF，以后随时能补。
+"""
+import os, sys
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
+from shared.kernel import role
+from shared.kernel.cli import flag, opt, wants_help
+
+from host import wechat_import as wi
+
+
+def _targets():
+    d, f = opt('--dir'), opt('--file')
+    if f:
+        return [f]
+    if not d:
+        return []
+    return [os.path.join(d, n) for n in sorted(os.listdir(d))
+            if n.lower().endswith('.md')]
+
+
+def main():
+    if wants_help() or not (opt('--dir') or opt('--file')):
+        print(__doc__)
+        return 0
+    files = _targets()
+    limit = int(opt('--limit') or 0)
+    if limit:
+        files = files[:limit]
+    if not files:
+        print('没找到 .md 文件')
+        return 1
+
+    if flag('--dry-run'):
+        print('【试跑】不写任何东西。共 %d 篇：' % len(files))
+        for p in files:
+            a = wi.parse_md(p)
+            n_img = sum(1 for b in a['blocks'] if b['kind'] == 'img')
+            n_txt = sum(len(b.get('text', '')) for b in a['blocks'])
+            print('  %-9s %d字 %d图  %s' % (a['doi'] or '(没DOI)', n_txt, n_img,
+                                            a['title'][:40]))
+        return 0
+
+    role.require_prod('把公众号精读导进 Zotero（建条目、传附件、打标签）',
+                      force=flag('--force'))
+    res = wi.import_many(files, purpose=opt('--purpose') or '建库',
+                         with_pdf=flag('--with-pdf'), force=flag('--force'))
+    ok = [r for r in res if r['key']]
+    print('\n完成：%d/%d 篇进库（新建 %d，本来就有 %d）'
+          % (len(ok), len(res),
+             sum(1 for r in res if r['action'] == 'created'),
+             sum(1 for r in res if r['action'] == 'exists')))
+    for r in res:
+        if not r['key']:
+            print('  未处理 %s —— %s' % (r['file'][:40], r['note']))
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

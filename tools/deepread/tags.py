@@ -21,8 +21,13 @@ TRIGGER_TAGS = ['待处理', '待精读']
 TAG_MAIN = '正文精读'                      # 只有正文被精读
 TAG_SI = 'SI精读'                          # 只有SI被精读（罕见，备用）
 TAG_FULL = '全文精读'                      # 正文+SI 都精读了
+# 正文来自公众号推送（人写的），不是我们跑的（用户 2026-09-06 定）。
+# 单独一个标签，是为了以后随时能把「人写的」和「机器写的」调出来对照 ——
+# 精读评测集也靠它把外来的那批排除在外。
+TAG_MAIN_WX = '正文精读·公众号'
 TAG_NOPDF = '无附件'                       # 没找到可精读的PDF（提示用户，而非静默跳过）
-ALL_STATE_TAGS = [TRIGGER_TAG, TAG_MAIN, TAG_SI, TAG_FULL, TAG_NOPDF, '待精读', '已精读']
+ALL_STATE_TAGS = [TRIGGER_TAG, TAG_MAIN, TAG_MAIN_WX, TAG_SI, TAG_FULL, TAG_NOPDF,
+                  '待精读', '已精读']
 
 # 「实际做成了什么」→ Zotero 状态标签。**这个映射只能在这一层**：
 # 编排（`tools.deepread.run`）不知道 Zotero 有什么标签，它只陈述事实。

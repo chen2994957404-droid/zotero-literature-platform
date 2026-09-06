@@ -13,9 +13,17 @@
   因为它依赖的公众号后台搜索接口被官方关停。目前能用的下载工具只剩一条路。
 - 下载工具的说明写着「仅供学习交流，24 小时内删除」。
 
-所以本块**只从 md 里提取 DOI + 推送日期，正文提完即弃**：
-方向库建在 OpenAlex 的 DOI 上，不建在微信上。明天工具挂了，
-换掉这一个文件就行，地图照常运转。
+所以**方向库只吃 DOI + 推送日期**：库建在 OpenAlex 的 DOI 上，不建在微信上。
+明天工具挂了，换掉这一个文件就行，地图照常运转。
+
+## 2026-09-06 改：正文不再「提完即弃」
+
+用户定的：**推送正文本身就是一份高质量的中文正文精读**（我们自己的精读一直在
+照它学），既然取 PDF 的通道通了，就反过来用 —— 推文当正文精读，我们只补 SI。
+于是本块多了 `parse_article()` / `fetch_image()`。
+
+边界没变：**只有被显式导入的那几篇才会落盘**（`host/wechat_import`），
+批量扫描仍然只吃 DOI。方向库那条线一个字都没动。
 
 ## 实测数据（835 篇，2025-01-28 ~ 2026-08-28）
 
@@ -30,11 +38,13 @@
    （`_2026年8月1日 09:46_`），所以日期只能从正文抓。
 
 对外接口：
-    scan(dir)        → [{file, doi, pubdate, journal_hint}]，按文件名排序
-    extract(text)    → (doi, pubdate)，单篇，纯函数便于测试
+    scan(dir)          → [{file, doi, pubdate, journal_hint}]，按文件名排序
+    extract(text)      → (doi, pubdate)，单篇，纯函数便于测试
+    parse_article(t)   → {title, doi, pubdate, blocks}，整篇拆成段落 + 图（纯函数）
+    fetch_image(url)   → (bytes, content_type)，**本块唯一联网的函数**
 
-依赖：标准库。**本块不联网** —— 它读的是别人下载好的本地文件。
-（放在 adapters 环是因为它是「外部世界的形状」的适配点，不是因为它联网。）
+依赖：标准库。除 `fetch_image` 外都不联网 —— 读的是别人下载好的本地文件。
+（放在 adapters 环，本来就是因为它是「外部世界的形状」的适配点。）
 """
 import io
 import os
@@ -121,3 +131,121 @@ def stats(seeds):
             'doi_rate': (with_doi / n) if n else 0.0,
             'unique_doi': len(set(s['doi'] for s in seeds if s['doi'])),
             'earliest': dates[0] if dates else '', 'latest': dates[-1] if dates else ''}
+
+
+# ── 取正文（2026-09-06 加）───────────────────────────────────────────
+# 起因：推送本身就是一份高质量的中文正文精读，用户决定直接拿来当正文精读用。
+# 于是本块的职责从「只提 DOI」扩到「把一篇推送拆成标题 + 段落 + 图」。
+# 仍然只认**外部世界的形状**：微信改排版就只改这里。
+
+# 平台自己的噪音行（实测量出来的，不是猜的）。整行完全等于才算，避免误伤正文。
+_JUNK_LINES = frozenset([
+    '在小说阅读器读本章', '去阅读', '预览时标签不可点', '阅读', '知道了',
+    '取消  允许', '取消 允许', '继续滑动看下一个', '轻触阅读原文',
+    '向上滑动看下一个', '****', '__', '', '_ _',
+])
+_IMG = re.compile(r'^!\[[^\]]*\]\(([^)\s]+)')
+# 署名行：`原创  X  Y  公众号名` / 日期行：`_2026年08月17日 08:34_ ...`
+_BYLINE = re.compile(r'^(原创\s|_\d{4}年)')
+
+
+def _is_junk(line):
+    s = line.strip()
+    return (s in _JUNK_LINES) or bool(_BYLINE.match(s)) or set(s) <= set('_ *')
+
+
+def _join(lines):
+    """把被硬折行的一段拼回一句：两边都是 ASCII 才补空格（中文之间不补）。"""
+    out = ''
+    for ln in lines:
+        ln = ln.strip()
+        if not out:
+            out = ln
+            continue
+        if out[-1].isascii() and ln[:1].isascii():
+            out += ' ' + ln
+        else:
+            out += ln
+    return out
+
+
+def parse_article(text):
+    """一篇推送的 md → dict(title, doi, pubdate, blocks)。
+
+    `blocks` 是按原顺序的正文流：`{'kind':'p','text':...}` 或 `{'kind':'img','url':...}`。
+
+    **头尾的平台噪音与品牌图会被剥掉**：正文从第一个实质段落开始，到写着 DOI
+    的那一行为止。这个边界是实测出来的 —— 公众号的头图、名片图、二维码都落在
+    这个区间之外，而文献配图全在区间之内。宁可少要几张图，不能把二维码当成图 3。
+    """
+    text = text or ''
+    doi, pubdate = extract(text)
+    lines = text.splitlines()
+    title = ''
+    for ln in lines:
+        if ln.startswith('#'):
+            title = ln.lstrip('#').strip()
+            break
+
+    # 终点：DOI 出现在哪一行（正文里也可能出现，取最后一次，那才是文末的出处行）
+    end = len(lines)
+    if doi:
+        for i, ln in enumerate(lines):
+            if doi in normalize_doi_line(ln):
+                end = i
+    raw, started = [], False
+    for ln in lines[:end]:
+        s = ln.strip()
+        if s.startswith('#') or _is_junk(s):
+            continue
+        m = _IMG.match(s)
+        if m:
+            if started:                      # 正文没开始 = 还在头图区，丢掉
+                raw.append(('img', m.group(1)))
+            continue
+        # 实质段落：去掉 md 的加粗记号后仍有内容
+        started = True
+        raw.append(('p', s.replace('**', '').strip()))
+
+    # 把连续的 p 行合并成段（空行已在 _JUNK_LINES 里被吃掉，所以按 img 切段）
+    blocks, buf = [], []
+    for kind, val in raw:
+        if kind == 'p':
+            buf.append(val)
+        else:
+            if buf:
+                blocks.append({'kind': 'p', 'text': _join(buf)})
+                buf = []
+            blocks.append({'kind': 'img', 'url': val})
+    if buf:
+        blocks.append({'kind': 'p', 'text': _join(buf)})
+    blocks = [b for b in blocks if b['kind'] == 'img' or len(b.get('text', '')) > 1]
+    return {'title': title, 'doi': doi, 'pubdate': pubdate, 'blocks': blocks}
+
+
+def normalize_doi_line(line):
+    """一行文本里的 DOI 归一后原样返回（找文末出处行用）。
+
+    单独一个函数是因为文末写的是 `https://doi.org/  10.1021/xxx`（**中间有空格**），
+    直接 `doi in line` 找不到。
+    """
+    return normalize_doi((line or '').replace('https://doi.org/', '').strip())
+
+
+def fetch_image(url, timeout=20):
+    """下载一张推文配图 → bytes。失败抛 SeedError（调用方决定是否跳过这张）。
+
+    实测（2026-09-06）：微信图床 `mmbiz.qpic.cn` **没有防盗链**，裸请求即 200。
+    所以这里不伪造 Referer —— 少一层将来会悄悄失效的假设。
+    """
+    import urllib.request
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = r.read()
+            ctype = r.headers.get('Content-Type', '')
+    except Exception as e:
+        raise SeedError('取图失败 %s: %s' % (url[:60], e)) from e
+    if not data or not ctype.startswith('image/'):
+        raise SeedError('取回来的不是图片（%s）: %s' % (ctype, url[:60]))
+    return data, ctype
