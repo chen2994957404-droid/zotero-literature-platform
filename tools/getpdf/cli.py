@@ -10,6 +10,10 @@
     python -m tools.getpdf --file dois.txt --limit 10    # 这次最多取 10 篇
     python -m tools.getpdf 10.1016/xxx --out D:/somewhere
 
+  收进 Zotero（会写你的库）:
+    python -m tools.getpdf --file dois.txt --to-zotero             # 默认「建库」用途
+    python -m tools.getpdf 10.1016/xxx --to-zotero --purpose 精读   # 标成重点文章
+
 **跑之前**：那台机器上要有一个带调试口启动的浏览器，**里面得有人过过一次人机验证**
 （机构订阅靠出口 IP 自动生效，不用登录；人机验证的通行证跟着浏览器的用户资料走）。
 专开一个就行，别跟日常那个抢 —— 双击 `launch/取全文用的浏览器.bat`，或者：
@@ -19,6 +23,11 @@
 
 默认很慢（每篇间隔 20 秒、单次最多 25 篇），这是**故意的**：
 出版商封的是整个机构的 IP，代价全校担。要快请自己显式加 --gap / --limit。
+
+`--to-zotero` 做四件事，每件都**幂等**（同一批跑两遍 = 跑一遍）：
+查库里有没有 → 没有就按 Crossref 元数据建条目 → 挂正文 PDF（已有就不重复挂）
+→ 放进「<顶层合集>/建库用」或「/重点精读」。
+**不打精读标签、不触发精读** —— 那是花钱的事，什么时候开始由你决定。
 """
 import os, sys
 # 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
@@ -30,6 +39,7 @@ except Exception:
 import io
 
 from shared.adapters import pdf_fetch
+from shared.kernel import role
 from shared.kernel.cli import flag, opt, positionals, wants_help
 from tools import getpdf
 
@@ -77,6 +87,17 @@ def main():
     gap = int(opt('--gap') or getpdf.GAP)
     limit = int(opt('--limit') or getpdf.LIMIT)
 
+    to_zotero = flag('--to-zotero')
+    purpose = opt('--purpose') or '建库'
+    if to_zotero:
+        if purpose not in getpdf.PURPOSES:
+            print(f'--purpose 只能是 {" / ".join(getpdf.PURPOSES)}，'
+                  f'给的是「{purpose}」')
+            return 2
+        # 写 Zotero 是不可逆的副作用 —— 守卫写在函数体里，不能写模块顶层（红线 #7）
+        role.require_prod('把文献收进你的 Zotero 库（建条目、挂 PDF、归合集）',
+                          force=flag('--force'))
+
     p = getpdf.probe()
     if not p['ok']:
         print(f'浏览器连不上（{p["cdp"]}），先跑 --probe 看怎么办。')
@@ -105,4 +126,38 @@ def main():
     if any(r['reason'] == 'captcha' for r in results):
         print('\n⚠ 停在人机验证上了。去那个浏览器里点一下通过，再跑一次同样的命令 ——'
               '\n  已经拿到的不会重下，会接着没取到的往下走。')
+
+    if to_zotero:
+        _stash_all(results, purpose)
     return 0
+
+
+def _stash_all(results, purpose):
+    """把拿到的那些收进 Zotero，逐篇报告。"""
+    got = [r for r in results if r['ok'] and r['path']]
+    if not got:
+        print('\n没有可以收进 Zotero 的（这批一篇都没拿到）。')
+        return
+    sub, why = getpdf.PURPOSES[purpose]
+    print(f'\n收进 Zotero → 「{getpdf.collection_top()}/{sub}」（{why}）')
+
+    words = {'created': '新建了条目并挂上 PDF', 'attached': '条目本来就有，补了 PDF',
+             'exists': '本来就在库里', 'failed': '没成'}
+    print('  先取一份全库 DOI 索引用来查重…')
+    index = getpdf.doi_index()
+    print(f'  库里现有 {len(index)} 篇带 DOI 的文献')
+    col = getpdf.ensure_tree(purpose)
+    counts = {}
+    for i, r in enumerate(got, 1):
+        s = getpdf.stash(r['doi'], r['path'], purpose=purpose,
+                         col_key=col, index=index)
+        counts[s['action']] = counts.get(s['action'], 0) + 1
+        mark = '✓' if s['ok'] else '×'
+        note = f'  （{s["note"]}）' if s['note'] else ''
+        print(f'  [{i}/{len(got)}] {mark} {s["doi"]}  '
+              f'{words.get(s["action"], s["action"])}{note}')
+
+    print('\n入库结果：')
+    for a, n in sorted(counts.items(), key=lambda kv: -kv[1]):
+        print(f'  {n} 篇 · {words.get(a, a)}')
+    print('\n没有打精读标签，也没有触发精读 —— 要精读的话你在 Zotero 里打「待处理」。')

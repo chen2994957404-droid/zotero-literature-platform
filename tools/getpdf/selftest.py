@@ -68,6 +68,37 @@ def main():
         print(f'  [FAIL] 默认值太激进：GAP={getpdf.GAP} LIMIT={getpdf.LIMIT}')
 
     total += 1
+    # 用途 → 合集名的表，和它在别处被引用的名字，必须对得上
+    if (set(getpdf.PURPOSES) == {'建库', '精读'}
+            and all(len(v) == 2 and v[0] and v[1] for v in getpdf.PURPOSES.values())):
+        print('  [PASS] 用途表完整（建库 / 精读，各带合集名与说明）'); ok += 1
+    else:
+        print(f'  [FAIL] 用途表不对：{getpdf.PURPOSES}')
+
+    total += 1
+    # 用途写错了要当场拦住，不能默默收到某个合集里去
+    try:
+        getpdf.ensure_tree('随便编一个')
+        print('  [FAIL] 乱写的用途没被拦住')
+    except ValueError:
+        print('  [PASS] 用途写错了会当场拦住'); ok += 1
+    except Exception as e:
+        print(f'  [FAIL] 抛的不是 ValueError，是 {type(e).__name__}')
+
+    total += 1
+    # 查重必须走全库 DOI 索引，不能按篇去搜（2026-09-05 实测：按篇搜连建三个重复条目）。
+    # ⚠ 这里查的是**正面行为**（有没有用索引），不是「某个字符串在不在」——
+    # 头一版写成「源码里不许出现 qmode=everything」，结果匹配到了文档字符串里
+    # 那句「别用 q 搜索」的警告，自己把自己判红了。
+    # 判据要盯着行为，别盯着字面，否则连解释都不敢写在代码里。
+    src = io.open(os.path.join(os.path.dirname(__file__), '__init__.py'),
+                  encoding='utf-8').read()
+    if 'def doi_index' in src and 'index.get(' in src:
+        print('  [PASS] 查重走全库 DOI 索引，不是按篇去搜'); ok += 1
+    else:
+        print('  [FAIL] 查重没走索引 —— 按篇搜会漏掉刚写进去的，于是建重复条目')
+
+    total += 1
     c = getpdf.summarize([{'reason': 'ok'}, {'reason': 'ok'}, {'reason': 'no_access'}])
     if c == {'ok': 2, 'no_access': 1}:
         print('  [PASS] 结果汇总'); ok += 1

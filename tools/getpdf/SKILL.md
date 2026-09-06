@@ -1,6 +1,6 @@
 ---
 name: getpdf
-description: 一批 DOI → 把正文 PDF 取到手（借真实浏览器，用机构订阅权限）。什么时候用：用户说「把这几篇下下来」「discover 找出来的这批我要正文」；某篇要精读但库里没有 PDF；你手上有 DOI，缺的是全文
+description: 一批 DOI → 正文 PDF 到手，可直接收进 Zotero（借真实浏览器，用机构订阅权限）。什么时候用：用户说「把这几篇下下来」「discover 找出来的这批我要正文」；某篇要精读但库里没有 PDF；你手上有 DOI，缺的是全文
 ---
 
 # getpdf · 把正文弄到手
@@ -29,7 +29,28 @@ python -m tools.getpdf --probe                    # 先确认浏览器在
 python -m tools.getpdf 10.1016/j.cej.2025.164092  # 取一篇
 python -m tools.getpdf --file dois.txt            # 一批，一行一个
 python -m tools.getpdf --file dois.txt --gap 30 --limit 10
+
+# 顺手收进 Zotero（**会写用户的库**）
+python -m tools.getpdf --file dois.txt --to-zotero              # 默认「建库」用途
+python -m tools.getpdf 10.1016/xxx --to-zotero --purpose 精读    # 标成重点文章
 ```
+
+## `--to-zotero` 做什么
+
+四件事，**每件都幂等**（同一批跑两遍 = 跑一遍）：
+
+1. 取一份全库 DOI 索引查重（**不是按篇去搜** —— 按篇搜查不到刚写进去的，会建重复）
+2. 库里没有 → 按 Crossref 元数据建条目，打上 `来源/自动` + `用途/建库`（或 `用途/精读`）
+3. 挂正文 PDF；已经有 PDF 附件就不重复挂
+4. 放进「`LLM导入`/`建库用`」或「`LLM导入`/`重点精读`」
+
+**不打精读标签、不触发精读。** 那是花钱的事，什么时候开始由用户决定
+（他在 Zotero 里打「待处理」，watcher 会接手）。
+
+合集名可以在控制面板改（`GETPDF_COLLECTION_TOP`），改了不用动代码。
+
+**为什么用途用合集、状态用标签**：进库原因是进来时就定了的、基本不变，适合合集；
+处理状态会变（待处理 → 正文精读 → 全文精读 → 读完），而且 watcher 认的就是标签。
 
 ## 跑之前必须成立的两件事
 
@@ -58,8 +79,11 @@ python -m tools.getpdf --file dois.txt --gap 30 --limit 10
 | `not_pdf` | 拿回来的不是 PDF | 多半是 captcha 的变种 |
 | `exists` | 盘上已经有了 | 正常，跳过 |
 
-## 现在还不做的事
+## 存储上的一条硬约束
 
-**不写 Zotero。** PDF 落在 `data/raw/_incoming/getpdf/`，还得人工导进去。
-原因是 `zotero_client` 目前只读，没有建条目/挂附件的能力 ——
-那要新加适配件，是下一步，不在这里凑合。
+附件走的是 **Zotero 官方存储，免费只有 300 MB**（用户的文件同步虽然走坚果云 WebDAV，
+但 API 上传进的是 Zotero 存储）。PDF 一篇 1～9 MB，**几十篇就满**。
+
+所以批量导入之前值得先看一眼用户的存储余量（zotero.org → Settings → Storage）。
+满了的长期解法有两条：升级 Zotero 存储，或者改成「链接文件 + 云盘同步文件夹」
+（后者不占任何云配额，但手机 App 看不到 PDF）。

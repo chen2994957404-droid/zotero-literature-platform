@@ -7,8 +7,7 @@
 **它不负责的事**（都是刻意的）：
   - 怎么拿到 PDF → `shared.adapters.pdf_fetch`（借真实浏览器，见那块的 CLAUDE.md）
   - 元数据 → `shared.adapters.crossref`
-  - 写进 Zotero → **还没做**。`zotero_client` 目前是只读的，没有建条目/挂附件的能力，
-    那是下一步要新加的适配件，不是这里凑合。所以本工具现在只把 PDF 落到磁盘。
+  - 写进 Zotero → `shared.adapters.zotero_client`（`--to-zotero` 时才碰）
 
 **为什么默认慢**：出版商对短时间大量下载有风控，被掐的是**整个机构的 IP**，
 不是某个账号 —— 代价由全校承担。所以 `GAP` 和 `LIMIT` 的默认值取保守值，
@@ -18,6 +17,8 @@
   - probe()                       → 浏览器在不在 → dict
   - fetch_many(dois, ...)         → 逐篇取，返回每篇的结果 dict 列表
   - safe_name(doi)                → DOI → 能当文件名的样子
+  - doi_index()                   → 全库 DOI → 条目 key，查重用
+  - stash(doi, pdf, purpose)      → 收进 Zotero（查重 → 建条目 → 挂 PDF → 归合集）
 """
 import io
 import os
@@ -112,3 +113,142 @@ def summarize(results):
     for r in results:
         counts[r['reason']] = counts.get(r['reason'], 0) + 1
     return counts
+
+
+# ── 收进 Zotero ────────────────────────────────────────────────────────────
+# 这一段是「有副作用」的那一半：会往用户真实的库里写东西。
+# 每一步都做成**幂等**的 —— 同一批 DOI 跑两遍，结果必须跟跑一遍一样。
+# 不幂等的后果不是「白跑」，是库里多出一堆重复条目，而重复条目**只能人工合并**
+# （删掉一个会丢掉它身上的合集和标签，这是 Zotero 的已知行为）。
+
+# 合集名字走 config，用户可以在控制面板改，改了不用动代码（红线 #3）。
+DEFAULT_TOP = 'LLM导入'
+PURPOSES = {
+    '建库': ('建库用', '只解析 + 向量化，补数据库用，不精读'),
+    '精读': ('重点精读', '向量化基础上还要精读的重点文章'),
+}
+
+
+def collection_top():
+    """自动导入的顶层合集名。"""
+    from shared.kernel import config
+    return config.get_key('GETPDF_COLLECTION_TOP', default='') or DEFAULT_TOP
+
+
+def doi_index(limit=100):
+    """全库的 DOI → 条目 key（小写键）。**一次取回，整批复用。**
+
+    ⚠ **别用 API 的 `q=<doi>&qmode=everything` 查重**（2026-09-05 实测栽过）：
+    连着三次导入同一个 DOI，建出了三个条目。两个原因叠在一起 ——
+    `q` 不是按字段精确匹配，而且它的索引**查不到刚写进去的东西**。
+    查重要么准，要么就别叫查重：不准的查重比没有更糟，
+    因为它会让人以为重复问题已经解决了。
+
+    问云端不问本地：本地 API 反映的是桌面端已经同步下来的状态，滞后几分钟
+    （踩坑 #64）。自己刚写上去的东西，只能问权威方。
+    """
+    from shared.adapters.zotero_client import _web
+    out, start = {}, 0
+    while True:
+        batch = _web.zweb(f'/items/top?limit={int(limit)}&start={start}'
+                          f'&format=json')
+        if not batch:
+            break
+        for it in batch:
+            d = it.get('data') or it
+            doi = (d.get('DOI') or '').strip().lower()
+            if doi and doi not in out:
+                out[doi] = d.get('key')
+        if len(batch) < limit:
+            break
+        start += limit
+    return out
+
+
+def ensure_tree(purpose, force=False):
+    """确保「<顶层>/<用途>」这棵合集树在，返回用途那一层的 key。"""
+    from shared.adapters.zotero_client import _web
+    if purpose not in PURPOSES:
+        raise ValueError(f'用途只能是 {list(PURPOSES)} 之一，给的是 {purpose!r}')
+    sub, _ = PURPOSES[purpose]
+    cols = _web.list_collections()          # 取一次，两步复用，少发一次请求
+    top = _web.ensure_collection(collection_top(), None,
+                                 action=f'建合集「{collection_top()}」',
+                                 force=force, cols=cols)
+    return _web.ensure_collection(sub, top,
+                                  action=f'建合集「{collection_top()}/{sub}」',
+                                  force=force, cols=cols)
+
+
+def stash(doi, pdf_path, purpose='建库', col_key=None, index=None, force=False):
+    """把一篇收进 Zotero → dict(doi, ok, action, item, note)。
+
+    `action` 说明这次到底做了什么，四种：
+      - `created`  新建了条目并挂了 PDF
+      - `attached` 条目本来就有，只补了 PDF
+      - `exists`   条目和 PDF 都已经有了，什么都没做
+      - `failed`   出错了，note 里是原因
+
+    **不打精读标签、不触发精读** —— 那是花钱的事，由用户自己决定什么时候开始。
+    """
+    from shared.adapters import crossref
+    from shared.adapters.zotero_client import _web
+
+    sub, _ = PURPOSES[purpose]
+    out = {'doi': doi, 'ok': False, 'action': 'failed', 'item': '', 'note': ''}
+    try:
+        col_key = col_key or ensure_tree(purpose, force=force)
+        # 整批共用一份索引：既省请求，也让**这一批里的重复**当场就被认出来
+        if index is None:
+            index = doi_index()
+        key = index.get(doi.strip().lower())
+
+        if not key:
+            m = crossref.work(doi)
+            item = crossref.to_zotero_item(
+                m, tags=['来源/自动', f'用途/{purpose}'])
+            item['collections'] = [col_key]
+            r = _web.create_items([item], action=f'新建条目：{doi}', force=force)
+            key = r['successful']['0']['key']
+            index[doi.strip().lower()] = key    # 同一批后面再遇到就认得出来了
+            out['action'] = 'created'
+        else:
+            _web.add_to_collection(key, col_key,
+                                   action=f'把 {doi} 放进「{sub}」', force=force)
+            out['action'] = 'exists'
+        out['item'] = key
+
+        # 挂 PDF。**已经有就不重复挂** —— 附件重复比条目重复更难收拾：
+        # 条目重复还能合并，附件重复只能一个个删，而且删错了文件就没了。
+        if not (pdf_path and os.path.exists(pdf_path)):
+            out['note'] = '没有 PDF 可挂（只收了元数据）'
+        elif _has_pdf_child(key):
+            out['note'] = '已有 PDF 附件，没重复挂'
+        else:
+            _web.upload_attachment(key, pdf_path, 'Full Text PDF',
+                                   action=f'给 {doi} 挂正文 PDF', force=force)
+            if out['action'] == 'exists':
+                out['action'] = 'attached'
+
+        out['ok'] = True
+        log.info(f'{doi} → {out["action"]} {key}')
+    except Exception as e:
+        out['note'] = f'{type(e).__name__}: {e}'
+        log.info(f'{doi} 收进库失败：{out["note"]}')
+    return out
+
+
+def _has_pdf_child(item_key):
+    """这个条目下面已经有 PDF 附件了吗（问云端，理由同 find_by_doi）。"""
+    from shared.adapters.zotero_client import _web
+    try:
+        kids = _web.zweb(f'/items/{item_key}/children?format=json')
+    except Exception:
+        return False
+    for c in kids or []:
+        d = c.get('data') or c
+        if d.get('itemType') != 'attachment':
+            continue
+        if 'pdf' in (d.get('contentType') or '').lower():
+            return True
+    return False

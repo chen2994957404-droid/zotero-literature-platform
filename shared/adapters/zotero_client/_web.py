@@ -162,6 +162,79 @@ def replace_tags(item_key, tags, action='更新 Zotero 标签', force=False, log
     return patch_item(item_key, {'tags': tags}, action=action, force=force, log=log)
 
 
+def list_collections(limit=100):
+    """云端的全部合集（原始条目）。**问权威方，不问本地 API** —— 理由同 `zweb`：
+    本地 API 反映的是桌面端已经同步下来的状态，刚建的合集在那里查不到，
+    于是会重复建一个同名的。
+    """
+    out, start = [], 0
+    while True:
+        batch = _call(f'/collections?limit={int(limit)}&start={start}')
+        if not batch:
+            break
+        out.extend(batch)
+        if len(batch) < limit:
+            break
+        start += limit
+    return out
+
+
+def find_collection(name, parent_key=None, cols=None):
+    """按名字找合集 → key 或 None。`parent_key=None` 表示顶层。
+
+    同名合集在不同父级下是不同的东西（「建库用」可以既在 A 下又在 B 下），
+    所以**必须连父级一起比**，只比名字会张冠李戴。
+    """
+    for c in (cols if cols is not None else list_collections()):
+        d = c.get('data') or c
+        if (d.get('name') or '') != name:
+            continue
+        parent = d.get('parentCollection') or None
+        if parent is False:
+            parent = None
+        if parent == parent_key:
+            return d.get('key')
+    return None
+
+
+def ensure_collection(name, parent_key=None, action='在 Zotero 里建合集',
+                      force=False, cols=None):
+    """找不到就建，返回 key。**幂等** —— 重复调用不会建出第二个同名合集。
+
+    幂等在这里不是洁癖：这个函数会被每一批导入调用，不幂等的话
+    跑十次就多出十个「LLM导入」，而合集一旦乱了，人要一个个手工合并。
+    """
+    key = find_collection(name, parent_key, cols=cols)
+    if key:
+        return key
+    role.require_prod(action, force=force)
+    payload = [{'name': name,
+                'parentCollection': parent_key if parent_key else False}]
+    r = _call('/collections', 'POST',
+              json.dumps(payload, ensure_ascii=False).encode('utf-8'),
+              {'Content-Type': 'application/json'})
+    return r['successful']['0']['key']
+
+
+def add_to_collection(item_key, collection_key,
+                      action='把条目放进合集', force=False):
+    """把已有条目加进一个合集。**不会从别的合集里移走** ——
+    Zotero 的条目可以同时属于多个合集（像歌单，不像文件夹），这是它的正常语义。
+    """
+    role.require_prod(action, force=force)
+    it = get_item(item_key)
+    d = it.get('data') or it
+    cols = list(d.get('collections') or [])
+    if collection_key in cols:
+        return False                      # 已经在里面了，别白发一次请求
+    cols.append(collection_key)
+    # 版本号交给 patch_item 自己取 —— 它每次重试都重取一遍做乐观锁。
+    # 在这里塞一个 version 进去反而是在**改 version 这个字段**，不是加锁。
+    patch_item(item_key, {'collections': cols},
+               action=action, force=True)   # 上面已经过了守卫，别问第二遍
+    return True
+
+
 def upload_attachment(parent_key, filepath, display_name,
                       action='上传附件到 Zotero', force=False):
     """把本地文件作为附件传到某条文献下，返回附件 key。
