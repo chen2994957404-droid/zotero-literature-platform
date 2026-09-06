@@ -52,7 +52,7 @@ python -m tools.getpdf --file dois.txt --to-zotero --with-si    # 连补充材�
 |---|---|---|
 | Elsevier | `mmc1.docx`(12MB) · `mmc2.mp4` · `mmc3.mp4` | mmc1 |
 | Wiley | `...sup-0001-SuppMat.pdf` · `...sup-0001-MovieS1.mp4` | SuppMat |
-| ACS | 文章页只给 `/doi/suppl/<doi>` 入口 | **要再进一层** |
+| ACS | 文章页只给一个锚点，二级页会重定向回文章页 | **⚠ 目前取不到**（见 INCIDENTS 10）|
 
 附件标题固定用 **`SI`** —— 跟库里已有的一致，而且 `deepread` 找 SI 认的就是这个名字。
 SI 允许 `.docx`（实测库里 19 pdf + 13 docx，docx 占四成），但永远不收 HTML。
