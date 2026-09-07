@@ -102,7 +102,15 @@ def tier_of(source, overrides=None):
 
 
 def _dois_by_key(keys=None):
-    """{key: doi}。刊名不在 meta.json 里（只有 DOI），所以得走 OpenAlex 反查。"""
+    """{key: doi}。刊名不在任何本地文件里（只有 DOI），所以得走 OpenAlex 反查。
+
+    **DOI 有两个来源，都要看**（2026-09-07 实测补的）：
+      · `curated/<key>/meta.json` —— 精读线产出的，只有精读过的篇才有
+      · `structured/<key>.json` 与 `abstracts/<Wxxx>.json` —— 抽取产出的，覆盖广得多
+
+    只看前者时，188 篇的库里只有 51 篇查得到刊 —— 粗层那些篇（从 Zotero 全文索引抽的）
+    压根没有 meta.json。而它们的 DOI 明明就在结构化记录里躺着。
+    """
     out = {}
     for key in (keys or paths.all_keys()):
         p = paths.meta(key)
@@ -115,6 +123,21 @@ def _dois_by_key(keys=None):
         doi = (d.get('DOI') or '').strip()
         if doi:
             out[key] = doi
+    if keys:
+        return out
+    for folder in (paths.STRUCTURED, paths.ABSTRACTS):
+        if not os.path.isdir(folder):
+            continue
+        for f in sorted(os.listdir(folder)):
+            if not f.endswith('.json'):
+                continue
+            try:
+                d = json.load(io.open(os.path.join(folder, f), encoding='utf-8'))
+            except Exception:
+                continue
+            k, doi = d.get('key'), (d.get('doi') or '').strip()
+            if k and doi and k not in out:
+                out[k] = doi
     return out
 
 
