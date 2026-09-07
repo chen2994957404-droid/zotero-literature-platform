@@ -57,7 +57,7 @@ PRODUCER = 'extract_structured'
 
 # 系统提示词（怎么跟模型说话）在这里；字段清单（抽什么）在 shared.domain.schema。
 # 改措辞 = 新建 prompts/main_v2.txt 再把这里改成 @v2（提示词只增不改）。
-SYS = prompts.load('extract', 'main@v2')
+SYS = prompts.load('extract', 'main@v3')
 EVAL_SYS = prompts.load('extract', 'eval@v1')
 
 # 自检开关：默认开（质量增强），设 EXTRACT_NO_EVAL=1 关掉省钱

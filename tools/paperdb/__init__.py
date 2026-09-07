@@ -58,7 +58,8 @@ _FIELDS = list(schema.SCHEMA.keys())
 
 _PAPER_COLS = (['key', 'title', 'doi', 'tier', 'source', 'si_used', 'schema_ver',
                 'is_review', 'journal', 'issn', 'journal_tier', 'publisher'] + _FIELDS)
-_SAMPLE_COLS = ['key', 'sample_id', 'composition', 'preparation', 'dynamic_bond', 'role']
+_SAMPLE_COLS = ['key', 'sample_id', 'composition', 'preparation', 'dynamic_bond',
+                'role', 'application']
 _MEAS_COLS = ['key', 'sample_id', 'name', 'raw_name', 'value', 'value_max', 'unit',
               'cmp', 'condition', 'location', 'section', 'method', 'raw']
 _CURVE_COLS = ['key', 'fig', 'series', 'chart_type', 'x_label', 'x_unit', 'y_label',
@@ -87,6 +88,7 @@ CREATE TABLE IF NOT EXISTS samples (
   preparation  TEXT,
   dynamic_bond TEXT,
   role         TEXT,
+  application  TEXT,
   PRIMARY KEY (key, sample_id)
 );
 CREATE TABLE IF NOT EXISTS measurements (
@@ -204,20 +206,34 @@ def _flat(v):
     return str(v)
 
 
-def _records():
-    """读回全部结构化记录（坏 JSON 跳过，不让一个坏文件毁掉整库）。"""
+def _read_dir(d):
+    """读回一个目录里的记录（坏 JSON 跳过，不让一个坏文件毁掉整库）。"""
     out = []
-    if not os.path.isdir(paths.STRUCTURED):
+    if not os.path.isdir(d):
         return out
-    for f in sorted(os.listdir(paths.STRUCTURED)):
+    for f in sorted(os.listdir(d)):
         if not f.endswith('.json'):
             continue
         try:
-            out.append(json.load(io.open(os.path.join(paths.STRUCTURED, f),
-                                         encoding='utf-8')))
+            out.append(json.load(io.open(os.path.join(d, f), encoding='utf-8')))
         except Exception:
             continue
     return out
+
+
+def _records():
+    """读回全部记录：**细节层 + 方向层**。
+
+    两个来源、同一种格式（`shared.domain.schema` 的 samples/measurements）：
+      · `structured/<8位key>.json`  —— 库里的文献，读的是全文（+SI）
+      · `abstracts/<Wxxx>.json`     —— 公开文献，读的只有摘要（`tier='摘要'`）
+
+    **住进同一张表是刻意的**（2026-09-07 用户拍板）：方向层与细节层此前是
+    两个互不相干的库，于是「这个策略在方向层反复出好数字，但我们没有全文」
+    这种最有价值的问题没人答得了。现在它只是一句 SQL：
+    `tier='摘要'` 的那些数值里挑高的，就是**该去取全文的清单**。
+    """
+    return _read_dir(paths.STRUCTURED) + _read_dir(paths.ABSTRACTS)
 
 
 _MEAS_COLS = ['key', 'sample_id', 'name', 'raw_name', 'value', 'value_max', 'unit',
@@ -309,9 +325,9 @@ def rebuild(records=None, log=print):
     jour = _journals()
     sql = ('INSERT OR REPLACE INTO papers (' + ','.join(f'"{c}"' for c in cols)
            + ') VALUES (' + ','.join('?' * len(cols)) + ')')
-    sql_s = ('INSERT OR REPLACE INTO samples '
-             '(key,sample_id,composition,preparation,dynamic_bond,role)'
-             ' VALUES (?,?,?,?,?,?)')
+    sql_s = ('INSERT OR REPLACE INTO samples ('
+             + ','.join(_SAMPLE_COLS) + ') VALUES ('
+             + ','.join('?' * len(_SAMPLE_COLS)) + ')')
     sql_m = ('INSERT INTO measurements (' + ','.join(f'"{c}"' for c in _MEAS_COLS)
              + ') VALUES (' + ','.join('?' * len(_MEAS_COLS)) + ')')
     n_samp = n_meas = 0
@@ -332,8 +348,7 @@ def rebuild(records=None, log=print):
             row += [_flat(r.get(f)) for f in _FIELDS]
             conn.execute(sql, row)
             for s in schema.samples_of(r):
-                conn.execute(sql_s, (key, s['sample_id'], s['composition'],
-                                     s['preparation'], s['dynamic_bond'], s['role']))
+                conn.execute(sql_s, [key] + [s.get(c, '') for c in _SAMPLE_COLS[1:]])
                 n_samp += 1
             for m in schema.iter_measurements(r):
                 conn.execute(sql_m, [key] + [m.get(c) for c in _MEAS_COLS[1:]])
@@ -366,12 +381,13 @@ def _ensure_fresh():
     except OSError:
         db_mtime = -1                      # 库还不存在 → 一定要建
     newest = -1
-    if os.path.isdir(paths.STRUCTURED):
-        for f in os.listdir(paths.STRUCTURED):
+    for d in (paths.STRUCTURED, paths.ABSTRACTS):
+        if not os.path.isdir(d):
+            continue
+        for f in os.listdir(d):
             if f.endswith('.json'):
                 try:
-                    newest = max(newest, os.path.getmtime(
-                        os.path.join(paths.STRUCTURED, f)))
+                    newest = max(newest, os.path.getmtime(os.path.join(d, f)))
                 except OSError:
                     continue
     try:                                  # 期刊分级也是源
@@ -486,7 +502,7 @@ def samples(key=None, text=None, limit=200):
         where.append('(s.composition LIKE ? OR s.preparation LIKE ? OR s.dynamic_bond LIKE ?)')
         args += ['%' + text + '%'] * 3
     sql = ('SELECT s.key, s.sample_id, p.title, s.composition, s.preparation, '
-           's.dynamic_bond, s.role, p.tier FROM samples s '
+           's.dynamic_bond, s.role, s.application, p.tier, p.journal_tier FROM samples s '
            'LEFT JOIN papers p ON p.key = s.key')
     if where:
         sql += ' WHERE ' + ' AND '.join(where)

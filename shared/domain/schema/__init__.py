@@ -47,7 +47,12 @@ SCHEMA = {
 
 # 改了 SCHEMA 就 +1。见本文件开头「加字段的规矩」。
 # v2（2026-09-06）：新增样品层与测量层 —— 见下面 SAMPLE_SCHEMA / MEAS_SCHEMA。
-SCHEMA_VER = 2
+# v3（2026-09-07）：样品层加 `application`（这套东西用在哪）。
+#     加它是因为方向层要落进同一个三层：用户要的是
+#     「策略/结构 → 性能（带数值）→ 应用场景 → 谁做的」，前两样已经有了，
+#     应用场景没有地方放。塞进 `role`（样品在这篇里的角色）是语义漂移，
+#     那种偷懒攒够三次，这张表就没人敢信了。
+SCHEMA_VER = 3
 
 
 # ── 样品层与测量层（v2）────────────────────────────────────────────────
@@ -74,6 +79,7 @@ SAMPLE_SCHEMA = {
     "preparation":   "How this particular sample was made: temperature, time, atmosphere, with numbers",
     "dynamic_bond":  "Dynamic/reversible interaction in this sample; N/A if none",
     "role":          "Its role in the study: 'best' / 'control' / 'series' / 'reference'",
+    "application":   "What this material/strategy is used for, as the paper states it (e.g. 'wearable strain sensor', 'impact protection pad', 'self-healing coating'); N/A if the paper does not say",
 }
 
 MEAS_SCHEMA = {
@@ -326,13 +332,19 @@ COMPARE_COLS = ['material_system', 'dynamic_bond_type', 'synthesis_conditions',
 SOURCE_FINE = 'fine'        # MineRU 全文 + 云端大模型
 SOURCE_LOCAL = 'local'      # MineRU 全文 + **本地** 模型（料一样好，模型小一档）
 SOURCE_COARSE = 'coarse'    # Zotero 全文索引 + 本地小模型（tools.extract.batch.coarse_all）
+# 摘要档（2026-09-07）：方向层的料只有摘要 —— 覆盖最广（付费墙论文也有摘要），
+# 但一篇只能得到「策略 → 性能 → 应用」这一层，配方与出处天然缺。
+# 单列一档，是为了让「这一格是空的」能一眼看出是**料本来就薄**，不是没抽到。
+SOURCE_ABSTRACT = 'abstract'
 
 TIER_FINE_SI = '精+SI'
 TIER_FINE = '精层'
 TIER_LOCAL_SI = '本地+SI'
 TIER_LOCAL = '本地'
 TIER_COARSE = '粗层'
-TIER_ORDER = [TIER_FINE_SI, TIER_FINE, TIER_LOCAL_SI, TIER_LOCAL, TIER_COARSE]
+TIER_ABSTRACT = '摘要'
+TIER_ORDER = [TIER_FINE_SI, TIER_FINE, TIER_LOCAL_SI, TIER_LOCAL, TIER_COARSE,
+              TIER_ABSTRACT]
 
 
 def tier_label(record):
@@ -342,6 +354,8 @@ def tier_label(record):
     差的只是模型档次。分开标，才知道「这一格该不该花钱升级」。
     """
     src = str(record.get('source') or SOURCE_FINE).lower()
+    if src == SOURCE_ABSTRACT:
+        return TIER_ABSTRACT
     if src == SOURCE_COARSE:
         return TIER_COARSE
     if src == SOURCE_LOCAL:
@@ -605,14 +619,15 @@ def samples_of(record):
                         'composition': _flat_text(s.get('composition')),
                         'preparation': _flat_text(s.get('preparation')),
                         'dynamic_bond': _flat_text(s.get('dynamic_bond')),
-                        'role': _flat_text(s.get('role'))})
+                        'role': _flat_text(s.get('role')),
+                        'application': _flat_text(s.get('application'))})
     if out:
         return out
     return [{'sample_id': 'main',
              'composition': _flat_text(record.get('precursors')),
              'preparation': _flat_text(record.get('synthesis_conditions')),
              'dynamic_bond': _flat_text(record.get('dynamic_bond_type')),
-             'role': ''}]
+             'role': '', 'application': ''}]
 
 
 def _flat_text(v):

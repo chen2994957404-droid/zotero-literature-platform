@@ -9,6 +9,8 @@
     python -m tools.direction cluster --band impact         # 聚类（纯本地，可反复调）
     python -m tools.direction report  --band impact --out 地图.txt
     python -m tools.direction stats   --band impact
+    python -m tools.direction quads   --band impact --limit 50   # 摘要抽「策略→性能→应用」（**花钱**）
+    python -m tools.direction quads   --band impact --list       # 只看还剩多少，不花钱
 
     --min-df N     骨干门槛：被至少 N 篇种子共引才拉元数据（默认 3）
     --min-size N   簇至少多少篇才显示（默认 5）
@@ -94,6 +96,11 @@ def main():
             print('')
             print('已写入 ' + out)
         return 0
+
+    if action == 'quads':
+        # 方向层摘要抽取：**花钱的批量作业**，守卫与用量统计都在子模块里
+        from tools.direction import quadruples
+        return quadruples.main() or 0
 
     if action == 'stats':
         s = dm.stats(band)

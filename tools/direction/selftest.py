@@ -6,8 +6,10 @@ build() 要联网，所以自测不跑它 —— 它的两个组成部分（wech
 各有自己的 selftest。这里测的是**编排本身**：schema、聚类落库、报告生成。
 测试会临时改写 shared.kernel.paths.DIRECTION 指向临时目录，**不碰真实数据**。
 """
+import io
 import os
 import shutil
+import sqlite3
 import sys
 import tempfile
 
@@ -123,6 +125,39 @@ try:
     print('== 6. 没碰真实数据目录 ==')
     check('DIRECTION 指向临时目录', paths.DIRECTION == TMP)
     check('数据库在临时目录里', dm.paths.direction_db('t1').startswith(TMP))
+    print('== 7. 方向层四元组：提问与判重（不联网、不调模型）==')
+    from tools.direction import quadruples as Q
+    prompt = Q._build_prompt('T', 'A long abstract about shear stiffening.', 'Adv Mater', 2024)
+    check('提问要样品与测量两部分', '"samples"' in prompt and '"measurements"' in prompt)
+    check('提问带上应用场景这一栏', 'application' in prompt)
+    check('明说出处留空（摘要里根本没有表号图号）',
+          'Leave "location" empty' in prompt)
+    check('摘要正文进了提问', 'shear stiffening' in prompt)
+
+    # 判重：产物在盘上就跳过 —— 用临时的 abstracts 目录，绝不碰真实数据
+    _orig_abs = paths.ABSTRACTS
+    paths.ABSTRACTS = os.path.join(TMP, 'abstracts')
+    try:
+        os.makedirs(paths.ABSTRACTS, exist_ok=True)
+        # 造两条合法的 OpenAlex 作品 id（假数据里的 id 不长这样，会被 check_work_id 挡掉，
+        # 那正是我们要的行为：不合法的 id 不该进方向层）
+        conn = sqlite3.connect(paths.direction_db('t1'))
+        conn.execute("INSERT OR REPLACE INTO works (id, title, cited_by) "
+                     "VALUES ('W1000000001', '一号', 9)")
+        conn.execute("INSERT OR REPLACE INTO works (id, title, cited_by) "
+                     "VALUES ('W1000000002', '二号', 8)")
+        conn.commit()
+        conn.close()
+        todo = Q.pending('t1')
+        ids = [t[0] for t in todo]
+        check('只有合法的作品 id 进待抽清单',
+              ids == ['W1000000001', 'W1000000002'], str(ids)[:60])
+        io.open(paths.abstract_record('W1000000001'), 'w', encoding='utf-8').write('{}')
+        check('抽过的那篇不再出现在待抽清单里',
+              [t[0] for t in Q.pending('t1')] == ['W1000000002'])
+    finally:
+        paths.ABSTRACTS = _orig_abs
+
 finally:
     paths.DIRECTION = _ORIG
     shutil.rmtree(TMP, ignore_errors=True)

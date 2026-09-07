@@ -31,3 +31,15 @@ python -m tools.direction seeds|build --band X   # 联网，十几分钟，先�
 - 一条窄带一个库，`--band` 不给就不知道你要哪条
 - 聚类结果跟分辨率参数有关；`cluster` 免费可反复调，多试几个再下结论
 - 「空白」是这张图里没有，不等于全世界没有 —— 下结论前用 `askworld` 复核一下
+
+## 方向层四元组（`quads`）
+
+`python -m tools.direction quads --band <窄带> --limit 50` ——
+把窄带里的摘要抽成「策略/结构 → 性能（带数值）→ 应用 → 谁做的」，
+落进 `paperdb` 的三层库（档次 `摘要`）。**每篇一次云端调用，是花钱的批量作业**：
+先 `--list` 看还剩多少、再 `--limit` 小跑一批算单价，别一上来全跑。
+
+抽完之后这些问题在 `paperdb` 里就能答：
+「要实现某个性能有哪些策略」（measurements 反查 samples）、
+「某个策略用在哪」（samples.application）、
+「哪些策略只有摘要档却反复出好数字」（tier='摘要' + 数值筛）—— 最后这条就是**该去取全文的清单**。

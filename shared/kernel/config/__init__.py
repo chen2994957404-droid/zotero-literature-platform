@@ -246,6 +246,8 @@ MODEL_SETTINGS = {
     'ASK_MODEL':        ('问答',       'deepseek-v4-flash'),
     'AUTOTAG_MODEL':    ('自动打标签', 'deepseek-v4-flash'),
     'BRAINSTORM_MODEL': ('研究构想',   'deepseek-v4-pro'),
+    # 方向层：一篇摘要一次调用，要跑上万篇 —— 输出很短，所以上便宜那档。
+    'DIRECTION_QUAD_MODEL': ('方向层摘要抽取', 'qwen3.8-flash'),
 }
 
 

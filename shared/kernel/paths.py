@@ -325,6 +325,40 @@ def journals():
     return os.path.join(SERVING, 'journals.json')
 
 
+# ── 方向层：摘要抽出来的记录 ──────────────────────────────────────────
+# 为什么另起一个目录而不是塞进 structured/：那边一个文件对应一篇**库里的**文献
+# （文件名就是 8 位 Zotero key）；方向层的料是 OpenAlex 上的公开文献，
+# 库里根本没有它们，也不该为了「像」而伪造一个 Zotero key。
+# 两个目录、同一种记录格式（schema 的 samples/measurements），
+# `tools/paperdb` 两边都读 —— 于是方向层与细节层住进同一张表，靠 tier 分辨。
+ABSTRACTS = os.path.join(SERVING, 'abstracts')
+_OA_RE = re.compile(r'^W\d{4,12}$')
+
+
+def check_work_id(work_id):
+    """校验 OpenAlex 作品 id（`W2741809807`）。允许整条 URL，返回短 id。"""
+    w = str(work_id).strip().rsplit('/', 1)[-1].upper()
+    if not _OA_RE.match(w):
+        raise BadKeyError('不是合法的 OpenAlex 作品 id: %r（应形如 W2741809807）' % (work_id,))
+    return w
+
+
+def abstract_record(work_id):
+    """★ serving/abstracts/<Wxxx>.json —— 一篇公开文献从摘要抽出来的记录。"""
+    return os.path.join(ABSTRACTS, check_work_id(work_id) + '.json')
+
+
+def all_work_ids():
+    """列出所有已抽过摘要的作品 id。"""
+    if not os.path.isdir(ABSTRACTS):
+        return []
+    out = []
+    for name in os.listdir(ABSTRACTS):
+        if name.endswith('.json') and _OA_RE.match(name[:-5].upper()):
+            out.append(name[:-5].upper())
+    return sorted(out)
+
+
 def compare(name='compare'):
     """★ structured/<name>.md —— 横向对比表（找 idea 的载体）。
 

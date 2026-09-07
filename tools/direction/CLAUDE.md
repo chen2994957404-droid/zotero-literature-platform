@@ -81,6 +81,16 @@ python -m tools.direction stats
 
 **如果以后加了要花钱的步骤**（比如用 LLM 给簇起名），那一步必须加守卫。
 
+## 方向层四元组（2026-09-07 做了）
+
+`quadruples.py`：窄带里的摘要 → 「策略 → 性能 → 应用」→ `serving/abstracts/<Wxxx>.json`。
+记录格式**与全文抽取共用同一套 schema**（`shared.domain.schema` 的 samples/measurements），
+只是 `source='abstract'` → `tier='摘要'`。于是方向层与细节层住进 `paperdb` 同一张表，
+「摘要档的合成条件是空的」一眼看得出是**料本来就薄**，不是没抽到。
+
+⚠ 这是本工具第二个**花钱**的动作（第一个是 brainstorm），
+`main()` 里有 `role.require_prod` 守卫。判重看产物在不在盘上，不另记台账。
+
 ## 下一步（还没做）
 
 1. **前向雪球**：现在只有「种子引了谁」，没有「谁引了种子」。
