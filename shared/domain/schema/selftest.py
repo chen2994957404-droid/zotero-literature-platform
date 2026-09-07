@@ -283,6 +283,79 @@ def main():
     else:
         print(f'  [FAIL] 提示词里混进了具体数字，小模型会抄它们：{sorted(nums)[:8]}')
 
+    # ── 洗表格：下面每一条都是 2026-09-07 在 42 篇真实全文里实测到的脏 ──
+    from shared.domain.schema import scan
+
+    total += 1
+    cases = {r'$M_{n}$': 'Mn', r'$\overline{M}_{n}$': 'Mn',
+             r'$T_{c,onset}$': 'Tc,onset', r'$k_{hn} \times 10^{-3}$': 'khn × 10-3'}
+    bad = {k: scan.clean_label(k) for k, v in cases.items() if scan.clean_label(k) != v}
+    if not bad:
+        print('  [PASS] 表头里的 LaTeX 洗成人话（实测 150/428 条名字带 LaTeX）'); ok += 1
+    else:
+        print(f'  [FAIL] LaTeX 没洗干净：{bad}')
+
+    total += 1
+    # 误差棒和比号长得像单位。挂上假单位比没有单位更坏 —— 它会被当真去比大小。
+    if (scan._clean_unit('± 1.7') == '' and scan._clean_unit(':1') == ''
+            and scan._clean_unit('MPa') == 'MPa'):
+        print('  [PASS] 误差棒与比号不当单位（实测 37 条挂过假单位）'); ok += 1
+    else:
+        print('  [FAIL] 假单位没拦住')
+
+    total += 1
+    # 一格塞两代样品，硬拆就是灌假数；误差棒是同一个数的精度，要留。
+    if (scan._cell_number('PD 1.68 1.28') is None
+            and scan._cell_number('12.4 (±0.10)') == '12.4'
+            and scan._cell_number('10–20') == '10–20'):
+        print('  [PASS] 一格多值不猜；误差棒剥掉、区间留住'); ok += 1
+    else:
+        print(f'  [FAIL] 一格多值判错：{scan._cell_number("PD 1.68 1.28")!r} / '
+              f'{scan._cell_number("12.4 (±0.10)")!r} / {scan._cell_number("10–20")!r}')
+
+    total += 1
+    # 「名字里有两个数」当判据会误伤条件（200/800 是温度区间，不是数据）
+    if (scan._is_collapsed('CFRP Laminate 8.31 13.74')
+            and not scan._is_collapsed('Weight loss (%) 200/800')
+            and not scan._is_collapsed('Energy loss coefficient 1st cycle')):
+        print('  [PASS] 塌陷行整列丢掉，但不误伤「条件里带数字」的表头'); ok += 1
+    else:
+        print('  [FAIL] 塌陷判据误伤了正常表头')
+
+    total += 1
+    # 转置表：第一列是性能、表头是样品。**必须先洗 LaTeX 再判**，否则认不出来。
+    t_md = ('Table 1. Properties.\n\n<table><tr><td></td><td>PDMS1</td><td>PDMS2</td></tr>'
+            '<tr><td>$d_w$ (μm)</td><td>0.39</td><td>0.52</td></tr>'
+            '<tr><td>apparent $E_a$ (kJ/mol)</td><td>61</td><td>72</td></tr></table>')
+    rows = scan.scan_tables(t_md)
+    sids = sorted({r['sample_id'] for r in rows})
+    if sids == ['PDMS1', 'PDMS2'] and len(rows) == 4:
+        print('  [PASS] 转置表转回来了（洗过 LaTeX 才认得出第一列是性能名）'); ok += 1
+    else:
+        print(f'  [FAIL] 转置表没转回来：样品={sids} 条数={len(rows)}')
+
+    total += 1
+    # 投料量属于配方，不该进测量层去跟别人比大小
+    c_md = ('Table 2. Formulations.\n\n<table><tr><td>Sample</td><td>PA6 (wt%)</td>'
+            '<td>Tensile strength (MPa)</td></tr>'
+            '<tr><td>PA6/PBS-1</td><td>80</td><td>52.3</td></tr></table>')
+    rows = scan.scan_tables(c_md)
+    kinds = {r['raw_name']: r['kind'] for r in rows}
+    if (kinds.get('PA6') == 'composition'
+            and kinds.get('Tensile strength') == 'measurement'):
+        print('  [PASS] 投料量与性能分开（wt% 的组分是配方，不是性能）'); ok += 1
+    else:
+        print(f'  [FAIL] 投料量没分出来：{kinds}')
+
+    total += 1
+    # 出处是脚本从同一段文字里读到的，不可能是编的
+    if rows and all(r['location'] == 'Table 2' and r['method'] == 'script' for r in rows):
+        print('  [PASS] 表格里的每条都带出处与 method=script'); ok += 1
+    else:
+        print(f'  [FAIL] 出处丢了：{[(r["location"], r["method"]) for r in rows]}')
+
+
+
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)
 

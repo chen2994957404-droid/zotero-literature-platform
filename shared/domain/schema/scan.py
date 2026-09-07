@@ -27,7 +27,7 @@
 """
 import re
 
-from . import parse_property, normalize_property_name
+from . import parse_property, normalize_property_name, PROPERTY_ALIASES
 
 # 单位表：写全一点，宁可多抓（上层还会筛），也别漏掉整类性能。
 # 顺序有讲究：长的在前，否则 'MPa' 会被 'Pa' 先吃掉。
@@ -185,6 +185,151 @@ def scan_measurements(md, window=90):
 import html as _html
 from html.parser import HTMLParser as _HTMLParser
 
+# ── 洗表格：三种脏，顺序不能换 ────────────────────────────────────────
+# **先洗 LaTeX，再判转置** —— 2026-09-07 实测踩到：转置表的第一列写的是
+# `$T_g$ by max $G''$`、`$d_w$ (μm)`，明明是性能名，但词表认不出带 `$` 的名字，
+# 于是「有没有转置表」这个问题被答成了「没有」。洗完再问，答案就变了。
+_BS = chr(92)
+_BS_RE = re.escape(_BS)
+
+_GREEK = {
+    'Delta': 'Δ', 'alpha': 'α', 'beta': 'β', 'gamma': 'γ', 'delta': 'δ',
+    'epsilon': 'ε', 'zeta': 'ζ', 'eta': 'η', 'theta': 'θ', 'kappa': 'κ',
+    'lambda': 'λ', 'mu': 'μ', 'nu': 'ν', 'pi': 'π', 'rho': 'ρ',
+    'sigma': 'σ', 'tau': 'τ', 'phi': 'φ', 'chi': 'χ', 'psi': 'ψ',
+    'omega': 'ω', 'Omega': 'Ω', 'Sigma': 'Σ', 'Phi': 'Φ',
+    'times': '×', 'cdot': '·', 'pm': '±', 'approx': '≈',
+    'leq': '≤', 'geq': '≥', 'circ': '°', 'degree': '°',
+}
+# 只起排版作用、洗掉不影响含义的命令
+_TEXT_CMD = re.compile(_BS_RE + r'(?:text|mathrm|mathit|mathbf|rm|overline|bar|hat|vec)\s*')
+_CMD = re.compile(_BS_RE + r'([A-Za-z]+)')
+_SUBSUP = re.compile(r'[_^]\s*\{([^{}]*)\}')
+
+
+def clean_label(text):
+    r"""表头 / 样品名里的 LaTeX → 人和词表都认得的写法。
+
+    `$\Delta H_c$` → `ΔHc`；`$\overline{M}_{n}$` → `Mn`；
+    `$k_{hn} \times 10^{-3}$` → `khn × 10-3`。
+
+    **为什么值得单独一个函数**：42 篇实测里 150/428 条测量的名字带 LaTeX，
+    38 条样品名带 LaTeX。不洗，这些名字既归一不了、也认不出是不是性能名 ——
+    后面那个「这张表是不是转置的」的判断就会直接答错。
+    """
+    t = str(text or '')
+    if not t:
+        return ''
+    t = t.replace('$', ' ')
+    t = _TEXT_CMD.sub(' ', t)
+    t = _SUBSUP.sub(lambda m: m.group(1), t)            # _{n} → n，^{-3} → -3
+    t = re.sub(r'[_^]\s*([A-Za-z0-9+-])', lambda m: m.group(1), t)
+    t = _CMD.sub(lambda m: _GREEK.get(m.group(1), ' '), t)
+    t = t.replace('{', '').replace('}', '').replace(_BS, ' ')
+    return re.sub(r'\s+', ' ', t).strip()
+
+
+def _known_property(name):
+    """这个名字是不是词表认得的性能？（**洗过再问**，见上面那段。）"""
+    n = clean_label(name)
+    if not n:
+        return False
+    return normalize_property_name(n) in PROPERTY_ALIASES
+
+
+def _looks_property(name):
+    """比词表宽一点的判断：**名字后面挂着括号单位**，那就是个性能名。
+
+    只靠词表不够 —— 2026-09-07 实测，转置表的第一列写着
+    `dw (μm)`、`apparent Ea (kJ/mol)`、`onset temperature of flow (°C)`，
+    词表一个都不认得，于是那几张表没被转回来，样品与性能一直是对调的。
+    **样品名几乎不会带括号单位**，所以这个信号很干净。
+    """
+    n = clean_label(name)
+    if not n or re.fullmatch(r'[-+±\d.,%\s]+', n):
+        return False
+    if _known_property(n):
+        return True
+    m = _HEAD_UNIT_RE.search(n)
+    return bool(m and _clean_unit(m.group('unit')))
+
+
+# 投料量的单位。**不含裸 `%`** —— 自修复效率也是 %，那是性能不是配方。
+_COMPOSITION_UNITS = ('wt%', 'wt.%', 'wt %', 'vol%', 'vol.%', 'mol%', 'mol.%',
+                      'phr', '份')
+_NUMLIKE_RE = re.compile(r'\d+(?:\.\d+)?')
+_ERRBAR_RE = re.compile(r'[（(]\s*±[^)）]*[)）]|±\s*\d+(?:\.\d+)?')
+_SCI_RE = re.compile(r'(?:[eE]|[×xX]\s*10)')
+_RANGE_CELL_RE = re.compile(r'^[-+]?\d+(?:\.\d+)?\s*[–—~-]\s*[-+]?\d+(?:\.\d+)?$')
+
+
+def _clean_unit(unit):
+    """表头括号里抓到的「单位」未必是单位 —— 误差棒和比号也长这样。
+
+    2026-09-07 实测抓到过 `± 1.7`、`±0.03`、`:1` 被当成单位。
+    **一个数字挂上假单位，比没有单位更坏**：它会被当真去跟别人比大小。
+    """
+    t = clean_label(unit)
+    if not t or '±' in t:
+        return ''
+    if re.fullmatch(r'[\d\s.,:;+–—/-]+', t):           # 纯数字、`:1` 这类
+        return ''
+    return t[:24]
+
+
+def _cell_number(cell):
+    """一格 → 可解析的那个数；**一格多值就返回 None（不猜）**。
+
+    `PD 1.68 1.28` 这种一格塞两代样品的，硬拆就是往库里灌假数。
+    误差棒 `12.4 (±0.10)` 先剥掉再判 —— 那是同一个数的精度，不是第二个数。
+    """
+    t = clean_label(cell)
+    if not t:
+        return None
+    t = _ERRBAR_RE.sub(' ', t).strip()
+    if not t:
+        return None
+    if _RANGE_CELL_RE.match(t) or _SCI_RE.search(t):
+        return t                                       # 区间、科学计数法交给 parse_property
+    if len(_NUMLIKE_RE.findall(t)) >= 2:
+        return None
+    return t
+
+
+_DECIMAL_RE = re.compile(r'\d+\.\d+')
+
+
+def _is_collapsed(label):
+    """整行塌进一个格子的表头（`CFRP Laminate 8.31 13.74`）→ 整列不要。
+
+    MineRU 偶尔把单列表解析成「表头里含着数据」。这种列取出来的每个数
+    都挂在错的名字上，**而且不会报错**。
+
+    判据不能是「名字里有两个数」—— 2026-09-07 实测那样会误伤
+    `Weight loss (%) 200/800`、`1st cycle`：那些数字是**测试条件**，不是数据。
+    塌进来的数据长得不一样：**带小数点**（8.31 13.74），或者密集到四个以上。
+    """
+    t = clean_label(label)
+    return len(_DECIMAL_RE.findall(t)) >= 2 or len(_NUMLIKE_RE.findall(t)) >= 4
+
+
+def _transpose(grid, head_rows):
+    """这张表是不是「第一列是性能、表头是样品」？是就转置回来，不是就返回 None。
+
+    判据：数据行的第一列里，**过半**能被词表认出是性能名（且至少 2 个）。
+    认不出就不动 —— 猜错的代价是整张表的样品与性能对调。
+    """
+    col0 = [(l[0] or '').strip() for l in grid[head_rows:] if l and (l[0] or '').strip()]
+    if len(col0) < 2:
+        return None
+    hit = sum(1 for c in col0 if _looks_property(c))
+    if hit < 2 or hit < len(col0) * 0.5:
+        return None
+    width = max(len(l) for l in grid)
+    padded = [list(l) + [''] * (width - len(l)) for l in grid]
+    return [list(row) for row in zip(*padded)]
+
+
 _TABLE_RE = re.compile(r'(?is)<table\b.*?</table>')
 # 表头里的单位：`Modulus (MPa)` / `Tensile strength at 250% (MPa)`
 # 单位可能在标签中间：双层表头拼起来是 `Modulus (MPa) 1st cycle`。
@@ -259,7 +404,10 @@ def _is_headerish(line):
 
 
 def _columns(grid):
-    """表头（可能两层）→ 每列的 (性能名, 单位)。返回 (列定义, 数据起始行号)。"""
+    """表头（可能两层）→ 每列的 (性能名, 单位)。返回 (列定义, 数据起始行号)。
+
+    名字与单位都**洗过**：LaTeX 化掉，误差棒不当单位（见 `clean_label` / `_clean_unit`）。
+    """
     head_rows = 0
     for line in grid[:3]:
         if _is_headerish(line):
@@ -273,15 +421,16 @@ def _columns(grid):
         parts, seen = [], set()
         for r in range(head_rows):
             if i < len(grid[r]):
-                t = grid[r][i].strip()
+                t = clean_label(grid[r][i])
                 if t and t not in seen:
                     parts.append(t)
                     seen.add(t)
         label = ' '.join(parts)
         m = _HEAD_UNIT_RE.search(label)
-        if m and not re.fullmatch(r'[\d\s.,%-]+', m.group('unit')):
+        unit = _clean_unit(m.group('unit')) if m else ''
+        if unit:
             name = (label[:m.start()] + ' ' + label[m.end():]).strip()
-            cols.append((name or label, m.group('unit').strip()))
+            cols.append((name or label, unit))
         else:
             cols.append((label, ''))
     return cols, head_rows
@@ -295,11 +444,54 @@ def _caption(md, start):
     return cap[:160], nearest_ref(md, start)
 
 
+def _table_rows(grid, cols, head_rows, ref, cap):
+    """规整表格 → 测量列表。取不到干净的数就跳过，**一条都不猜**。"""
+    out = []
+    for line in grid[head_rows:]:
+        if not line:
+            continue
+        sample = clean_label(line[0])
+        if not sample or re.fullmatch(r'[-+±\d.,%\s]+', sample):
+            continue          # 第一列是数字 → 这张表没有样品列，交给模型
+        if re.fullmatch(r'[a-z]', sample):
+            continue          # 表末的脚注行（a/b/c），不是样品。元素符号是大写，误伤不到
+        for i, cell in enumerate(line[1:], start=1):
+            if i >= len(cols):
+                break
+            name, unit = cols[i]
+            if not name or _is_collapsed(name):
+                continue
+            text = _cell_number(cell)
+            if text is None:
+                continue
+            parsed = parse_property('%s %s' % (text, unit))
+            if parsed['value'] is None:
+                continue
+            kind = ('composition'
+                    if unit in _COMPOSITION_UNITS and not _known_property(name)
+                    else 'measurement')
+            out.append({
+                'sample_id': sample, 'name': normalize_property_name(name),
+                'raw_name': name,
+                'value': parsed['value'], 'value_max': parsed['value_max'],
+                'unit': unit or parsed['unit'], 'cmp': parsed['cmp'],
+                'condition': '', 'location': ref, 'section': 'main',
+                'method': 'script', 'kind': kind,
+                'raw': '%s: %s %s' % (name, text, unit),
+                'caption': cap})
+    return out
+
+
 def scan_tables(md):
     """全文里的每张表 → 测量列表（**带样品、性能、单位、出处**，全部由脚本得到）。
 
     `sample_id` 取行首那一格 —— 论文表格的第一列几乎总是样品名。
-    取不到数的格子直接跳过；表头认不出性能名的列也跳过（那才交给模型）。
+    遇到「第一列是性能名」的转置表会先转回来（`_transpose`）。
+    取不到数的格子直接跳过；表头认不出性能名的列也照样入库，
+    只是 `name` 没归一 —— **宁可留着没归一的名字，也别悄悄丢掉一个真数字**。
+
+    每条带 `kind`：`'measurement'` 是性能，`'composition'` 是投料量
+    （`PA6 80 wt%` 那种）。投料量属于样品的配方，不该进测量层去跟人比大小。
     """
     out = []
     for m in _TABLE_RE.finditer(md):
@@ -312,28 +504,10 @@ def scan_tables(md):
             continue
         grid = _grid(p.rows)
         cols, head_rows = _columns(grid)
+        flipped = _transpose(grid, head_rows)
+        if flipped is not None:            # 转置表：转回来再按同一套规则读
+            grid = flipped
+            cols, head_rows = _columns(grid)
         cap, ref = _caption(md, m.start())
-        for line in grid[head_rows:]:
-            if not line:
-                continue
-            sample = (line[0] or '').strip()
-            if not sample or re.fullmatch(r'[-+±\d.,%\s]+', sample):
-                continue          # 第一列是数字 → 这张表没有样品列，交给模型
-            for i, cell in enumerate(line[1:], start=1):
-                if i >= len(cols):
-                    break
-                name, unit = cols[i]
-                if not name or not cell.strip():
-                    continue
-                parsed = parse_property('%s %s' % (cell.strip(), unit))
-                if parsed['value'] is None:
-                    continue
-                canon = normalize_property_name(name)
-                out.append({
-                    'sample_id': sample, 'name': canon, 'raw_name': name,
-                    'value': parsed['value'], 'value_max': parsed['value_max'],
-                    'unit': unit or parsed['unit'], 'cmp': parsed['cmp'],
-                    'condition': '', 'location': ref, 'section': 'main',
-                    'method': 'script', 'raw': '%s: %s %s' % (name, cell.strip(), unit),
-                    'caption': cap})
+        out += _table_rows(grid, cols, head_rows, ref, cap)
     return out
