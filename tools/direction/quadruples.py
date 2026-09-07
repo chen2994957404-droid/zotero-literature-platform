@@ -29,6 +29,8 @@
     python -m tools.direction quads --band impact                # 这条窄带全跑
     python -m tools.direction quads --band impact --list         # 只看还剩多少，不花钱
     python -m tools.direction quads --band impact --all          # 连引用层一起抽（贵得多，多是无关的通用论文）
+    python -m tools.direction quads --band impact --models qwen3.8-flash,qwen3.6-flash
+                                                                 # 一个模型的免费额度用完就换下一个
 """
 import io
 import json
@@ -74,6 +76,21 @@ def _build_prompt(title, abstract, venue='', year=''):
         + '\n\nThe abstract is all you have. Leave "location" empty for every measurement, '
           'and set "section" to "abstract".\n\n'
           '===== ABSTRACT START =====\n%s\n===== ABSTRACT END =====' % abstract)
+
+
+# 「这个模型的免费额度用完了」长什么样（2026-09-07 实测百炼原话）：
+#   HTTP 403 ... "Free quota exhausted. To continue accessing the model on a paid
+#   basis, please add funds or disable the \"use free tier only\" mode"
+# 百炼的免费额度**按模型各算 100 万**，所以这不是「没钱了」，是「这个模型用完了」——
+# 换一个还有额度的接着跑就行。认它靠的是这句话本身，不是状态码：
+# 403 还可能是密钥不对，那种换模型也没用，得让它照常报错。
+_QUOTA_MARKS = ('free quota exhausted', 'allocationquota', 'insufficient_quota')
+
+
+def is_quota_exhausted(err):
+    """这个异常是不是「这个模型的免费额度用完了」。"""
+    t = str(err).lower()
+    return any(m in t for m in _QUOTA_MARKS)
 
 
 def pending(band, limit=None, seeds_only=True):
@@ -143,8 +160,16 @@ def one(work_id, title, abstract, doi='', venue='', year='', model=None):
     return rec
 
 
-def run(band, limit=None, log=print, seeds_only=True):
-    """跑一批：取摘要 → 抽四元组 → 落盘。返回 (成功篇数, 用量快照)。"""
+def run(band, limit=None, log=print, seeds_only=True, models=None):
+    """跑一批：取摘要 → 抽四元组 → 落盘。返回 (成功篇数, 用量快照)。
+
+    `models` 给一串模型名时，**某个模型的免费额度用完就换下一个**
+    （百炼按模型各算 100 万，2328 篇摘要一个模型装不下）。
+    换模型这件事会打进日志，且每条记录都记着自己是哪个模型抽的 ——
+    不然日后发现某一段质量不对，查不出是谁的手笔。
+    """
+    queue = list(models or [_model()])
+    cur = queue.pop(0)
     todo = pending(band, limit, seeds_only)
     if not todo:
         log('这条窄带的摘要都抽过了')
@@ -161,14 +186,25 @@ def run(band, limit=None, log=print, seeds_only=True):
             if not text:
                 no_abs += 1
                 continue
-            try:
-                if one(wid, title, text, doi, venue, year):
-                    done += 1
-                else:
+            while True:
+                try:
+                    if one(wid, title, text, doi, venue, year, model=cur):
+                        done += 1
+                    else:
+                        failed += 1
+                    break
+                except Exception as e:
+                    if is_quota_exhausted(e) and queue:
+                        nxt = queue.pop(0)
+                        log('  [额度用完] %s 的免费额度到头了，换 %s 接着跑' % (cur, nxt))
+                        cur = nxt
+                        continue          # 同一篇用新模型重来，不丢
+                    if is_quota_exhausted(e):
+                        log('  [停] %s 也没额度了，且没有备选模型。已抽 %d 篇。' % (cur, done))
+                        raise SystemExit(0)
                     failed += 1
-            except Exception as e:
-                failed += 1
-                log('  [失败] %s %s' % (wid, str(e)[:80]))
+                    log('  [失败] %s %s' % (wid, str(e)[:80]))
+                    break
             if done and done % 10 == 0:
                 log('  已抽 %d 篇（用时 %ds）' % (done, round(time.time() - t0)))
     after = llm_client.usage_snapshot()
@@ -198,7 +234,9 @@ def main():
     lim = opt('--limit')
     role.require_prod('方向层摘要抽取（每篇一次云端小模型调用，是花钱的批量作业）',
                       force=flag('--force'))
-    run(band, int(lim) if lim else None, seeds_only=seeds_only)
+    ms = opt('--models')
+    run(band, int(lim) if lim else None, seeds_only=seeds_only,
+        models=[m.strip() for m in ms.split(',') if m.strip()] if ms else None)
 
 
 if __name__ == '__main__':

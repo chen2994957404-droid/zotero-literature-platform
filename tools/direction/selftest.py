@@ -134,6 +134,11 @@ try:
           'Leave "location" empty' in prompt)
     check('摘要正文进了提问', 'shear stiffening' in prompt)
 
+    check('认得出「这个模型免费额度用完了」',
+          Q.is_quota_exhausted(Exception('HTTP 403: Free quota exhausted. add funds')))
+    check('密钥错的 403 不当成额度用完（换模型也救不了）',
+          not Q.is_quota_exhausted(Exception('HTTP 403: invalid api key')))
+
     # 判重：产物在盘上就跳过 —— 用临时的 abstracts 目录，绝不碰真实数据
     _orig_abs = paths.ABSTRACTS
     paths.ABSTRACTS = os.path.join(TMP, 'abstracts')
