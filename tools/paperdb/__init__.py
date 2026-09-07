@@ -57,7 +57,8 @@ from shared.domain import schema
 _FIELDS = list(schema.SCHEMA.keys())
 
 _PAPER_COLS = (['key', 'title', 'doi', 'tier', 'source', 'si_used', 'schema_ver',
-                'is_review', 'journal', 'issn', 'journal_tier', 'publisher'] + _FIELDS)
+                'is_review', 'journal', 'issn', 'journal_tier', 'publisher',
+                'model'] + _FIELDS)
 _SAMPLE_COLS = ['key', 'sample_id', 'composition', 'preparation', 'dynamic_bond',
                 'role', 'application']
 _MEAS_COLS = ['key', 'sample_id', 'name', 'raw_name', 'value', 'value_max', 'unit',
@@ -79,6 +80,7 @@ CREATE TABLE IF NOT EXISTS papers (
   issn        TEXT,
   journal_tier TEXT,
   publisher   TEXT,
+  model       TEXT,
   %s
 );
 CREATE TABLE IF NOT EXISTS samples (
@@ -344,7 +346,8 @@ def rebuild(records=None, log=print):
                    1 if schema.is_review(r) else 0]
             j = jour.get(key) or {}
             row += [j.get('name') or '', j.get('issn') or '',
-                    j.get('tier') or '', j.get('publisher') or '']
+                    j.get('tier') or '', j.get('publisher') or '',
+                    r.get('model') or '']
             row += [_flat(r.get(f)) for f in _FIELDS]
             conn.execute(sql, row)
             for s in schema.samples_of(r):

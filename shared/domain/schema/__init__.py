@@ -585,16 +585,20 @@ def number_grounding(data, source):
 
 
 def make_record(key, title, doi, data, schema_ver=None,
-                source=SOURCE_FINE, si_used=False):
+                source=SOURCE_FINE, si_used=False, model=''):
     """抽取结果 → 落盘用的记录。
 
     **带上版本号**，否则以后没法知道它是哪版 schema 抽的；
     **带上来源档次与是否读了 SI**，否则以后没法知道一个空格是
-    「原文没有」还是「料不够没抽到」（这正是 2026-08-28 对比表的病）。
+    「原文没有」还是「料不够没抽到」（这正是 2026-08-28 对比表的病）；
+    **带上模型名**（2026-09-07 加）：百炼的免费额度按模型各算 100 万，
+    一批文献常常是两三个模型接力抽完的。不记下来，日后发现某一批质量不对
+    就查不出是哪个模型的手笔 —— 而那正是最需要查的时候。
     """
     return {'key': key, 'title': title, 'doi': doi or '',
             'schema_ver': SCHEMA_VER if schema_ver is None else schema_ver,
-            'source': source, 'si_used': bool(si_used), **data}
+            'source': source, 'si_used': bool(si_used),
+            'model': model or '', **data}
 
 
 # ── v2：样品与测量的读出口（老记录也走这里）──────────────────────────

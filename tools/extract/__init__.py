@@ -150,7 +150,7 @@ def extract_one(key, log=print):
     data, _report = extract_with_eval(title, body, si, log=log)
     src = schema.SOURCE_LOCAL if _provider() == 'ollama' else schema.SOURCE_FINE
     record = schema.make_record(key, title, meta.get('DOI', ''), data,
-                               source=src, si_used=bool(si))
+                                source=src, si_used=bool(si), model=_model())
     os.makedirs(paths.STRUCTURED, exist_ok=True)
     json.dump(record, io.open(paths.structured(key), 'w', encoding='utf-8'),
               ensure_ascii=False, indent=2)

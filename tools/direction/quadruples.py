@@ -133,7 +133,8 @@ def one(work_id, title, abstract, doi='', venue='', year='', model=None):
         if isinstance(m, dict):
             m['section'] = 'abstract'
     rec = schema.make_record(paths.check_work_id(work_id), title, doi, data,
-                             source=schema.SOURCE_ABSTRACT, si_used=False)
+                             source=schema.SOURCE_ABSTRACT, si_used=False,
+                             model=model or _model())
     rec['venue'] = venue
     rec['year'] = year
     p = paths.abstract_record(work_id)
