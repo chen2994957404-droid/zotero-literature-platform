@@ -7,7 +7,11 @@
 | 粗层 `light_all()` | Zotero 自带全文索引（不解析 PDF、不占空间） | **全库** | 一般 | `--light`（默认）|
 
 两条并存不冲突：粗层负责「广撒网、都能搜到」，精层负责「读过的答得深」。
-同一篇已有精层向量时，粗层会跳过（`existing_keys()` 判重）。
+**同一篇不会两档并存**：粗层遇到已有向量的跳过；精层入库后，反过来把同篇的粗层块删掉。
+
+⚠ 判重必须按「这一档有没有入过库」算（`_indexed_keys(coll, source)`），
+不能按「这篇有没有块」（`existing_keys()`）算 —— 粗层每小时自动跑、早把全库入过一遍，
+用后者会让精层一篇都进不来，而且不报错（踩坑 #126）。
 
 用法:
     python -m tools.ask.vectorize                 增量粗层（全库轻量，定时任务跑的就是这条）
@@ -56,6 +60,8 @@ def deep_one(key, coll, existing, log=print):
     """向量化单篇精读产物：读 full.md → 切块 → embedding → 入库。
 
     返回 (是否新处理, 块数)。没解析产物、或已入库，都返回 (False, 0)。
+
+    入库成功后会把同一篇的**粗层块删掉** —— 同一篇不该两档并存。
     """
     md_path = paths.fulltext(key)
     if not os.path.exists(md_path):
@@ -78,20 +84,32 @@ def deep_one(key, coll, existing, log=print):
     metas = [{'key': key, 'title': title, 'doi': meta.get('DOI', ''),
               'source': 'main', 'chunk': i} for i in range(len(chunks))]
     coll.add(ids, chunks, metas, _embed_all(chunks))
+    # 精层进来了，同一篇的粗层块就该退场：它们讲同一件事，但那份是 Zotero 全文索引
+    # 抽的，质量低一档，留着只会跟精层互相挤占检索名额。
+    dropped = coll.delete_by(key=key, source='library')
+    if dropped > 0:
+        log(f'       同篇粗层 {dropped} 块退场（精层已就位）')
     return True, len(chunks)
 
 
-# ── 精层·补充材料：si_parsed/full.md → 向量库 ─────────────────────────
-def _si_indexed_keys(coll):
-    """已经把 SI 入过库的文献 key。
+# ── 判重：按「这一档有没有入过库」算，不按「这篇有没有块」算 ──────────
+def _indexed_keys(coll, source):
+    """已经把某一档（main / si / library）入过库的文献 key。
 
-    **不能复用 `existing_keys()`**：那个只回答「这篇有没有任何块」，
-    而库里绝大多数文献早就有正文块了 —— 拿它判重会让 SI 一篇都补不进去。
-    SI 要能补进**已经建好的**向量库，判重就必须按 `source` 分开算。
+    **不能用 `existing_keys()`**：那个只回答「这篇有没有任何块」。
+    粗层每小时自动跑、早把全库都入过一遍，于是拿它判重会让精层**一篇都进不来** ——
+    而且不报错，只是安静地全部「跳过」。2026-09-06 实测的账：42 篇有 `full.md`，
+    精层却只有 276 块（踩坑 #126）。SI 早先栽的是同一个跟头，解法也是同一个。
     """
-    return {m.get('key') for m in coll.all_metadatas() if m.get('source') == 'si'}
+    return {m.get('key') for m in coll.all_metadatas() if m.get('source') == source}
 
 
+def _si_indexed_keys(coll):
+    """已经把 SI 入过库的文献 key（`_indexed_keys` 的具名特例）。"""
+    return _indexed_keys(coll, 'si')
+
+
+# ── 精层·补充材料：si_parsed/full.md → 向量库 ─────────────────────────
 def si_one(key, coll, existing_si, log=print):
     """向量化单篇的**补充材料**：读 si_parsed/full.md → 切块 → 入库。
 
@@ -128,11 +146,11 @@ def si_one(key, coll, existing_si, log=print):
 def deep_all(rebuild=False, log=print, with_si=True):
     """精层增量向量化全库：**正文 + 补充材料**。返回 (处理篇数, 块数)。
 
-    ⚠ SI 的判重**不能**用 `existing_keys()`：库里绝大多数文献正文早就入过库，
-    拿「这篇有没有块」判重会让 SI 一篇都补不进去。见 `_si_indexed_keys()`。
+    ⚠ 三档的判重都**按 source 分开算**（`_indexed_keys`）。用「这篇有没有块」判重时，
+    精层会被早就入库的粗层挡在门外、SI 会被正文挡在门外 —— 都是安静地什么都不发生。
     """
     coll = get_collection(rebuild)
-    existing = set() if rebuild else coll.existing_keys()
+    existing = set() if rebuild else _indexed_keys(coll, 'main')
     existing_si = set() if rebuild else (_si_indexed_keys(coll) if with_si else set())
     processed = total_chunks = si_papers = si_chunks = 0
     for key in paths.all_keys():

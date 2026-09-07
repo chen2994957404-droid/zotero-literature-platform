@@ -38,9 +38,19 @@ class FakeStore(object):
         return set(i.split('_')[0] for i in self.ids)
 
     def all_metadatas(self):
-        # 真 Store 有这个方法，假的也必须有 —— SI 的判重就走它。
+        # 真 Store 有这个方法，假的也必须有 —— 三档的判重都走它。
         # 假件跟真件接口漂移时，坏的不是自测而是「自测过了但真跑会崩」。
         return list(self.metas)
+
+    def delete_by(self, **fields):
+        """真 Store 有 delete_by（精层入库后清掉同篇粗层块），假的也必须有。"""
+        keep = [i for i, m in enumerate(self.metas)
+                if not all(m.get(k) == v for k, v in fields.items())]
+        n = len(self.metas) - len(keep)
+        self.ids = [self.ids[i] for i in keep]
+        self.docs = [self.docs[i] for i in keep]
+        self.metas = [self.metas[i] for i in keep]
+        return n
 
 
 def main():
@@ -130,6 +140,34 @@ def main():
                 print('  [PASS] 已入库的不重做（增量）'); ok += 1
             else:
                 print(f'  [FAIL] 重复处理了 {again} 篇')
+
+            # ── 粗层先入过库的那些，精层必须还能进来 ────────────────────
+            # 这是 2026-09-06 抓到的真 bug（踩坑 #126）：粗层每小时自动跑、
+            # 早把全库入过一遍，若拿 existing_keys()（「这篇有没有块」）判重，
+            # 精层**一篇都进不来**，而且不报错。42 篇有 full.md、精层只有 276 块。
+            key2 = 'ZZZZ0004'
+            paths.parsed_dir(key2, create=True)
+            io.open(paths.fulltext(key2), 'w', encoding='utf-8').write(
+                '# T2\n\n' + ('dynamic bond elastomer. ' * 200))
+            store.add([f'{key2}_L0', f'{key2}_L1'], ['粗层块一', '粗层块二'],
+                      [{'key': key2, 'title': 'T2', 'source': 'library', 'chunk': 0},
+                       {'key': key2, 'title': 'T2', 'source': 'library', 'chunk': 1}],
+                      [[0.0], [0.0]])
+
+            total += 1
+            n2, c2 = vectorize.deep_all(log=lambda *a: None)
+            main2 = [m for m in store.metas if m.get('key') == key2 and m.get('source') == 'main']
+            if n2 == 1 and main2:
+                print('  [PASS] 粗层已入库的那篇，精层照样进得来（判重按档次算）'); ok += 1
+            else:
+                print(f'  [FAIL] 精层被粗层挡住了：新处理 {n2} 篇、精层块 {len(main2)} 个')
+
+            total += 1
+            light2 = [m for m in store.metas if m.get('key') == key2 and m.get('source') == 'library']
+            if not light2:
+                print('  [PASS] 精层就位后，同篇粗层块退场（同一篇不两档并存）'); ok += 1
+            else:
+                print(f'  [FAIL] 同篇粗层块还在：{len(light2)} 个')
 
             # ── SI：必须能补进**已经有正文**的库 ──────────────────────
             # 这是本条最关键的设计点：库里绝大多数文献正文早就入过库了，

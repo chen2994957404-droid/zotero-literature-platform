@@ -53,6 +53,26 @@ def main():
             print('  [PASS] 四个列表不等长被挡住'); ok += 1
 
         total += 1
+        store.add(['c_L0', 'c_L1', 'c_0'], ['粗一', '粗二', '精一'],
+                  [{'key': 'CCCCCCCC', 'source': 'library'},
+                   {'key': 'CCCCCCCC', 'source': 'library'},
+                   {'key': 'CCCCCCCC', 'source': 'main'}],
+                  [_vec(0, 1), _vec(0, 1), _vec(0, 1)])
+        gone = store.delete_by(key='CCCCCCCC', source='library')
+        left = [m for m in store.all_metadatas() if m.get('key') == 'CCCCCCCC']
+        if gone == 2 and len(left) == 1 and left[0].get('source') == 'main':
+            print('  [PASS] 按元数据删块：多字段条件真的删对了（Chroma 要 $and，方言不外漏）'); ok += 1
+        else:
+            print(f'  [FAIL] delete_by 不对：删了 {gone}，剩 {left}')
+
+        total += 1
+        if store.delete_by(key='NOSUCHKEY', source='library') == 0:
+            print('  [PASS] 没有匹配的块时删 0 条，不报错'); ok += 1
+        else:
+            print('  [FAIL] 删不存在的块时行为不对')
+        store.delete_by(key='CCCCCCCC')      # 收拾干净，后面几条验的是原来那两条
+
+        total += 1
         hits = store.query(_vec(1, 0, 0), n=2)
         shape_ok = (hits and isinstance(hits, list)
                     and set(hits[0]) == {'id', 'doc', 'meta', 'distance', 'sim'})

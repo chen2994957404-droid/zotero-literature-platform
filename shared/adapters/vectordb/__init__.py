@@ -31,6 +31,7 @@ store.add(ids, documents, metadatas, embeddings)
 hits = store.query(qvec, n=6)               # → [Hit, ...]，已经拆好，没有 [0]
 store.count()
 store.all_metadatas()                       # 增量入库时用来看哪些已经有了
+store.delete_by(key='ABCD1234', source='library')   # 精层入库后，同篇粗层块退场
 ```
 
 `query` 返回的每个 `Hit` 是一个普通 dict：
@@ -42,7 +43,7 @@ store.all_metadatas()                       # 增量入库时用来看哪些已�
 
 ## 换实现时要守住的契约
 
-1. `open_store()` 返回的对象有 add / query / count / all_metadatas / reset
+1. `open_store()` 返回的对象有 add / query / count / all_metadatas / delete_by / reset
 2. `query` 返回 `Hit` 列表，字段名不变，`sim` 越大越像
 3. 集合名与向量空间由本模块决定，调用方不需要知道
 
@@ -52,6 +53,7 @@ store.all_metadatas()                       # 增量入库时用来看哪些已�
 import os
 
 from shared.kernel import errors, paths
+from shared.kernel.log import get_logger
 
 COLLECTION = 'literature'        # 集合名：全平台只有这一个
 SPACE = 'cosine'                 # 向量空间：与 embed 模型（bge-m3）配套
@@ -129,6 +131,34 @@ class Store:
             return [m for m in (got.get('metadatas') or []) if m]
         except Exception:
             return []
+
+    def delete_by(self, **fields):
+        """按元数据删块，例：`delete_by(key='ABCD1234', source='library')`。
+
+        谁需要它：同一篇被精层入库之后，**粗层那份低质量的块就该退场** ——
+        留着只会让同一篇的两份文本互相挤占检索名额，而它们讲的是同一件事。
+
+        ⚠ 调用方只管给字段，条件语法由本层拼（2026-09-06 实测 chromadb 1.5.9）：
+        多个字段直接写成 `{'key': ..., 'source': ...}` 会被拒
+        （`Expected where to have exactly one operator`），必须拼成
+        `{'$and': [{'key': {'$eq': ...}}, ...]}`。**这正是本适配层存在的理由** ——
+        这种方言不该漏到 `tools/` 里去。
+
+        返回删掉的块数；删不掉返回 -1 并记一条日志（向量库是可重建的索引，
+        清理失败不该毁掉一次成功的向量化，但**也不许静默**）。
+        """
+        clauses = [{k: {'$eq': v}} for k, v in fields.items() if v is not None]
+        if not clauses:
+            return 0
+        where = clauses[0] if len(clauses) == 1 else {'$and': clauses}
+        try:
+            ids = (self._coll.get(where=where) or {}).get('ids') or []
+            if ids:
+                self._coll.delete(ids=ids)
+            return len(ids)
+        except Exception as e:
+            get_logger('vectordb').warning('删块失败 %s：%s', fields, e)
+            return -1
 
     def existing_keys(self, field='key'):
         """已入库的文献 key 集合（增量向量化的核心判断）。"""
