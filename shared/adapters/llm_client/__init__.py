@@ -36,10 +36,31 @@ except Exception:
 _OLLAMA_DEFAULT = 'http://localhost:11434'      # 只在 config 取不到时兜底
 
 DEEPSEEK_API = 'https://api.deepseek.com/chat/completions'
-# 阿里云百炼（DashScope）的 OpenAI 兼容端点。**地域绑死密钥**：中国大陆的 key
-# 只能打这个地址，国际站是 dashscope-intl.aliyuncs.com，两边的 key 不通用。
-# 新人免费额度只在华北2（北京）发放，所以这里固定用大陆版。
+# 阿里云百炼（DashScope）的 OpenAI 兼容端点。
+#
+# ⚠ 这条**不能写死**：百炼有两种地址，老的通用域名（这里的默认值）和每个用户
+#   各不相同的业务空间专属域名（ws-<你的空间id>.cn-beijing.maas.aliyuncs.com，
+#   官方推荐、吞吐更高）。后者带着用户自己的 ID，源码里放什么都是错的。
+#   所以真实地址走本机设置 DASHSCOPE_BASE，这里只是留个能跑的兜底。
+#
+# ⚠ 地域绑死密钥：大陆版 key 打不通国际版（dashscope-intl），反之亦然。
 DASHSCOPE_API = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions'
+
+
+def _chat_endpoint(provider):
+    """该往哪个 URL 发。除百炼外都用 PROVIDERS 里登记的固定端点。
+
+    百炼要拼：用户从控制台粘过来的是 base（`.../compatible-mode/v1`），
+    不带 `/chat/completions`。要求用户手工补那一截，等于给一个必错项 ——
+    他照着控制台粘完，看到的会是 404，而 404 不会告诉他少了什么。
+    """
+    endpoint = PROVIDERS.get(provider, PROVIDERS['deepseek'])[0]
+    if provider != 'dashscope':
+        return endpoint
+    base = (_cfg_site('DASHSCOPE_BASE') or '').strip().rstrip('/')
+    if not base:
+        return DASHSCOPE_API
+    return base if base.endswith('/chat/completions') else base + '/chat/completions'
 
 # ── 云端 provider 登记处 ──────────────────────────────────────────────
 # (chat 端点, 密钥名, 默认文本模型, 默认视觉模型)
@@ -157,7 +178,8 @@ def _cloud_chat(messages, model, key, temperature, json_mode, max_tokens,
     max_tokens 给小了（如 8000），推理吃光额度 → 正文被截断甚至空输出。
     长文生成（精读）应关掉 thinking 或把 max_tokens 放大。
     """
-    endpoint, key_env, _m, _v = PROVIDERS.get(provider, PROVIDERS['deepseek'])
+    _e, key_env, _m, _v = PROVIDERS.get(provider, PROVIDERS['deepseek'])
+    endpoint = _chat_endpoint(provider)
     if not key:
         raise LLMError(f'未提供 {key_env}')
     body = {'model': model, 'temperature': temperature, 'messages': messages}
@@ -301,9 +323,10 @@ def chat_vision(system, user, image_b64, provider=None, model=None, key=None,
             headers={'Content-Type': 'application/json'})
         return json.loads(urllib.request.urlopen(req, timeout=600).read())['message']['content']
     else:
-        # 云端 OpenAI 兼容（deepseek / siliconflow / gemini）
-        endpoint, key_env, _t, default_model = PROVIDERS.get(
+        # 云端 OpenAI 兼容（deepseek / siliconflow / gemini / dashscope）
+        _e, key_env, _t, default_model = PROVIDERS.get(
             provider, PROVIDERS['deepseek'])
+        endpoint = _chat_endpoint(provider)
         model = model or default_model
         # ⚠ 这里原来写的是 `os.environ.get(key_env)` —— **凭据库里的密钥读不到**。
         #   密钥搬进系统凭据库之后，看图这条路就只在「密钥恰好也在环境变量里」时能用，

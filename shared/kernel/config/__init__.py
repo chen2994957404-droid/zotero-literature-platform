@@ -178,6 +178,13 @@ SITE_SETTINGS = [
     ('WECHAT_DIR', '公众号推送下载目录', '',
      '下载工具存 md 的那个文件夹（形如 D:\\...\\下载\\高分子学人）。'
      '「导入公众号精读」要从这里读推文'),
+    # 百炼有两种地址：老的通用域名（下面这个默认值，仍可用）和**每个人不一样**的
+    # 业务空间专属域名（形如 ws-xxxx.cn-beijing.maas.aliyuncs.com，官方推荐）。
+    # 后者带着用户自己的空间 ID，写死在源码里必然是错的 —— 所以它是本机设置。
+    ('DASHSCOPE_BASE', '阿里云百炼 接口地址', 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+     '百炼控制台「API Key」页里那条「OpenAI 兼容地址」，整条粘进来即可'
+     '（形如 https://ws-xxxx.cn-beijing.maas.aliyuncs.com/compatible-mode/v1）。'
+     '留空用通用地址。注意大陆版与国际版的 key 不通用'),
 ]
 
 
