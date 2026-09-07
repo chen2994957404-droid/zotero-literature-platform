@@ -8,6 +8,7 @@ except Exception:
 from shared.kernel import jobs, paths
 from shared.domain import schema
 from tools import extract
+from tools.extract import audit
 
 KEY = 'ZZZZ0002'
 
@@ -102,6 +103,32 @@ def main():
             jobs.close()
             paths.CURATED, paths.RAW = real_cur, real_raw
             paths.STRUCTURED, jobs.db_path = real_struct, real_db
+
+    # ── 抽检：编出来的数字要能被挑出来（免费替代每篇都花钱的自检）──────
+    total += 1
+    rec = {'key': 'AAAA0001', 'title': '测试', 'schema_ver': 3,
+           'samples': [{'sample_id': 'PBS-1'}],
+           'measurements': [
+               {'sample_id': 'PBS-1', 'name': 'tensile strength', 'value_text': '12.4 MPa'},
+               {'sample_id': 'PBS-1', 'name': 'toughness', 'value_text': '999 kJ/m^2'},
+               {'sample_id': '不存在的样品', 'name': 'modulus', 'value_text': '3.1 MPa'}]}
+    real = audit._source_text
+    audit._source_text = lambda key: ('The sample PBS-1 reached 12.4 MPa tensile '
+                                      'strength and a modulus of 3.1 MPa. ' * 20)
+    try:
+        r = audit.audit_one(rec)
+    finally:
+        audit._source_text = real
+    if r and r['hit'] == 2 and r['n'] == 3 and any('999' in m for m in r['miss']):
+        print('  [PASS] 抽检把原文里找不到的那个数字（999）挑出来了'); ok += 1
+    else:
+        print(f'  [FAIL] 抽检结果不对：{r}')
+
+    total += 1
+    if r and r['orphan'] == ['不存在的样品']:
+        print('  [PASS] 挂在不存在样品上的数值也被点名（等于没挂）'); ok += 1
+    else:
+        print(f'  [FAIL] 没查出孤儿样品：{r and r["orphan"]}')
 
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)
