@@ -186,7 +186,7 @@ def run(models, n_chunks=12):
             t = time.time()
             try:
                 data = llm_client.chat_json(SYS, build_prompt(chunk, samples),
-                                            model=model, num_ctx=8192, max_tokens=1500)
+                                            model=model, num_ctx=8192)
             except Exception as e:
                 agg['fail'] += 1
                 agg['secs'] += time.time() - t
