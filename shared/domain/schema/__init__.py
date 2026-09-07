@@ -46,7 +46,106 @@ SCHEMA = {
 }
 
 # 改了 SCHEMA 就 +1。见本文件开头「加字段的规矩」。
-SCHEMA_VER = 1
+# v2（2026-09-06）：新增样品层与测量层 —— 见下面 SAMPLE_SCHEMA / MEAS_SCHEMA。
+SCHEMA_VER = 2
+
+
+# ── 样品层与测量层（v2）────────────────────────────────────────────────
+# **为什么要多这两层**（2026-09-06 重新规划数据库时定的）：
+# v1 的最小单元是「一篇论文」，可一篇论文里常有 PBS-1/PBS-2/PBS-3 好几个配方，
+# 各有各的强度。全挤进 key_properties 一句话里，拆出来的数字**不知道是哪个样品的**,
+# 于是「强度>10 MPa 的体系有哪些」答出来的是论文，不是体系 —— 越大越没法用。
+# 而且 v1 的数字没有出处（表几图几、正文还是 SI），写论文时不敢引，还得翻回原文。
+#
+# 三层的形状：
+#     papers        一篇一行：元数据、结论、局限、来源档次
+#       ↑
+#     samples       一篇多行：这个配方是什么、怎么做的
+#       ↑
+#     measurements  一个样品多行：一个数字一行，带条件与出处
+#
+# **老记录不用重抽也能进三层**：iter_measurements() 会把 v1 的 key_properties
+# 拆成 sample_id='main'、location='' 的测量。空出处本身就是信息 ——
+# 它精确地告诉你「这个数字还没定位到原文」。
+
+SAMPLE_SCHEMA = {
+    "sample_id":     "Short label used in the paper for this sample/formulation (e.g. 'PBS-1', 'PU-10%', 'neat PDMS'). If the paper reports only one material, use 'main'",
+    "composition":   "What this sample is made of, with amounts/ratios if given (e.g. 'PDMS:boric acid = 10:1 wt')",
+    "preparation":   "How this particular sample was made: temperature, time, atmosphere, with numbers",
+    "dynamic_bond":  "Dynamic/reversible interaction in this sample; N/A if none",
+    "role":          "Its role in the study: 'best' / 'control' / 'series' / 'reference'",
+}
+
+MEAS_SCHEMA = {
+    "sample_id":  "Which sample this number belongs to (must match one sample_id above; use 'main' if the paper has only one material)",
+    "name":       "Property name in plain English (e.g. 'tensile strength', 'elongation at break', 'self-healing efficiency', 'Mn')",
+    "value_text": "The number with its unit exactly as printed (e.g. '12.4 MPa', '3.2x10^4 g/mol', '225-300 C'). Never convert units",
+    "condition":  "Test condition if stated: strain rate, temperature, frequency, healing time, humidity. Empty string if not stated",
+    "location":   "Where in the paper this number is printed: 'Table 2' / 'Fig. 3b' / 'main text' / 'SI Table S1'. Empty string if unsure",
+    "section":    "'main' if it comes from the main text, 'si' if from the supplementary information",
+}
+
+# 抽取方式：这个数字是怎么来的。写论文引用前要看的第一眼。
+METHOD_TEXT = 'text'          # 模型从正文/SI 文字里读出来的
+METHOD_TEXT_V1 = 'text-v1'    # v1 老记录拆出来的，没有样品归属也没有出处
+METHOD_CURVE = 'curve'        # 从曲线图上抠出来的（tools.digitize）
+METHOD_HUMAN = 'human'        # 人手工核对/录入的，最可信
+
+
+# ── 性能名字的统一词表 ────────────────────────────────────────────────
+# 为什么必须归一：模型每篇写法都不一样（tensile strength / ultimate tensile
+# stress / 拉伸强度 / σb）。不归一，「强度>10 MPa」这一句 SQL 就漏掉一半的库。
+# **只归一名字，绝不归一单位**（单位换算错比查不到更难发现）。
+PROPERTY_ALIASES = {
+    'tensile strength':      ('tensile strength', 'ultimate tensile strength', 'ultimate tensile stress',
+                              'tensile stress', 'fracture strength', 'breaking strength', 'strength at break',
+                              '拉伸强度', '断裂强度'),
+    'elongation at break':   ('elongation at break', 'strain at break', 'fracture strain', 'breaking elongation',
+                              'elongation', '断裂伸长率', '断裂应变'),
+    "young's modulus":       ("young's modulus", 'youngs modulus', 'elastic modulus', 'tensile modulus',
+                              'modulus', '弹性模量', '杨氏模量'),
+    'storage modulus':       ('storage modulus', "g'", '储能模量'),
+    'loss modulus':          ('loss modulus', 'g"', '损耗模量'),
+    'toughness':             ('toughness', 'work of fracture', 'fracture energy', 'energy dissipation', '韧性'),
+    'self-healing efficiency': ('self-healing efficiency', 'self healing efficiency', 'healing efficiency',
+                                'recovery efficiency', '自修复效率', '修复效率'),
+    'mn':                    ('mn', 'number average molecular weight', 'number-average molecular weight'),
+    'mw':                    ('mw', 'weight average molecular weight', 'weight-average molecular weight'),
+    'pdi':                   ('pdi', 'polydispersity', 'polydispersity index', 'dispersity'),
+    'viscosity':             ('viscosity', 'complex viscosity', 'zero-shear viscosity', 'shear viscosity', '粘度'),
+    'glass transition temperature': ('glass transition temperature', 'tg', '玻璃化转变温度'),
+    'thermal stability':     ('thermal stability', 'decomposition temperature', 'td', 't5%', '热分解温度'),
+    'conductivity':          ('conductivity', 'ionic conductivity', 'electrical conductivity', '电导率', '离子电导率'),
+    'gauge factor':          ('gauge factor', 'sensitivity', 'gf', '灵敏度'),
+    'adhesion strength':     ('adhesion strength', 'adhesive strength', 'lap shear strength', 'peel strength',
+                              '粘接强度', '剥离强度'),
+    'hardness':              ('hardness', 'shore hardness', '硬度'),
+    'impact strength':       ('impact strength', 'impact resistance', 'impact energy', 'ballistic limit',
+                              '冲击强度', '抗冲击'),
+    'crosslink density':     ('crosslink density', 'cross-link density', '交联密度'),
+}
+
+# 反查表：别名 → 正名。长别名优先匹配（'ultimate tensile strength' 要盖过 'tensile strength'）
+_ALIAS_TO_CANON = sorted(
+    ((a, canon) for canon, alist in PROPERTY_ALIASES.items() for a in alist),
+    key=lambda x: -len(x[0]))
+
+
+def normalize_property_name(name):
+    """性能名字 → 统一词表里的正名；词表里没有的原样返回（小写去空白）。
+
+    **只做名字归一，不碰单位、不碰数值。**词表外的名字照样入库 ——
+    宁可库里多几个没归一的名字，也不要把它们悄悄丢掉。
+    """
+    t = re.sub(r'\s+', ' ', str(name or '')).strip().lower().strip('（）()[]:：')
+    if not t:
+        return ''
+    if t in PROPERTY_ALIASES:
+        return t
+    for alias, canon in _ALIAS_TO_CANON:
+        if alias == t or re.search(r'(^|[^a-z])' + re.escape(alias) + r'($|[^a-z])', t):
+            return canon
+    return t
 
 # 系统提示词（「你是一台抽取引擎，不许编」那两段）不在这里 ——
 # R5 窗起它们住 tools/extract/prompts/{main,eval}_v<N>.txt，由 tools.extract 读进来。
@@ -461,3 +560,139 @@ def make_record(key, title, doi, data, schema_ver=None,
     return {'key': key, 'title': title, 'doi': doi or '',
             'schema_ver': SCHEMA_VER if schema_ver is None else schema_ver,
             'source': source, 'si_used': bool(si_used), **data}
+
+
+# ── v2：样品与测量的读出口（老记录也走这里）──────────────────────────
+# 这两个函数是**三层库的唯一入口**：编排环（tools/paperdb）只调它们，
+# 不去关心一条记录到底是 v1 还是 v2 抽的。新旧混在一个库里也不会崩。
+
+def samples_of(record):
+    """一条记录 → 样品列表。
+
+    v2 记录直接用它的 `samples`；**v1 老记录合成一个 'main' 样品**，
+    把论文级的配方字段挪进去 —— 于是老数据不用重抽也能进三层，
+    只是「这篇有几个配方」这一维暂时是塌的（等重抽才展开）。
+    """
+    raw = record.get('samples')
+    out = []
+    if isinstance(raw, (list, tuple)):
+        for i, s in enumerate(raw):
+            if not isinstance(s, dict):
+                continue
+            sid = str(s.get('sample_id') or f'S{i + 1}').strip() or f'S{i + 1}'
+            out.append({'sample_id': sid,
+                        'composition': _flat_text(s.get('composition')),
+                        'preparation': _flat_text(s.get('preparation')),
+                        'dynamic_bond': _flat_text(s.get('dynamic_bond')),
+                        'role': _flat_text(s.get('role'))})
+    if out:
+        return out
+    return [{'sample_id': 'main',
+             'composition': _flat_text(record.get('precursors')),
+             'preparation': _flat_text(record.get('synthesis_conditions')),
+             'dynamic_bond': _flat_text(record.get('dynamic_bond_type')),
+             'role': ''}]
+
+
+def _flat_text(v):
+    """列表/None → 一行文本（样品与测量字段都只存一行文本）。"""
+    if v is None:
+        return ''
+    if isinstance(v, (list, tuple, set)):
+        return '; '.join(str(x) for x in v if str(x).strip())
+    return str(v).strip()
+
+
+def iter_measurements(record):
+    """一条记录 → 测量列表（一个数字一条，带条件、出处、抽取方式）。
+
+    v2 走 `measurements`；v1 退回 `key_properties`，标 method='text-v1'、
+    出处留空 —— **空出处本身就是信息**：它精确地说「这个数字还没定位到原文」，
+    于是「哪些数字能直接写进论文」变成一句 SQL，而不是靠记忆。
+    """
+    out = []
+    raw = record.get('measurements')
+    if isinstance(raw, (list, tuple)) and raw:
+        for m in raw:
+            if not isinstance(m, dict):
+                continue
+            name = _flat_text(m.get('name'))
+            text = _flat_text(m.get('value_text')) or _flat_text(m.get('value'))
+            if not (name or text):
+                continue
+            parsed = parse_property(f'{name}: {text}' if name else text)
+            out.append({
+                'sample_id': _flat_text(m.get('sample_id')) or 'main',
+                'name': normalize_property_name(name or parsed['name']),
+                'raw_name': name or parsed['name'],
+                'value': parsed['value'], 'value_max': parsed['value_max'],
+                'unit': parsed['unit'], 'cmp': parsed['cmp'],
+                'condition': _flat_text(m.get('condition')),
+                'location': _flat_text(m.get('location')),
+                'section': (_flat_text(m.get('section')) or 'main').lower(),
+                'method': _flat_text(m.get('method')) or METHOD_TEXT,
+                'raw': f'{name}: {text}'.strip(': '),
+            })
+        return out
+    for p in parse_properties(record):
+        out.append({'sample_id': 'main',
+                    'name': normalize_property_name(p['name']), 'raw_name': p['name'],
+                    'value': p['value'], 'value_max': p['value_max'],
+                    'unit': p['unit'], 'cmp': p['cmp'],
+                    'condition': '', 'location': '',
+                    'section': 'si' if record.get('si_used') else 'main',
+                    'method': METHOD_TEXT_V1, 'raw': p['raw']})
+    return out
+
+
+def build_user_prompt_v2(title, body, si=''):
+    """v2 抽取提问：论文级字段 + **样品清单** + **一条一个数字的测量清单**。
+
+    与 v1 的区别只有一件事，但它决定了整个库能不能用：
+    **要求模型说清每个数字属于哪个样品、在什么条件下测的、印在原文哪儿。**
+    没有这三样，跨论文比大小就是在比假数，写论文时也不敢引。
+    """
+    fields = "\n".join(f'  - "{k}": {v}' for k, v in SAMPLE_SCHEMA.items())
+    meas = "\n".join(f'  - "{k}": {v}' for k, v in MEAS_SCHEMA.items())
+    p = (
+        f"Paper title: {title}\n\n"
+        "Return ONE JSON object with these three parts.\n\n"
+        "PART 1 - paper-level fields (same keys as before):\n"
+        f"{_field_list()}\n\n"
+        'PART 2 - "samples": a list, ONE ENTRY PER MATERIAL/FORMULATION the paper reports.\n'
+        "If the paper reports a series (PBS-1, PBS-2, ...), list them all. Fields:\n"
+        f"{fields}\n\n"
+        'PART 3 - "measurements": a list, ONE ENTRY PER NUMBER. Fields:\n'
+        f"{meas}\n\n"
+        "Rules for measurements (these matter more than coverage):\n"
+        "  * Copy numbers and units EXACTLY as printed. Never convert units.\n"
+        '  * Every measurement must name a sample_id that appears in "samples".\n'
+        '  * If you cannot tell where a number is printed, leave "location" empty '
+        "rather than guessing. A guessed location is worse than an empty one.\n"
+        "  * Do not invent numbers. If the paper only shows a curve without a stated "
+        "value, skip it.\n\n"
+        f"===== MAIN TEXT START =====\n{body}\n===== MAIN TEXT END ====="
+    )
+    if si and si.strip():
+        p += (
+            f"\n\n===== SUPPLEMENTARY INFORMATION START =====\n{si}\n"
+            "===== SUPPLEMENTARY INFORMATION END =====\n\n"
+            "The supplementary information belongs to this same paper and usually holds "
+            "the exact recipe (amounts, ratios, concentrations, temperature, time) and "
+            "extra tables of numbers. Use it for \"samples\" and for measurements with "
+            "section='si'."
+        )
+    return p
+
+
+def provenance_stats(measurements):
+    """这批数字有多少能追溯：{'n', 'located', 'with_condition', 'with_sample', 'numeric'}。
+
+    这是三层库的体温计 —— 「能不能直接写进论文」看的就是 located 这一栏。
+    """
+    ms = list(measurements)
+    return {'n': len(ms),
+            'numeric': sum(1 for m in ms if m.get('value') is not None),
+            'located': sum(1 for m in ms if has_value(m.get('location'))),
+            'with_condition': sum(1 for m in ms if has_value(m.get('condition'))),
+            'with_sample': sum(1 for m in ms if (m.get('sample_id') or 'main') != 'main')}

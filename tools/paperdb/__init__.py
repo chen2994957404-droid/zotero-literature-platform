@@ -66,21 +66,53 @@ CREATE TABLE IF NOT EXISTS papers (
   is_review   INTEGER,
   %s
 );
-CREATE TABLE IF NOT EXISTS properties (
+CREATE TABLE IF NOT EXISTS samples (
+  key          TEXT,
+  sample_id    TEXT,
+  composition  TEXT,
+  preparation  TEXT,
+  dynamic_bond TEXT,
+  role         TEXT,
+  PRIMARY KEY (key, sample_id)
+);
+CREATE TABLE IF NOT EXISTS measurements (
   key       TEXT,
+  sample_id TEXT,
   name      TEXT,
+  raw_name  TEXT,
   value     REAL,
   value_max REAL,
   unit      TEXT,
   cmp       TEXT,
+  "condition" TEXT,
+  location  TEXT,
+  section   TEXT,
+  method    TEXT,
   raw       TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_prop_name  ON properties(name);
-CREATE INDEX IF NOT EXISTS idx_prop_value ON properties(value);
-CREATE INDEX IF NOT EXISTS idx_papers_tier ON papers(tier);
+-- 旧名字保留成视图：老查询、老 evals、老 SQL 照样跑（三层是加出来的，不是换掉的）
+CREATE VIEW IF NOT EXISTS properties AS
+  SELECT key, name, value, value_max, unit, cmp, raw FROM measurements;
+CREATE INDEX IF NOT EXISTS idx_meas_name    ON measurements(name);
+CREATE INDEX IF NOT EXISTS idx_meas_value   ON measurements(value);
+CREATE INDEX IF NOT EXISTS idx_meas_key     ON measurements(key, sample_id);
+CREATE INDEX IF NOT EXISTS idx_papers_tier  ON papers(tier);
 """ % (',\n  '.join(f'"{f}" TEXT' for f in _FIELDS))
 
 _conn_cache = {}
+
+
+def _migrate(conn):
+    """把 v1 库里的 `properties` **表**换成视图（同名，查询一行不用改）。
+
+    为什么必须换：三层之后一个数字要带样品、条件、出处，列多了一倍。
+    与其让两份数值并存（必然对不上），不如让 properties 变成 measurements 的一个视图 ——
+    **一个真相，两个看法。**库本来就是可再生索引，换掉零风险。
+    """
+    row = conn.execute("SELECT type FROM sqlite_master WHERE name='properties'").fetchone()
+    if row is not None and row[0] == 'table':
+        conn.executescript('DROP TABLE properties;')
+        conn.commit()
 
 
 def db_path():
@@ -103,6 +135,7 @@ def connect(path=None):
         conn.execute('PRAGMA journal_mode=WAL')
     except sqlite3.Error:
         pass                    # 网络盘上 WAL 可能不可用，退回默认模式
+    _migrate(conn)
     conn.executescript(_DDL)
     conn.commit()
     _conn_cache[p] = conn
@@ -146,8 +179,16 @@ def _records():
     return out
 
 
+_MEAS_COLS = ['key', 'sample_id', 'name', 'raw_name', 'value', 'value_max', 'unit',
+              'cmp', 'condition', 'location', 'section', 'method', 'raw']
+
+
 def rebuild(records=None, log=print):
-    """从 `structured/*.json` 整库重建。返回 (篇数, 性能条数)。
+    """从 `structured/*.json` 整库重建。返回 (篇数, 样品数, 测量条数)。
+
+    **三层一起建**：一篇 → 若干样品 → 若干测量。
+    v1 老记录没有样品与出处，`shared.domain.schema` 会合成一个 'main' 样品、
+    出处留空 —— 所以新旧记录混在一个库里也查得动，空出处本身就是「还没定位」的信息。
 
     **只有整库重建，没有增量**：重建 175 篇不到一秒，
     而「增量维护」会引入一整类「库里还留着已删记录」的 bug。
@@ -158,10 +199,16 @@ def rebuild(records=None, log=print):
             'is_review'] + _FIELDS
     sql = ('INSERT OR REPLACE INTO papers (' + ','.join(f'"{c}"' for c in cols)
            + ') VALUES (' + ','.join('?' * len(cols)) + ')')
-    n_prop = 0
+    sql_s = ('INSERT OR REPLACE INTO samples '
+             '(key,sample_id,composition,preparation,dynamic_bond,role)'
+             ' VALUES (?,?,?,?,?,?)')
+    sql_m = ('INSERT INTO measurements (' + ','.join(f'"{c}"' for c in _MEAS_COLS)
+             + ') VALUES (' + ','.join('?' * len(_MEAS_COLS)) + ')')
+    n_samp = n_meas = 0
     with conn:
         conn.execute('DELETE FROM papers')
-        conn.execute('DELETE FROM properties')
+        conn.execute('DELETE FROM samples')
+        conn.execute('DELETE FROM measurements')
         for r in records:
             key = r.get('key') or ''
             row = [key, r.get('title', ''), r.get('doi', ''),
@@ -169,15 +216,15 @@ def rebuild(records=None, log=print):
                    1 if r.get('si_used') else 0, r.get('schema_ver'),
                    1 if schema.is_review(r) else 0] + [_flat(r.get(f)) for f in _FIELDS]
             conn.execute(sql, row)
-            for p in schema.parse_properties(r):
-                conn.execute(
-                    'INSERT INTO properties (key,name,value,value_max,unit,cmp,raw)'
-                    ' VALUES (?,?,?,?,?,?,?)',
-                    (key, p['name'], p['value'], p['value_max'],
-                     p['unit'], p['cmp'], p['raw']))
-                n_prop += 1
-    log(f'[查询库] {len(records)} 篇、{n_prop} 条性能数值 → {db_path()}')
-    return len(records), n_prop
+            for s in schema.samples_of(r):
+                conn.execute(sql_s, (key, s['sample_id'], s['composition'],
+                                     s['preparation'], s['dynamic_bond'], s['role']))
+                n_samp += 1
+            for m in schema.iter_measurements(r):
+                conn.execute(sql_m, [key] + [m.get(c) for c in _MEAS_COLS[1:]])
+                n_meas += 1
+    log(f'[查询库] {len(records)} 篇、{n_samp} 个样品、{n_meas} 条数值 → {db_path()}')
+    return len(records), n_samp, n_meas
 
 
 def _ensure_fresh():
@@ -292,3 +339,92 @@ def props(name_like=None, limit=200):
     sql += ' GROUP BY name, unit ORDER BY n DESC LIMIT ?'
     args.append(int(limit))
     return query(sql, args)
+
+
+def samples(key=None, text=None, limit=200):
+    """样品层：一行一个配方（哪篇的、什么组成、怎么做的、什么动态键）。
+
+    `key` 只看某一篇；`text` 在组成/制备里搜词。
+    """
+    where, args = [], []
+    if key:
+        where.append('s.key = ?')
+        args.append(key)
+    if text:
+        where.append('(s.composition LIKE ? OR s.preparation LIKE ? OR s.dynamic_bond LIKE ?)')
+        args += ['%' + text + '%'] * 3
+    sql = ('SELECT s.key, s.sample_id, p.title, s.composition, s.preparation, '
+           's.dynamic_bond, s.role, p.tier FROM samples s '
+           'LEFT JOIN papers p ON p.key = s.key')
+    if where:
+        sql += ' WHERE ' + ' AND '.join(where)
+    sql += ' ORDER BY s.key, s.sample_id LIMIT ?'
+    args.append(int(limit))
+    return query(sql, args)
+
+
+def measurements(prop=None, min_value=None, max_value=None, unit=None,
+                 tier=None, located=None, section=None, key=None, limit=200):
+    """测量层：一行一个数字，**带样品、条件、出处**。
+
+    这是「能不能写进论文」的那张表：`located=True` 只要定位到了原文
+    （表几图几）的那些 —— 其余的还得自己翻回去核对。
+
+      prop      性能名（先按统一词表归一，再模糊匹配）
+      located   True 只要有出处的；False 只要没出处的（= 待核清单）
+      section   'main' 只要正文的；'si' 只要补充材料的
+    """
+    where, args = [], []
+    if prop:
+        canon = schema.normalize_property_name(prop)
+        where.append('(m.name LIKE ? OR m.raw_name LIKE ?)')
+        args += ['%' + canon + '%', '%' + prop.lower() + '%']
+    if unit:
+        where.append('LOWER(m.unit) LIKE ?')
+        args.append('%' + unit.lower() + '%')
+    if min_value is not None:
+        where.append('m.value >= ?')
+        args.append(min_value)
+    if max_value is not None:
+        where.append('m.value <= ?')
+        args.append(max_value)
+    if tier:
+        where.append('p.tier = ?')
+        args.append(tier)
+    if section:
+        where.append('m.section = ?')
+        args.append(section)
+    if key:
+        where.append('m.key = ?')
+        args.append(key)
+    if located is not None:
+        where.append("TRIM(COALESCE(m.location,'')) " + ('!=' if located else '=') + " ''")
+    sql = ('SELECT m.key, p.title, m.sample_id, s.composition, m.name, m.value, '
+           'm.value_max, m.unit, m.cmp, m."condition", m.location, m.section, '
+           'm.method, p.tier, m.raw FROM measurements m '
+           'LEFT JOIN papers p ON p.key = m.key '
+           'LEFT JOIN samples s ON s.key = m.key AND s.sample_id = m.sample_id')
+    if where:
+        sql += ' WHERE ' + ' AND '.join(where)
+    sql += ' ORDER BY m.name, m.value DESC LIMIT ?'
+    args.append(int(limit))
+    return query(sql, args)
+
+
+def provenance():
+    """数字的可追溯体温计：总条数里有多少带出处 / 带条件 / 挂到了具体样品。
+
+    **这一栏才是数据库有没有长大的真指标** —— 篇数涨得再快，
+    没有出处的数字依然不能写进论文（AGENTS.md 的零号判据同一个道理：
+    「听起来很具体的数字最像事实，也最可能是编的」）。
+    """
+    rows = query(
+        'SELECT p.tier tier, COUNT(*) n, '
+        " SUM(CASE WHEN TRIM(COALESCE(m.location,'')) != '' THEN 1 ELSE 0 END) located,"
+        " SUM(CASE WHEN TRIM(COALESCE(m.\"condition\",'')) != '' THEN 1 ELSE 0 END) with_condition,"
+        " SUM(CASE WHEN COALESCE(m.sample_id,'main') != 'main' THEN 1 ELSE 0 END) with_sample,"
+        ' SUM(CASE WHEN m.value IS NOT NULL THEN 1 ELSE 0 END) numeric,'
+        " SUM(CASE WHEN m.section = 'si' THEN 1 ELSE 0 END) from_si"
+        ' FROM measurements m LEFT JOIN papers p ON p.key = m.key'
+        ' GROUP BY p.tier ORDER BY n DESC')
+    return rows

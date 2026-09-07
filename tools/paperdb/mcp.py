@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""paperdb 的 MCP 面：4 个只读工具（模型可以自己调，不花钱、不改任何东西）。
+"""paperdb 的 MCP 面：7 个只读工具（模型可以自己调，不花钱、不改任何东西）。
 
 查询库是 `structured/*.json` 的索引，读它零成本，所以按 R4 判据是 tool。
 返回值直接给 JSON：结构化数值是**给机器用的原生数据**，不翻译、不排版
@@ -58,8 +58,48 @@ def register(server):
                                       limit=a.get('limit', 200))))
 
     server.register_tool(
+        'paperdb_samples',
+        '样品层：一行一个配方（哪篇的、什么组成、怎么做的、什么动态键）。',
+        {'type': 'object', 'properties': {
+            'key': {'type': 'string', 'description': '只看某一篇（Zotero key）'},
+            'text': {'type': 'string', 'description': '组成/制备里含这个词'},
+            'limit': {'type': 'integer', 'minimum': 1, 'maximum': 500},
+        }},
+        lambda a: _json(paperdb.samples(key=a.get('key'), text=a.get('text'),
+                                        limit=a.get('limit', 200))))
+
+    server.register_tool(
+        'paperdb_measurements',
+        '测量层：一行一个数字，带样品、测试条件与出处（表几图几）。'
+        'located=true 只要能追溯到原文的那些 —— 要引进论文就筛这个。',
+        {'type': 'object', 'properties': {
+            'prop': {'type': 'string', 'description': '性能名，如 tensile strength（会先按统一词表归一）'},
+            'min_value': {'type': 'number'},
+            'max_value': {'type': 'number'},
+            'unit': {'type': 'string', 'description': '单位（**不做换算**，要连单位一起筛）'},
+            'tier': {'type': 'string', 'description': '档次：精+SI / 精层 / 粗层'},
+            'section': {'type': 'string', 'description': "'main' 正文 / 'si' 补充材料"},
+            'located': {'type': 'boolean', 'description': 'true=只要有出处的；false=只要还没定位的'},
+            'key': {'type': 'string', 'description': '只看某一篇'},
+            'limit': {'type': 'integer', 'minimum': 1, 'maximum': 500},
+        }},
+        lambda a: _json(paperdb.measurements(
+            prop=a.get('prop'), min_value=a.get('min_value'),
+            max_value=a.get('max_value'), unit=a.get('unit'), tier=a.get('tier'),
+            section=a.get('section'), located=a.get('located'), key=a.get('key'),
+            limit=a.get('limit', 200))))
+
+    server.register_tool(
+        'paperdb_provenance',
+        '这库里的数字有多少能追溯到原文（带出处 / 带测试条件 / 挂到了具体样品）。',
+        {'type': 'object', 'properties': {}},
+        lambda a: _json(paperdb.provenance()))
+
+    server.register_tool(
         'paperdb_sql',
-        '只读 SQL 查询（**只接受 SELECT / WITH**）。两张表：papers、properties。',
+        '只读 SQL 查询（**只接受 SELECT / WITH**）。三张表：papers（一篇一行）、'
+        'samples（一个配方一行）、measurements（一个数字一行，带条件与出处）；'
+        'properties 是 measurements 的兼容视图。',
         {'type': 'object', 'properties': {
             'sql': {'type': 'string', 'description': 'SELECT / WITH 开头的语句'},
         }, 'required': ['sql']},

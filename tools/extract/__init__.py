@@ -57,7 +57,7 @@ PRODUCER = 'extract_structured'
 
 # 系统提示词（怎么跟模型说话）在这里；字段清单（抽什么）在 shared.domain.schema。
 # 改措辞 = 新建 prompts/main_v2.txt 再把这里改成 @v2（提示词只增不改）。
-SYS = prompts.load('extract', 'main@v1')
+SYS = prompts.load('extract', 'main@v2')
 EVAL_SYS = prompts.load('extract', 'eval@v1')
 
 # 自检开关：默认开（质量增强），设 EXTRACT_NO_EVAL=1 关掉省钱
@@ -96,7 +96,7 @@ def evaluate(body, data):
 
 def extract_with_eval(title, body, si='', max_cycles=2, log=print):
     """抽取 + 自我评估重抽循环。返回 (data, report)。`si` 为补充材料全文（可空）。"""
-    data = llm_json(SYS, schema.build_user_prompt(title, body, si))
+    data = llm_json(SYS, schema.build_user_prompt_v2(title, body, si))
     if not EVAL_ENABLED or _provider() == 'ollama':      # 本地模型评估不可靠
         return data, {'ok': None, 'note': 'eval skipped'}
     # 自检也要照着「正文+SI」查，否则 SI 里抽来的投料量会被判成幻觉
@@ -110,7 +110,7 @@ def extract_with_eval(title, body, si='', max_cycles=2, log=print):
         log(f'  [自检第{cycle+1}轮] 漏抽{len(report.get("missed", []))} '
             f'幻觉{len(report.get("hallucinated", []))}，重抽')
         data = llm_json(SYS,
-                        schema.build_user_prompt(title, body, si) + "\n\n"
+                        schema.build_user_prompt_v2(title, body, si) + "\n\n"
                         + schema.build_feedback(report))
     return data, report
 

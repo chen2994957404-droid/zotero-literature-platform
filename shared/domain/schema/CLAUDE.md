@@ -13,7 +13,7 @@
 
 ## 用户的领域
 
-材料方向：聚硼硅氧烷 / 动态键弹性体 / 自愈合。11 个字段全部输出英文
+材料方向：聚硼硅氧烷 / 动态键弹性体 / 自愈合。字段全部输出英文
 （机器数据用原生英文，只有给人看的精读和问答才中文）。
 
 字段的选取判据：**能不能竖着比**。对比表的全部价值在于同一字段跨文献并列，
@@ -36,6 +36,35 @@ jobs.stale('extract', schema_ver=2)   # 这就是「谁缺新字段」的答案
 
 漏掉它的后果不是报错，是**安静地什么都没发生** —— 你以为全库都有新字段了，
 其实只有之后新进来的那几篇有。
+
+## v2（2026-09-06）：论文 → 样品 → 测量
+
+`SCHEMA` 只管**论文级**字段（结论、局限、体系描述）。数值不再挤在
+`key_properties` 一句话里，而是分成两层：
+
+```python
+SAMPLE_SCHEMA   # 一个配方：sample_id / composition / preparation / dynamic_bond / role
+MEAS_SCHEMA     # 一个数字：sample_id / name / value_text / condition / location / section
+```
+
+- `build_user_prompt_v2(title, body, si)` —— 同时要这三部分（v1 的 `build_user_prompt` 保留没删）
+- `samples_of(record)` / `iter_measurements(record)` —— **读出口**，
+  v1 老记录自动合成 `main` 样品、出处留空、`method='text-v1'`
+- `normalize_property_name(name)` —— 按 `PROPERTY_ALIASES` 归一（`ultimate tensile
+  stress` → `tensile strength`）。**只归一名字，绝不换算单位**
+- `provenance_stats(measurements)` —— 有多少数字带出处 / 带条件 / 挂到了具体样品
+
+**为什么非这么改不可**：一篇论文常有 PBS-1/PBS-2/PBS-3 好几个配方，
+v1 把它们的数字混成一句话，于是「强度 > 10 MPa 的体系」答出来的是论文不是体系；
+而没有出处（表几图几、正文还是 SI）的数字，用户不敢写进论文。
+这两条决定了库能不能真的用起来 —— 不是「多几个字段」的事。
+
+**加样品/测量字段的规矩跟 SCHEMA 一样**：改了就 `SCHEMA_VER +1`，
+否则 `jobs.stale('extract', schema_ver=N)` 查不出谁该重抽（安静地什么都不发生）。
+
+⚠ 粗层（`tools/extract/batch.py` 的 `coarse_all`）**仍用 v1 提问**：
+它的料是 Zotero 全文索引，本来就没有表号图号可指，问了只会诱导模型编。
+那些记录如实写 `schema_ver=1`。
 
 ## 综述分流（`is_review`）
 

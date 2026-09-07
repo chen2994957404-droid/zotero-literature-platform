@@ -18,6 +18,20 @@ RECS = [
      'source': 'coarse', 'synthesis_conditions': 'N/A',
      'key_properties': ['tensile strength: 0.5 MPa']},
     {'key': 'CCCC0003', 'title': 'Recent advances in gels', 'doc_type': 'review'},
+    # v2 记录：一篇里两个配方，数字各自挂到样品上，并带条件与出处
+    {'key': 'DDDD0004', 'title': 'A PBS series', 'doc_type': 'research',
+     'schema_ver': 2, 'si_used': True, 'material_system': 'polyborosiloxane PBS',
+     'samples': [
+         {'sample_id': 'PBS-1', 'composition': 'PDMS:boric acid = 10:1',
+          'preparation': '150 °C, 2 h', 'dynamic_bond': 'boroxine', 'role': 'best'},
+         {'sample_id': 'PBS-2', 'composition': 'PDMS:boric acid = 20:1',
+          'preparation': '150 °C, 2 h', 'dynamic_bond': 'boroxine', 'role': 'series'}],
+     'measurements': [
+         {'sample_id': 'PBS-1', 'name': 'ultimate tensile stress',
+          'value_text': '18 MPa', 'condition': '100 mm/min, 25 °C',
+          'location': 'Table 2', 'section': 'main'},
+         {'sample_id': 'PBS-2', 'name': 'tensile strength', 'value_text': '4 MPa',
+          'location': 'Fig. 3b', 'section': 'si'}]},
 ]
 
 
@@ -35,16 +49,16 @@ def main():
                                      'w', encoding='utf-8'), ensure_ascii=False)
 
             total += 1
-            n_paper, n_prop = paperdb.rebuild(log=lambda *a: None)
-            if (n_paper, n_prop) == (3, 3):
-                print('  [PASS] 建库：3 篇、3 条性能数值'); ok += 1
+            n_paper, n_samp, n_meas = paperdb.rebuild(log=lambda *a: None)
+            if (n_paper, n_samp, n_meas) == (4, 5, 5):
+                print('  [PASS] 三层一起建：4 篇、5 个样品、5 条数值'); ok += 1
             else:
-                print(f'  [FAIL] 建库计数不对：{n_paper} 篇 {n_prop} 条')
+                print(f'  [FAIL] 建库计数不对：{n_paper} 篇 {n_samp} 样品 {n_meas} 条')
 
             total += 1
             hit = paperdb.find(prop='tensile', min_value=10)
-            if [r['key'] for r in hit] == ['AAAA0001']:
-                print('  [PASS] 性能能比大小（拉伸强度 > 10 MPa 只剩一篇）'); ok += 1
+            if sorted(r['key'] for r in hit) == ['AAAA0001', 'DDDD0004']:
+                print('  [PASS] 性能能比大小（拉伸强度 > 10 MPa 的两篇，弱的那篇被挡掉）'); ok += 1
             else:
                 print(f'  [FAIL] 数值筛选不对：{[r["key"] for r in hit]}')
 
@@ -72,6 +86,53 @@ def main():
                 print(f'  [FAIL] 档次/综述标记不对：{rows}')
 
             total += 1
+            rows = paperdb.samples(key='DDDD0004')
+            if ([r['sample_id'] for r in rows] == ['PBS-1', 'PBS-2']
+                    and rows[0]['composition'].startswith('PDMS')):
+                print('  [PASS] 样品层：一篇里的两个配方各占一行'); ok += 1
+            else:
+                print(f'  [FAIL] 样品层不对：{rows}')
+
+            total += 1
+            rows = paperdb.measurements(prop='tensile strength', min_value=10)
+            keys = sorted({(r['key'], r['sample_id']) for r in rows})
+            if keys == [('AAAA0001', 'main'), ('DDDD0004', 'PBS-1')]:
+                print('  [PASS] 测量层：比大小时分得清是哪个样品的数'); ok += 1
+            else:
+                print(f'  [FAIL] 测量层筛选不对：{keys}')
+
+            total += 1
+            loc = paperdb.measurements(located=True)
+            unloc = paperdb.measurements(located=False)
+            if ({r['key'] for r in loc} == {'DDDD0004'}
+                    and {r['key'] for r in unloc} == {'AAAA0001', 'BBBB0002'}):
+                print('  [PASS] 有出处的和还没定位的分得开（待核清单能一句话拉出来）'); ok += 1
+            else:
+                print(f'  [FAIL] 出处筛选不对：{[r["key"] for r in loc]} / {[r["key"] for r in unloc]}')
+
+            total += 1
+            rows = paperdb.measurements(prop='ultimate tensile stress')
+            if rows and rows[0]['name'] == 'tensile strength':
+                print('  [PASS] 换个叫法也查得到（性能名字先归一再匹配）'); ok += 1
+            else:
+                print(f'  [FAIL] 名字归一没生效：{rows}')
+
+            total += 1
+            prov = {r['tier']: r for r in paperdb.provenance()}
+            fine = prov.get(schema.TIER_FINE_SI, {})
+            if fine.get('located') == 2 and fine.get('with_condition') == 1:
+                print('  [PASS] 体温计：数得出有多少数字能追溯到原文'); ok += 1
+            else:
+                print(f'  [FAIL] 体温计不对：{prov}')
+
+            total += 1
+            n_view = paperdb.query('SELECT COUNT(*) n FROM properties')[0]['n']
+            if n_view == 5:
+                print('  [PASS] 老名字 properties 还在（视图），老查询照跑'); ok += 1
+            else:
+                print(f'  [FAIL] 兼容视图不对：{n_view}')
+
+            total += 1
             try:
                 paperdb.query('DELETE FROM papers')
                 print('  [FAIL] 居然让写语句跑了')
@@ -83,7 +144,7 @@ def main():
             paperdb.close()
             os.remove(os.path.join(d, 'papers.db'))
             again = paperdb.rebuild(log=lambda *a: None)
-            if again == (3, 3):
+            if again == (4, 5, 5):
                 print('  [PASS] 删库可原样重建（真相是 structured/*.json）'); ok += 1
             else:
                 print(f'  [FAIL] 重建结果不一致：{again}')

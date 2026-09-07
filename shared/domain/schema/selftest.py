@@ -149,6 +149,67 @@ def main():
     else:
         print(f'  [FAIL] 记录缺版本号或来源：{r}')
 
+    # ── v2：样品层与测量层 ────────────────────────────────────────────
+    total += 1
+    if (schema.normalize_property_name('Ultimate tensile stress') == 'tensile strength'
+            and schema.normalize_property_name('断裂伸长率') == 'elongation at break'
+            and schema.normalize_property_name('Healing efficiency') == 'self-healing efficiency'
+            and schema.normalize_property_name('some odd prop') == 'some odd prop'):
+        print('  [PASS] 性能名字归一：别名归到正名，词表外的原样留着'); ok += 1
+    else:
+        print('  [FAIL] 性能名字归一不对')
+
+    v1 = {'key': 'K1', 'precursors': 'PDMS:boric acid = 10:1',
+          'key_properties': ['tensile strength: 12 MPa', 'Mn: 3.2x10^4 g/mol']}
+    total += 1
+    s1 = schema.samples_of(v1)
+    m1 = schema.iter_measurements(v1)
+    if (len(s1) == 1 and s1[0]['sample_id'] == 'main'
+            and len(m1) == 2 and m1[0]['value'] == 12.0
+            and all(x['method'] == schema.METHOD_TEXT_V1 for x in m1)
+            and all(x['location'] == '' for x in m1)):
+        print('  [PASS] v1 老记录不重抽也能进三层（合成 main 样品，出处留空）'); ok += 1
+    else:
+        print(f'  [FAIL] v1 兼容不对：{s1} {m1}')
+
+    v2 = {'key': 'K2',
+          'samples': [{'sample_id': 'PBS-1', 'composition': 'a', 'preparation': 'b'},
+                      {'sample_id': 'PBS-2', 'composition': 'c'}],
+          'measurements': [
+              {'sample_id': 'PBS-1', 'name': 'Ultimate tensile stress',
+               'value_text': '12.4 MPa', 'condition': '100 mm/min',
+               'location': 'Table 2', 'section': 'si'},
+              {'sample_id': 'PBS-2', 'name': 'healing efficiency',
+               'value_text': '95 %', 'location': '', 'section': 'main'}]}
+    total += 1
+    s2 = schema.samples_of(v2)
+    m2 = schema.iter_measurements(v2)
+    if (len(s2) == 2 and [x['sample_id'] for x in s2] == ['PBS-1', 'PBS-2']
+            and len(m2) == 2 and m2[0]['name'] == 'tensile strength'
+            and m2[0]['raw_name'] == 'Ultimate tensile stress'
+            and m2[0]['value'] == 12.4 and m2[0]['unit'] == 'MPa'
+            and m2[0]['location'] == 'Table 2' and m2[0]['section'] == 'si'
+            and m2[1]['name'] == 'self-healing efficiency'):
+        print('  [PASS] v2 记录：数字挂到样品上，条件与出处都留住了'); ok += 1
+    else:
+        print(f'  [FAIL] v2 读出不对：{s2} {m2}')
+
+    total += 1
+    st = schema.provenance_stats(m2)
+    if st == {'n': 2, 'numeric': 2, 'located': 1, 'with_condition': 1, 'with_sample': 2}:
+        print('  [PASS] 出处体温计：2 条数字里 1 条定位到了原文'); ok += 1
+    else:
+        print(f'  [FAIL] 出处统计不对：{st}')
+
+    total += 1
+    p = schema.build_user_prompt_v2('T', 'BODY', 'SIBODY')
+    if ('"samples"' in p and '"measurements"' in p and 'sample_id' in p
+            and 'Never convert units' in p and 'SIBODY' in p
+            and 'material_system' in p):
+        print('  [PASS] v2 提问同时要论文级字段、样品清单、带出处的测量清单'); ok += 1
+    else:
+        print('  [FAIL] v2 提问缺了某一部分')
+
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)
 

@@ -185,7 +185,7 @@ def coarse_all(rebuild=False, log=print):
             failed += 1
             continue          # 单篇失败继续下一篇
         record = schema.make_record(key, title, x['data'].get('DOI', ''), data,
-                                    source=schema.SOURCE_COARSE)
+                                    schema_ver=1, source=schema.SOURCE_COARSE)
         os.makedirs(paths.STRUCTURED, exist_ok=True)
         json.dump(record, io.open(paths.structured(key), 'w', encoding='utf-8'),
                   ensure_ascii=False, indent=2)

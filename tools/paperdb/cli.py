@@ -10,6 +10,9 @@
   python -m tools.paperdb --props tensile  # 抽到过哪些性能、各多少条、范围多大
   python -m tools.paperdb --find boron --prop tensile --min 10
   python -m tools.paperdb --field synthesis_conditions  # 这个字段真有值的篇
+  python -m tools.paperdb --samples          # 样品层：一行一个配方（--samples KEY 只看某篇）
+  python -m tools.paperdb --m tensile --min 10 --located   # 测量层：带出处的那些数字
+  python -m tools.paperdb --prov            # 数字有多少能追溯到原文（体温计）
   python -m tools.paperdb --sql "SELECT tier, COUNT(*) n FROM papers GROUP BY tier"
 
 **库是索引不是真相**：真相是 `structured/<key>.json`。库随时可删可重建，
@@ -55,6 +58,32 @@ def main():
         for f in (cov[tiers[0]]['rate'] if tiers else {}):
             print(f.ljust(24) + ''.join(
                 f'{round(cov[t]["rate"][f] * 100)}%'.rjust(14) for t in tiers))
+        return
+
+    if flag('--prov'):
+        rows = paperdb.provenance()
+        print('数字能不能追溯（located = 定位到了原文表几图几，才敢写进论文）\n')
+        _print_rows(rows, ['tier', 'n', 'numeric', 'located', 'with_condition',
+                           'with_sample', 'from_si'], width=14)
+        return
+
+    if flag('--samples') or opt('--samples') is not None:
+        _print_rows(paperdb.samples(key=opt('--samples'), text=opt('--find'),
+                                    limit=int(opt('--limit', 50))),
+                    ['key', 'sample_id', 'title', 'composition', 'dynamic_bond'])
+        return
+
+    if flag('--m') or opt('--m') is not None:
+        mn, mx = opt('--min'), opt('--max')
+        _print_rows(paperdb.measurements(
+            prop=opt('--m'), unit=opt('--unit'), tier=opt('--tier'),
+            section=opt('--section'), key=opt('--key'),
+            located=True if flag('--located') else (False if flag('--unlocated') else None),
+            min_value=float(mn) if mn else None,
+            max_value=float(mx) if mx else None,
+            limit=int(opt('--limit', 50))),
+            ['key', 'sample_id', 'name', 'value', 'unit', 'condition', 'location',
+             'section', 'method'])
         return
 
     if opt('--props') is not None or flag('--props'):

@@ -15,34 +15,55 @@
 此前答不了的原因很具体：`key_properties` 存的是 `'tensile strength: 12 MPa'`
 这种人话，机器比不了大小；而 `compare.md` 是给人竖着看的一张表，不能筛也不能分组。
 
-## 两张表
+## 三张表（2026-09-06 由两张扩成三张）
 
 | 表 | 一行是什么 | 关键列 |
 |---|---|---|
 | `papers` | 一篇文献 | `key` / `title` / `tier` / `source` / `si_used` / `schema_ver` / `is_review` + schema 的每个字段 |
-| `properties` | 一条性能数值 | `key` / `name` / `value` / `value_max` / `unit` / `cmp` / `raw` |
+| `samples` | **一个配方** | `key` / `sample_id` / `composition` / `preparation` / `dynamic_bond` / `role` |
+| `measurements` | **一个数字** | `key` / `sample_id` / `name` / `raw_name` / `value` / `value_max` / `unit` / `cmp` / `condition` / `location` / `section` / `method` / `raw` |
 
-`properties` 由 `shared.domain.schema.parse_properties()` 拆出来：
-`'Mn: 3.2×10^4 g/mol'` → `name='mn', value=32000.0, unit='g/mol'`；
-`'225–300 °C'` → `value=225, value_max=300`；`'>20 times'` → `cmp='>'`。
-拆不出数字的照样入库（`value` 为 NULL），只是不能参与大小比较。
+`properties` 保留成 `measurements` 的视图（同名同列），**老查询、老 evals、老 SQL 一行都不用改**。
+建库时 `_migrate()` 会把 v1 库里那张 `properties` 表丢掉换成视图 —— 库本来就是可再生索引，换掉零风险。
 
-**不做单位换算**：MPa 与 kPa 混在一起时宁可让人看见 —— 偷偷换算错，
-比查不到更难发现。查询时按「名字 + 单位」一起筛（`find(prop=..., unit=...)`）。
+### 为什么要有样品层与出处（这两条是整次改动的全部理由）
+
+**① 最小单元错了。** v1 是「一篇一行」，可一篇论文常有 PBS-1/PBS-2/PBS-3 好几个配方。
+数字全挤在一句 `key_properties` 里，拆出来**不知道属于哪个样品** ——
+「强度 > 10 MPa 的体系有哪些」只能答出论文，答不出体系。库越大，这个错越致命。
+
+**② 数字没有出处就不敢用。** `tensile strength: 12 MPa` 不告诉你它印在表 2 还是图 3b、
+是正文还是 SI、是模型读的文字还是从曲线上抠的。于是每次要引用都得翻回原文。
+`measurements(located=True)` 一句话就是「敢引的那些」，`located=False` 是待核清单。
+
+**③ 测试条件是数值的一部分。** 12 MPa 在什么应变速率、什么温度下测的；
+自修复 95% 修了几小时。不带条件跨论文比大小，比的是假数。
+
+### 新旧混住的规矩
+
+`shared.domain.schema.samples_of()` / `iter_measurements()` 是**唯一入口**，
+本模块不判断一条记录是 v1 还是 v2：v1 自动合成 `main` 样品、出处留空、
+`method='text-v1'`。所以**老数据不用重抽就能进三层**，而且一眼看得出它还没定位。
+
+`parse_property` 依然不换单位。名字则按 `PROPERTY_ALIASES` 归一（`name` 存正名，
+`raw_name` 存原文写法）—— 不归一，「强度」这一查就会漏掉一半的库。
 
 ## 对外接口
 
 ```python
 from tools import paperdb
 
-paperdb.rebuild()                       # 从 structured/*.json 整库重建
+paperdb.rebuild()                       # 三层一起重建 → (篇数, 样品数, 数值条数)
 paperdb.query(sql, args)                # 只读 SQL → list[dict]（只接受 SELECT / WITH）
 paperdb.find(text='boron', prop='tensile', min_value=10, tier='精层', field='...')
 paperdb.stats()                         # 各档次 × 各字段有值率
 paperdb.props('tensile')                # 抽到过哪些性能、各多少条、范围多大
+paperdb.samples(key=..., text=...)      # 样品层：一行一个配方
+paperdb.measurements(prop=..., min_value=..., located=True)   # 测量层：带条件与出处
+paperdb.provenance()                    # 多少数字能追溯到原文（体温计）
 ```
 
-命令行：`python -m tools.paperdb --rebuild | --stats | --props X | --find X | --sql "..."`
+命令行：`--rebuild | --stats | --props X | --find X | --samples | --m X [--located] | --prov | --sql "..."`
 
 ## 文件
 
