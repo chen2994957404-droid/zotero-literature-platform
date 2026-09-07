@@ -27,10 +27,16 @@ description: 抽取出来的结构化记录 → 可筛可查、能比大小的�
 | `paperdb_find` | 按关键词 / 档次 / 某字段有值 / 性能数值范围筛 |
 | `paperdb_stats` | 有多少篇、各字段有值率（**先看这个再下结论**）|
 | `paperdb_props` | 抽到过哪些性能名、各多少条、范围多大 |
+| `paperdb_samples` | 样品层：一行一个配方（这篇里有几个体系、各是什么组成）|
+| `paperdb_measurements` | 测量层：一行一个数字，**带测试条件与出处**；`located=true` 只要能追溯到原文的 |
+| `paperdb_provenance` | 这库里的数字有多少带出处 / 带条件 / 挂到了具体样品 |
 | `paperdb_sql` | 复杂查询自己写 SQL（只接受 SELECT / WITH）|
 
 用 `paperdb_props` 先看性能名怎么写的，再拿去 `paperdb_find`：
-性能名是从原文里抽的，不是我们规定的枚举，猜名字十有八九筛出空。
+性能名是从原文里抽的（常见的那些会归到统一词表），猜名字容易筛出空。
+
+**要把数字写进论文/报告，先 `paperdb_measurements(located=true)`** ——
+没有出处的数字只能当线索，得自己翻回原文核。`paperdb_provenance` 告诉你这库整体有多少能追溯。
 
 ## 什么时候**别**用我
 
@@ -45,5 +51,7 @@ description: 抽取出来的结构化记录 → 可筛可查、能比大小的�
 ## 边界
 
 - 数值拆自「人话字符串」，拆不出数字的记录 `value` 是 NULL —— `min_value` 筛不到它们
+- **v1 老记录没有样品也没有出处**（`method='text-v1'`、`sample_id='main'`、`location` 空）：
+  它们的数字只能算「这篇里出现过这个值」，不能算「这个配方的性能」
 - `tier`（精层/粗层）差别很大：粗层来自 Zotero 全文索引 + 本地小模型，
   **只适合粗筛**，下结论前先看 `paperdb_stats` 里那一档的有值率
