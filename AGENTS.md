@@ -96,7 +96,8 @@ A 机默认不写 Zotero、不跑常驻服务、不跑花钱的批量作业 —�
 - `data/serving/structured/compare.md` — 横向对比表（2026-08-28 实测 175 条：39 精层 + 136 粗层）
 - `data/serving/structured/compare_reviews.md` · `compare_PBS.md` — 综述单列 · PBS 精层子表（10 篇）
 - `data/raw/<KEY>/parsed/full.md` — 解析出的全文 ｜ `data/curated/<KEY>/summary.html` — 中文精读
-- `data/serving/vector_db/` — 向量库（9105 块，供 `tools/ask` 检索）
+- `data/serving/vector_db/` — 向量库（2026-09-06 实测 13051 块：粗层 12160 + **SI 615** + 旧精层 276，供 `tools/ask` 检索）
+  ⚠ **精层几乎是空的**：42 篇有 `parsed/full.md`，但精层只有 276 块 —— 粗层每小时自动跑、先入了库，`deep_one` 的 `existing_keys()` 判重就把它们全跳过了。精读产出的高质量全文基本没进库，问答用的其实是 Zotero 的粗糙全文索引。
 
 ## 语言约定与模型分工（别搞混）
 
