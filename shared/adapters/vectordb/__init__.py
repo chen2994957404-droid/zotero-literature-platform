@@ -44,6 +44,7 @@ store.delete_by(key='ABCD1234', source='library')   # 精层入库后，同篇�
 ## 换实现时要守住的契约
 
 1. `open_store()` 返回的对象有 add / query / count / all_metadatas / delete_by / reset
+   （`add` 必须是**同 id 覆盖**的语义 —— 见它的文档字符串，这条踩过）
 2. `query` 返回 `Hit` 列表，字段名不变，`sim` 越大越像
 3. 集合名与向量空间由本模块决定，调用方不需要知道
 
@@ -89,7 +90,16 @@ class Store:
 
     # ── 写 ──
     def add(self, ids, documents, metadatas, embeddings):
-        """批量入库。四个列表必须等长。"""
+        """批量入库（**同 id 覆盖**）。四个列表必须等长。
+
+        ⚠ 为什么必须是 upsert 而不是 add（2026-09-06 实测 chromadb 1.5.9）：
+        `collection.add()` 遇到已存在的 id **一声不吭地丢掉这一条**，
+        库里留着的还是老内容、老元数据。于是「重新向量化一篇」这件事
+        **在任何已入库的篇上都是空操作** —— 重新解析过、换了切块方式、
+        补了元数据，全都进不去，而且没有任何报错。
+        实测的账：精层重跑写进 2873 块，库里只多了 2597 —— 差的 276 块正是
+        早年入过库的那些，它们的 `source` 至今还是空的（踩坑 #129）。
+        """
         n = len(ids)
         if not (len(documents) == len(metadatas) == len(embeddings) == n):
             raise errors.BadInputError(
@@ -97,8 +107,8 @@ class Store:
                 f'metas={len(metadatas)}、embs={len(embeddings)}')
         if n == 0:
             return 0
-        self._coll.add(ids=ids, documents=documents,
-                       metadatas=metadatas, embeddings=embeddings)
+        self._coll.upsert(ids=ids, documents=documents,
+                          metadatas=metadatas, embeddings=embeddings)
         return n
 
     def reset(self):

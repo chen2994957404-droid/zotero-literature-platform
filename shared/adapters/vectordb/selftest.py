@@ -46,6 +46,16 @@ def main():
             print(f'  [FAIL] 入库异常: 返回{n}、count={store.count()}')
 
         total += 1
+        store.add(['a'], ['聚硼硅氧烷（改过的正文）'],
+                  [{'key': 'AAAAAAAA', 'title': '论文A', 'source': 'main'}],
+                  [_vec(1, 0, 0)])
+        again = [m for m in store.all_metadatas() if m.get('key') == 'AAAAAAAA']
+        if len(again) == 1 and again[0].get('source') == 'main' and store.count() == 2:
+            print('  [PASS] 同 id 再入库是**覆盖**（Chroma 的 add 会静默丢掉，必须 upsert）'); ok += 1
+        else:
+            print(f'  [FAIL] 同 id 覆盖没生效：{again}、count={store.count()}')
+
+        total += 1
         try:
             store.add(['x', 'y'], ['只有一条'], [{}], [_vec(1)])
             print('  [FAIL] 四个列表不等长竟然没报错（会静默入错数据）')
