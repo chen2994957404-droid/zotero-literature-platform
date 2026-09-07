@@ -88,8 +88,12 @@ def main():
         if rebuild:
             backup(keys)
 
-    print(f'结构化抽取 {len(keys)} 篇（schema v{schema.SCHEMA_VER}，'
-          f'{"本地 Ollama" if os.environ.get("EXTRACT_PROVIDER") == "ollama" else "云端 DeepSeek"}'
+    # 报**真实**用的模型，别报一个写死的家名：换成百炼之后这行仍写着
+    # 「云端 DeepSeek」，日志与事实对不上（2026-09-07 撞到）。
+    # 花钱的作业，最不该骗人的就是「现在花的是谁的钱」。
+    who = ('本地 Ollama' if os.environ.get('EXTRACT_PROVIDER') == 'ollama'
+           else f'云端 {extract._model()}')
+    print(f'结构化抽取 {len(keys)} 篇（schema v{schema.SCHEMA_VER}，{who}'
           f'{"，强制重抽" if rebuild else "，已抽过的跳过"}）\n', flush=True)
     done = extract_many(keys, force=rebuild or bool(only_key),
                         parse_missing=flag('--parse'))
