@@ -98,6 +98,14 @@ def main():
     else:
         print('  [FAIL] thinking=None 时不该往请求里塞东西')
 
+    total += 1
+    p_local, m_local, _k = llm_client._cfg(None, 'qwen3.5:latest', None)
+    p_cloud, _m, _k2 = llm_client._cfg(None, 'qwen3.8-flash', None)
+    if p_local == 'ollama' and m_local == 'qwen3.5:latest' and p_cloud == 'dashscope':
+        print('  [PASS] 带 tag 的模型名走本地 ollama，不带 tag 的按前缀认云端'); ok += 1
+    else:
+        print(f'  [FAIL] 本地/云端认错家：{p_local} / {p_cloud}')
+
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)
 

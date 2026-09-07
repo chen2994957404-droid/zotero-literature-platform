@@ -126,6 +126,12 @@ def _cfg(provider, model, key):
       而是让唯一知道「谁家是谁家」的这一层说了算。
     """
     owner = provider_of(model)
+    if not owner and model and _OLLAMA_TAG in str(model):
+        # 带 tag 的名字（`qwen3.5:latest`）只有本地 ollama 认。
+        # 不认这条的后果是**把本地模型名发去云端**，换回一句「模型不存在」——
+        # 而那看起来像模型名写错了，没人会想到是发错了家（2026-09-07 撞到）。
+        provider, key = 'ollama', ''
+    owner = owner if owner else provider_of(model)
     if owner and provider != 'ollama' and owner != provider:
         # 连 key 一起丢掉：调用方递来的是**另一家的钥匙**，
         # 拿去开这扇门只会换来一句莫名其妙的 401/400。
