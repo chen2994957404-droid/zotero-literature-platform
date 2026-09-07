@@ -161,6 +161,59 @@ def main():
     else:
         print('  [FAIL] 坏格式没被判掉')
 
+    # ── 拆段抽取的脚本校验层：小模型能用的全部前提 ──────────────────
+    from tools.extract import chunk_pass as C
+
+    passage = ('The PBS-1 sample showed a tensile strength of 12.4 MPa and an '
+               'elongation at break of 480 %. PBS-2 reached 8.1 MPa.')
+    names = ['PBS-1', 'PBS-2']
+
+    total += 1
+    rows = [{'sample_id': 'PBS-1', 'name': 'tensile strength', 'value_text': '12.4 MPa'},
+            {'sample_id': 'PBS-1', 'name': 'tensile strength', 'value_text': '99.9 MPa'}]
+    kept, drop = C.validate(rows, passage, names)
+    if len(kept) == 1 and drop['编的数字'] == 1:
+        print('  [PASS] 数字不在这一段里就丢掉（模型编的那个 99.9 被判了）'); ok += 1
+    else:
+        print(f'  [FAIL] 编的数字没判掉：留下 {len(kept)} 条，{drop}')
+
+    total += 1
+    rows = [{'sample_id': 'PBS-9', 'name': 'tensile strength', 'value_text': '12.4 MPa'}]
+    kept, drop = C.validate(rows, passage, names)
+    if not kept and drop['编的样品'] == 1:
+        print('  [PASS] 样品不在名单里就丢掉（模型没有权力发明样品名）'); ok += 1
+    else:
+        print(f'  [FAIL] 编的样品没判掉：{kept}')
+
+    total += 1
+    rows = [{'sample_id': 'unknown', 'name': 'tensile strength', 'value_text': '12.4 MPa'}]
+    kept, _ = C.validate(rows, passage, names)
+    if len(kept) == 1 and kept[0]['sample_id'] == 'unknown':
+        print('  [PASS] 说不清属于谁时 unknown 是合法答案（比硬猜一个强）'); ok += 1
+    else:
+        print(f'  [FAIL] unknown 被误判了：{kept}')
+
+    total += 1
+    tbl = [{'sample_id': 'PBS-1', 'name': 'tensile strength', 'value': 12.4}]
+    rows = [{'sample_id': 'PBS-1', 'name': 'tensile strength', 'value_text': '12.4 MPa'}]
+    kept, drop = C.validate(rows, passage, names, table_rows=tbl)
+    if not kept and drop['跟表格重了'] == 1:
+        print('  [PASS] 跟表格重的丢掉（表格那条带出处，更硬）'); ok += 1
+    else:
+        print(f'  [FAIL] 没跟表格判重：{kept}')
+
+    total += 1
+    rows = [{'sample_id': 'PBS-1', 'name': 'note', 'value_text': 'improved a lot'},
+            {'sample_id': 'PBS-2', 'name': 'tensile strength', 'value_text': '8.1 MPa'},
+            {'sample_id': 'PBS-2', 'name': 'tensile strength', 'value_text': '8.1 MPa'}]
+    kept, drop = C.validate(rows, passage, names)
+    if len(C._dedup(kept)) == 1 and drop['没有数值'] == 1:
+        print('  [PASS] 没数值的丢掉；同一个数复述多遍只算一条'); ok += 1
+    else:
+        print(f'  [FAIL] 去重或空值判错：{kept} {drop}')
+
+
+
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)
 

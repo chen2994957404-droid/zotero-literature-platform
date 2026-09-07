@@ -301,6 +301,20 @@ def curves(key):
     return os.path.join(paper_dir(key), 'curves.json')
 
 
+def chunk_measurements(key):
+    """★ curated/<key>/chunk_measurements.json —— 拆段扫正文抽到的数值。
+
+    为什么单独一份、而不是并进 `structured/<key>.json`（2026-09-07）：
+    那份是「整篇过一次大模型」的产物，重抽一次就整个覆盖。
+    拆段扫正文是**另一条流水线、另一种代价**（几百次小请求），
+    混在一起会出现「重抽一次，几百次小请求的成果没了」——
+    而且没人看得出来它没了。分开放，两条线各自可重跑。
+
+    跟 `curves()` 是同一个道理：都是花过钱才拿到的派生数据，都由 paperdb 编进索引。
+    """
+    return os.path.join(paper_dir(key), 'chunk_measurements.json')
+
+
 # ── 结构化抽取产物 ────────────────────────────────────────────────────
 def structured(key):
     """★ structured/<key>.json —— 单篇的结构化字段。"""

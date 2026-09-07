@@ -312,6 +312,32 @@ def _insert_curves(conn, curves_by_key):
     return n_c, n_m
 
 
+def _chunk_measurements():
+    """读回拆段抽取的产物：`{key: [测量, ...]}`（坏文件跳过）。
+
+    真相是 `curated/<key>/chunk_measurements.json`（`tools.extract.chunk_pass` 写的），
+    这里只把它编进索引 —— 跟曲线同一个待遇：**花过钱才拿到的派生数据，
+    要长期留着，也要能被查**。
+
+    这些条目的 `method='chunk'`：它们过了脚本校验（数字必须在那一段里逐字找得到、
+    样品必须在名单里），但**出处不如表格硬** —— 表格的出处是版面结构给的，
+    正文的出处是「这段附近提到了 Table 2」。查询时 `method` 就是可信度的分档。
+    """
+    out = {}
+    for key in paths.all_keys():
+        f = paths.chunk_measurements(key)
+        if not os.path.exists(f):
+            continue
+        try:
+            d = json.load(io.open(f, encoding='utf-8'))
+        except Exception:
+            continue
+        rows = (d or {}).get('measurements')
+        if isinstance(rows, list) and rows:
+            out[key] = [r for r in rows if isinstance(r, dict)]
+    return out
+
+
 def _table_measurements(keys):
     """全文里的表格 → (测量, 投料量)，都按 key 分组。**现扫现用，不落第三份 JSON**。
 
@@ -399,7 +425,9 @@ def rebuild(records=None, log=print):
     n_samp = n_meas = 0
     # 脚本从全文表格里现扫的测量与投料量（不落盘，见 `_table_measurements`）
     t_meas, t_comp = _table_measurements({(r.get('key') or '') for r in records})
+    c_meas = _chunk_measurements()          # 拆段抽正文的产物（已过脚本校验）
     n_script = sum(len(v) for v in t_meas.values())
+    n_chunk = sum(len(v) for v in c_meas.values())
     with conn:
         conn.execute('DELETE FROM papers')
         conn.execute('DELETE FROM samples')
@@ -420,6 +448,7 @@ def rebuild(records=None, log=print):
             # 先算数值再算样品：`samples_of` 要拿数值对帐，
             # 把挂在不存在样品上的数值接回去（同一个列表对象，两边才一致）
             meas = _merge_script(schema.iter_measurements(r), t_meas.get(key) or [])
+            meas = _merge_script(meas, c_meas.get(key) or [])
             comp = _composition_text(t_comp.get(key) or [])
             for s in schema.samples_of(r, meas):
                 extra = comp.get(s['sample_id'])
@@ -436,6 +465,7 @@ def rebuild(records=None, log=print):
     log(f'[查询库] {len(records)} 篇、{n_samp} 个样品、{n_meas} 条数值'
         + (f'（其中 {n_cm} 条抠自 {n_curve} 条曲线）' if n_curve else '')
         + (f'（其中 {n_script} 条由脚本从表格直扫，全部带出处）' if n_script else '')
+        + (f'（其中 {n_chunk} 条拆段抽自正文，已过脚本校验）' if n_chunk else '')
         + f' → {db_path()}')
     return len(records), n_samp, n_meas
 
@@ -474,7 +504,8 @@ def _ensure_fresh():
     except OSError:
         pass
     for key in paths.all_keys():          # 曲线与全文也是源
-        for f in (paths.curves(key), paths.fulltext(key)):
+        for f in (paths.curves(key), paths.fulltext(key),
+                  paths.chunk_measurements(key)):
             try:                          # 抠完一张图、重解析一篇全文，库都该跟着新
                 newest = max(newest, os.path.getmtime(f))
             except OSError:
