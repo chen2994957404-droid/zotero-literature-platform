@@ -3,7 +3,7 @@
 
 | 线 | 料 | 覆盖 | 质量 | 入口 |
 |---|---|---|---|---|
-| 精层 `deep_all()`  | 精读产物 `parsed/full.md`（MineRU 解析的全文） | 只有精读过的 | 高 | `--deep` |
+| 精层 `deep_all()`  | 精读产物 `parsed/full.md` **+ `si_parsed/full.md`（SI）** | 只有精读过的 | 高 | `--deep` |
 | 粗层 `light_all()` | Zotero 自带全文索引（不解析 PDF、不占空间） | **全库** | 一般 | `--light`（默认）|
 
 两条并存不冲突：粗层负责「广撒网、都能搜到」，精层负责「读过的答得深」。
@@ -11,7 +11,8 @@
 
 用法:
     python -m tools.ask.vectorize                 增量粗层（全库轻量，定时任务跑的就是这条）
-    python -m tools.ask.vectorize --deep          增量精层（只处理精读过、还没入库的）
+    python -m tools.ask.vectorize --deep          增量精层（正文 + 补充材料 SI）
+    python -m tools.ask.vectorize --deep --no-si  只做正文，跳过 SI
     python -m tools.ask.vectorize --deep --rebuild  清空重建整个向量库
 
 R2/R3 窗合并自 `库内问答/{vectorize,vectorize_library}.py`。
@@ -74,25 +75,80 @@ def deep_one(key, coll, existing, log=print):
         return False, 0
     log(f'[处理] {title[:40]} — {len(chunks)} 块')
     ids = [f'{key}_{i}' for i in range(len(chunks))]
-    metas = [{'key': key, 'title': title, 'doi': meta.get('DOI', ''), 'chunk': i}
-             for i in range(len(chunks))]
+    metas = [{'key': key, 'title': title, 'doi': meta.get('DOI', ''),
+              'source': 'main', 'chunk': i} for i in range(len(chunks))]
     coll.add(ids, chunks, metas, _embed_all(chunks))
     return True, len(chunks)
 
 
-def deep_all(rebuild=False, log=print):
-    """精层增量向量化全库。返回 (处理篇数, 块数)。"""
+# ── 精层·补充材料：si_parsed/full.md → 向量库 ─────────────────────────
+def _si_indexed_keys(coll):
+    """已经把 SI 入过库的文献 key。
+
+    **不能复用 `existing_keys()`**：那个只回答「这篇有没有任何块」，
+    而库里绝大多数文献早就有正文块了 —— 拿它判重会让 SI 一篇都补不进去。
+    SI 要能补进**已经建好的**向量库，判重就必须按 `source` 分开算。
+    """
+    return {m.get('key') for m in coll.all_metadatas() if m.get('source') == 'si'}
+
+
+def si_one(key, coll, existing_si, log=print):
+    """向量化单篇的**补充材料**：读 si_parsed/full.md → 切块 → 入库。
+
+    与 `deep_one` 同构，两处刻意不同：
+      - id 用 `<key>_SI<i>`，与正文的 `<key>_<i>`、粗层的 `<key>_L<i>` 都不撞
+      - meta 里 `source='si'`，`ask` 据此在答案里标明「出自补充材料」——
+        否则用户拿着出处去正文里找，会找不到（SI 是另一个文件）
+
+    返回 (是否新处理, 块数)。没有 SI、或已入库，都返回 (False, 0)。
+    """
+    si_path = paths.si_fulltext(key)
+    if not os.path.exists(si_path):
+        return False, 0
+    if key in existing_si:
+        return False, 0
+    meta = {}
+    if os.path.exists(paths.meta(key)):
+        try:
+            meta = json.load(io.open(paths.meta(key), encoding='utf-8'))
+        except Exception:
+            meta = {}
+    title = meta.get('title', key)
+    chunks = chunk(io.open(si_path, encoding='utf-8').read())
+    if not chunks:
+        return False, 0
+    log(f'[SI]   {title[:40]} — {len(chunks)} 块')
+    ids = [f'{key}_SI{i}' for i in range(len(chunks))]
+    metas = [{'key': key, 'title': title, 'doi': meta.get('DOI', ''),
+              'source': 'si', 'chunk': i} for i in range(len(chunks))]
+    coll.add(ids, chunks, metas, _embed_all(chunks))
+    return True, len(chunks)
+
+
+def deep_all(rebuild=False, log=print, with_si=True):
+    """精层增量向量化全库：**正文 + 补充材料**。返回 (处理篇数, 块数)。
+
+    ⚠ SI 的判重**不能**用 `existing_keys()`：库里绝大多数文献正文早就入过库，
+    拿「这篇有没有块」判重会让 SI 一篇都补不进去。见 `_si_indexed_keys()`。
+    """
     coll = get_collection(rebuild)
     existing = set() if rebuild else coll.existing_keys()
-    processed = total_chunks = 0
+    existing_si = set() if rebuild else (_si_indexed_keys(coll) if with_si else set())
+    processed = total_chunks = si_papers = si_chunks = 0
     for key in paths.all_keys():
         ok, n = deep_one(key, coll, existing, log=log)
         if ok:
             processed += 1
             total_chunks += n
-    log(f'\n完成：新处理 {processed} 篇文献，{total_chunks} 个文本块')
+        if with_si:
+            ok_si, n_si = si_one(key, coll, existing_si, log=log)
+            if ok_si:
+                si_papers += 1
+                si_chunks += n_si
+    log(f'\n完成：正文新处理 {processed} 篇（{total_chunks} 块）'
+        + (f'；补充材料新处理 {si_papers} 篇（{si_chunks} 块）' if with_si else ''))
     log(f'向量库当前总块数：{coll.count()}')
-    return processed, total_chunks
+    return processed + si_papers, total_chunks + si_chunks
 
 
 # ── 粗层：Zotero 全文索引 → 向量库 ────────────────────────────────────
@@ -180,7 +236,7 @@ def main():
     role.require_prod('全库向量化', force=flag('--force'))
     os.makedirs(paths.VECTOR_DB, exist_ok=True)
     if flag('--deep'):
-        deep_all(rebuild=flag('--rebuild'))
+        deep_all(rebuild=flag('--rebuild'), with_si=not flag('--no-si'))
         print(f'向量库位置：{paths.VECTOR_DB}')
     else:
         light_all()

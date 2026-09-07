@@ -41,7 +41,7 @@
 
 | 线 | 料 | 覆盖 | 谁跑 |
 |---|---|---|---|
-| 精层 `deep_all()` | 精读产物 `parsed/full.md` | 只有精读过的 | 手动 `--deep` |
+| 精层 `deep_all()` | 精读产物 `parsed/full.md` **+ SI `si_parsed/full.md`** | 只有精读过的 | 手动 `--deep` |
 | 粗层 `light_all()` | Zotero 自带全文索引 | **全库** | 定时任务每小时（`host.autosync`）|
 
 ## 对外接口
@@ -73,7 +73,7 @@ vectorize.deep_all()       # 精层增量
 ## 怎么验证
 
 ```
-python tools/ask/selftest.py                  # 7 条，全离线
+python tools/ask/selftest.py                  # 11 条，全离线
 python host/doctor/health_check.py --offline  # 离线体检，必须全绿
 python -m tools.ask "我的库里关于自修复有什么"   # 真问一次（要 Ollama + DEEPSEEK_KEY）
 ```

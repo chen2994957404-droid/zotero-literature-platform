@@ -37,6 +37,11 @@ class FakeStore(object):
     def existing_keys(self):
         return set(i.split('_')[0] for i in self.ids)
 
+    def all_metadatas(self):
+        # 真 Store 有这个方法，假的也必须有 —— SI 的判重就走它。
+        # 假件跟真件接口漂移时，坏的不是自测而是「自测过了但真跑会崩」。
+        return list(self.metas)
+
 
 def main():
     ok = total = 0
@@ -125,6 +130,46 @@ def main():
                 print('  [PASS] 已入库的不重做（增量）'); ok += 1
             else:
                 print(f'  [FAIL] 重复处理了 {again} 篇')
+
+            # ── SI：必须能补进**已经有正文**的库 ──────────────────────
+            # 这是本条最关键的设计点：库里绝大多数文献正文早就入过库了，
+            # 若拿 existing_keys()（「这篇有没有块」）判重，SI 一篇都补不进去。
+            paths.si_parsed_dir(key, create=True)
+            io.open(paths.si_fulltext(key), 'w', encoding='utf-8').write(
+                '# SI\n\n' + ('supplementary synthesis detail. ' * 200))
+
+            total += 1
+            before = store.count()
+            n_si, c_si = vectorize.deep_all(log=lambda *a: None)
+            si_metas = [m for m in store.metas if m.get('source') == 'si']
+            if n_si == 1 and si_metas and store.count() > before:
+                print(f'  [PASS] SI 补进了已有正文的库 → {len(si_metas)} 块'); ok += 1
+            else:
+                print(f'  [FAIL] SI 没补进去：新增 {n_si} 篇、SI 块 {len(si_metas)} 个'
+                      f'（正文早已入库时最容易在这里被误判为「已处理」）')
+
+            total += 1
+            si_ids = [i for i in store.ids if '_SI' in i]
+            main_metas = [m for m in store.metas if m.get('source') == 'main']
+            if len(si_ids) == len(si_metas) > 0 and main_metas                     and not (set(si_ids) & set(i for i in store.ids if '_SI' not in i)):
+                print('  [PASS] SI 的 id 与正文不撞、source 标记正确'); ok += 1
+            else:
+                print(f'  [FAIL] id/标记有问题：SI id {len(si_ids)} 个、'
+                      f'SI 块 {len(si_metas)}、正文块 {len(main_metas)}')
+
+            total += 1
+            again_si, _ = vectorize.deep_all(log=lambda *a: None)
+            if again_si == 0:
+                print('  [PASS] SI 也不会重复入库'); ok += 1
+            else:
+                print(f'  [FAIL] SI 重复处理了 {again_si} 篇')
+
+            total += 1
+            n_off, _ = vectorize.deep_all(log=lambda *a: None, with_si=False)
+            if n_off == 0:
+                print('  [PASS] --no-si 时不碰 SI'); ok += 1
+            else:
+                print(f'  [FAIL] with_si=False 仍处理了 {n_off} 篇')
         finally:
             vectorize.embed, vectorize.get_collection = real_emb, real_coll
             paths.CURATED, paths.RAW = real_cur, real_raw

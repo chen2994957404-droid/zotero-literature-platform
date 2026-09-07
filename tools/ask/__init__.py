@@ -70,7 +70,9 @@ def answer_with(system, user):
 def ask_answer(question, top_k=TOP_K):
     """RAG 问答，**返回**结果而不是打印 —— 供 MCP / 面板 / 其他脚本复用。
 
-    返回 {'answer': str, 'sources': [{'title','doi'}], 'chunks': int}
+    返回 {'answer': str, 'sources': [{'title','doi','si'}], 'chunks': int}
+    `si=True` 表示这篇的**补充材料**被引用了 —— 必须让用户看见，
+    否则他拿着出处去正文里找会找不到（SI 是另一个文件）。
     找不到内容时 answer 为空串、chunks 为 0（调用方据此给提示）。
     """
     hits = _store().query(embed(question), n=top_k)
@@ -80,12 +82,19 @@ def ask_answer(question, top_k=TOP_K):
         return {'answer': '', 'sources': [], 'chunks': 0}
     context = ''
     sources = {}
+    si_titles = set()   # 哪些文献这次用到了 SI —— 出处要标出来，否则用户去正文里找会找不到
     for i, (doc, m) in enumerate(zip(docs, metas)):
-        context += f'\n【片段{i+1}·来自《{m["title"][:40]}》】\n{doc}\n'
-        sources[m['title'][:50]] = m.get('doi', '')
+        # 没有 source 字段的是早期入库的块，一律当正文（向后兼容旧库）
+        where = '补充材料SI' if m.get('source') == 'si' else '正文'
+        context += f'\n【片段{i+1}·来自《{m["title"][:40]}》的{where}】\n{doc}\n'
+        t = m['title'][:50]
+        sources[t] = m.get('doi', '')
+        if m.get('source') == 'si':
+            si_titles.add(t)
     answer = answer_with(SYS, f'文献片段：\n{context}\n\n用户问题：{question}')
     return {'answer': answer,
-            'sources': [{'title': t, 'doi': d} for t, d in sources.items()],
+            'sources': [{'title': t, 'doi': d, 'si': t in si_titles}
+                        for t, d in sources.items()],
             'chunks': len(docs)}
 
 
@@ -100,6 +109,8 @@ def ask(question, top_k=TOP_K):
     print('=' * 50)
     print('\n📚 参考来源：')
     for s in r['sources']:
-        print(f'  - 《{s["title"]}》' + (f'  DOI:{s["doi"]}' if s['doi'] else ''))
+        print(f'  - 《{s["title"]}》'
+              + ('（含补充材料 SI）' if s.get('si') else '')
+              + (f'  DOI:{s["doi"]}' if s['doi'] else ''))
     print()
     return r
