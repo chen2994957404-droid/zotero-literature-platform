@@ -39,7 +39,11 @@ def main():
     ok = total = 0
     with tempfile.TemporaryDirectory() as d:
         real_struct, real_db = paths.STRUCTURED, paperdb.db_path
-        real_curated = paths.CURATED
+        real_curated, real_abs = paths.CURATED, paths.ABSTRACTS
+        # 方向层目录也要隔离：`_records()` 现在两个目录都读，
+        # 漏一个就会把真实数据算进来 —— 在编程端看不出来（那儿没数据），
+        # 一到主力机就红。同 #127 的教训：**给读取加了新来源，先看测试隔离了什么。**
+        paths.ABSTRACTS = os.path.join(d, 'abstracts')
         paths.STRUCTURED = os.path.join(d, 'structured')
         os.makedirs(paths.STRUCTURED)
         paperdb.db_path = lambda: os.path.join(d, 'papers.db')
@@ -189,7 +193,7 @@ def main():
         finally:
             paperdb.close()
             paths.STRUCTURED, paperdb.db_path = real_struct, real_db
-            paths.CURATED = real_curated
+            paths.CURATED, paths.ABSTRACTS = real_curated, real_abs
 
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)
