@@ -243,6 +243,16 @@ def main():
             _llm.chat_json = _chat
             paths.CURATED, paths.RAW = _cur, _raw
 
+    total += 1
+    # 正文里的数常带误差棒。不剥掉，单位那栏会变成 `± 0.2 MPa`（2026-09-07 实测）
+    _p = ('Sample PBS-1 showed a tensile strength of 19.5 ± 0.2 MPa in this test.')
+    kept, _ = C.validate([{'sample_id': 'PBS-1', 'name': 'tensile strength',
+                           'value_text': '19.5 ± 0.2 MPa'}], _p, ['PBS-1'])
+    if kept and kept[0]['unit'] == 'MPa' and kept[0]['value'] == 19.5:
+        print('  [PASS] 误差棒不混进单位（挂假单位比没单位更坏）'); ok += 1
+    else:
+        print(f'  [FAIL] 误差棒混进单位了：{kept}')
+
 
 
     print(f'\n{ok}/{total} 通过')

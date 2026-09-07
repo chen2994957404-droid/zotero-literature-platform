@@ -86,7 +86,8 @@ def validate(rows, chunk, samples, table_rows=()):
         if not isinstance(m, dict):
             continue
         name = str(m.get('name') or '').strip()
-        text = str(m.get('value_text') or '').strip()
+        # 误差棒先剥掉再解析，否则 `19.5 ± 0.2 MPa` 的单位会变成 `± 0.2 MPa`
+        text = scan.clean_value_text(m.get('value_text'))
         sid = str(m.get('sample_id') or 'unknown').strip() or 'unknown'
         toks = _digits(text)
         if not toks:

@@ -277,16 +277,26 @@ def _clean_unit(unit):
     return t[:24]
 
 
+def clean_value_text(text):
+    """`12.4 ± 0.3 MPa` → `12.4 MPa`。**误差棒不是第二个数，更不是单位。**
+
+    不剥掉的话 `parse_property` 会把 `± 0.3 MPa` 整个当成单位存进库
+    （2026-09-07 实测：正文抽出来的 `19.5 ± 0.2 MPa`，单位那栏就是 `± 0.2 MPa`）。
+    一个数字挂上假单位，比没有单位更坏 —— 它会被当真去跟别人比大小。
+    """
+    t = clean_label(text)
+    if not t:
+        return ''
+    return re.sub(r'\s+', ' ', _ERRBAR_RE.sub(' ', t)).strip()
+
+
 def _cell_number(cell):
     """一格 → 可解析的那个数；**一格多值就返回 None（不猜）**。
 
     `PD 1.68 1.28` 这种一格塞两代样品的，硬拆就是往库里灌假数。
     误差棒 `12.4 (±0.10)` 先剥掉再判 —— 那是同一个数的精度，不是第二个数。
     """
-    t = clean_label(cell)
-    if not t:
-        return None
-    t = _ERRBAR_RE.sub(' ', t).strip()
+    t = clean_value_text(cell)
     if not t:
         return None
     if _RANGE_CELL_RE.match(t) or _SCI_RE.search(t):
