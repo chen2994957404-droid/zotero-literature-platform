@@ -174,3 +174,166 @@ def scan_measurements(md, window=90):
                     'section': 'main', 'method': 'script', 'raw': c['raw'],
                     'context': c['context']})
     return out
+
+
+# ── 表格：脚本最该干、模型最容易读错的地方 ────────────────────────────
+# MineRU 解析出来的表是 **HTML**（`<table><tr><td>`，实测 42 篇里 18 篇有），
+# 不是 markdown 管道表。一张表里四样东西同时在场：
+#   行首 = 样品名 · 表头 = 性能名与单位 · 交叉点 = 数值 · 表前一句 = 标题（出处）
+# 模型读这种表最容易串行串列（尤其带 colspan/rowspan 的双层表头），
+# 而脚本只是按坐标取值，**串不了**。
+import html as _html
+from html.parser import HTMLParser as _HTMLParser
+
+_TABLE_RE = re.compile(r'(?is)<table\b.*?</table>')
+# 表头里的单位：`Modulus (MPa)` / `Tensile strength at 250% (MPa)`
+# 单位可能在标签中间：双层表头拼起来是 `Modulus (MPa) 1st cycle`。
+# 只认结尾的话，这一列的单位就丢了 —— 丢了不报错，只是数字从此没有量纲。
+_HEAD_UNIT_RE = re.compile(r'[（(]\s*(?P<unit>[^)）]{1,16})\s*[)）]')
+
+
+class _TableParser(_HTMLParser):
+    """把 `<table>` 拆成二维格子，**展开 colspan / rowspan**。
+
+    不展开的后果是双层表头下的列全部错位 —— 而错位不会报错，
+    只会让 12.4 MPa 变成另一个性能的值。宁可代码多十行。
+    """
+
+    def __init__(self):
+        _HTMLParser.__init__(self)
+        self.rows, self._row, self._cell, self._span = [], None, None, {}
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag == 'tr':
+            self._row = []
+        elif tag in ('td', 'th') and self._row is not None:
+            self._cell = []
+            self._span = {'c': int(a.get('colspan') or 1),
+                          'r': int(a.get('rowspan') or 1)}
+
+    def handle_data(self, data):
+        if self._cell is not None:
+            self._cell.append(data)
+
+    def handle_endtag(self, tag):
+        if tag in ('td', 'th') and self._cell is not None:
+            text = _html.unescape(''.join(self._cell)).strip()
+            self._row.append({'text': text, **self._span})
+            self._cell = None
+        elif tag == 'tr' and self._row is not None:
+            self.rows.append(self._row)
+            self._row = None
+
+
+def _grid(rows):
+    """带 span 的行 → 规整二维数组（每格都填上真实文本）。"""
+    grid, pending = [], {}
+    for r in rows:
+        line, col = [], 0
+        for cell in r:
+            while col in pending and pending[col][1] > 0:
+                line.append(pending[col][0])
+                pending[col] = (pending[col][0], pending[col][1] - 1)
+                col += 1
+            for _ in range(cell['c']):
+                line.append(cell['text'])
+                if cell['r'] > 1:
+                    pending[col] = (cell['text'], cell['r'] - 1)
+                col += 1
+        while col in pending and pending[col][1] > 0:
+            line.append(pending[col][0])
+            pending[col] = (pending[col][0], pending[col][1] - 1)
+            col += 1
+        grid.append(line)
+    return grid
+
+
+def _is_headerish(line):
+    """这一行像表头吗：格子里基本没有纯数字。"""
+    vals = [c for c in line if c.strip()]
+    if not vals:
+        return False
+    numeric = sum(1 for c in vals if re.fullmatch(r'[-+±\d.,%\s]+', c))
+    return numeric <= len(vals) * 0.3
+
+
+def _columns(grid):
+    """表头（可能两层）→ 每列的 (性能名, 单位)。返回 (列定义, 数据起始行号)。"""
+    head_rows = 0
+    for line in grid[:3]:
+        if _is_headerish(line):
+            head_rows += 1
+        else:
+            break
+    head_rows = max(head_rows, 1)
+    width = max(len(l) for l in grid)
+    cols = []
+    for i in range(width):
+        parts, seen = [], set()
+        for r in range(head_rows):
+            if i < len(grid[r]):
+                t = grid[r][i].strip()
+                if t and t not in seen:
+                    parts.append(t)
+                    seen.add(t)
+        label = ' '.join(parts)
+        m = _HEAD_UNIT_RE.search(label)
+        if m and not re.fullmatch(r'[\d\s.,%-]+', m.group('unit')):
+            name = (label[:m.start()] + ' ' + label[m.end():]).strip()
+            cols.append((name or label, m.group('unit').strip()))
+        else:
+            cols.append((label, ''))
+    return cols, head_rows
+
+
+def _caption(md, start):
+    """表前最近的一句话当标题；顺带找表号（找不到就空 —— 空是事实）。"""
+    before = md[max(0, start - 400):start].strip()
+    line = [x.strip() for x in before.splitlines() if x.strip()]
+    cap = line[-1] if line else ''
+    return cap[:160], nearest_ref(md, start)
+
+
+def scan_tables(md):
+    """全文里的每张表 → 测量列表（**带样品、性能、单位、出处**，全部由脚本得到）。
+
+    `sample_id` 取行首那一格 —— 论文表格的第一列几乎总是样品名。
+    取不到数的格子直接跳过；表头认不出性能名的列也跳过（那才交给模型）。
+    """
+    out = []
+    for m in _TABLE_RE.finditer(md):
+        p = _TableParser()
+        try:
+            p.feed(m.group(0))
+        except Exception:
+            continue
+        if len(p.rows) < 2:
+            continue
+        grid = _grid(p.rows)
+        cols, head_rows = _columns(grid)
+        cap, ref = _caption(md, m.start())
+        for line in grid[head_rows:]:
+            if not line:
+                continue
+            sample = (line[0] or '').strip()
+            if not sample or re.fullmatch(r'[-+±\d.,%\s]+', sample):
+                continue          # 第一列是数字 → 这张表没有样品列，交给模型
+            for i, cell in enumerate(line[1:], start=1):
+                if i >= len(cols):
+                    break
+                name, unit = cols[i]
+                if not name or not cell.strip():
+                    continue
+                parsed = parse_property('%s %s' % (cell.strip(), unit))
+                if parsed['value'] is None:
+                    continue
+                canon = normalize_property_name(name)
+                out.append({
+                    'sample_id': sample, 'name': canon, 'raw_name': name,
+                    'value': parsed['value'], 'value_max': parsed['value_max'],
+                    'unit': unit or parsed['unit'], 'cmp': parsed['cmp'],
+                    'condition': '', 'location': ref, 'section': 'main',
+                    'method': 'script', 'raw': '%s: %s %s' % (name, cell.strip(), unit),
+                    'caption': cap})
+    return out
