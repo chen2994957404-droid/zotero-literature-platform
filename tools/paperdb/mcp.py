@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""paperdb 的 MCP 面：7 个只读工具（模型可以自己调，不花钱、不改任何东西）。
+"""paperdb 的 MCP 面：9 个只读工具（模型可以自己调，不花钱、不改任何东西）。
 
 查询库是 `structured/*.json` 的索引，读它零成本，所以按 R4 判据是 tool。
 返回值直接给 JSON：结构化数值是**给机器用的原生数据**，不翻译、不排版
@@ -96,9 +96,30 @@ def register(server):
         lambda a: _json(paperdb.provenance()))
 
     server.register_tool(
+        'paperdb_curves',
+        '曲线层：从论文图里抠下来的曲线（哪篇第几张图、什么曲线、多少个点、多确信）。'
+        '曲线的峰值同时也在测量层里，method=curve。',
+        {'type': 'object', 'properties': {
+            'key': {'type': 'string', 'description': '只看某一篇'},
+            'limit': {'type': 'integer', 'minimum': 1, 'maximum': 500},
+        }},
+        lambda a: _json(paperdb.curves(key=a.get('key'), limit=a.get('limit', 200))))
+
+    server.register_tool(
+        'paperdb_curve_points',
+        '某条曲线的原始点（[[x, y], ...]），要画图或再分析时用。',
+        {'type': 'object', 'properties': {
+            'key': {'type': 'string'},
+            'fig': {'type': 'string', 'description': '图号，如 3'},
+            'series': {'type': 'string', 'description': '同一张图有多条时指名字'},
+        }, 'required': ['key', 'fig']},
+        lambda a: _json(paperdb.curve_points(a['key'], a['fig'], a.get('series'))))
+
+    server.register_tool(
         'paperdb_sql',
         '只读 SQL 查询（**只接受 SELECT / WITH**）。三张表：papers（一篇一行）、'
-        'samples（一个配方一行）、measurements（一个数字一行，带条件与出处）；'
+        'samples（一个配方一行）、measurements（一个数字一行，带条件与出处）、'
+        'curves（从图里抠下来的曲线）；'
         'properties 是 measurements 的兼容视图。',
         {'type': 'object', 'properties': {
             'sql': {'type': 'string', 'description': 'SELECT / WITH 开头的语句'},

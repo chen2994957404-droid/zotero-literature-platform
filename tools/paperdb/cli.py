@@ -12,6 +12,7 @@
   python -m tools.paperdb --field synthesis_conditions  # 这个字段真有值的篇
   python -m tools.paperdb --samples          # 样品层：一行一个配方（--samples KEY 只看某篇）
   python -m tools.paperdb --m tensile --min 10 --located   # 测量层：带出处的那些数字
+  python -m tools.paperdb --curves          # 曲线层：从图里抠出来的曲线
   python -m tools.paperdb --prov            # 数字有多少能追溯到原文（体温计）
   python -m tools.paperdb --sql "SELECT tier, COUNT(*) n FROM papers GROUP BY tier"
 
@@ -71,6 +72,13 @@ def main():
         _print_rows(paperdb.samples(key=opt('--samples'), text=opt('--find'),
                                     limit=int(opt('--limit', 50))),
                     ['key', 'sample_id', 'title', 'composition', 'dynamic_bond'])
+        return
+
+    if flag('--curves') or opt('--curves') is not None:
+        _print_rows(paperdb.curves(key=opt('--curves'),
+                                   limit=int(opt('--limit', 50))),
+                    ['key', 'fig', 'series', 'chart_type', 'y_label', 'y_unit',
+                     'n_points', 'confidence'])
         return
 
     if flag('--m') or opt('--m') is not None:

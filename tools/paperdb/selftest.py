@@ -39,6 +39,7 @@ def main():
     ok = total = 0
     with tempfile.TemporaryDirectory() as d:
         real_struct, real_db = paths.STRUCTURED, paperdb.db_path
+        real_curated = paths.CURATED
         paths.STRUCTURED = os.path.join(d, 'structured')
         os.makedirs(paths.STRUCTURED)
         paperdb.db_path = lambda: os.path.join(d, 'papers.db')
@@ -132,6 +133,42 @@ def main():
             else:
                 print(f'  [FAIL] 兼容视图不对：{n_view}')
 
+            # ── 曲线：抠下来的点要能进库、能比大小 ──────────────────────
+            paths.CURATED = os.path.join(d, 'curated')
+            os.makedirs(os.path.join(paths.CURATED, 'DDDD0004'), exist_ok=True)
+            json.dump({'3': {'chart_type': 'line', 'confidence': 'medium',
+                             'caption': 'Stress-strain curves',
+                             'x_axis': {'label': 'Strain', 'unit': '%'},
+                             'y_axis': {'label': 'Stress', 'unit': 'MPa'},
+                             'series': [{'name': 'PBS-1',
+                                         'points': [[0, 0], [100, 8.2], [300, 12.4], [400, 5.0]]}]}},
+                      io.open(os.path.join(paths.CURATED, 'DDDD0004', 'curves.json'),
+                              'w', encoding='utf-8'), ensure_ascii=False)
+
+            total += 1
+            paperdb.close()
+            n_p, n_s, n_m = paperdb.rebuild(log=lambda *a: None)
+            rows = paperdb.curves(key='DDDD0004')
+            if len(rows) == 1 and rows[0]['n_points'] == 4 and rows[0]['y_unit'] == 'MPa':
+                print('  [PASS] 曲线进库：一条 series 一行，轴与单位都留着'); ok += 1
+            else:
+                print(f'  [FAIL] 曲线没进库：{rows}')
+
+            total += 1
+            peak = [m for m in paperdb.measurements(key='DDDD0004')
+                    if m['method'] == 'curve' and m['name'] == 'stress']
+            if peak and peak[0]['value'] == 12.4 and peak[0]['location'] == 'Fig. 3':
+                print('  [PASS] 曲线峰值变成能比大小的测量（method=curve，出处到图号）'); ok += 1
+            else:
+                print(f'  [FAIL] 曲线没派生出测量：{peak}')
+
+            total += 1
+            pts = paperdb.curve_points('DDDD0004', 3)
+            if pts and pts[0]['points'][2] == [300, 12.4]:
+                print('  [PASS] 原始点存住了（要画图或再分析随时取）'); ok += 1
+            else:
+                print(f'  [FAIL] 原始点取不回来：{pts}')
+
             total += 1
             try:
                 paperdb.query('DELETE FROM papers')
@@ -144,13 +181,15 @@ def main():
             paperdb.close()
             os.remove(os.path.join(d, 'papers.db'))
             again = paperdb.rebuild(log=lambda *a: None)
-            if again == (4, 5, 5):
-                print('  [PASS] 删库可原样重建（真相是 structured/*.json）'); ok += 1
+            # 5 条文字里抽的 + 2 条从曲线峰值派生的
+            if again == (4, 5, 7):
+                print('  [PASS] 删库可原样重建（真相是 JSON 文件，不是库）'); ok += 1
             else:
                 print(f'  [FAIL] 重建结果不一致：{again}')
         finally:
             paperdb.close()
             paths.STRUCTURED, paperdb.db_path = real_struct, real_db
+            paths.CURATED = real_curated
 
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)

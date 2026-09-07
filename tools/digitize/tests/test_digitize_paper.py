@@ -26,7 +26,7 @@ def test_怪key也只是空字典():
     assert digitize.digitize_paper('不是key') == {}
 
 
-def test_only参数只做指定的图(monkeypatch):
+def test_only参数只做指定的图(monkeypatch, tmp_path):
     """整篇 = 每张图各调一次云端视觉模型，**是要花钱的**。
     `only` 不生效意味着用户想读 1 张、实际付了 10 张的钱。
     """
@@ -42,8 +42,23 @@ def test_only参数只做指定的图(monkeypatch):
         return {'chart_type': 'line', 'series': []}
 
     monkeypatch.setattr(digitize, 'digitize', _fake_digitize)
+    # 落盘要落在临时目录：**测试不许写用户的数据目录**
+    # （第一版忘了这条，跑一次 pytest 就在 data/curated 下留了个 AAAA1111）
+    monkeypatch.setattr('shared.kernel.paths.CURATED', str(tmp_path))
 
     out = digitize.digitize_paper('AAAA1111', only=[2, 3])
     assert sorted(out) == [2, 3], f'只要 2、3 张，实际 {sorted(out)}'
     assert called == ['b', 'c'], '多调了模型 = 多花了钱'
     assert out[2]['caption'] == '图2', '图注要带上，否则没法判断读的是哪张'
+
+    # 抠过的图不该再花第二次钱：结果落了盘，第二次直接拿现成的
+    called.clear()
+    again = digitize.digitize_paper('AAAA1111', only=[2, 3])
+    assert called == [], '同一张图又调了一次模型 = 又花了一次钱'
+    assert sorted(again) == [2, 3]
+    assert digitize.load_curves('AAAA1111')['2']['caption'] == '图2'
+
+    # refresh=True 才强制重读（图重画了、或换了更好的模型时用）
+    called.clear()
+    digitize.digitize_paper('AAAA1111', only=[2], refresh=True)
+    assert called == ['b'], 'refresh=True 应该重读'

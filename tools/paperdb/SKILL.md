@@ -18,6 +18,8 @@
 | `paperdb_samples` | 样品层：一行一个配方（这篇里有几个体系、各是什么组成）|
 | `paperdb_measurements` | 测量层：一行一个数字，**带测试条件与出处**；`located=true` 只要能追溯到原文的 |
 | `paperdb_provenance` | 这库里的数字有多少带出处 / 带条件 / 挂到了具体样品 |
+| `paperdb_curves` | 曲线层：从论文图里抠下来的曲线（哪篇第几张图、多少个点、多确信）|
+| `paperdb_curve_points` | 某条曲线的原始点，要画图或再分析时用 |
 | `paperdb_sql` | 复杂查询自己写 SQL（只接受 SELECT / WITH）|
 
 用 `paperdb_props` 先看性能名怎么写的，再拿去 `paperdb_find`：
@@ -39,6 +41,8 @@
 ## 边界
 
 - 数值拆自「人话字符串」，拆不出数字的记录 `value` 是 NULL —— `min_value` 筛不到它们
+- **从曲线抠来的数字**（`method='curve'`）是**读图读出来的近似值**，`cmp='~'`：
+  能用来排序和找规律，写进论文前要回原图核
 - **v1 老记录没有样品也没有出处**（`method='text-v1'`、`sample_id='main'`、`location` 空）：
   它们的数字只能算「这篇里出现过这个值」，不能算「这个配方的性能」
 - `tier`（精层/粗层）差别很大：粗层来自 Zotero 全文索引 + 本地小模型，

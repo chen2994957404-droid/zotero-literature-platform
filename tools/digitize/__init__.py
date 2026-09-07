@@ -15,7 +15,8 @@
 |---|---|
 | `digitize(image_b64, hint='', provider, model, key) → dict` | 一张图 → `{chart_type, x_axis, y_axis, series, confidence, note}`，读不出时 `{'error': ...}` |
 | `digitize_file(path, hint='', ...) → dict` | 同上，但直接给图片文件路径（命令行用）|
-| `digitize_paper(item_key, only=None, ...) → {图号: dict}` | **一篇已解析文献 → 每张图的数值**（自己裁图，不用调用方操心）|
+| `digitize_paper(item_key, only=None, refresh=False, ...) → {图号: dict}` | **一篇已解析文献 → 每张图的数值**（自己裁图、自动落盘、抠过的不重抠）|
+| `load_curves(item_key)` / `save_curves(item_key, results)` | 读/存这篇抠过的曲线（`curated/<key>/curves.json`）|
 
 ⚠ **必须用云端大模型**：本地 7B 视觉模型会**编出看似合理的假数据**
 （宪法零号判据的反面教材 —— 编的数字最像事实）。
@@ -77,7 +78,8 @@ def digitize_file(path, hint='', provider=None, model=None, key=None):
     return digitize(b64, hint=hint, provider=provider, model=model, key=key)
 
 
-def digitize_paper(item_key, only=None, hint='', provider=None, model=None, key=None):
+def digitize_paper(item_key, only=None, hint='', provider=None, model=None,
+                   key=None, refresh=False):
     """**一篇已解析文献 → 它每张图的数值**（`{图号: 结果}`）。
 
     此前只有「给我一张图片文件」这个入口，而用户手里从来不是图片文件 ——
@@ -87,6 +89,10 @@ def digitize_paper(item_key, only=None, hint='', provider=None, model=None, key=
 
     `only` 给图号列表就只做那几张（`[2, 3]`）；不给就整篇。
     **每张图都要调一次云端视觉模型，整篇是要花钱的**，所以 `only` 是常用参数。
+
+    **抠过的图不再重抠**：结果存在 `curated/<key>/curves.json`，
+    下次直接拿来用（`refresh=True` 才强制重读）。抠出来的数值同时会被
+    `tools/paperdb` 收进测量层，跟文字里抽的数字放在一起比大小。
 
     返回 `{图号: {chart_type, series, ...}}`；某张读不出来时那一项是 `{'error': ...}`，
     不影响别的图 —— 与 `digitize()` 同一个契约。
@@ -100,12 +106,61 @@ def digitize_paper(item_key, only=None, hint='', provider=None, model=None, key=
         figs = crop_figures(paths.parsed_dir(item_key))
     except (OSError, paths.BadKeyError):
         return {}
+    cached = load_curves(item_key)
     out = {}
     for f in figs:
         num = f.get('num')
         if only and num not in only:
             continue
+        if not refresh and str(num) in cached:
+            out[num] = cached[str(num)]      # 这张图上次已经花钱读过了
+            continue
         r = digitize(f['b64'], hint=hint, provider=provider, model=model, key=key)
         r['caption'] = f.get('caption', '')
         out[num] = r
+    save_curves(item_key, out)
     return out
+
+
+# ── 抠出来的数值要留住 ────────────────────────────────────────────────
+# 为什么（2026-09-06）：此前读完图把结果返回给调用方就完了，**谁也没存**。
+# 于是同一张图每问一次就要再花一次云端视觉模型的钱，抠出来的数值也进不了查询库。
+# 图只需读一次，数值该跟精读产物一样长期留着 —— 真相是文件，库只是索引。
+def load_curves(item_key):
+    """这篇已经抠过的曲线：`{图号: 结果}`；没有就 `{}`（不抛异常）。"""
+    import io
+    import json
+    from shared.kernel import paths
+    try:
+        p = paths.curves(item_key)
+    except paths.BadKeyError:
+        return {}
+    if not os.path.exists(p):
+        return {}
+    try:
+        d = json.load(io.open(p, encoding='utf-8'))
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}          # 坏文件不该让整条线挂掉，当作还没抠过
+
+
+def save_curves(item_key, results):
+    """把这次抠到的图**并进**已有的 curves.json，返回落盘路径。
+
+    **并入而不是覆盖**：一次常常只读一两张图（`only=[2,3]`），
+    覆盖会把上次花钱读出来的其它图抹掉。读失败的那张（`{'error': ...}`）不存 ——
+    存了会让「这张图抠过了」变成假的。
+    """
+    import io
+    import json
+    from shared.kernel import paths
+    keep = {str(k): v for k, v in (results or {}).items()
+            if isinstance(v, dict) and not v.get('error')}
+    if not keep:
+        return ''
+    merged = load_curves(item_key)
+    merged.update(keep)
+    p = paths.curves(item_key)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    json.dump(merged, io.open(p, 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
+    return p

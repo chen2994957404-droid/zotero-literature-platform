@@ -17,6 +17,7 @@ python -m tools.paperdb --props tensile           # 抽到过哪些性能、范�
 python -m tools.paperdb --find boron --prop tensile --min 10
 python -m tools.paperdb --samples                 # 样品层：一行一个配方
 python -m tools.paperdb --m tensile --min 10 --located   # 测量层：能追溯到原文的数字
+python -m tools.paperdb --curves                  # 曲线层：抠过哪些图
 python -m tools.paperdb --prov                    # 有多少数字能追溯（体温计）
 python -m tools.paperdb --sql "SELECT tier, COUNT(*) n FROM papers GROUP BY tier"
 ```
@@ -29,6 +30,8 @@ paperdb.find(text='boron', prop='tensile', min_value=10, tier='精层')
 paperdb.samples(key='ABCD1234')                 # 这篇有几个配方
 paperdb.measurements(prop='tensile strength', min_value=10, located=True)
 paperdb.provenance()                            # 数字有多少能追溯到原文
+paperdb.curves(key='ABCD1234')                  # 这篇抠过哪些曲线
+paperdb.curve_points('ABCD1234', 3)             # 第 3 张图的原始点
 paperdb.query('SELECT ...')      # 只接受 SELECT / WITH
 ```
 
@@ -39,6 +42,7 @@ paperdb.query('SELECT ...')      # 只接受 SELECT / WITH
 | `papers` | 一篇文献：key / title / tier / source / si_used / schema 的每个字段 |
 | `samples` | **一个配方**：sample_id / 组成 / 制备 / 动态键 / 它在这篇里的角色 |
 | `measurements` | **一个数字**：name / value / unit / 测试条件 / **出处** / 正文还是 SI / 谁抽的 |
+| `curves` | **一条曲线**：哪篇第几张图、图例名、轴与单位、多少个点、原始点、读得多确信 |
 
 （`properties` 还在，是 `measurements` 的兼容视图，老查询照跑。）
 
@@ -54,6 +58,10 @@ paperdb.query('SELECT ...')      # 只接受 SELECT / WITH
 拆不出数字的照样入库，只是不能参与大小比较。
 性能名字按统一词表归一（`ultimate tensile stress` → `tensile strength`），
 **只归一名字，绝不换算单位**。
+
+**从图上抠下来的数也在同一张测量表里**（`method='curve'`，出处写成 `Fig. 3`）：
+每条曲线派生「峰值」和「峰值处的 X」两条。曲线本身连原始点一起留着，
+随时能取出来画图 —— 图只需花钱读一次。
 
 **v1 老记录不用重抽也能进三层**：自动合成一个 `main` 样品，出处留空 ——
 空出处本身就是信息，它精确地说「这个数字还没定位到原文」。

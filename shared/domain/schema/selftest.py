@@ -224,6 +224,28 @@ def main():
     else:
         print(f'  [FAIL] 废话出处没被清掉：{[m["location"] for m in ms]}')
 
+    total += 1
+    curve = {'chart_type': 'line', 'confidence': 'medium',
+             'x_axis': {'label': 'Strain', 'unit': '%'},
+             'y_axis': {'label': 'Stress', 'unit': 'MPa'},
+             'series': [{'name': 'PBS-1',
+                         'points': [[0, 0], [100, 8.2], [300, 12.4], [400, 5.0]]}]}
+    cm = schema.curve_measurements(curve, fig=3)
+    if (len(cm) == 2 and cm[0]['value'] == 12.4 and cm[0]['unit'] == 'MPa'
+            and cm[1]['value'] == 300 and cm[0]['sample_id'] == 'PBS-1'
+            and cm[0]['location'] == 'Fig. 3' and cm[0]['method'] == schema.METHOD_CURVE):
+        print('  [PASS] 曲线 → 峰值与峰值处的 X，出处到图号、标明是抠图来的'); ok += 1
+    else:
+        print(f'  [FAIL] 曲线派生不对：{cm}')
+
+    total += 1
+    if (schema.curve_measurements({'error': '读不出'}, fig=1) == []
+            and schema.curve_measurements(
+                {'series': [{'name': 'a', 'points': []}]}, fig=1) == []):
+        print('  [PASS] 读失败或没有点的曲线不派生任何数字（不许无中生有）'); ok += 1
+    else:
+        print('  [FAIL] 空曲线竟然派生出了数字')
+
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)
 

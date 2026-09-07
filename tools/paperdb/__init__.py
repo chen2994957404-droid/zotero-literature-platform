@@ -31,6 +31,8 @@
 | `rebuild(records=None)` | 从 `structured/*.json` 整库重建（秒级、不花钱） |
 | `query(sql, args)`      | **只读**查询（只接受单条 SELECT / WITH） |
 | `find(text, tier, field, prop, min_value, max_value, unit)` | 常用筛法，不用手写 SQL |
+| `samples()` / `measurements()` / `provenance()` | 样品层 / 测量层（带条件与出处）/ 可追溯体温计 |
+| `curves()` / `curve_points(key, fig)` | 从图上抠下来的曲线，以及它的原始点 |
 | `stats()`               | 各档次篇数 + 各字段有值率 |
 | `props(name_like)`      | 抽到过哪些性能、各多少条、范围多大 |
 | `db_path()` / `connect()` / `close()` | 库文件在哪 / 连接管理 |
@@ -90,6 +92,21 @@ CREATE TABLE IF NOT EXISTS measurements (
   method    TEXT,
   raw       TEXT
 );
+CREATE TABLE IF NOT EXISTS curves (
+  key        TEXT,
+  fig        TEXT,
+  series     TEXT,
+  chart_type TEXT,
+  x_label    TEXT,
+  x_unit     TEXT,
+  y_label    TEXT,
+  y_unit     TEXT,
+  n_points   INTEGER,
+  confidence TEXT,
+  caption    TEXT,
+  points     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_curves_key ON curves(key);
 -- 旧名字保留成视图：老查询、老 evals、老 SQL 照样跑（三层是加出来的，不是换掉的）
 CREATE VIEW IF NOT EXISTS properties AS
   SELECT key, name, value, value_max, unit, cmp, raw FROM measurements;
@@ -183,6 +200,57 @@ _MEAS_COLS = ['key', 'sample_id', 'name', 'raw_name', 'value', 'value_max', 'uni
               'cmp', 'condition', 'location', 'section', 'method', 'raw']
 
 
+def _curves():
+    """读回全部抠过的曲线：`{key: {图号: 结果}}`（坏文件跳过）。
+
+    真相是 `curated/<key>/curves.json`（`tools.digitize` 写的），
+    这里只是把它也编进索引 —— 曲线上抠下来的数字和文字里抽出来的数字
+    本来就该放在一起比大小，只是 `method` 不同、可信度不同。
+    """
+    out = {}
+    for key in paths.all_keys():
+        p = paths.curves(key)
+        if not os.path.exists(p):
+            continue
+        try:
+            d = json.load(io.open(p, encoding='utf-8'))
+        except Exception:
+            continue
+        if isinstance(d, dict) and d:
+            out[key] = d
+    return out
+
+
+def _insert_curves(conn, curves_by_key):
+    """曲线进 `curves` 表 + 派生的峰值进 `measurements`。返回 (曲线条数, 测量条数)。"""
+    sql_c = ('INSERT INTO curves (key,fig,series,chart_type,x_label,x_unit,y_label,'
+             'y_unit,n_points,confidence,caption,points) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+    sql_m = ('INSERT INTO measurements (' + ','.join(f'"{c}"' for c in _MEAS_COLS)
+             + ') VALUES (' + ','.join('?' * len(_MEAS_COLS)) + ')')
+    n_c = n_m = 0
+    for key, figs in curves_by_key.items():
+        for fig, cur in sorted(figs.items(), key=lambda kv: str(kv[0])):
+            if not isinstance(cur, dict) or cur.get('error'):
+                continue
+            x_ax, y_ax = cur.get('x_axis') or {}, cur.get('y_axis') or {}
+            for s in (cur.get('series') or []):
+                if not isinstance(s, dict):
+                    continue
+                pts = s.get('points') or []
+                conn.execute(sql_c, (key, str(fig), _flat(s.get('name')),
+                                     _flat(cur.get('chart_type')),
+                                     _flat(x_ax.get('label')), _flat(x_ax.get('unit')),
+                                     _flat(y_ax.get('label')), _flat(y_ax.get('unit')),
+                                     len(pts), _flat(cur.get('confidence')),
+                                     _flat(cur.get('caption')),
+                                     json.dumps(pts, ensure_ascii=False)))
+                n_c += 1
+            for m in schema.curve_measurements(cur, fig=fig):
+                conn.execute(sql_m, [key] + [m.get(c) for c in _MEAS_COLS[1:]])
+                n_m += 1
+    return n_c, n_m
+
+
 def rebuild(records=None, log=print):
     """从 `structured/*.json` 整库重建。返回 (篇数, 样品数, 测量条数)。
 
@@ -209,6 +277,7 @@ def rebuild(records=None, log=print):
         conn.execute('DELETE FROM papers')
         conn.execute('DELETE FROM samples')
         conn.execute('DELETE FROM measurements')
+        conn.execute('DELETE FROM curves')
         for r in records:
             key = r.get('key') or ''
             row = [key, r.get('title', ''), r.get('doi', ''),
@@ -223,7 +292,11 @@ def rebuild(records=None, log=print):
             for m in schema.iter_measurements(r):
                 conn.execute(sql_m, [key] + [m.get(c) for c in _MEAS_COLS[1:]])
                 n_meas += 1
-    log(f'[查询库] {len(records)} 篇、{n_samp} 个样品、{n_meas} 条数值 → {db_path()}')
+        n_curve, n_cm = _insert_curves(conn, _curves())
+        n_meas += n_cm
+    log(f'[查询库] {len(records)} 篇、{n_samp} 个样品、{n_meas} 条数值'
+        + (f'（其中 {n_cm} 条抠自 {n_curve} 条曲线）' if n_curve else '')
+        + f' → {db_path()}')
     return len(records), n_samp, n_meas
 
 
@@ -255,6 +328,11 @@ def _ensure_fresh():
                         os.path.join(paths.STRUCTURED, f)))
                 except OSError:
                     continue
+    for key in paths.all_keys():          # 曲线也是源：抠完一张图，库该跟着新
+        try:
+            newest = max(newest, os.path.getmtime(paths.curves(key)))
+        except OSError:
+            continue
     if newest < 0 and db_mtime >= 0:
         return                             # 没有源 JSON，保持现状（多半是测试造的库）
     if db_mtime < newest:
@@ -419,12 +497,46 @@ def provenance():
     「听起来很具体的数字最像事实，也最可能是编的」）。
     """
     rows = query(
-        'SELECT p.tier tier, COUNT(*) n, '
+        "SELECT COALESCE(p.tier,'(只有曲线)') tier, COUNT(*) n, "
         " SUM(CASE WHEN TRIM(COALESCE(m.location,'')) != '' THEN 1 ELSE 0 END) located,"
         " SUM(CASE WHEN TRIM(COALESCE(m.\"condition\",'')) != '' THEN 1 ELSE 0 END) with_condition,"
         " SUM(CASE WHEN COALESCE(m.sample_id,'main') != 'main' THEN 1 ELSE 0 END) with_sample,"
         ' SUM(CASE WHEN m.value IS NOT NULL THEN 1 ELSE 0 END) numeric,'
         " SUM(CASE WHEN m.section = 'si' THEN 1 ELSE 0 END) from_si"
         ' FROM measurements m LEFT JOIN papers p ON p.key = m.key'
-        ' GROUP BY p.tier ORDER BY n DESC')
+        ' GROUP BY 1 ORDER BY n DESC')
     return rows
+
+def curves(key=None, limit=200):
+    """曲线层：一行一条曲线（哪篇的第几张图、什么曲线、多少个点、读得有多确信）。
+
+    点本身存在 `points` 列里（JSON 字符串）—— 要画图或再分析就取那一列。
+    """
+    where, args = [], []
+    if key:
+        where.append('c.key = ?')
+        args.append(key)
+    sql = ('SELECT c.key, p.title, c.fig, c.series, c.chart_type, c.x_label, c.x_unit, '
+           'c.y_label, c.y_unit, c.n_points, c.confidence, c.caption '
+           'FROM curves c LEFT JOIN papers p ON p.key = c.key')
+    if where:
+        sql += ' WHERE ' + ' AND '.join(where)
+    sql += ' ORDER BY c.key, c.fig, c.series LIMIT ?'
+    args.append(int(limit))
+    return query(sql, args)
+
+
+def curve_points(key, fig, series=None):
+    """某条曲线的原始点：`[[x, y], ...]`。同一张图有多条时 `series` 指名字。"""
+    sql = 'SELECT series, points FROM curves WHERE key = ? AND fig = ?'
+    args = [key, str(fig)]
+    if series:
+        sql += ' AND series = ?'
+        args.append(series)
+    out = []
+    for r in query(sql, args):
+        try:
+            out.append({'series': r['series'], 'points': json.loads(r['points'] or '[]')})
+        except Exception:
+            out.append({'series': r['series'], 'points': []})
+    return out

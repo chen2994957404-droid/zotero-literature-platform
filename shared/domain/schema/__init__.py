@@ -718,3 +718,60 @@ def provenance_stats(measurements):
             'located': sum(1 for m in ms if has_value(m.get('location'))),
             'with_condition': sum(1 for m in ms if has_value(m.get('condition'))),
             'with_sample': sum(1 for m in ms if (m.get('sample_id') or 'main') != 'main')}
+
+
+# ── 曲线：从图上抠下来的点 → 能比大小的测量 ──────────────────────────
+# 为什么这一步在 domain（2026-09-06）：「一条曲线的峰值算不算一个测量」
+# 是我们自己的领域判断，跟「图片从哪来、结果写到哪」无关。
+#
+# **只派生峰值，不派生别的**：应力应变曲线的峰值就是拉伸强度、曲线末端就是
+# 断裂伸长 —— 这两个是通用的；而「屈服点」「模量斜率」得看曲线类型和领域惯例，
+# 猜错了就是往库里灌假数。宁可少派生，让曲线原样留着供人看。
+def curve_measurements(curve, fig=None, sample_hint=''):
+    """一张图的数字化结果 → 测量列表（与 `iter_measurements` 同一形状）。
+
+    每条 series 派生两条：Y 的峰值、以及峰值处的 X（应力应变曲线里就是
+    「最大应力」和「到达最大应力时的应变」）。`method='curve'`，
+    出处写成 `Fig. <n>`，`sample_id` 取 series 的名字（图例上写的往往就是样品名）。
+    """
+    out = []
+    if not isinstance(curve, dict) or curve.get('error'):
+        return out
+    y_ax = curve.get('y_axis') or {}
+    x_ax = curve.get('x_axis') or {}
+    y_name = normalize_property_name(y_ax.get('label') or 'y')
+    x_name = normalize_property_name(x_ax.get('label') or 'x')
+    y_unit = str(y_ax.get('unit') or '')
+    x_unit = str(x_ax.get('unit') or '')
+    loc = f'Fig. {fig}' if fig not in (None, '') else ''
+    for s in (curve.get('series') or []):
+        if not isinstance(s, dict):
+            continue
+        pts = [p for p in (s.get('points') or [])
+               if isinstance(p, (list, tuple)) and len(p) >= 2
+               and isinstance(p[0], (int, float)) and isinstance(p[1], (int, float))]
+        if not pts:
+            continue
+        px, py = max(pts, key=lambda p: p[1])
+        sid = _flat_text(s.get('name')) or sample_hint or 'main'
+        note = _flat_text(curve.get('confidence'))
+        cond = f'read off curve ({note} confidence)' if note else 'read off curve'
+        out.append({'sample_id': sid, 'name': y_name, 'raw_name': _flat_text(y_ax.get('label')),
+                    'value': float(py), 'value_max': None, 'unit': y_unit, 'cmp': '~',
+                    'condition': cond, 'location': loc, 'section': 'main',
+                    'method': METHOD_CURVE, 'raw': f'{y_name} peak: {py} {y_unit}'.strip()})
+        out.append({'sample_id': sid, 'name': f'{x_name} at peak {y_name}',
+                    'raw_name': _flat_text(x_ax.get('label')),
+                    'value': float(px), 'value_max': None, 'unit': x_unit, 'cmp': '~',
+                    'condition': cond, 'location': loc, 'section': 'main',
+                    'method': METHOD_CURVE,
+                    'raw': f'{x_name} at peak {y_name}: {px} {x_unit}'.strip()})
+    return out
+
+
+def curves_measurements(curves_by_fig):
+    """整篇的 `{图号: 数字化结果}` → 测量列表。"""
+    out = []
+    for fig, curve in sorted((curves_by_fig or {}).items(), key=lambda kv: str(kv[0])):
+        out += curve_measurements(curve, fig=fig)
+    return out

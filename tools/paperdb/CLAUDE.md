@@ -22,6 +22,7 @@
 | `papers` | 一篇文献 | `key` / `title` / `tier` / `source` / `si_used` / `schema_ver` / `is_review` + schema 的每个字段 |
 | `samples` | **一个配方** | `key` / `sample_id` / `composition` / `preparation` / `dynamic_bond` / `role` |
 | `measurements` | **一个数字** | `key` / `sample_id` / `name` / `raw_name` / `value` / `value_max` / `unit` / `cmp` / `condition` / `location` / `section` / `method` / `raw` |
+| `curves` | **一条曲线** | `key` / `fig` / `series` / `chart_type` / `x_label` / `x_unit` / `y_label` / `y_unit` / `n_points` / `confidence` / `caption` / `points` |
 
 `properties` 保留成 `measurements` 的视图（同名同列），**老查询、老 evals、老 SQL 一行都不用改**。
 建库时 `_migrate()` 会把 v1 库里那张 `properties` 表丢掉换成视图 —— 库本来就是可再生索引，换掉零风险。
@@ -38,6 +39,16 @@
 
 **③ 测试条件是数值的一部分。** 12 MPa 在什么应变速率、什么温度下测的；
 自修复 95% 修了几小时。不带条件跨论文比大小，比的是假数。
+
+### 曲线（2026-09-06 加）
+
+源是 `curated/<key>/curves.json`（`tools.digitize` 写的），本模块只把它编进索引。
+每条 series 除了原样入 `curves` 表，还由 `schema.curve_measurements()` 派生两条测量：
+**Y 的峰值**与**峰值处的 X**，`method='curve'`、出处 `Fig. <n>`、`cmp='~'`
+（抠图读数天然是近似值，别装成精确值）。
+
+**只派生峰值**是刻意的：屈服点、模量斜率要看曲线类型与领域惯例，猜错就是往库里灌假数。
+曲线原始点一起存着（`points` 列），要更细的分析就取那一列自己算。
 
 ### 新旧混住的规矩
 

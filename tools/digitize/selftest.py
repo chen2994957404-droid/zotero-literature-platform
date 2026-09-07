@@ -15,6 +15,7 @@ R7 窗重写。此前这份自测要求本地 Ollama 装着 qwen2.5vl、且库�
 """
 import os
 import sys
+import tempfile
 
 # 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
@@ -23,6 +24,7 @@ except Exception:
     pass
 
 from shared.adapters.llm_client import _parse_json_lenient
+from shared.kernel import paths
 from tools import digitize as D
 
 ok = total = 0
@@ -64,6 +66,25 @@ def main():
     print('== 4. 读不了图片文件也要守同一个契约 ==')
     out2 = D.digitize_file(os.path.join(os.path.dirname(__file__), '不存在的图.png'))
     check('文件读不了 → error 字段', isinstance(out2, dict) and 'error' in out2, str(out2)[:80])
+
+    print('== 5. 抠出来的曲线要存住（不然同一张图每问一次就再花一次钱）==')
+    with tempfile.TemporaryDirectory() as d:
+        real_curated = paths.CURATED
+        paths.CURATED = os.path.join(d, 'curated')
+        try:
+            key = 'CURV0001'
+            check('没抠过的篇返回空 dict（不抛异常）', D.load_curves(key) == {})
+            D.save_curves(key, {2: {'chart_type': 'line', 'series': []},
+                                5: {'error': '读不出'}})
+            got = D.load_curves(key)
+            check('抠到的存住了，读失败的那张不存（否则「抠过了」是假的）',
+                  list(got) == ['2'], str(got)[:80])
+            D.save_curves(key, {3: {'chart_type': 'bar', 'series': []}})
+            got = D.load_curves(key)
+            check('再抠一张是并入不是覆盖（上次花的钱不能白花）',
+                  sorted(got) == ['2', '3'], str(got)[:80])
+        finally:
+            paths.CURATED = real_curated
 
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)

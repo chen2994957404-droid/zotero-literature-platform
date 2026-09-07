@@ -291,6 +291,16 @@ def meta(key):
     return os.path.join(paper_dir(key), 'meta.json')
 
 
+def curves(key):
+    """★ curated/<key>/curves.json —— 从图上抠下来的曲线数值（tools.digitize 的产物）。
+
+    为什么要落盘（2026-09-06）：此前 `digitize_paper()` 读完图就把结果返回给调用方，
+    **谁也没存** —— 每问一次同一张图就要再花一次云端视觉模型的钱，
+    而且抠出来的数据进不了查询库。图只需读一次，数值应该跟精读产物一样长期留着。
+    """
+    return os.path.join(paper_dir(key), 'curves.json')
+
+
 # ── 结构化抽取产物 ────────────────────────────────────────────────────
 def structured(key):
     """★ structured/<key>.json —— 单篇的结构化字段。"""
