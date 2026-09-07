@@ -350,10 +350,13 @@ def rebuild(records=None, log=print):
                     r.get('model') or '']
             row += [_flat(r.get(f)) for f in _FIELDS]
             conn.execute(sql, row)
-            for s in schema.samples_of(r):
+            # 先算数值再算样品：`samples_of` 要拿数值对帐，
+            # 把挂在不存在样品上的数值接回去（同一个列表对象，两边才一致）
+            meas = schema.iter_measurements(r)
+            for s in schema.samples_of(r, meas):
                 conn.execute(sql_s, [key] + [s.get(c, '') for c in _SAMPLE_COLS[1:]])
                 n_samp += 1
-            for m in schema.iter_measurements(r):
+            for m in meas:
                 conn.execute(sql_m, [key] + [m.get(c) for c in _MEAS_COLS[1:]])
                 n_meas += 1
         n_curve, n_cm = _insert_curves(conn, _curves())

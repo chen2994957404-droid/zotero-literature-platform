@@ -246,6 +246,31 @@ def main():
     else:
         print('  [FAIL] 空曲线竟然派生出了数字')
 
+    total += 1
+    rec = {'samples': [{'sample_id': 'PBS-1', 'composition': 'a'}],
+           'measurements': [
+               {'sample_id': 'main', 'name': 'tensile strength', 'value_text': '12 MPa'},
+               {'sample_id': 'PBS/LMMT-2wt%', 'name': 'toughness', 'value_text': '3 kJ/m^2'}]}
+    ms = schema.iter_measurements(rec)
+    sp = schema.samples_of(rec, ms)
+    ids = [x['sample_id'] for x in sp]
+    if (ids == ['PBS-1', 'PBS/LMMT-2wt%']
+            and [m['sample_id'] for m in ms] == ['PBS-1', 'PBS/LMMT-2wt%']
+            and '只在数值里出现过' in sp[1]['role']):
+        print('  [PASS] 悬空的数值接回样品：main 归到唯一那个，具名的补一条样品'); ok += 1
+    else:
+        print(f'  [FAIL] 悬空数值没接回去：{ids} / {[m["sample_id"] for m in ms]}')
+
+    total += 1
+    rec2 = {'samples': [{'sample_id': 'A'}, {'sample_id': 'B'}],
+            'measurements': [{'sample_id': 'main', 'name': 'x', 'value_text': '1 MPa'}]}
+    ms2 = schema.iter_measurements(rec2)
+    sp2 = schema.samples_of(rec2, ms2)
+    if [x['sample_id'] for x in sp2] == ['A', 'B', 'main']:
+        print('  [PASS] 有两个样品时不猜 main 归谁（单列出来，让人看见这个不确定）'); ok += 1
+    else:
+        print(f'  [FAIL] 不该猜的时候猜了：{[x["sample_id"] for x in sp2]}')
+
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)
 

@@ -66,9 +66,13 @@ def audit_one(record):
     fields = {k: v for k, v in record.items()
               if k in schema.SCHEMA and k != 'key_properties'}
     fhit, ftotal, fmiss = schema.number_grounding(fields, src)
-    sample_ids = {s['sample_id'] for s in schema.samples_of(record)}
-    orphan = sorted({m['sample_id'] for m in ms
-                     if m['sample_id'] not in sample_ids})
+    # 对帐**之前**先看一眼原始归属：`samples_of` 会把挂不上的接回去，
+    # 接完再查就永远查不出问题了。抽检要的是「模型交出来时是什么样」。
+    raw_ids = [m['sample_id'] for m in ms]
+    declared = {s['sample_id'] for s in (record.get('samples') or [])
+                if isinstance(s, dict) and s.get('sample_id')}
+    orphan = sorted({sid for sid in raw_ids
+                     if declared and sid not in declared}) if declared else []
     return {'key': key, 'title': (record.get('title') or '')[:50],
             'model': record.get('model') or '', 'tier': schema.tier_label(record),
             'n': total, 'hit': hit, 'miss': miss,

@@ -605,12 +605,39 @@ def make_record(key, title, doi, data, schema_ver=None,
 # 这两个函数是**三层库的唯一入口**：编排环（tools/paperdb）只调它们，
 # 不去关心一条记录到底是 v1 还是 v2 抽的。新旧混在一个库里也不会崩。
 
-def samples_of(record):
+# 数值挂在不存在的样品上，这事真会发生（2026-09-07 全库抽检：42 篇里 7 篇有）。
+# 两种成因，成因不同，处理也该不同：
+#   · 数值写 'main'（通用占位），而样品另有其名 —— 只有一个样品时归到它，没有歧义
+#   · 数值提到 PBS/LMMT-2wt% 这类**具名**样品，而样品清单里漏了 ——
+#     补一个「只在数值里出现过」的样品条目，让它在库里看得见
+# **两种都不许丢掉那条数值**：悬空的数字既查不到也改不了，等于白抽。
+def _attach_orphans(samples, measurements):
+    """把挂不上样品的数值接回去；接不上的补一个空样品条目。返回样品列表。"""
+    known = {s['sample_id'] for s in samples}
+    named = [s for s in samples if s['sample_id'] != 'main']
+    for m in measurements:
+        sid = m.get('sample_id') or 'main'
+        if sid in known:
+            continue
+        if sid == 'main' and len(named) == 1:
+            m['sample_id'] = named[0]['sample_id']      # 只有一个样品，占位符没有歧义
+            continue
+        samples.append({'sample_id': sid, 'composition': '', 'preparation': '',
+                        'dynamic_bond': '', 'role': '只在数值里出现过（原文没给它的组成）',
+                        'application': ''})
+        known.add(sid)
+    return samples
+
+
+def samples_of(record, measurements=None):
     """一条记录 → 样品列表。
 
     v2 记录直接用它的 `samples`；**v1 老记录合成一个 'main' 样品**，
     把论文级的配方字段挪进去 —— 于是老数据不用重抽也能进三层，
     只是「这篇有几个配方」这一维暂时是塌的（等重抽才展开）。
+
+    `measurements` 给了就用它对帐（避免重复解析）；不给就自己算一遍。
+    对帐是为了**没有悬空的数值** —— 见 `_attach_orphans`。
     """
     raw = record.get('samples')
     out = []
@@ -626,7 +653,8 @@ def samples_of(record):
                         'role': _flat_text(s.get('role')),
                         'application': _flat_text(s.get('application'))})
     if out:
-        return out
+        return _attach_orphans(out, measurements if measurements is not None
+                               else iter_measurements(record))
     return [{'sample_id': 'main',
              'composition': _flat_text(record.get('precursors')),
              'preparation': _flat_text(record.get('synthesis_conditions')),
