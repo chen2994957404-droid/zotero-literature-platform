@@ -161,7 +161,7 @@ def run_one(key, model=None, max_chunks=0, verbose=True):
                                         model=model, num_ctx=8192)
         except Exception as e:
             n_fail += 1
-            log.warning('%s 第 %d 段失败：%s', key, i, str(e)[:120])
+            log.warn('%s 第 %d 段失败：%s' % (key, i, str(e)[:120]))
             continue
         rows = (data or {}).get('measurements')
         if not isinstance(rows, list):

@@ -212,6 +212,32 @@ def main():
     else:
         print(f'  [FAIL] 去重或空值判错：{kept} {drop}')
 
+    total += 1
+    # **失败分支也要真跑一遍**：模型调用抛异常时那行日志本身写错过
+    # （`log.warning` 不存在，而 Log 只有 `warn`）—— import 能过、平时不走到，
+    # 一到真跑就在「处理失败」的路上再炸一次（踩坑 #49 的原样重演）。
+    import tempfile as _tf, os as _os, io as _io
+    from shared.adapters import llm_client as _llm
+    with _tf.TemporaryDirectory() as _d:
+        _cur, _raw = paths.CURATED, paths.RAW
+        _chat = _llm.chat_json
+        paths.CURATED, paths.RAW = _os.path.join(_d, 'c'), _os.path.join(_d, 'r')
+        try:
+            paths.parsed_dir('YYYY0003', create=True)
+            _io.open(paths.fulltext('YYYY0003'), 'w', encoding='utf-8').write(
+                '# Results' + chr(10) + '' + chr(10) + '' + ('The sample reached 12.4 MPa and 480 % elongation at a rate of 50 mm/min, with a modulus of 3.2 MPa. ' * 8))
+            _llm.chat_json = lambda *a, **k: (_ for _ in ()).throw(RuntimeError('模型挂了'))
+            r = C.run_one('YYYY0003', model='x', verbose=False)
+            if r.get('n_failed_chunks') and not r.get('measurements'):
+                print('  [PASS] 模型全挂时不崩：记下失败段数，产出为空'); ok += 1
+            else:
+                print(f'  [FAIL] 失败分支不对：{r}')
+        except Exception as e:
+            print(f'  [FAIL] 失败分支自己炸了：{type(e).__name__}: {e}')
+        finally:
+            _llm.chat_json = _chat
+            paths.CURATED, paths.RAW = _cur, _raw
+
 
 
     print(f'\n{ok}/{total} 通过')
