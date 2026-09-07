@@ -210,6 +210,20 @@ def main():
     else:
         print('  [FAIL] v2 提问缺了某一部分')
 
+    total += 1
+    ms = schema.iter_measurements({'measurements': [
+        {'sample_id': 'A', 'name': 'tensile strength', 'value_text': '12 MPa',
+         'location': 'main text', 'section': 'main'},
+        {'sample_id': 'A', 'name': 'toughness', 'value_text': '3 kJ/m^2',
+         'location': 'SI', 'section': 'si'},
+        {'sample_id': 'A', 'name': 'elongation at break', 'value_text': '300 %',
+         'location': 'Fig. 3b', 'section': 'main'}]})
+    if ([m['location'] for m in ms] == ['', '', 'Fig. 3b']
+            and schema.provenance_stats(ms)['located'] == 1):
+        print('  [PASS] 「main text / SI」不算出处（否则有出处率永远 100%）'); ok += 1
+    else:
+        print(f'  [FAIL] 废话出处没被清掉：{[m["location"] for m in ms]}')
+
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)
 

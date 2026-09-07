@@ -81,7 +81,7 @@ MEAS_SCHEMA = {
     "name":       "Property name in plain English (e.g. 'tensile strength', 'elongation at break', 'self-healing efficiency', 'Mn')",
     "value_text": "The number with its unit exactly as printed (e.g. '12.4 MPa', '3.2x10^4 g/mol', '225-300 C'). Never convert units",
     "condition":  "Test condition if stated: strain rate, temperature, frequency, healing time, humidity. Empty string if not stated",
-    "location":   "Where in the paper this number is printed: 'Table 2' / 'Fig. 3b' / 'main text' / 'SI Table S1'. Empty string if unsure",
+    "location":   "The numbered table or figure this value is printed in: 'Table 2', 'Fig. 3b', 'Table S1'. Leave it EMPTY unless you can name a specific table or figure - 'main text' or 'SI' is not a location, the section field already says that",
     "section":    "'main' if it comes from the main text, 'si' if from the supplementary information",
 }
 
@@ -90,6 +90,27 @@ METHOD_TEXT = 'text'          # 模型从正文/SI 文字里读出来的
 METHOD_TEXT_V1 = 'text-v1'    # v1 老记录拆出来的，没有样品归属也没有出处
 METHOD_CURVE = 'curve'        # 从曲线图上抠出来的（tools.digitize）
 METHOD_HUMAN = 'human'        # 人手工核对/录入的，最可信
+
+# 「等于没说」的出处。2026-09-06 真机实测撞到的：模型很乐意在每条数值上填
+# 'main text' / 'SI'，于是「有出处率」瞬间 100% —— 而那一栏本来是要回答
+# 「这个数字我翻回原文的哪儿去核」的。**指标一旦能被废话填满，它就不再是指标。**
+# 正文还是 SI 由 `section` 回答，`location` 只认「表几 / 图几」。
+_VAGUE_LOCATIONS = {
+    'main text', 'maintext', 'text', 'main', 'body', 'article', 'paper',
+    'si', 'supplementary information', 'supplementary', 'supporting information',
+    'esi', 'abstract', 'unknown', 'n/a', 'na', 'none', '-', '正文', '补充材料',
+}
+
+
+def clean_location(loc):
+    """出处归一：说不出表几图几的一律当没有出处。
+
+    宁可让「有出处」这一栏难看，也不要让它变成一句永远 100% 的废话。
+    """
+    t = str(loc or '').strip().strip('.,;').lower()
+    if t in _VAGUE_LOCATIONS:
+        return ''
+    return str(loc or '').strip()
 
 
 # ── 性能名字的统一词表 ────────────────────────────────────────────────
@@ -628,7 +649,7 @@ def iter_measurements(record):
                 'value': parsed['value'], 'value_max': parsed['value_max'],
                 'unit': parsed['unit'], 'cmp': parsed['cmp'],
                 'condition': _flat_text(m.get('condition')),
-                'location': _flat_text(m.get('location')),
+                'location': clean_location(_flat_text(m.get('location'))),
                 'section': (_flat_text(m.get('section')) or 'main').lower(),
                 'method': _flat_text(m.get('method')) or METHOD_TEXT,
                 'raw': f'{name}: {text}'.strip(': '),
@@ -667,8 +688,9 @@ def build_user_prompt_v2(title, body, si=''):
         "Rules for measurements (these matter more than coverage):\n"
         "  * Copy numbers and units EXACTLY as printed. Never convert units.\n"
         '  * Every measurement must name a sample_id that appears in "samples".\n'
-        '  * If you cannot tell where a number is printed, leave "location" empty '
-        "rather than guessing. A guessed location is worse than an empty one.\n"
+        '  * "location" means a numbered table or figure ("Table 2", "Fig. 3b"). '
+        '"main text" or "SI" is NOT a location - leave it empty instead, the "section" '
+        "field already records that. A guessed location is worse than an empty one.\n"
         "  * Do not invent numbers. If the paper only shows a curve without a stated "
         "value, skip it.\n\n"
         f"===== MAIN TEXT START =====\n{body}\n===== MAIN TEXT END ====="
