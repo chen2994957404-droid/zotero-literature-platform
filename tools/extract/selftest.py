@@ -227,11 +227,16 @@ def main():
             _io.open(paths.fulltext('YYYY0003'), 'w', encoding='utf-8').write(
                 '# Results' + chr(10) + '' + chr(10) + '' + ('The sample reached 12.4 MPa and 480 % elongation at a rate of 50 mm/min, with a modulus of 3.2 MPa. ' * 8))
             _llm.chat_json = lambda *a, **k: (_ for _ in ()).throw(RuntimeError('模型挂了'))
+            _io.open(paths.chunk_measurements('YYYY0003'), 'w',
+                     encoding='utf-8').write('{"measurements": [1]}')
             r = C.run_one('YYYY0003', model='x', verbose=False)
-            if r.get('n_failed_chunks') and not r.get('measurements'):
-                print('  [PASS] 模型全挂时不崩：记下失败段数，产出为空'); ok += 1
+            still = _io.open(paths.chunk_measurements('YYYY0003'),
+                             encoding='utf-8').read()
+            if (r.get('n_failed_chunks') and not r.get('measurements')
+                    and '[1]' in still):
+                print('  [PASS] 模型全挂时不崩，也不把上一次的好结果覆盖成空'); ok += 1
             else:
-                print(f'  [FAIL] 失败分支不对：{r}')
+                print(f'  [FAIL] 失败分支不对：{r} / 盘上还剩 {still[:40]!r}')
         except Exception as e:
             print(f'  [FAIL] 失败分支自己炸了：{type(e).__name__}: {e}')
         finally:

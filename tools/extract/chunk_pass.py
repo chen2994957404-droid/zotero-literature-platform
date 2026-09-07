@@ -176,10 +176,15 @@ def run_one(key, model=None, max_chunks=0, verbose=True):
     out = {'key': key, 'model': model or '', 'n_chunks': len(chunks),
            'n_failed_chunks': n_fail, 'measurements': kept_all,
            'dropped': drops, 'secs': round(time.time() - t0, 1)}
-    if chunks:
+    # **全军覆没时不写盘**：模型这一趟全挂（额度用完、服务没起来）会得到一份空结果，
+    # 写下去就把上一次跑成功的结果覆盖没了 —— 而且看不出来，文件还在，只是空的。
+    # 2026-09-07 真覆盖过一次：qwen3.8-flash 免费额度用完，12 段全 403。
+    if chunks and n_fail < len(chunks):
         paths.parsed_dir(key)                     # 保证 curated/<key>/ 在
         io.open(paths.chunk_measurements(key), 'w', encoding='utf-8').write(
             json.dumps(out, ensure_ascii=False, indent=1))
+    elif chunks:
+        out['skipped_write'] = '这一趟每段都失败，没有覆盖已有结果'
     if verbose:
         shown = '、'.join('%s %d' % kv for kv in sorted(drops.items()) if kv[1])
         print('%s  %2d 段 → 留下 %3d 条（脚本判掉：%s）%.0fs'
