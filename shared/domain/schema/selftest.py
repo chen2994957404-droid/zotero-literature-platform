@@ -271,6 +271,18 @@ def main():
     else:
         print(f'  [FAIL] 不该猜的时候猜了：{[x["sample_id"] for x in sp2]}')
 
+    total += 1
+    import re as _re
+    prompt = schema.build_user_prompt_v2('T', 'BODY')
+    # 提示词里出现的每个数，除了 PART 1/2/3 这种序号，都是**给模型的现成答案**。
+    # 2026-09-07 实测：gemma3:1b 抽摘要时把字段说明里的 12 / 3.2 / 10 原样吐了出来，
+    # 数字接地率只有 3% —— 它读不动那份说明，就照着例子编。
+    nums = set(_re.findall(r'(?<![\w<])\d+(?:\.\d+)?(?![\w>])', prompt)) - {'1', '2', '3'}
+    if not nums:
+        print('  [PASS] 提示词里没有示例数值（有的话小模型会照抄，实测接地率掉到 3%）'); ok += 1
+    else:
+        print(f'  [FAIL] 提示词里混进了具体数字，小模型会抄它们：{sorted(nums)[:8]}')
+
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)
 

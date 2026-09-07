@@ -34,10 +34,10 @@ import re
 SCHEMA = {
     "material_system":     "Core material system (e.g. polyborosiloxane PBS, PDMS-based elastomer, dynamic phase-locked adhesive), one sentence",
     "dynamic_bond_type":   "Interaction providing reversible/dynamic crosslinking (hydrogen bond, boroxine B-O-B, metal coordination, phase-separated nanodomains, etc.)",
-    "precursors":          "Main precursors/raw materials and ratio (e.g. PDMS:boric acid = 10:1)",
+    "precursors":          "Main precursors/raw materials and ratio (as the paper states it, with the amounts it gives)",
     "synthesis_conditions":"Key synthesis/processing conditions, always with numbers (temperature, time, atmosphere, etc.)",
     "characterization":    "List of main characterization methods (e.g. GPC, FTIR, rheology, SAXS)",
-    "key_properties":      "Any quantitative results — not only mechanical; covers mechanical (tensile strength/toughness/modulus), molecular weight (Mn/Mw/PDI), rheology/viscosity, thermal stability, conductivity/ionic conductivity, sensing sensitivity, self-healing efficiency, etc. Write each as 'property: value+unit' (e.g. 'tensile strength: 12 MPa', 'Mn: 3.2×10^4 g/mol', 'complex viscosity: 1.5×10^3 Pa·s', 'ionic conductivity: 8.2×10^-5 S/cm'). Extract whenever the text reports a quantitative result with unit; only use N/A if none",
+    "key_properties":      "Any quantitative results — not only mechanical; covers mechanical (tensile strength/toughness/modulus), molecular weight (Mn/Mw/PDI), rheology/viscosity, thermal stability, conductivity/ionic conductivity, sensing sensitivity, self-healing efficiency, etc. Write each as 'property: value+unit' (e.g. 'tensile strength: <number> MPa', 'Mn: <number> g/mol', 'complex viscosity: <number> Pa·s', 'ionic conductivity: <number> S/cm'). Extract whenever the text reports a quantitative result with unit; only use N/A if none",
     "self_healing":        "Whether it has self-healing/reversibility and its mechanism in one sentence; N/A if none",
     "structure_property":  "The structure-property causal relationship stated in the paper (what structural feature causes what property change)",
     "key_finding":         "The single most important finding/innovation, one sentence",
@@ -74,8 +74,8 @@ SCHEMA_VER = 3
 # 它精确地告诉你「这个数字还没定位到原文」。
 
 SAMPLE_SCHEMA = {
-    "sample_id":     "Short label used in the paper for this sample/formulation (e.g. 'PBS-1', 'PU-10%', 'neat PDMS'). If the paper reports only one material, use 'main'",
-    "composition":   "What this sample is made of, with amounts/ratios if given (e.g. 'PDMS:boric acid = 10:1 wt')",
+    "sample_id":     "Short label used in the paper for this sample/formulation (e.g. the label the paper itself uses for that formulation). If the paper reports only one material, use 'main'",
+    "composition":   "What this sample is made of, with amounts/ratios if given (as the paper states it, with the amounts it gives)",
     "preparation":   "How this particular sample was made: temperature, time, atmosphere, with numbers",
     "dynamic_bond":  "Dynamic/reversible interaction in this sample; N/A if none",
     "role":          "Its role in the study: 'best' / 'control' / 'series' / 'reference'",
@@ -85,9 +85,9 @@ SAMPLE_SCHEMA = {
 MEAS_SCHEMA = {
     "sample_id":  "Which sample this number belongs to (must match one sample_id above; use 'main' if the paper has only one material)",
     "name":       "Property name in plain English (e.g. 'tensile strength', 'elongation at break', 'self-healing efficiency', 'Mn')",
-    "value_text": "The number with its unit exactly as printed (e.g. '12.4 MPa', '3.2x10^4 g/mol', '225-300 C'). Never convert units",
+    "value_text": "The number with its unit exactly as printed (exactly as printed, including the unit and any range or comparison sign). Never convert units",
     "condition":  "Test condition if stated: strain rate, temperature, frequency, healing time, humidity. Empty string if not stated",
-    "location":   "The numbered table or figure this value is printed in: 'Table 2', 'Fig. 3b', 'Table S1'. Leave it EMPTY unless you can name a specific table or figure - 'main text' or 'SI' is not a location, the section field already says that",
+    "location":   "The numbered table or figure this value is printed in: 'Table <n>', 'Fig. <n><letter>', 'Table S<n>'. Leave it EMPTY unless you can name a specific table or figure - 'main text' or 'SI' is not a location, the section field already says that",
     "section":    "'main' if it comes from the main text, 'si' if from the supplementary information",
 }
 
