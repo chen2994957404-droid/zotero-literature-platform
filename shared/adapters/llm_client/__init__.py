@@ -10,12 +10,13 @@
 对外接口：
   - chat(system, user, ...)      → 纯文本输出（对话/精读/问答）
   - chat_json(system, user, ...) → 强制 JSON 输出并解析成 dict（结构化抽取）
-  两者都支持云端多家（deepseek / siliconflow / gemini）与本地 ollama。
+  两者都支持云端多家（deepseek / siliconflow / gemini / dashscope）与本地 ollama。
   **选哪家由模型名决定**：`gemini-*` 自动走 Gemini，不必另设开关（见 PROVIDERS）。
 
 配置（环境变量，可被函数参数覆盖）：
   - DEEPSEEK_KEY   : DeepSeek API key
   - GEMINI_KEY     : Google AI Studio 的 key（走 Gemini 的 OpenAI 兼容端点）
+  - DASHSCOPE_KEY  : 阿里云百炼的 key（走百炼的 OpenAI 兼容端点，模型名 qwen*）
   - LLM_PROVIDER   : 认不出模型名时的默认 provider，默认 deepseek
   - DEEPSEEK_MODEL : 默认 deepseek-v4-pro
   - OLLAMA_MODEL   : 默认 qwen2.5:7b-instruct
@@ -35,6 +36,10 @@ except Exception:
 _OLLAMA_DEFAULT = 'http://localhost:11434'      # 只在 config 取不到时兜底
 
 DEEPSEEK_API = 'https://api.deepseek.com/chat/completions'
+# 阿里云百炼（DashScope）的 OpenAI 兼容端点。**地域绑死密钥**：中国大陆的 key
+# 只能打这个地址，国际站是 dashscope-intl.aliyuncs.com，两边的 key 不通用。
+# 新人免费额度只在华北2（北京）发放，所以这里固定用大陆版。
+DASHSCOPE_API = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions'
 
 # ── 云端 provider 登记处 ──────────────────────────────────────────────
 # (chat 端点, 密钥名, 默认文本模型, 默认视觉模型)
@@ -50,6 +55,8 @@ PROVIDERS = {
                     'Qwen/Qwen2.5-72B-Instruct', 'Qwen/Qwen2.5-VL-72B-Instruct'),
     'gemini': ('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
                'GEMINI_KEY', 'gemini-3.8-flash', 'gemini-3.8-flash'),
+    'dashscope': (DASHSCOPE_API, 'DASHSCOPE_KEY',
+                  'qwen3.7-plus', 'qwen3-vl-plus'),
 }
 
 # 模型名前缀 → 是谁家的。
@@ -59,11 +66,19 @@ PROVIDERS = {
 # 用户就有了两个必须彼此对上的设置项 —— 对不上时的症状是「模型不存在」，
 # 而那看起来像模型名写错了，没人会想到是另一个框选错了家。
 # 一个设置项推不出两种真相，那就只留一个。
-_MODEL_OWNERS = (('gemini-', 'gemini'), ('deepseek-', 'deepseek'), ('Qwen/', 'siliconflow'))
+_MODEL_OWNERS = (('gemini-', 'gemini'), ('deepseek-', 'deepseek'), ('Qwen/', 'siliconflow'),
+                 ('qwen', 'dashscope'))
+
+# 本地 ollama 的模型名长得跟百炼的很像（`qwen2.5:7b-instruct` vs `qwen3.7-plus`），
+# 但 ollama 的名字**一定带冒号**（那是它的 tag 语法），云端的一定不带。
+# 不区分的话，本地免费模型会被静默发去云端花钱 —— 症状还只是「跑得有点慢」。
+_OLLAMA_TAG = ':'
 
 
 def provider_of(model):
     """从模型名认出该找哪家。认不出来返回 ''（由调用方决定默认）。"""
+    if model and _OLLAMA_TAG in str(model):
+        return ''            # 带 tag 的是本地 ollama 模型，云端认不出这种名字
     for prefix, name in _MODEL_OWNERS:
         if model and str(model).startswith(prefix):
             return name
