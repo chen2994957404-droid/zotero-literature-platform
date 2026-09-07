@@ -130,6 +130,37 @@ def main():
     else:
         print(f'  [FAIL] 没查出孤儿样品：{r and r["orphan"]}')
 
+    # ── 段落级比武的打分：编数字、编样品名，都要能当场判死 ──────────────
+    total += 1
+    from tools.extract import bench_chunk as B
+    chunk = ('The hybrid gel reached a tensile strength of 12.4 MPa and an '
+             'elongation at break of 320 %. Testing used a rate of 100 mm/min.')
+    samples = ['hybrid gel', 'alginate gel']
+    good = {'measurements': [
+        {'sample_id': 'hybrid gel', 'name': 'tensile strength', 'value_text': '12.4 MPa'},
+        {'sample_id': 'hybrid gel', 'name': 'elongation at break', 'value_text': '320 %'}]}
+    s_good = B.score(good, chunk, samples)
+    if (s_good['grounded'] == s_good['nums'] == 2 and s_good['sid_ok'] == 2
+            and s_good['recall_hit'] >= 1):
+        print('  [PASS] 老实作答：数字全接地、样品名合法、召回算得出'); ok += 1
+    else:
+        print(f'  [FAIL] 老实作答被误判：{s_good}')
+
+    total += 1
+    bad = {'measurements': [
+        {'sample_id': 'PBS-9（编的）', 'name': 'tensile strength', 'value_text': '99.9 MPa'}]}
+    s_bad = B.score(bad, chunk, samples)
+    if s_bad['grounded'] == 0 and s_bad['sid_ok'] == 0:
+        print('  [PASS] 编的数字与编的样品名，两样都当场判死'); ok += 1
+    else:
+        print(f'  [FAIL] 没抓住编造：{s_bad}')
+
+    total += 1
+    if B.score('不是 JSON', chunk, samples) is None and B.score({'x': 1}, chunk, samples) is None:
+        print('  [PASS] 格式崩了就算这次没答（不给它蒙混过关）'); ok += 1
+    else:
+        print('  [FAIL] 坏格式没被判掉')
+
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)
 
