@@ -28,8 +28,8 @@ shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
     adapters/  ← 外接口：唯一允许联网/用第三方库的一环（12 块）
         crossref、embed、llm_client、openalex、pdf_fetch、pdf_parse、query_expand、sciverse、snowball、vectordb、wechat_seed、zotero_client
 specs/ （0 个脚本）
-tests/ （2 个脚本）
-    test_architecture.py、test_no_undefined_names.py
+tests/ （3 个脚本）
+    test_architecture.py、test_constitution.py、test_no_undefined_names.py
 tools/  ← 工具切片：一个工具 = 一个自包含的包（11 块）
     ask、askworld、curate、deepread、digitize、direction、discover、extract、getpdf、library、paperdb
 
@@ -120,11 +120,23 @@ A 机默认不写 Zotero、不跑常驻服务、不跑花钱的批量作业 —�
 宪法【零号判据】（2026-08-09 立）。用户原话：
 > **你下意识回答我的往往还是预训练的结果，我们还是要主动去看真实实时的世界是怎么样。**
 
-外部世界现状（有无某功能、定价、限额、惯例）**必须查**；具体数字查到出处才说；
-外部 API 行为**真实调用实测**。**听起来很具体的数字最像事实，也最可能是编的** ——
-说完一句判断先自问：这是刚查到的，还是我本来就「知道」的？
+<!-- AUTO:零号判据 开始 · 源在 docs/explain/架构宪法_第一性原理.md，由 host/codegen/handover.py 抄过来，勿手改 -->
 
-**停止判据**：这次调研能不能改变我接下来的做法？能就查，不能就别查。
+- 外部世界现状的断言（有无某功能、定价、限额、版本、行业惯例）→ **必须查**
+- 具体数字 → 查到出处才说，查不到就明说查不到
+- 外部 API 行为 → 真实调用实测，不信文档也不信记忆
+
+**现场例证（这是本条真正起作用的部分，不许抽象掉）**：我曾断言「MineRU 的 token
+通常两周过期」。查证后官方**根本没给任何天数** —— 那个「两周」是我编的，
+一个听起来精确、实则无据的数字。
+
+**自查方法**：说完一句判断，问自己「这是**刚查到的**，还是我**本来就『知道』的**？」
+后者一律打问号。
+
+**唯一停止判据**：这次调研能不能改变我接下来的做法？能就查，不能就别查。
+
+<!-- AUTO:零号判据 结束 -->
+
 → 四步调研法见 `research-first` skill。
 
 ---

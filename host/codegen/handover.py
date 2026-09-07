@@ -482,6 +482,51 @@ def sync_agents_md():
     return True
 
 
+# ── 零号判据：一处为源，两处照抄 ──────────────────────────────────
+# 2026-09-07：这条判据原本在三个地方各写一份（宪法 / AGENTS.md / research-first
+# skill），改一处另两处就漂移 —— 跟「别落第三份 JSON」是同一个病。
+# 现在宪法里那段被 `<!-- 摘:零号判据 -->` 圈起来，是唯一的源，其余两处由这里抄过去。
+宪法 = os.path.join(ROOT, 'docs', 'explain', '架构宪法_第一性原理.md')
+摘_BEGIN_RE = r'<!-- 摘:零号判据 开始[^>]*-->'
+摘_END = '<!-- 摘:零号判据 结束 -->'
+零号_BEGIN = ('<!-- AUTO:零号判据 开始 · 源在 docs/explain/架构宪法_第一性原理.md，'
+              '由 host/codegen/handover.py 抄过来，勿手改 -->')
+零号_BEGIN_RE = r'<!-- AUTO:零号判据 开始[^>]*-->'
+零号_END = '<!-- AUTO:零号判据 结束 -->'
+_NL_ = chr(10)   # 换行常量：写成字面量会被各种工具链的转义吃掉（同 tests/ 的做法）
+零号_目标 = (AGENTS_MD, os.path.join(ROOT, 'docs', 'howto', 'skills', 'research-first.md'))
+
+
+def 取零号判据():
+    """从宪法里抠出那段唯一的源；抠不到就返回 None（宁可不同步，也不写半截）。"""
+    src = io.open(宪法, encoding='utf-8').read()
+    m = re.search(摘_BEGIN_RE + r'([\s\S]*?)' + re.escape(摘_END), src)
+    return m.group(1).strip() if m else None
+
+
+def sync_zero_criterion():
+    """把宪法里的零号判据同步进 AGENTS.md 与 research-first skill 源。
+
+    只写已经有 AUTO 区块的文件 —— 不自作主张往别处插内容。
+    """
+    正文 = 取零号判据()
+    if not 正文:
+        return []
+    块 = _NL_.join([零号_BEGIN, '', 正文, '', 零号_END])
+    改了 = []
+    for f in 零号_目标:
+        if not os.path.exists(f):
+            continue
+        src = io.open(f, encoding='utf-8').read()
+        if not (re.search(零号_BEGIN_RE, src) and 零号_END in src):
+            continue
+        new = re.sub(零号_BEGIN_RE + r'[\s\S]*?' + re.escape(零号_END), 块, src)
+        if new != src:
+            io.open(f, 'w', encoding='utf-8', newline='').write(new)
+            改了.append(os.path.basename(f))
+    return 改了
+
+
 def main():
     txt = build()
     if '--print' in sys.argv:
@@ -489,8 +534,10 @@ def main():
         return
     io.open(HANDOVER, 'w', encoding='utf-8', newline='').write(txt + '\n')
     ok = sync_agents_md()
+    抄了 = sync_zero_criterion() if ok else []
     print(f'已生成 {HANDOVER}（{len(txt)} 字符）'
-          + ('；AGENTS.md 的结构区块已同步' if ok else ''))
+          + ('；AGENTS.md 的结构区块已同步' if ok else '')
+          + ('；零号判据已同步到 ' + '、'.join(抄了) if 抄了 else ''))
 
 
 if __name__ == '__main__':
