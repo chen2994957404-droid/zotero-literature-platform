@@ -316,6 +316,15 @@ def structured_backup(stamp):
     return os.path.join(BACKUP, 'structured_' + str(stamp))
 
 
+def journals():
+    """★ serving/journals.json —— 期刊分级（tools.curate.journals 的产物）。
+
+    为什么单独一份而不是塞进每篇记录：刊是**共享的**，188 篇可能只涉及 60 本刊；
+    分级还会随指标更新而变，塞进每篇就得改 188 个文件。
+    """
+    return os.path.join(SERVING, 'journals.json')
+
+
 def compare(name='compare'):
     """★ structured/<name>.md —— 横向对比表（找 idea 的载体）。
 

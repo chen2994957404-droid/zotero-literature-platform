@@ -56,6 +56,14 @@ from shared.domain import schema
 # schema 的字段都存成 TEXT（列表字段 join 成一行文本，原样可读）
 _FIELDS = list(schema.SCHEMA.keys())
 
+_PAPER_COLS = (['key', 'title', 'doi', 'tier', 'source', 'si_used', 'schema_ver',
+                'is_review', 'journal', 'issn', 'journal_tier', 'publisher'] + _FIELDS)
+_SAMPLE_COLS = ['key', 'sample_id', 'composition', 'preparation', 'dynamic_bond', 'role']
+_MEAS_COLS = ['key', 'sample_id', 'name', 'raw_name', 'value', 'value_max', 'unit',
+              'cmp', 'condition', 'location', 'section', 'method', 'raw']
+_CURVE_COLS = ['key', 'fig', 'series', 'chart_type', 'x_label', 'x_unit', 'y_label',
+               'y_unit', 'n_points', 'confidence', 'caption', 'points']
+
 _DDL = """
 CREATE TABLE IF NOT EXISTS papers (
   key         TEXT PRIMARY KEY,
@@ -66,6 +74,10 @@ CREATE TABLE IF NOT EXISTS papers (
   si_used     INTEGER,
   schema_ver  INTEGER,
   is_review   INTEGER,
+  journal     TEXT,
+  issn        TEXT,
+  journal_tier TEXT,
+  publisher   TEXT,
   %s
 );
 CREATE TABLE IF NOT EXISTS samples (
@@ -130,6 +142,18 @@ def _migrate(conn):
     if row is not None and row[0] == 'table':
         conn.executescript('DROP TABLE properties;')
         conn.commit()
+    # 列对不上就整张丢掉重建。**这是索引特有的自由** —— 真相在 JSON 文件里，
+    # 重建一次不到一秒。换成「小心翼翼 ALTER 加列」反而会攒出一堆迁移分支，
+    # 而且哪天漏加一列，症状是「查出来永远是空」，不报错。
+    for table, want in (('papers', _PAPER_COLS), ('samples', _SAMPLE_COLS),
+                        ('measurements', _MEAS_COLS), ('curves', _CURVE_COLS)):
+        try:
+            have = [r[1] for r in conn.execute('PRAGMA table_info(%s)' % table)]
+        except sqlite3.Error:
+            continue
+        if have and set(have) != set(want):
+            conn.executescript('DROP TABLE IF EXISTS %s;' % table)
+            conn.commit()
 
 
 def db_path():
@@ -200,6 +224,24 @@ _MEAS_COLS = ['key', 'sample_id', 'name', 'raw_name', 'value', 'value_max', 'uni
               'cmp', 'condition', 'location', 'section', 'method', 'raw']
 
 
+def _journals():
+    """读回期刊分级：`{key: {name, publisher, tier, ...}}`。没有就空。
+
+    真相是 `serving/journals.json`（`tools/curate/journals.py` 写的），
+    这里只把它编进索引 —— 与 structured/*.json 同一个关系。
+    **不 import tools.curate**（工具不许 import 工具），只读它的产物。
+    """
+    p = paths.journals()
+    if not os.path.exists(p):
+        return {}
+    try:
+        d = json.load(io.open(p, encoding='utf-8'))
+    except Exception:
+        return {}
+    js, by_key = d.get('journals') or {}, d.get('by_key') or {}
+    return {k: dict(js.get(issn) or {}, issn=issn) for k, issn in by_key.items()}
+
+
 def _curves():
     """读回全部抠过的曲线：`{key: {图号: 结果}}`（坏文件跳过）。
 
@@ -263,8 +305,8 @@ def rebuild(records=None, log=print):
     """
     records = _records() if records is None else records
     conn = connect()
-    cols = ['key', 'title', 'doi', 'tier', 'source', 'si_used', 'schema_ver',
-            'is_review'] + _FIELDS
+    cols = _PAPER_COLS
+    jour = _journals()
     sql = ('INSERT OR REPLACE INTO papers (' + ','.join(f'"{c}"' for c in cols)
            + ') VALUES (' + ','.join('?' * len(cols)) + ')')
     sql_s = ('INSERT OR REPLACE INTO samples '
@@ -283,7 +325,11 @@ def rebuild(records=None, log=print):
             row = [key, r.get('title', ''), r.get('doi', ''),
                    schema.tier_label(r), r.get('source', schema.SOURCE_FINE),
                    1 if r.get('si_used') else 0, r.get('schema_ver'),
-                   1 if schema.is_review(r) else 0] + [_flat(r.get(f)) for f in _FIELDS]
+                   1 if schema.is_review(r) else 0]
+            j = jour.get(key) or {}
+            row += [j.get('name') or '', j.get('issn') or '',
+                    j.get('tier') or '', j.get('publisher') or '']
+            row += [_flat(r.get(f)) for f in _FIELDS]
             conn.execute(sql, row)
             for s in schema.samples_of(r):
                 conn.execute(sql_s, (key, s['sample_id'], s['composition'],
@@ -328,6 +374,10 @@ def _ensure_fresh():
                         os.path.join(paths.STRUCTURED, f)))
                 except OSError:
                     continue
+    try:                                  # 期刊分级也是源
+        newest = max(newest, os.path.getmtime(paths.journals()))
+    except OSError:
+        pass
     for key in paths.all_keys():          # 曲线也是源：抠完一张图，库该跟着新
         try:
             newest = max(newest, os.path.getmtime(paths.curves(key)))
@@ -351,11 +401,12 @@ def query(sql, args=()):
 
 
 def find(text=None, tier=None, field=None, prop=None,
-         min_value=None, max_value=None, unit=None, limit=100):
+         min_value=None, max_value=None, unit=None, journal=None, limit=100):
     """常用筛法的快捷方式（不用手写 SQL）。
 
       text       任意字段里含这个词（体系、动态键、结论都算）
-      tier       只要某一档：'精+SI' / '精层' / '粗层'
+      tier       抽取档次：'精+SI' / '精层' / '粗层'
+      journal    期刊档次：'顶刊' / '一流' / '常规' / '一般' / '慎用'
       field      这个字段必须有真值（不是 N/A）
       prop       性能名字里含这个词，例如 'tensile'
       min_value  / max_value / unit —— 配合 prop 用，比大小
@@ -368,6 +419,9 @@ def find(text=None, tier=None, field=None, prop=None,
     if tier:
         where.append('tier = ?')
         args.append(tier)
+    if journal:
+        where.append('journal_tier = ?')
+        args.append(journal)
     if field:
         if field not in _FIELDS:
             raise ValueError(f'没有这个字段: {field}')
@@ -540,3 +594,19 @@ def curve_points(key, fig, series=None):
         except Exception:
             out.append({'series': r['series'], 'points': []})
     return out
+
+
+def journals(tier=None, limit=200):
+    """期刊视角：库里的文献分布在哪些刊上、各是什么档次、各有多少篇。
+
+    「这条数据有多可信」的第二条腿 —— 第一条是数字能不能追溯到原文（见 `provenance()`）。
+    """
+    sql = ('SELECT journal_tier, journal, publisher, issn, COUNT(*) n '
+           'FROM papers WHERE COALESCE(journal, "") != ""')
+    args = []
+    if tier:
+        sql += ' AND journal_tier = ?'
+        args.append(tier)
+    sql += ' GROUP BY journal_tier, journal, publisher, issn ORDER BY n DESC, journal LIMIT ?'
+    args.append(int(limit))
+    return query(sql, args)

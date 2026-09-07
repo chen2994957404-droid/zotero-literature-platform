@@ -42,3 +42,12 @@ python -m tools.curate junk --删除  # 用户看过清单、明确说删，才�
 - 定时增量同步不在我这儿了（在 `host/autosync/`，每小时自己跑）
 - `autotag`（自动打标签）**已于 2026-07-25 弃用**（用户认为多余），别推荐它
 - `rename` 要一份全库 JSON 作数据源，不是随手就能跑的
+
+## 期刊分级
+
+`python -m tools.curate journals` —— 库里每篇发在哪本刊、那本刊什么档次
+（顶刊/一流/常规/一般/慎用）。免费、只读外网、不碰 Zotero。
+分完之后 `paperdb` 能按刊筛：`paperdb_find(journal='顶刊')`、`paperdb_journals()`。
+
+**用户的名单压过一切指标**（`data/serving/journal_overrides.json`）——
+他明确说过不看不引 MDPI 这类刊，那就是「慎用」，不管指标多好看。

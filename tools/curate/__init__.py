@@ -13,6 +13,7 @@
 | `junk`     | 找出无 PDF 的残留条目 → 确认后删 | 否 | **删条目** |
 | `rename`   | 附件统一命名（正文 / SI / 快照）| 否 | **改附件名** |
 | `backfill` | 给缺 `meta.json` 的文献补元数据 | 否 | 否 |
+| `journals` | 期刊分级（发在哪本刊、那本刊有多重）| 否 | 否 |
 | `tags`     | 标签改造（`dim:value` → `dim/value`）；`autotag` 已弃用 | 是（autotag）| **改标签** |
 
 **除 `backfill` 外都写用户的真实 Zotero 库**，一律带机器角色守卫：

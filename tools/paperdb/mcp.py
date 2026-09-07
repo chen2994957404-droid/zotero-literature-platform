@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""paperdb 的 MCP 面：9 个只读工具（模型可以自己调，不花钱、不改任何东西）。
+"""paperdb 的 MCP 面：10 个只读工具（模型可以自己调，不花钱、不改任何东西）。
 
 查询库是 `structured/*.json` 的索引，读它零成本，所以按 R4 判据是 tool。
 返回值直接给 JSON：结构化数值是**给机器用的原生数据**，不翻译、不排版
@@ -27,7 +27,9 @@ def register(server):
         '按条件筛结构化记录：关键词 / 档次 / 某字段有值 / 某性能数值范围。',
         {'type': 'object', 'properties': {
             'text': {'type': 'string', 'description': '标题或字段里的关键词'},
-            'tier': {'type': 'string', 'description': '档次：精层 / 粗层'},
+            'tier': {'type': 'string', 'description': '抽取档次：精+SI / 精层 / 粗层'},
+            'journal': {'type': 'string',
+                        'description': '期刊档次：顶刊 / 一流 / 常规 / 一般 / 慎用'},
             'field': {'type': 'string',
                       'description': '这个字段必须有值，如 synthesis_conditions'},
             'prop': {'type': 'string', 'description': '性能名，如 tensile'},
@@ -39,6 +41,7 @@ def register(server):
         }},
         lambda a: _json(paperdb.find(
             text=a.get('text'), tier=a.get('tier'), field=a.get('field'),
+            journal=a.get('journal'),
             prop=a.get('prop'), min_value=a.get('min_value'),
             max_value=a.get('max_value'), unit=a.get('unit'),
             limit=a.get('limit', 100))))
@@ -94,6 +97,16 @@ def register(server):
         '这库里的数字有多少能追溯到原文（带出处 / 带测试条件 / 挂到了具体样品）。',
         {'type': 'object', 'properties': {}},
         lambda a: _json(paperdb.provenance()))
+
+    server.register_tool(
+        'paperdb_journals',
+        '期刊视角：库里的文献发在哪些刊上、各是什么档次（顶刊/一流/常规/一般/慎用）、各多少篇。'
+        '「这条数据有多可信」的第二条腿 —— 第一条是数字能不能追溯到原文。',
+        {'type': 'object', 'properties': {
+            'tier': {'type': 'string', 'description': '只看某一档：顶刊 / 一流 / 常规 / 一般 / 慎用'},
+            'limit': {'type': 'integer', 'minimum': 1, 'maximum': 500},
+        }},
+        lambda a: _json(paperdb.journals(tier=a.get('tier'), limit=a.get('limit', 200))))
 
     server.register_tool(
         'paperdb_curves',

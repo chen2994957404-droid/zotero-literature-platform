@@ -18,12 +18,17 @@
 | `paperdb_samples` | 样品层：一行一个配方（这篇里有几个体系、各是什么组成）|
 | `paperdb_measurements` | 测量层：一行一个数字，**带测试条件与出处**；`located=true` 只要能追溯到原文的 |
 | `paperdb_provenance` | 这库里的数字有多少带出处 / 带条件 / 挂到了具体样品 |
+| `paperdb_journals` | 期刊视角：文献发在哪些刊、各什么档次、各多少篇 |
 | `paperdb_curves` | 曲线层：从论文图里抠下来的曲线（哪篇第几张图、多少个点、多确信）|
 | `paperdb_curve_points` | 某条曲线的原始点，要画图或再分析时用 |
 | `paperdb_sql` | 复杂查询自己写 SQL（只接受 SELECT / WITH）|
 
 用 `paperdb_props` 先看性能名怎么写的，再拿去 `paperdb_find`：
 性能名是从原文里抽的（常见的那些会归到统一词表），猜名字容易筛出空。
+
+**「这条数据有多可信」有两条腿**：数字能不能追溯到原文（`located`），
+以及它出自什么刊（`journal_tier`）。用户明确说过**不看不引 MDPI 这类刊** ——
+那些在库里标成 `慎用`，给他推荐结论前先看一眼这一列。
 
 **要把数字写进论文/报告，先 `paperdb_measurements(located=true)`** ——
 没有出处的数字只能当线索，得自己翻回原文核。`paperdb_provenance` 告诉你这库整体有多少能追溯。

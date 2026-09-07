@@ -18,6 +18,8 @@ python -m tools.paperdb --find boron --prop tensile --min 10
 python -m tools.paperdb --samples                 # 样品层：一行一个配方
 python -m tools.paperdb --m tensile --min 10 --located   # 测量层：能追溯到原文的数字
 python -m tools.paperdb --curves                  # 曲线层：抠过哪些图
+python -m tools.paperdb --journals               # 库里的文献发在什么档次的刊上
+python -m tools.paperdb --find 硼 --journal 顶刊  # 只看顶刊的那些
 python -m tools.paperdb --prov                    # 有多少数字能追溯（体温计）
 python -m tools.paperdb --sql "SELECT tier, COUNT(*) n FROM papers GROUP BY tier"
 ```
@@ -42,6 +44,7 @@ paperdb.query('SELECT ...')      # 只接受 SELECT / WITH
 | `papers` | 一篇文献：key / title / tier / source / si_used / schema 的每个字段 |
 | `samples` | **一个配方**：sample_id / 组成 / 制备 / 动态键 / 它在这篇里的角色 |
 | `measurements` | **一个数字**：name / value / unit / 测试条件 / **出处** / 正文还是 SI / 谁抽的 |
+| `papers` 的期刊列 | `journal` / `issn` / `journal_tier` / `publisher` —— 来自 `tools/curate journals` |
 | `curves` | **一条曲线**：哪篇第几张图、图例名、轴与单位、多少个点、原始点、读得多确信 |
 
 （`properties` 还在，是 `measurements` 的兼容视图，老查询照跑。）

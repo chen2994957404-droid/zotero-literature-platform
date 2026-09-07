@@ -11,6 +11,8 @@
     python -m tools.curate backfill                 给缺 meta.json 的补元数据
     python -m tools.curate tags                     标签改嵌套写法（不带 apply = 预览）
     python -m tools.curate tags apply               真改
+    python -m tools.curate journals                 期刊分级（走 OpenAlex，免费、不写 Zotero）
+    python -m tools.curate journals --list          只看上次的结果，不联网
 
 ⚠ 除 junk 列清单、rename/tags 的预览之外，其余都会**写回 Zotero**，
    只允许在主力机上跑（role.require_prod 会拦住编程端）。
@@ -24,7 +26,7 @@ except Exception:
 
 from shared.kernel.cli import pos, wants_help
 
-ACTIONS = ('junk', 'rename', 'backfill', 'tags')
+ACTIONS = ('junk', 'rename', 'backfill', 'tags', 'journals')
 
 
 def main():

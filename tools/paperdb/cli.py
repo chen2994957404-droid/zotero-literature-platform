@@ -13,6 +13,8 @@
   python -m tools.paperdb --samples          # 样品层：一行一个配方（--samples KEY 只看某篇）
   python -m tools.paperdb --m tensile --min 10 --located   # 测量层：带出处的那些数字
   python -m tools.paperdb --curves          # 曲线层：从图里抠出来的曲线
+  python -m tools.paperdb --journals        # 库里的文献都发在什么档次的刊上
+  python -m tools.paperdb --find X --journal 顶刊   # 只看顶刊那些
   python -m tools.paperdb --prov            # 数字有多少能追溯到原文（体温计）
   python -m tools.paperdb --sql "SELECT tier, COUNT(*) n FROM papers GROUP BY tier"
 
@@ -74,6 +76,12 @@ def main():
                     ['key', 'sample_id', 'title', 'composition', 'dynamic_bond'])
         return
 
+    if flag('--journals') or opt('--journals') is not None:
+        _print_rows(paperdb.journals(tier=opt('--journals'),
+                                     limit=int(opt('--limit', 50))),
+                    ['journal_tier', 'n', 'journal', 'publisher', 'issn'])
+        return
+
     if flag('--curves') or opt('--curves') is not None:
         _print_rows(paperdb.curves(key=opt('--curves'),
                                    limit=int(opt('--limit', 50))),
@@ -106,10 +114,11 @@ def main():
     mn, mx = opt('--min'), opt('--max')
     rows = paperdb.find(text=opt('--find'), tier=opt('--tier'), field=opt('--field'),
                          prop=opt('--prop'), unit=opt('--unit'),
+                         journal=opt('--journal'),
                          min_value=float(mn) if mn else None,
                          max_value=float(mx) if mx else None,
                          limit=int(opt('--limit', 50)))
-    _print_rows(rows, ['key', 'tier', 'title', 'material_system',
+    _print_rows(rows, ['key', 'tier', 'journal_tier', 'title', 'material_system',
                        'dynamic_bond_type', 'key_properties'])
 
 

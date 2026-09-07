@@ -34,3 +34,21 @@ python -m tools.curate tags                    标签改嵌套写法（不带 ap
 ## 只在主力机上跑
 
 每个写操作开头都有机器角色守卫，编程端会被拦住。
+
+## 期刊分级（2026-09-07 加）
+
+```
+python -m tools.curate journals          # 全库刷一遍（走 OpenAlex，免费、不写 Zotero）
+python -m tools.curate journals --list    # 只看上次结果，不联网
+```
+
+产出 `data/serving/journals.json`：每篇发在哪本刊、那本刊什么档次
+（`顶刊 / 一流 / 常规 / 一般 / 慎用`，按近两年篇均被引分档）。
+`tools/paperdb` 读它，于是 `--find X --journal 顶刊` 这类筛法成立。
+
+**你的名单压过指标**：`data/serving/journal_overrides.json` 想写什么写什么
+（按出版商或按刊名，大小写不敏感、包含匹配）。默认只有一条 ——
+你说过的「不看不引 MDPI」。改完再跑一次 `journals` 就生效。
+
+指标来自 OpenAlex（免费）。中科院分区和 JCR 都要订阅，SCImago 的下载口有
+Cloudflare 挡着（实测 curl 只拿得到验证页），所以现成的免费源就这一个。

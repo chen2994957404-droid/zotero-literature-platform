@@ -10,7 +10,7 @@ try:
 except Exception:
     pass
 
-from tools.curate import junk, rename, tags
+from tools.curate import journals, junk, rename, tags
 
 
 def _item(key, title, doi='', n_children=0, item_type='journalArticle'):
@@ -76,6 +76,38 @@ def main():
         print('  [PASS] 没有可改的就返回 None（不产生一次无谓写回）'); ok += 1
     else:
         print('  [FAIL] 没东西可改却说要改')
+
+    # ── 期刊分级：档次判定是纯逻辑，必须离线可测 ───────────────────────
+    top = {'display_name': 'Advanced Materials', 'host_organization_name': 'Wiley',
+           'summary_stats': {'2yr_mean_citedness': 22.4}}
+    mid = {'display_name': 'Some Journal', 'summary_stats': {'2yr_mean_citedness': 9.1}}
+    low = {'display_name': 'Tiny Journal', 'summary_stats': {'2yr_mean_citedness': 1.2}}
+    unknown = {'display_name': 'No Metrics Journal'}
+    mdpi = {'display_name': 'Polymers',
+            'host_organization_name': 'Multidisciplinary Digital Publishing Institute',
+            'summary_stats': {'2yr_mean_citedness': 7.3}}
+
+    total += 1
+    got = [journals.tier_of(x)[0] for x in (top, mid, low, unknown)]
+    if got == ['顶刊', '一流', '一般', '一般']:
+        print('  [PASS] 期刊分档按近两年篇均被引，查不到指标的算「一般」'); ok += 1
+    else:
+        print(f'  [FAIL] 分档不对：{got}')
+
+    total += 1
+    t, why = journals.tier_of(mdpi, journals.DEFAULT_OVERRIDES)
+    t2, _ = journals.tier_of(mdpi)
+    if t == '慎用' and '用户名单' in why and t2 == '常规':
+        print('  [PASS] 用户名单压过指标（MDPI 指标不低，但用户说过不看不引）'); ok += 1
+    else:
+        print(f'  [FAIL] 用户名单没压过指标：{t} / {why} / 无名单时 {t2}')
+
+    total += 1
+    ov = {'journals': {'tiny journal': '慎用'}}
+    if journals.tier_of(low, ov)[0] == '慎用' and journals.tier_of(top, ov)[0] == '顶刊':
+        print('  [PASS] 名单也能按刊名单点某一本，不影响别的'); ok += 1
+    else:
+        print('  [FAIL] 按刊名的名单不生效')
 
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)

@@ -363,3 +363,41 @@ def cited_by(work_id, limit=200, select=FIELDS, mailto=POLITE_MAILTO, page_all=F
             break
         page += 1
     return out, total
+
+
+# ── 期刊本身（sources 端点）────────────────────────────────────────────
+# `works` 端点只给「这篇发在哪」（刊名 / ISSN / 出版商），给不出**这本刊有多重**。
+# 刊级指标住在另一个端点 `/sources`：`summary_stats.2yr_mean_citedness`
+# （就是影响因子那个口径）、`h_index`、以及是不是开放获取、在不在 DOAJ。
+SOURCE_FIELDS = ('id,display_name,issn_l,issn,type,is_oa,is_in_doaj,'
+                 'host_organization_name,works_count,cited_by_count,summary_stats')
+
+
+def sources_by_issn(issns, on_progress=None, mailto=POLITE_MAILTO):
+    """一批 ISSN → `{issn_l: 刊的元数据与指标}`。
+
+    走 `/sources?filter=issn:a|b|c`。同一本刊有纸质与电子两个 ISSN，
+    返回时**每个 ISSN 都指向同一条记录**（调用方拿手上那个查得到就行）。
+    """
+    vals = sorted({str(i).strip() for i in issns if i})
+    out = {}
+    for i in range(0, len(vals), BATCH):
+        chunk = vals[i:i + BATCH]
+        f = 'issn:%s' % '|'.join(chunk)
+        url = '%s/sources?filter=%s&per-page=%d&select=%s&mailto=%s' % (
+            BASE, urllib.parse.quote(f, safe=':|/.'), BATCH, SOURCE_FIELDS,
+            urllib.parse.quote(mailto))
+        for wait in _BACKOFF + (None,):
+            try:
+                for s in get(url).get('results', []):
+                    for key in ([s.get('issn_l')] + list(s.get('issn') or [])):
+                        if key:
+                            out[key] = s
+                break
+            except errors.PlatformError:
+                if wait is None:
+                    raise
+                time.sleep(wait)
+        if on_progress:
+            on_progress(min(i + BATCH, len(vals)), len(vals), len(out))
+    return out
