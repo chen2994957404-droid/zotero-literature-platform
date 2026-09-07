@@ -354,6 +354,20 @@ def main():
     else:
         print(f'  [FAIL] 出处丢了：{[(r["location"], r["method"]) for r in rows]}')
 
+    total += 1
+    # v1 老记录 + 脚本从表格扫来的数值：样品名是真实的，不是 'main'。
+    # 不对帐就成了悬空数值（查得到数、查不到它属于谁）—— 2026-09-07 实测 36 条。
+    v1 = {'key': 'AAAA0001', 'key_properties': ['tensile strength: 12 MPa']}
+    ms_v1 = schema.iter_measurements(v1) + [
+        {'sample_id': 'PA6/PBS-1', 'name': 'tensile strength', 'value': 52.3,
+         'value_max': None, 'unit': 'MPa', 'cmp': '', 'condition': '',
+         'location': 'Table 2', 'section': 'main', 'method': 'script', 'raw': ''}]
+    ids_v1 = [x['sample_id'] for x in schema.samples_of(v1, ms_v1)]
+    if ids_v1 == ['main', 'PA6/PBS-1']:
+        print('  [PASS] v1 老记录也对帐：脚本扫来的样品名补进样品层，没有悬空数值'); ok += 1
+    else:
+        print(f'  [FAIL] v1 分支没对帐，数值会悬空：{ids_v1}')
+
 
 
     print(f'\n{ok}/{total} 通过')

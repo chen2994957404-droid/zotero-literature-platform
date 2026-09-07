@@ -655,11 +655,16 @@ def samples_of(record, measurements=None):
     if out:
         return _attach_orphans(out, measurements if measurements is not None
                                else iter_measurements(record))
-    return [{'sample_id': 'main',
-             'composition': _flat_text(record.get('precursors')),
-             'preparation': _flat_text(record.get('synthesis_conditions')),
-             'dynamic_bond': _flat_text(record.get('dynamic_bond_type')),
-             'role': '', 'application': ''}]
+    # v1 老记录也要对帐。**只有模型抽的时候这一步是空转**（它给的都是 'main'），
+    # 可脚本从表格里扫出来的数值带着真实样品名（`PA6/PBS-1`），
+    # 挂到一个只有 'main' 的清单上就成了悬空数值 —— 2026-09-07 实测悬空 36 条。
+    return _attach_orphans(
+        [{'sample_id': 'main',
+          'composition': _flat_text(record.get('precursors')),
+          'preparation': _flat_text(record.get('synthesis_conditions')),
+          'dynamic_bond': _flat_text(record.get('dynamic_bond_type')),
+          'role': '', 'application': ''}],
+        measurements if measurements is not None else iter_measurements(record))
 
 
 def _flat_text(v):
