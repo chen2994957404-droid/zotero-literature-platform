@@ -6,6 +6,7 @@
 （stream:false 下看起来像卡死），自测只验链路，不测翻译。
 """
 import sys, os
+from shared.adapters import llm_client
 from shared.adapters.llm_client import chat, chat_json, LLMError
 
 def main():
@@ -75,6 +76,27 @@ def main():
             print('  [PASS] 模型名能认出是哪家，且 gemini 去拿 GEMINI_KEY'); ok += 1
     except Exception as e:
         print(f'  [FAIL] provider 推断异常: {type(e).__name__}: {e}')
+
+    # ── 「少想一点」的翻译：漏一家不会报错，只会安静地一直开着 ──────────
+    total += 1
+    ds = llm_client.apply_thinking({}, 'deepseek', False)
+    qw_off = llm_client.apply_thinking({}, 'dashscope', False)
+    qw_on = llm_client.apply_thinking({}, 'dashscope', True)
+    gm = llm_client.apply_thinking({}, 'gemini', False)
+    if (ds == {'thinking': {'type': 'disabled'}}
+            and qw_off == {'enable_thinking': False}
+            and qw_on == {'enable_thinking': True}
+            and gm == {'reasoning_effort': 'low'}):
+        print('  [PASS] 三家的「关思考」各说各的话，都翻译到位'); ok += 1
+    else:
+        print(f'  [FAIL] 思考开关翻译不对：{ds} / {qw_off} / {qw_on} / {gm}')
+
+    total += 1
+    if (llm_client.apply_thinking({}, 'dashscope', None) == {}
+            and llm_client.apply_thinking({}, 'gemini', True) == {}):
+        print('  [PASS] 没说要关就什么都不发（随各家默认）'); ok += 1
+    else:
+        print('  [FAIL] thinking=None 时不该往请求里塞东西')
 
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)

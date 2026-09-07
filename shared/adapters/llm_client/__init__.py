@@ -168,9 +168,41 @@ def usage_snapshot():
     return dict(USAGE)
 
 
+def apply_thinking(body, provider, thinking):
+    """把「少想一点」翻译成这家听得懂的话。**三家三种说法，一处翻译。**
+
+    | 家 | 说法 |
+    |---|---|
+    | deepseek | `thinking={'type': 'enabled'/'disabled'}` |
+    | dashscope（百炼 qwen3.x）| `enable_thinking=True/False` |
+    | gemini | 关不掉，只能 `reasoning_effort='low'` |
+
+    ⚠ **漏翻译不会报错，只会安静地一直开着**：百炼这一家漏了将近一天 ——
+    方向层抽摘要因此慢了一个数量级（实测同一个提问：开着 45 tok / 1.2s，
+    关掉 5 tok / 0.6s），还白付了推理链的输出费（踩坑 #130）。
+
+    ⚠ Gemini 3 之后思考**真的关不掉**（官方原话：不支持 `reasoning_effort="none"`），
+    只能调到最低。所以这里的 `thinking=False` 对它是「尽量少想」——
+    名字骗人，但行为是调用方要的那个：别让推理链吃掉正文额度。
+    实测撞过：max_tokens=300 时思考把额度吃光，正文一个字没剩（2026-09-03）。
+    """
+    if thinking is None:
+        return body
+    if provider == 'deepseek':
+        body['thinking'] = {'type': 'enabled' if thinking else 'disabled'}
+    elif provider == 'dashscope':
+        body['enable_thinking'] = bool(thinking)
+    elif provider == 'gemini' and not thinking:
+        # ⚠ 用 `low`，**别用文档里列的 `minimal`**：文档把它列成合法值，
+        #   但 gemini-3.8-flash 实测回 400
+        #   `Thinking level MINIMAL is not supported for this model`。
+        body['reasoning_effort'] = 'low'
+    return body
+
+
 def _cloud_chat(messages, model, key, temperature, json_mode, max_tokens,
                 thinking=None, provider='deepseek'):
-    """打一家 OpenAI 兼容的云端模型。thinking 只对 DeepSeek 有意义。
+    """打一家 OpenAI 兼容的云端模型。thinking 三家三种说法，本函数负责翻译。
 
     thinking: True=开推理链, False=关, None=随 API 默认（V4 默认开）。
 
@@ -192,15 +224,7 @@ def _cloud_chat(messages, model, key, temperature, json_mode, max_tokens,
     #
     # 这条是实测撞出来的（2026-09-03）：max_tokens=300 的一次试探直接
     # 「输出被截断且正文近乎为空」—— 300 全被思考吃光了，一个字没留给答案。
-    if thinking is not None:
-        if provider == 'deepseek':
-            body['thinking'] = {'type': 'enabled' if thinking else 'disabled'}
-        elif provider == 'gemini' and not thinking:
-            # ⚠ 用 `low`，**别用文档里列的 `minimal`**：文档把 minimal 列成合法值，
-            #   但 gemini-3.8-flash 实测回 400
-            #   `Thinking level MINIMAL is not supported for this model`。
-            #   又一次「文档说的和它实际接受的不一样」—— 以实测为准。
-            body['reasoning_effort'] = 'low'
+    apply_thinking(body, provider, thinking)
     if json_mode:
         body['response_format'] = {'type': 'json_object'}
     if max_tokens:
