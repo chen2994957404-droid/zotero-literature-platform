@@ -16,7 +16,7 @@ from shared.kernel import paths
 from tools import paperdb
 
 # paperdb 会去读的每一个 paths 属性。加源就往这里加。
-SOURCES = ('STRUCTURED', 'ABSTRACTS', 'CURATED', 'SERVING')
+SOURCES = ('STRUCTURED', 'ABSTRACTS', 'CURATED', 'SERVING', 'RAW')
 
 
 @pytest.fixture

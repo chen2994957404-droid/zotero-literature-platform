@@ -52,6 +52,7 @@ import sqlite3
 
 from shared.kernel import paths
 from shared.domain import schema
+from shared.domain.schema import scan
 
 # schema 的字段都存成 TEXT（列表字段 join 成一行文本，原样可读）
 _FIELDS = list(schema.SCHEMA.keys())
@@ -311,6 +312,65 @@ def _insert_curves(conn, curves_by_key):
     return n_c, n_m
 
 
+def _table_measurements(keys):
+    """全文里的表格 → (测量, 投料量)，都按 key 分组。**现扫现用，不落第三份 JSON**。
+
+    真相始终是 `raw/<key>/parsed/full.md`；这里只是每次重建时现扫一遍
+    （42 篇不到十秒）。落盘会立刻引出「JSON 与全文谁新」这类问题，
+    而这份数据是**纯派生**的 —— 换了扫描规则就该整体重算，不该有旧副本活着。
+
+    为什么值得扫（2026-09-07 实测 42 篇）：脚本从表格直出 371 条测量，
+    **353 条带出处**；而模型读同一批全文只给出 175 条带出处的。
+    差别不在聪明，在于**脚本抓的出处不可能是编的** —— 数字和 `Table 2`
+    本来就是同一段文字里的两个位置，程序只是把它们连起来。
+    """
+    meas, comp = {}, {}
+    for key in sorted(keys):
+        p = paths.fulltext(key)
+        if not os.path.exists(p):
+            continue
+        try:
+            md = io.open(p, encoding='utf-8').read()
+            rows = scan.scan_tables(md)
+        except Exception:
+            continue                      # 解析坏了就当这篇没有表，别拖垮整次重建
+        for r in rows:
+            bucket = comp if r.get('kind') == 'composition' else meas
+            bucket.setdefault(key, []).append(r)
+    return meas, comp
+
+
+def _merge_script(model_rows, script_rows):
+    """模型抽的 + 脚本抽的 → 一份。**同一个数字重了，留脚本那条。**
+
+    判重只看「哪个样品的哪个性能是多少」。留脚本那条不是因为它更聪明，
+    而是它带着出处，而模型给的出处有可能是编的。
+    """
+    if not script_rows:
+        return list(model_rows)
+    seen = {(r.get('sample_id'), r.get('name'), r.get('value')) for r in script_rows}
+    kept = [m for m in model_rows
+            if (m.get('sample_id'), m.get('name'), m.get('value')) not in seen]
+    return kept + list(script_rows)
+
+
+def _composition_text(rows):
+    """投料量若干条 → `{样品: 'PA6 80 wt%; PBS 20 wt%'}`。
+
+    这些数字是**配方**不是性能：`PA6 80 wt%` 拿去跟别人比大小毫无意义，
+    但它恰恰是「这个配方是什么」的答案，所以并进样品层的 composition。
+    """
+    out = {}
+    for r in rows:
+        v = r.get('value')
+        if v is None:
+            continue
+        txt = ('%s %g %s' % (r.get('raw_name') or r.get('name') or '',
+                             v, r.get('unit') or '')).strip()
+        out.setdefault(r.get('sample_id') or 'main', []).append(txt)
+    return {k: '; '.join(v) for k, v in out.items()}
+
+
 def rebuild(records=None, log=print):
     """从 `structured/*.json` 整库重建。返回 (篇数, 样品数, 测量条数)。
 
@@ -333,6 +393,9 @@ def rebuild(records=None, log=print):
     sql_m = ('INSERT INTO measurements (' + ','.join(f'"{c}"' for c in _MEAS_COLS)
              + ') VALUES (' + ','.join('?' * len(_MEAS_COLS)) + ')')
     n_samp = n_meas = 0
+    # 脚本从全文表格里现扫的测量与投料量（不落盘，见 `_table_measurements`）
+    t_meas, t_comp = _table_measurements({(r.get('key') or '') for r in records})
+    n_script = sum(len(v) for v in t_meas.values())
     with conn:
         conn.execute('DELETE FROM papers')
         conn.execute('DELETE FROM samples')
@@ -352,8 +415,13 @@ def rebuild(records=None, log=print):
             conn.execute(sql, row)
             # 先算数值再算样品：`samples_of` 要拿数值对帐，
             # 把挂在不存在样品上的数值接回去（同一个列表对象，两边才一致）
-            meas = schema.iter_measurements(r)
+            meas = _merge_script(schema.iter_measurements(r), t_meas.get(key) or [])
+            comp = _composition_text(t_comp.get(key) or [])
             for s in schema.samples_of(r, meas):
+                extra = comp.get(s['sample_id'])
+                if extra:               # 表格里的投料量补进配方（模型没写才补）
+                    s['composition'] = '; '.join(
+                        x for x in (s.get('composition'), extra) if x)
                 conn.execute(sql_s, [key] + [s.get(c, '') for c in _SAMPLE_COLS[1:]])
                 n_samp += 1
             for m in meas:
@@ -363,6 +431,7 @@ def rebuild(records=None, log=print):
         n_meas += n_cm
     log(f'[查询库] {len(records)} 篇、{n_samp} 个样品、{n_meas} 条数值'
         + (f'（其中 {n_cm} 条抠自 {n_curve} 条曲线）' if n_curve else '')
+        + (f'（其中 {n_script} 条由脚本从表格直扫，全部带出处）' if n_script else '')
         + f' → {db_path()}')
     return len(records), n_samp, n_meas
 
@@ -400,11 +469,12 @@ def _ensure_fresh():
         newest = max(newest, os.path.getmtime(paths.journals()))
     except OSError:
         pass
-    for key in paths.all_keys():          # 曲线也是源：抠完一张图，库该跟着新
-        try:
-            newest = max(newest, os.path.getmtime(paths.curves(key)))
-        except OSError:
-            continue
+    for key in paths.all_keys():          # 曲线与全文也是源
+        for f in (paths.curves(key), paths.fulltext(key)):
+            try:                          # 抠完一张图、重解析一篇全文，库都该跟着新
+                newest = max(newest, os.path.getmtime(f))
+            except OSError:
+                continue
     if newest < 0 and db_mtime >= 0:
         return                             # 没有源 JSON，保持现状（多半是测试造的库）
     if db_mtime < newest:
