@@ -22,20 +22,9 @@ from tools import paperdb
 
 
 @pytest.fixture
-def db(tmp_path, monkeypatch):
-    """把库和源 JSON 都指到 tmp_path，绝不碰用户真实数据。"""
-    from shared.kernel import paths
-    st = tmp_path / 'structured'
-    st.mkdir()
-    monkeypatch.setattr(paths, 'STRUCTURED', str(st))
-    # 方向层与曲线也是源，一并指走 —— 漏一个就会把真实数据算进来
-    # （在编程端看不出来，那儿没数据；一到主力机就红。同踩坑 #127）
-    monkeypatch.setattr(paths, 'ABSTRACTS', str(tmp_path / 'abstracts'))
-    monkeypatch.setattr(paths, 'CURATED', str(tmp_path / 'curated'))
-    monkeypatch.setattr(paperdb, 'db_path', lambda: str(tmp_path / 'papers.db'))
-    paperdb.close()
-    yield st
-    paperdb.close()
+def db(isolate):
+    """源与库都在临时目录里（隔离清单见 conftest.py）。"""
+    return isolate
 
 
 def _write(st, key, title):

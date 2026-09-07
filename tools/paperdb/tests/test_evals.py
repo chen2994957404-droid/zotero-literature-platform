@@ -18,15 +18,9 @@ from tools.paperdb.evals.scorers import query_match
 
 
 @pytest.fixture
-def db(tmp_path, monkeypatch):
-    """把库和源 JSON 都指到 tmp_path —— **绝不碰用户真实数据**。"""
-    from shared.kernel import paths
-    st = tmp_path / 'structured'
-    st.mkdir()
-    monkeypatch.setattr(paths, 'STRUCTURED', str(st))
-    monkeypatch.setattr(paperdb, 'db_path', lambda: str(tmp_path / 'papers.db'))
-    paperdb.close()
-
+def db(isolate):
+    """金标记录写进隔离好的临时目录（隔离清单见 conftest.py）。"""
+    st = isolate
     records, cases = evals.golden()
     for r in records:
         with open(st / f"{r['key']}.json", 'w', encoding='utf-8') as f:
