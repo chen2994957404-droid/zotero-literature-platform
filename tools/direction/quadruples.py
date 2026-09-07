@@ -28,6 +28,7 @@
     python -m tools.direction quads --band impact --limit 50     # 先试 50 条
     python -m tools.direction quads --band impact                # 这条窄带全跑
     python -m tools.direction quads --band impact --list         # 只看还剩多少，不花钱
+    python -m tools.direction quads --band impact --all          # 连引用层一起抽（贵得多，多是无关的通用论文）
 """
 import io
 import json
@@ -75,16 +76,24 @@ def _build_prompt(title, abstract, venue='', year=''):
           '===== ABSTRACT START =====\n%s\n===== ABSTRACT END =====' % abstract)
 
 
-def pending(band, limit=None):
+def pending(band, limit=None, seeds_only=True):
     """这条窄带里还没抽过摘要的作品：`[(id, doi, title, venue, year), ...]`。
 
     判据是产物在不在盘上 —— **不另记台账**：台账会和文件不同步，
     而文件本身就是真相（跟 paperdb「库是索引不是真相」同一条道理）。
+
+    **默认只抽种子层**（`seeds_only=True`，2026-09-07 实测后改的）：
+    `works` 表里还有引用层 —— 种子引到的一切，包括 PBE 泛函这种
+    「谁都引一下」的通用方法论文。impact 窄带 12085 篇里种子只有 2328 篇，
+    剩下的大多跟抗冲击没关系。给它们花钱是纯浪费，而且会把方向层的版图冲淡。
+    真要连引用层一起抽，`seeds_only=False`。
     """
     c = sqlite3.connect(paths.direction_db(band))
     try:
-        rows = c.execute('SELECT id, doi, title, venue, year FROM works '
-                         'ORDER BY cited_by DESC').fetchall()
+        sql = 'SELECT id, doi, title, venue, year FROM works '
+        if seeds_only:
+            sql += 'WHERE is_seed = 1 '
+        rows = c.execute(sql + 'ORDER BY cited_by DESC').fetchall()
     finally:
         c.close()
     out = []
@@ -133,9 +142,9 @@ def one(work_id, title, abstract, doi='', venue='', year='', model=None):
     return rec
 
 
-def run(band, limit=None, log=print):
+def run(band, limit=None, log=print, seeds_only=True):
     """跑一批：取摘要 → 抽四元组 → 落盘。返回 (成功篇数, 用量快照)。"""
-    todo = pending(band, limit)
+    todo = pending(band, limit, seeds_only)
     if not todo:
         log('这条窄带的摘要都抽过了')
         return 0, {}
@@ -178,15 +187,17 @@ def run(band, limit=None, log=print):
 def main():
     """命令行入口。`--list` 只数数不花钱；其余是**花钱的批量作业**。"""
     band = opt('--band') or 'impact'
+    seeds_only = not flag('--all')
     if flag('--list'):
-        todo = pending(band)
-        print('窄带 %s：还没抽摘要的有 %d 篇；已抽 %d 篇'
-              % (band, len(todo), len(paths.all_work_ids())))
+        todo = pending(band, seeds_only=seeds_only)
+        print('窄带 %s：还没抽摘要的有 %d 篇（%s）；已抽 %d 篇'
+              % (band, len(todo), '只算种子层' if seeds_only else '含引用层',
+                 len(paths.all_work_ids())))
         return
     lim = opt('--limit')
     role.require_prod('方向层摘要抽取（每篇一次云端小模型调用，是花钱的批量作业）',
                       force=flag('--force'))
-    run(band, int(lim) if lim else None)
+    run(band, int(lim) if lim else None, seeds_only=seeds_only)
 
 
 if __name__ == '__main__':

@@ -142,16 +142,21 @@ try:
         # 造两条合法的 OpenAlex 作品 id（假数据里的 id 不长这样，会被 check_work_id 挡掉，
         # 那正是我们要的行为：不合法的 id 不该进方向层）
         conn = sqlite3.connect(paths.direction_db('t1'))
-        conn.execute("INSERT OR REPLACE INTO works (id, title, cited_by) "
-                     "VALUES ('W1000000001', '一号', 9)")
-        conn.execute("INSERT OR REPLACE INTO works (id, title, cited_by) "
-                     "VALUES ('W1000000002', '二号', 8)")
+        conn.execute("INSERT OR REPLACE INTO works (id, title, cited_by, is_seed) "
+                     "VALUES ('W1000000001', '一号', 9, 1)")
+        conn.execute("INSERT OR REPLACE INTO works (id, title, cited_by, is_seed) "
+                     "VALUES ('W1000000002', '二号', 8, 1)")
+        conn.execute("INSERT OR REPLACE INTO works (id, title, cited_by, is_seed) "
+                     "VALUES ('W1000000003', '引用层的通用方法论文', 999, 0)")
         conn.commit()
         conn.close()
         todo = Q.pending('t1')
         ids = [t[0] for t in todo]
-        check('只有合法的作品 id 进待抽清单',
+        check('只有合法的作品 id 进待抽清单，且默认只抽种子层'
+              '（引用层多是「谁都引一下」的通用论文，花钱抽它是浪费）',
               ids == ['W1000000001', 'W1000000002'], str(ids)[:60])
+        check('--all 才把引用层也算进来',
+              len(Q.pending('t1', seeds_only=False)) == 3)
         io.open(paths.abstract_record('W1000000001'), 'w', encoding='utf-8').write('{}')
         check('抽过的那篇不再出现在待抽清单里',
               [t[0] for t in Q.pending('t1')] == ['W1000000002'])
