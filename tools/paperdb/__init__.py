@@ -326,6 +326,10 @@ def _table_measurements(keys):
     """
     meas, comp = {}, {}
     for key in sorted(keys):
+        # 方向层的 key 是 OpenAlex 的（`W1081348687`），不是 Zotero 的 8 位 key，
+        # 本来就没有全文 —— 不先滤掉，`paths.fulltext()` 会直接抛 BadKeyError。
+        if not paths.KEY_RE.match(key.upper()):
+            continue
         p = paths.fulltext(key)
         if not os.path.exists(p):
             continue

@@ -39,12 +39,13 @@ def main():
     ok = total = 0
     with tempfile.TemporaryDirectory() as d:
         real_struct, real_db = paths.STRUCTURED, paperdb.db_path
-        real_curated, real_abs = paths.CURATED, paths.ABSTRACTS
+        real_curated, real_abs, real_raw = paths.CURATED, paths.ABSTRACTS, paths.RAW
         # 方向层目录也要隔离：`_records()` 现在两个目录都读，
         # 漏一个就会把真实数据算进来 —— 在编程端看不出来（那儿没数据），
         # 一到主力机就红。同 #127 的教训：**给读取加了新来源，先看测试隔离了什么。**
         paths.ABSTRACTS = os.path.join(d, 'abstracts')
         paths.STRUCTURED = os.path.join(d, 'structured')
+        paths.RAW = os.path.join(d, 'raw')      # 表格扫描读全文，raw 也是源了
         os.makedirs(paths.STRUCTURED)
         paperdb.db_path = lambda: os.path.join(d, 'papers.db')
         paperdb.close()
@@ -190,10 +191,31 @@ def main():
                 print('  [PASS] 删库可原样重建（真相是 JSON 文件，不是库）'); ok += 1
             else:
                 print(f'  [FAIL] 重建结果不一致：{again}')
+
+            total += 1
+            # 方向层的 key 是 OpenAlex 的（`W...`，位数也不对）。表格扫描要按 key
+            # 去找全文，不先滤掉就会 BadKeyError 把**整次重建**炸掉。
+            # 2026-09-07 真炸过：编程端没有方向层数据，本地全绿，一到主力机就死。
+            os.makedirs(paths.ABSTRACTS, exist_ok=True)
+            json.dump({'key': 'W1081348687', 'title': 'An abstract-only paper',
+                       'doc_type': 'research', 'source': 'abstract',
+                       'key_properties': ['tensile strength: 7 MPa']},
+                      io.open(os.path.join(paths.ABSTRACTS, 'W1081348687.json'),
+                              'w', encoding='utf-8'), ensure_ascii=False)
+            try:
+                n2 = paperdb.rebuild(log=lambda *a: None)[0]
+                if n2 == 5:
+                    print('  [PASS] 方向层的非 Zotero key 不会把重建炸掉'); ok += 1
+                else:
+                    print(f'  [FAIL] 方向层那篇没进库：{n2} 篇')
+            except Exception as e:
+                print(f'  [FAIL] 非 Zotero key 把重建炸了：{type(e).__name__}: {e}')
+
         finally:
             paperdb.close()
             paths.STRUCTURED, paperdb.db_path = real_struct, real_db
             paths.CURATED, paths.ABSTRACTS = real_curated, real_abs
+            paths.RAW = real_raw
 
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)
