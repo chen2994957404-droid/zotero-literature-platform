@@ -28,6 +28,10 @@ def db(tmp_path, monkeypatch):
     st = tmp_path / 'structured'
     st.mkdir()
     monkeypatch.setattr(paths, 'STRUCTURED', str(st))
+    # 方向层与曲线也是源，一并指走 —— 漏一个就会把真实数据算进来
+    # （在编程端看不出来，那儿没数据；一到主力机就红。同踩坑 #127）
+    monkeypatch.setattr(paths, 'ABSTRACTS', str(tmp_path / 'abstracts'))
+    monkeypatch.setattr(paths, 'CURATED', str(tmp_path / 'curated'))
     monkeypatch.setattr(paperdb, 'db_path', lambda: str(tmp_path / 'papers.db'))
     paperdb.close()
     yield st
