@@ -6,7 +6,7 @@ description: 一批 DOI → 正文 PDF 到手，可直接收进 Zotero（借真�
 <!-- 本文件由 host/codegen/skills.py 生成，**别手改**。改源：tools/getpdf/SKILL.md + tools/getpdf/tool.toml -->
 
 > **动手之前先看这三行**（取自 `tools/getpdf/tool.toml`）：
-> 不花钱 · **有副作用**：向出版商网站发真实请求 —— 量大会触发风控，被封的是整个机构的 IP、写 data/raw/_incoming/getpdf/*.pdf、--to-zotero 时**写用户的 Zotero 库**：建条目、挂 PDF 附件、建合集（不可逆） · **只能在运行端（主力机）跑**
+> 不花钱 · **有副作用**：向出版商网站发真实请求 —— 量大会触发风控，被封的是整个机构的 IP、写 data/raw/_incoming/getpdf/*.pdf、--to-zotero 时**写用户的 Zotero 库**：建条目、挂 PDF 附件、建合集（不可逆）、fulltext 会花 MineRU 解析额度，并写 data/raw/<id>/（正本 PDF 与解析产物） · **只能在运行端（主力机）跑**
 > MCP 暴露方式：`prompt`（**由人在客户端点，模型不能自己发起**）
 > 命令行：`python -m tools.getpdf`
 

@@ -9,6 +9,7 @@ side_effects  = [
   "向出版商网站发真实请求 —— 量大会触发风控，被封的是整个机构的 IP",
   "写 data/raw/_incoming/getpdf/*.pdf",
   "--to-zotero 时**写用户的 Zotero 库**：建条目、挂 PDF 附件、建合集（不可逆）",
+  "fulltext 会花 MineRU 解析额度，并写 data/raw/<id>/（正本 PDF 与解析产物）",
 ]
 requires_role = "prod"          # 最危险的那条路径是 --to-zotero，它写真实的库
 prompts       = []
@@ -17,4 +18,11 @@ prompts       = []
 # 判据是**代价的量级与可逆性**：
 #   取一篇 = 单次、不花钱、可重来 → 可以放开，但客户端每次必须弹窗
 #   一整批 = 量能堆到触发出版商风控 → 留给人点，走 prompt
-agent_tools   = ["getpdf_one"]
+agent_tools   = ["getpdf_one", "paper_fulltext"]
+# paper_fulltext：DOI → LLM 读得懂的全文（四层回退）。**默认最多 3 篇**，
+#   前三层（缓存 / 本地 / Zotero）零成本，只有第四层才真去敲出版商。
+#   放开成 tool 的判据仍是那条：单次、可重来、且客户端每次弹窗。
+#   一整批仍然只能走 getpdf_batch 那条人点的路 —— 封的是整个机构的 IP。
+# 「看进度」不在这里：它只读一个进度文件、零成本，但本切片是「花钱」档，
+#   守卫要求切片内每个 tool 都弹窗 —— 轮询每次弹窗等于把设计废掉。
+#   所以它挂在 host/mcp/server.py 上（跟 ping 同类：平台自身的状态）。

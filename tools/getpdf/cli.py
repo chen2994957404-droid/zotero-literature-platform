@@ -3,6 +3,8 @@
 
 用法:
     python -m tools.getpdf --probe                       # 浏览器在不在（先跑这个）
+    python -m tools.getpdf --fulltext 10.1021/xxx        # DOI → 可读全文（四层回退）
+    python -m tools.getpdf --fulltext 10.1021/xxx --no-fetch   # 只看手上有没有，零代价
     python -m tools.getpdf 10.1016/j.cej.2025.164092     # 取一篇
     python -m tools.getpdf 10.1016/xxx 10.1002/yyy       # 取几篇
     python -m tools.getpdf --file dois.txt               # 从文件读，一行一个
@@ -71,6 +73,25 @@ def main():
         print('  它需要带调试口启动，专门开一个就行（双击 launch/取全文用的浏览器.bat）：')
         print('    msedge --remote-debugging-port=9333')
         return 1
+
+    # ── 跨付费墙的原子入口（2026-09-08）─────────────────────────────
+    # 后台作业也走这条路（MCP 的 paper_fulltext 就是 spawn 它）。
+    if flag('--fulltext'):
+        from shared.kernel import paths, role
+        from tools.getpdf import fulltext as F
+        keys = list(positionals())
+        if not keys:
+            print('用法：python -m tools.getpdf --fulltext <DOI> [DOI...]')
+            return 2
+        allow = not flag('--no-fetch')
+        if allow:
+            # 会向出版商发真实请求 + 花 MineRU 额度 —— 编程端默认拦住
+            role.require_prod('取全文（向出版商取 PDF + MineRU 解析）',
+                              force=flag('--force'))
+        rs = F.many(keys, allow_fetch=allow,
+                    progress=paths.runtime('fulltext_progress.json'))
+        print(F.summarize(rs))
+        return 0 if all(r['ok'] for r in rs) else 1
 
     dois = list(positionals())
     src = opt('--file')

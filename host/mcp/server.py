@@ -38,8 +38,39 @@ def build_server():
                     lambda a: {'text': f'{NAME} {VERSION} 在跑',
                                'structured': {'ok': True, 'server': NAME,
                                               'version': VERSION}})
+    # 「取全文跑到哪了」——**平台自身的运行状态**，跟 ping 同类，所以挂在这里。
+    # 为什么不挂在 getpdf 切片里（2026-09-08）：那个切片是「花钱」档，
+    # 守卫要求它的每个 tool 都带 confirm；而轮询工具每次弹窗，
+    # 等于把「后台发起 + 轮询」这个设计废掉。只读的东西不该被切片的档位连坐。
+    s.register_tool('fulltext_status',
+                    '看后台取全文跑到哪了（只读、零成本、不弹窗）。'
+                    '跑完会给出每篇的 id 与来源，然后用 library_outline 看菜单。',
+                    {'type': 'object', 'properties': {}},
+                    lambda a: {'text': _fulltext_status()})
     s._report = registry.register_all(s)      # --list 与自测要看这份账
     return s
+
+
+def _fulltext_status():
+    """读进度文件。没有就说没有 —— 不猜、不报错。"""
+    import io
+    import json
+    import os
+
+    from shared.kernel import paths
+    from tools.getpdf import fulltext as F
+
+    path = paths.runtime('fulltext_progress.json')
+    if not os.path.exists(path):
+        return '还没有跑过取全文（paper_fulltext）。'
+    try:
+        d = json.load(io.open(path, encoding='utf-8'))
+    except Exception:
+        return '进度文件正在写，读不完整。过几秒再看一次。'
+    head = ('%d/%d 篇已处理，用时 %.0f 秒%s\n'
+            % (d.get('finished', 0), d.get('total', 0), d.get('elapsed', 0),
+               '' if d.get('done') else '（还在跑）'))
+    return head + F.summarize(d.get('results') or [])
 
 
 def print_list(s):
