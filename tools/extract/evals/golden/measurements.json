@@ -5,111 +5,406 @@
     {
       "key": "CL2HILJ9",
       "title": "Reinforcement of boron-nitrogen coordinated polyurethane elastomers with silica nanoparticles",
-      "samples": ["SPU", "SPU/5D-SiO2", "SPU/10D-SiO2", "SPU/15D-SiO2", "SPU/5SiO2", "SPU/10SiO2", "SPU/15SiO2"],
+      "samples": [
+        "SPU",
+        "SPU/5D-SiO2",
+        "SPU/10D-SiO2",
+        "SPU/15D-SiO2",
+        "SPU/5SiO2",
+        "SPU/10SiO2",
+        "SPU/15SiO2"
+      ],
       "core": [
-        {"sample_id": "SPU", "name": "tensile strength", "value": 9.8, "unit": "MPa",
-         "quote": "The SPU exhibits the ultimate tensile strength of 9.8 ± 0.3 MPa"},
-        {"sample_id": "SPU", "name": "elongation at break", "value": 3052, "unit": "%",
-         "quote": "superior elongation at break of 3052 ± 117%"},
-        {"sample_id": "SPU/10D-SiO2", "name": "tensile strength", "value": 19.5, "unit": "MPa",
-         "quote": "The tensile strength for SPU/10D-SiO2 reaches 19.5 ± 0.2 MPa"},
-        {"sample_id": "SPU/10D-SiO2", "name": "toughness", "value": 216.9, "unit": "MJ/m3",
-         "quote": "the tensile toughness of SPU/10D-SiO2 reaches 216.9 MJ/m3"},
-        {"sample_id": "SPU/10D-SiO2", "name": "energy dissipation ratio", "value": 88, "unit": "%",
-         "condition": "strain 1200%",
-         "quote": "the energy dissipation ratio of 88% is achieved ... at a strain of 1200%"},
-        {"sample_id": "SPU/10D-SiO2", "name": "dissipated energy", "value": 90, "unit": "MJ/m3",
-         "condition": "strain 1200%",
-         "quote": "the highest dissipated energy of 90 MJ/m3 is achieved for SPU/10D-SiO2 at the strain of 1200%"}
+        {
+          "sample_id": "SPU",
+          "name": "tensile strength",
+          "value": 9.8,
+          "unit": "MPa",
+          "quote": "The SPU exhibits the ultimate tensile strength of 9.8 ± 0.3 MPa"
+        },
+        {
+          "sample_id": "SPU",
+          "name": "elongation at break",
+          "value": 3052,
+          "unit": "%",
+          "quote": "superior elongation at break of 3052 ± 117%"
+        },
+        {
+          "sample_id": "SPU/10D-SiO2",
+          "name": "tensile strength",
+          "value": 19.5,
+          "unit": "MPa",
+          "quote": "The tensile strength for SPU/10D-SiO2 reaches 19.5 ± 0.2 MPa"
+        },
+        {
+          "sample_id": "SPU/10D-SiO2",
+          "name": "toughness",
+          "value": 216.9,
+          "unit": "MJ/m3",
+          "quote": "the tensile toughness of SPU/10D-SiO2 reaches 216.9 MJ/m3"
+        },
+        {
+          "sample_id": "SPU/10D-SiO2",
+          "name": "energy dissipation ratio",
+          "value": 88,
+          "unit": "%",
+          "condition": "strain 1200%",
+          "quote": "the energy dissipation ratio of 88% is achieved ... at a strain of 1200%"
+        },
+        {
+          "sample_id": "SPU/10D-SiO2",
+          "name": "dissipated energy",
+          "value": 90,
+          "unit": "MJ/m3",
+          "condition": "strain 1200%",
+          "quote": "the highest dissipated energy of 90 MJ/m3 is achieved for SPU/10D-SiO2 at the strain of 1200%"
+        }
       ],
       "edge": [
-        {"sample_id": "D-SiO2", "name": "grafting content", "value": 6.54, "unit": "%",
-         "quote": "The weight content of 6.54% is estimated for the silane coupling agent"},
-        {"sample_id": "SPU/10D-SiO2", "name": "toughness increase", "value": 35, "unit": "%",
-         "quote": "achieves a 35% of increase as compared with neat SPU"},
-        {"sample_id": "SiO2", "name": "particle diameter", "value": 20, "unit": "nm",
-         "quote": "Silica nanoparticles with a diameter of ~20 nm"}
+        {
+          "sample_id": "D-SiO2",
+          "name": "grafting content",
+          "value": 6.54,
+          "unit": "%",
+          "quote": "The weight content of 6.54% is estimated for the silane coupling agent"
+        },
+        {
+          "sample_id": "SPU/10D-SiO2",
+          "name": "toughness increase",
+          "value": 35,
+          "unit": "%",
+          "quote": "achieves a 35% of increase as compared with neat SPU"
+        },
+        {
+          "sample_id": "SiO2",
+          "name": "particle diameter",
+          "value": 20,
+          "unit": "nm",
+          "quote": "Silica nanoparticles with a diameter of ~20 nm"
+        }
       ],
       "negative": [
-        {"value": 797.4, "unit": "MPa", "why": "别人文献（Yang et al.）的模量，不是本文的材料"},
-        {"value": 73.6, "unit": "MPa", "why": "别人文献（Yang et al.）的拉伸强度"},
-        {"value": 218.2, "unit": "MJ/m3", "why": "别人文献（Yang et al.）的韧性"},
-        {"value": 11, "unit": "wt%", "why": "硼氮对含量 = 配方，不是性能"},
-        {"value": 100, "unit": "mm/min", "why": "拉伸速度 = 实验条件"},
-        {"value": 1000, "unit": "g/mol", "why": "PTMEG 原料规格"}
-      ]
+        {
+          "value": 797.4,
+          "unit": "MPa",
+          "why": "别人文献（Yang et al.）的模量，不是本文的材料"
+        },
+        {
+          "value": 73.6,
+          "unit": "MPa",
+          "why": "别人文献（Yang et al.）的拉伸强度"
+        },
+        {
+          "value": 218.2,
+          "unit": "MJ/m3",
+          "why": "别人文献（Yang et al.）的韧性"
+        },
+        {
+          "value": 11,
+          "unit": "wt%",
+          "why": "硼氮对含量 = 配方，不是性能"
+        },
+        {
+          "value": 100,
+          "unit": "mm/min",
+          "why": "拉伸速度 = 实验条件"
+        },
+        {
+          "value": 1000,
+          "unit": "g/mol",
+          "why": "PTMEG 原料规格"
+        }
+      ],
+      "single_sample": false
     },
     {
       "key": "VHJI4A32",
       "title": "Synthesis of Structure-Controlled Polyborosiloxanes ... Viscoelastic Response",
-      "samples": ["PBS1", "PBS2", "PBS3", "PBS4", "PBS5", "PBS6"],
+      "samples": [
+        "PBS1",
+        "PBS2",
+        "PBS3",
+        "PBS4",
+        "PBS5",
+        "PBS6"
+      ],
       "core": [
-        {"sample_id": "PBS1", "name": "plateau elastic modulus", "value": 243, "unit": "kPa",
-         "quote": "The Ge,exp values for PBS1 to PBS6 are 243, 129, 73, 71, 91, and 112 kPa"},
-        {"sample_id": "PBS2", "name": "plateau elastic modulus", "value": 129, "unit": "kPa", "quote": "同上"},
-        {"sample_id": "PBS3", "name": "plateau elastic modulus", "value": 73, "unit": "kPa", "quote": "同上"},
-        {"sample_id": "PBS4", "name": "plateau elastic modulus", "value": 71, "unit": "kPa", "quote": "同上"},
-        {"sample_id": "PBS5", "name": "plateau elastic modulus", "value": 91, "unit": "kPa", "quote": "同上"},
-        {"sample_id": "PBS6", "name": "plateau elastic modulus", "value": 112, "unit": "kPa", "quote": "同上"},
-        {"sample_id": "PBS1", "name": "relaxation time", "value": 1.08, "unit": "s",
-         "quote": "The tau_c values for PBS1 to PBS6 are 1.08, 0.91, 0.70, 0.41, 1.45, and 1.72 s"},
-        {"sample_id": "PBS2", "name": "relaxation time", "value": 0.91, "unit": "s", "quote": "同上"},
-        {"sample_id": "PBS3", "name": "relaxation time", "value": 0.70, "unit": "s", "quote": "同上"},
-        {"sample_id": "PBS4", "name": "relaxation time", "value": 0.41, "unit": "s", "quote": "同上"},
-        {"sample_id": "PBS5", "name": "relaxation time", "value": 1.45, "unit": "s", "quote": "同上"},
-        {"sample_id": "PBS6", "name": "relaxation time", "value": 1.72, "unit": "s", "quote": "同上"}
+        {
+          "sample_id": "PBS1",
+          "name": "plateau elastic modulus",
+          "value": 243,
+          "unit": "kPa",
+          "quote": "The Ge,exp values for PBS1 to PBS6 are 243, 129, 73, 71, 91, and 112 kPa"
+        },
+        {
+          "sample_id": "PBS2",
+          "name": "plateau elastic modulus",
+          "value": 129,
+          "unit": "kPa",
+          "quote": "同上"
+        },
+        {
+          "sample_id": "PBS3",
+          "name": "plateau elastic modulus",
+          "value": 73,
+          "unit": "kPa",
+          "quote": "同上"
+        },
+        {
+          "sample_id": "PBS4",
+          "name": "plateau elastic modulus",
+          "value": 71,
+          "unit": "kPa",
+          "quote": "同上"
+        },
+        {
+          "sample_id": "PBS5",
+          "name": "plateau elastic modulus",
+          "value": 91,
+          "unit": "kPa",
+          "quote": "同上"
+        },
+        {
+          "sample_id": "PBS6",
+          "name": "plateau elastic modulus",
+          "value": 112,
+          "unit": "kPa",
+          "quote": "同上"
+        },
+        {
+          "sample_id": "PBS1",
+          "name": "relaxation time",
+          "value": 1.08,
+          "unit": "s",
+          "quote": "The tau_c values for PBS1 to PBS6 are 1.08, 0.91, 0.70, 0.41, 1.45, and 1.72 s"
+        },
+        {
+          "sample_id": "PBS2",
+          "name": "relaxation time",
+          "value": 0.91,
+          "unit": "s",
+          "quote": "同上"
+        },
+        {
+          "sample_id": "PBS3",
+          "name": "relaxation time",
+          "value": 0.7,
+          "unit": "s",
+          "quote": "同上"
+        },
+        {
+          "sample_id": "PBS4",
+          "name": "relaxation time",
+          "value": 0.41,
+          "unit": "s",
+          "quote": "同上"
+        },
+        {
+          "sample_id": "PBS5",
+          "name": "relaxation time",
+          "value": 1.45,
+          "unit": "s",
+          "quote": "同上"
+        },
+        {
+          "sample_id": "PBS6",
+          "name": "relaxation time",
+          "value": 1.72,
+          "unit": "s",
+          "quote": "同上"
+        }
       ],
       "edge": [
-        {"sample_id": "PBS1", "name": "plateau elastic modulus (fitted)", "value": 240, "unit": "kPa",
-         "quote": "the Ge,fit values for PBS1 to PBS6 are 240, 121, 66, 55, 75, and 100 kPa"},
-        {"sample_id": "PBS2", "name": "plateau elastic modulus (fitted)", "value": 121, "unit": "kPa", "quote": "同上"},
-        {"sample_id": "PBS3", "name": "plateau elastic modulus (fitted)", "value": 66, "unit": "kPa", "quote": "同上"},
-        {"sample_id": "PBS4", "name": "plateau elastic modulus (fitted)", "value": 55, "unit": "kPa", "quote": "同上"},
-        {"sample_id": "PBS5", "name": "plateau elastic modulus (fitted)", "value": 75, "unit": "kPa", "quote": "同上"},
-        {"sample_id": "PBS6", "name": "plateau elastic modulus (fitted)", "value": 100, "unit": "kPa", "quote": "同上"},
-        {"sample_id": "PBS1", "name": "supramolecular modulus (fitted)", "value": 54, "unit": "kPa", "quote": "Gb values ... 54, 29, 51, 56, 58, and 60 kPa"},
-        {"sample_id": "PBS1", "name": "fast relaxation time (fitted)", "value": 0.0005, "unit": "s", "quote": "tau_b values ... 0.00050, 0.0010, ..."}
+        {
+          "sample_id": "PBS1",
+          "name": "plateau elastic modulus (fitted)",
+          "value": 240,
+          "unit": "kPa",
+          "quote": "the Ge,fit values for PBS1 to PBS6 are 240, 121, 66, 55, 75, and 100 kPa"
+        },
+        {
+          "sample_id": "PBS2",
+          "name": "plateau elastic modulus (fitted)",
+          "value": 121,
+          "unit": "kPa",
+          "quote": "同上"
+        },
+        {
+          "sample_id": "PBS3",
+          "name": "plateau elastic modulus (fitted)",
+          "value": 66,
+          "unit": "kPa",
+          "quote": "同上"
+        },
+        {
+          "sample_id": "PBS4",
+          "name": "plateau elastic modulus (fitted)",
+          "value": 55,
+          "unit": "kPa",
+          "quote": "同上"
+        },
+        {
+          "sample_id": "PBS5",
+          "name": "plateau elastic modulus (fitted)",
+          "value": 75,
+          "unit": "kPa",
+          "quote": "同上"
+        },
+        {
+          "sample_id": "PBS6",
+          "name": "plateau elastic modulus (fitted)",
+          "value": 100,
+          "unit": "kPa",
+          "quote": "同上"
+        },
+        {
+          "sample_id": "PBS1",
+          "name": "supramolecular modulus (fitted)",
+          "value": 54,
+          "unit": "kPa",
+          "quote": "Gb values ... 54, 29, 51, 56, 58, and 60 kPa"
+        },
+        {
+          "sample_id": "PBS1",
+          "name": "fast relaxation time (fitted)",
+          "value": 0.0005,
+          "unit": "s",
+          "quote": "tau_b values ... 0.00050, 0.0010, ..."
+        }
       ],
       "negative": [
-        {"value": 12, "unit": "kg/mol", "why": "PDMS 的临界缠结分子量 = 文献常数，不是本文测的"},
-        {"value": 24.5, "unit": "kg/mol", "why": "临界分子量 Mc = 文献常数"},
-        {"value": 120, "unit": "°C", "why": "反应温度 = 合成条件"},
-        {"value": 1340, "unit": "cm-1", "why": "红外谱峰位置，不是性能"},
-        {"value": 26.6, "unit": "mg", "why": "投料量"},
-        {"value": 3.4, "unit": "", "why": "eta0 ~ Mw^3.4 的幂律指数（文献标度关系）"}
-      ]
+        {
+          "value": 12,
+          "unit": "kg/mol",
+          "why": "PDMS 的临界缠结分子量 = 文献常数，不是本文测的"
+        },
+        {
+          "value": 24.5,
+          "unit": "kg/mol",
+          "why": "临界分子量 Mc = 文献常数"
+        },
+        {
+          "value": 120,
+          "unit": "°C",
+          "why": "反应温度 = 合成条件"
+        },
+        {
+          "value": 1340,
+          "unit": "cm-1",
+          "why": "红外谱峰位置，不是性能"
+        },
+        {
+          "value": 26.6,
+          "unit": "mg",
+          "why": "投料量"
+        },
+        {
+          "value": 3.4,
+          "unit": "",
+          "why": "eta0 ~ Mw^3.4 的幂律指数（文献标度关系）"
+        }
+      ],
+      "single_sample": false
     },
     {
       "key": "P2Q5TYFR",
       "title": "Alternating Poly(borosiloxane) for Solid State Ultrasensitivity Toward Fluoride Ions",
-      "samples": ["1", "PBS", "poly(borosiloxane)"],
+      "samples": [
+        "1",
+        "PBS",
+        "poly(borosiloxane)"
+      ],
       "core": [
-        {"sample_id": "poly(borosiloxane)", "name": "detection limit", "value": 1e-10, "unit": "M",
-         "quote": "extremely sensitive toward fluoride ions (10^-10 M in aqueous media)"},
-        {"sample_id": "poly(borosiloxane)", "name": "sensitivity slope", "value": -23, "unit": "mV",
-         "condition": "per 10-fold increase in concentration",
-         "quote": "sub-Nernstian order with the slope of -23 mV per 10-fold increase in concentration"},
-        {"sample_id": "poly(borosiloxane)", "name": "ceramic yield", "value": 20, "unit": "%",
-         "condition": "750 °C", "cmp": ">",
-         "quote": "more than 20% of the ceramic yield at 750 °C"},
-        {"sample_id": "1", "name": "number-average molecular weight", "value": 40000, "unit": "g/mol",
-         "cmp": ">", "quote": "maximum number-average molecular weight of >40 000 g/mol"}
+        {
+          "sample_id": "poly(borosiloxane)",
+          "name": "detection limit",
+          "value": 1e-10,
+          "unit": "M",
+          "quote": "extremely sensitive toward fluoride ions (10^-10 M in aqueous media)"
+        },
+        {
+          "sample_id": "poly(borosiloxane)",
+          "name": "sensitivity slope",
+          "value": -23,
+          "unit": "mV",
+          "condition": "per 10-fold increase in concentration",
+          "quote": "sub-Nernstian order with the slope of -23 mV per 10-fold increase in concentration"
+        },
+        {
+          "sample_id": "poly(borosiloxane)",
+          "name": "ceramic yield",
+          "value": 20,
+          "unit": "%",
+          "condition": "750 °C",
+          "cmp": ">",
+          "quote": "more than 20% of the ceramic yield at 750 °C"
+        },
+        {
+          "sample_id": "1",
+          "name": "number-average molecular weight",
+          "value": 40000,
+          "unit": "g/mol",
+          "cmp": ">",
+          "quote": "maximum number-average molecular weight of >40 000 g/mol"
+        }
       ],
       "edge": [
-        {"sample_id": "2", "name": "yield", "value": 93, "unit": "%", "quote": "High yields (93%) of 2"},
-        {"sample_id": "toothpaste X", "name": "measured fluoride concentration", "value": 25.1, "unit": "ppm",
-         "quote": "sample X was predicted to be 25.1 ppm"},
-        {"sample_id": "toothpaste Y", "name": "measured fluoride concentration", "value": 245.3, "unit": "ppm",
-         "quote": "for sample Y it was 245.3 ppm"}
+        {
+          "sample_id": "2",
+          "name": "yield",
+          "value": 93,
+          "unit": "%",
+          "quote": "High yields (93%) of 2"
+        },
+        {
+          "sample_id": "toothpaste X",
+          "name": "measured fluoride concentration",
+          "value": 25.1,
+          "unit": "ppm",
+          "quote": "sample X was predicted to be 25.1 ppm"
+        },
+        {
+          "sample_id": "toothpaste Y",
+          "name": "measured fluoride concentration",
+          "value": 245.3,
+          "unit": "ppm",
+          "quote": "for sample Y it was 245.3 ppm"
+        }
       ],
       "negative": [
-        {"value": 0.8, "unit": "mg/L", "why": "WHO 饮用水推荐浓度，与本文材料无关"},
-        {"value": 137.45, "unit": "°", "why": "DFT 计算的键角，不是实测性能"},
-        {"value": 1.36, "unit": "Å", "why": "DFT 计算的键长"},
-        {"value": 30, "unit": "ppm", "why": "11B NMR 化学位移，不是性能"},
-        {"value": 814, "unit": "cm-1", "why": "红外谱峰位置"},
-        {"value": 1e-6, "unit": "M", "why": "Table 1 里别人传感器的检出限"}
-      ]
+        {
+          "value": 0.8,
+          "unit": "mg/L",
+          "why": "WHO 饮用水推荐浓度，与本文材料无关"
+        },
+        {
+          "value": 137.45,
+          "unit": "°",
+          "why": "DFT 计算的键角，不是实测性能"
+        },
+        {
+          "value": 1.36,
+          "unit": "Å",
+          "why": "DFT 计算的键长"
+        },
+        {
+          "value": 30,
+          "unit": "ppm",
+          "why": "11B NMR 化学位移，不是性能"
+        },
+        {
+          "value": 814,
+          "unit": "cm-1",
+          "why": "红外谱峰位置"
+        },
+        {
+          "value": 1e-06,
+          "unit": "M",
+          "why": "Table 1 里别人传感器的检出限"
+        }
+      ],
+      "single_sample": true,
+      "_single_sample_why": "全篇只有一个聚合物（文中称 \"1\" 或 \"poly(borosiloxane)\"），正文报数值时不指明样品是正常写法 —— 此时 unknown 是正确答案"
     }
   ]
 }

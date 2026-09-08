@@ -82,3 +82,21 @@ def test_漏抽要说清楚漏了哪几条():
     s = M.score_paper(g, [])
     assert s['recall'] == 0.0 and len(s['missed']) == len(g['core'])
     assert '只有数字的报告没人会去修' or M.format_report([s])
+
+
+def test_单体系论文里unknown是正确答案():
+    """P2Q5TYFR 全篇一个聚合物，正文不指明样品是正常写法。"""
+    g = _gold('P2Q5TYFR')
+    assert g['single_sample'] is True
+    s = M.score_paper(g, [{'sample_id': 'unknown', 'name': 'detection limit',
+                           'value': 1e-10, 'unit': 'M'}])
+    assert s['recall'] > 0, '单体系论文里 unknown 不该算漏抽'
+
+
+def test_多体系论文里unknown照样不算对():
+    """`PBS1 到 PBS6 是 243, 129...` —— 这里样品归属正是考点，不能放水。"""
+    g = _gold('VHJI4A32')
+    assert g['single_sample'] is False
+    s = M.score_paper(g, [{'sample_id': 'unknown', 'name': 'plateau elastic modulus',
+                           'value': 243, 'unit': 'kPa'}])
+    assert s['recall'] == 0.0, '多体系论文里 unknown 不能算抽对'

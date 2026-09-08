@@ -16,6 +16,8 @@
 错标进了库最阴 —— 它长得跟真数据一模一样，还会被拿去比大小。
 """
 
+import re
+
 _REL_TOL = 0.01          # 数值相对误差 1% 以内算同一个数（排版会带来 ±1 位有效数字）
 
 
@@ -35,11 +37,25 @@ def _norm(s):
     return ' '.join(str(s or '').lower().replace('_', ' ').split())
 
 
-def _same_sample(a, b):
+def _same_sample(a, b, single=False):
     """样品名对得上吗。**只做大小写与空白归一**，不做模糊匹配 ——
-    模糊匹配会把 `SPU` 和 `SPU/10D-SiO2` 算成一个，那正是最该抓的错。"""
+    模糊匹配会把 `SPU` 和 `SPU/10D-SiO2` 算成一个，那正是最该抓的错。
+
+    `single=True`（金标标了 `single_sample`）时**不比样品**：全篇只有一个体系时，
+    正文报数值本来就不指明样品，模型答 `unknown` 是正确行为。
+    2026-09-08 实测：不放行这一条，P2Q5TYFR 四条全对的答案会被判成 0 分。
+    多体系论文里样品归属恰恰是最该考的一项，所以这个放行**由金标逐篇声明**，
+    不是全局放水。
+    """
+    if single:
+        return True
     x, y = _norm(a), _norm(b)
-    return bool(x) and x == y
+    if x == y and x:
+        return True
+    # `1` vs `Polymer 1`、`PBS` vs `PBS 1` 不算 —— 后者是不同样品。
+    # 只放行「金标写全名、模型写论文里的短名」这一种：一端是另一端的完整词
+    return bool(x) and bool(y) and (
+        re.search(r'(^|\s)%s($|\s)' % re.escape(x), y) is not None)
 
 
 def _same_name(a, b):
@@ -52,6 +68,7 @@ def _same_name(a, b):
 
 def score_paper(gold_paper, rows):
     """一篇的打分。`rows` 是抽出来的记录（含 sample_id / name / value / unit）。"""
+    single = bool(gold_paper.get('single_sample'))
     core = list(gold_paper.get('core') or [])
     edge = list(gold_paper.get('edge') or [])
     neg = list(gold_paper.get('negative') or [])
@@ -63,7 +80,7 @@ def score_paper(gold_paper, rows):
         for i, r in enumerate(rows):
             if i in used or not _same_value(r.get('value'), g['value']):
                 continue
-            if not _same_sample(r.get('sample_id'), g['sample_id']):
+            if not _same_sample(r.get('sample_id'), g['sample_id'], single):
                 continue
             used.add(i)
             (hit_core if _same_name(r.get('name'), g['name']) else mislabeled).append(
