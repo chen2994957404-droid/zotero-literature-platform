@@ -1,0 +1,5 @@
+# 配置里有 IP、账号、私钥路径 —— 不进版本库。
+# 真正的配置放在 ~/.remote-machine/machines.toml（见 README）。
+machines.toml
+__pycache__/
+*.pyc

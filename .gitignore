@@ -84,8 +84,3 @@ workflow_data/_last_search.json
 
 # 手工备份（如 evalset.json.backup）：留在本地即可，不进版本库
 *.backup
-
-# --- 通用工具（2026-09-08 搬进来）---
-# toolbox/ 下面每一个都是**自己独立的 git 仓库**（各有各的 GitHub），
-# 放在这里只是「摆在一起方便找」，不由父仓库管版本。
-toolbox/

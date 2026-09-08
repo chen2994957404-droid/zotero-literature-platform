@@ -557,7 +557,15 @@ def has(key, what='fulltext'):
 NOISE_DIRS = {
     'data', 'workflow_data', 'n8n_data', 'wf_backup', 'b',
     '__pycache__', '.git', '.venv', 'venv', 'build', 'dist', '.pytest_cache',
-    'zotero_literature_platform.egg-info',
+    # 两个 egg-info 都要留着：2026-09-08 项目改名 zotero-literature-platform →
+    # literature-platform，旧的构建产物在换过的机器上还躺着，只写新名字会漏掉它。
+    'zotero_literature_platform.egg-info', 'literature_platform.egg-info',
+    # toolbox/toolforge/template/ 里是**带 {{占位符}} 的骨架文件，不是能运行的
+    # Python** —— 扫源码的检查（语法、未定义名字）碰到就报语法错误。
+    # 2026-09-08 toolbox 并进主仓库后才暴露出来。
+    # ⚠ 这是按**名字**跳过的：以后真要在别处放一个正经的 template/ 目录，
+    #    得改成按路径跳过，不能直接沿用这一行。
+    'template',
 }
 
 # ② 非工作流目录 = 噪音 + 代码环 + 积木/文档/测试。
@@ -570,6 +578,16 @@ NON_WORKFLOW_DIRS = NOISE_DIRS | {
 
 # ③ 顶层代码目录（= 可以 import 的顶层包名）。守卫用它判断「这个 import 是不是自家的」。
 CODE_ROOTS = ('shared', 'host', 'tools')
+
+# ③b 要做静态检查（语法 / 未定义名字 / 弹窗 / 硬编码）的顶层目录。
+#    **比 CODE_ROOTS 多一个 toolbox** —— 2026-09-08 toolbox 并进主仓库，
+#    它是真代码、会被人改，当然要检查。但它**不能进 CODE_ROOTS**：
+#    那个常量的含义是「可以 import 的顶层包名」，守卫拿它判断依赖环，
+#    而 `toolbox/remote-machine` 带连字符根本不能 import。
+#    混为一谈会让架构守卫开始检查一片它管不着的地方。
+#    toolbox 也**刻意不受五层规矩约束**（比如 remote.py 要开 SSH 连接，
+#    放在 tools/ 里会违反「联网只在 adapters」）—— 它不是平台的能力层。
+SCANNED_ROOTS = CODE_ROOTS + ('toolbox',)
 
 # ④ 积木住的环。**带斜杠的相对路径**，因为 kernel/domain/adapters 现在住在 shared/ 底下。
 #    依赖只能从上往下：host → tools → shared.domain / shared.adapters → shared.kernel

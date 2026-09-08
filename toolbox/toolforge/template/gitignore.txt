@@ -1,0 +1,12 @@
+# 只版本管理代码与文档。**配置和密钥一律不进** ——
+# 这类文件一旦提交过，从历史里彻底删掉很麻烦，而它已经被抓走了。
+config.toml
+.env
+secrets*
+*.key
+*.pem
+
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/

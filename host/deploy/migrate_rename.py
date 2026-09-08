@@ -75,10 +75,12 @@ def replace_in_file(path, pairs):
 
 
 def s1_toolbox(root):
-    """把 remote-machine / toolforge 搬进 <root>/toolbox/。
+    """核对 toolbox/ 到位了没。
 
-    它们各自是独立的 git 仓库（有自己的 GitHub），搬进来只是**放在一起**，
-    不合并版本库 —— 父仓库的 .gitignore 里已经把 toolbox/ 挡掉了。
+    2026-09-08 用户拍板：**toolbox 并进主仓库的版本管理**，不再是两个独立仓库
+    （理由：「单独弄还是不方便实时更新」—— 改一下就要切到另一个仓库去提交）。
+    所以搬移已经在开发时做完并提交了，这里只剩核对。
+    留着这一步是为了「万一没搬」也能自愈。它们原来的 git 历史在 GitHub 上还有。
     """
     lab = step('第 1 步：把通用工具搬进 toolbox/')
     box = os.path.join(root, 'toolbox')
@@ -150,6 +152,9 @@ def s4_global_skills():
     for name in TOOLBOX_MOVES:
         p = os.path.join(HOME, '.claude', 'skills', name, 'SKILL.md')
         n = replace_in_file(p, [
+            # 技能里已经指向 toolbox/，只是项目文件夹名要换
+            (f'D:/dev/{OLD_NAME}/', f'D:/dev/{NEW_NAME}/'),
+            # 兜底：万一还是搬进 toolbox 之前的老写法
             (f'D:/dev/{name}/', f'D:/dev/{NEW_NAME}/toolbox/{name}/'),
         ])
         if n is None:

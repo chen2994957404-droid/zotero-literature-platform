@@ -51,7 +51,13 @@ namespaces = true
 #   host/**/tests/   平台自身（面板 / 体检 / 常驻服务）的判据
 # 四个根目录都要在这里列出来，**漏一个 = 那一片的测试静悄悄不再运行**
 # （踩坑 #83 的同一类事故：位置变了，跑它的人没跟着变）。
-testpaths = ["tests", "tools", "shared", "host"]
+testpaths = ["tests", "tools", "shared", "host", "toolbox"]
+# ⚠ toolbox/ 2026-09-08 并进主仓库（原来是两个独立仓库）。列进来是因为
+#   「不列 = 那一片的测试静悄悄不再运行」，正是踩坑 #83 那一类事故。
+# toolforge/template/ 里是带 {{占位符}} 的骨架文件，不是能运行的 Python，
+#   收集到就是一个错误 —— 这条原本写在 toolforge 自己的 pytest.ini 里，
+#   现在 rootdir 是主项目，那份配置不再被读取，所以要搬到这里来。
+norecursedirs = ["template"]
 # ⚠ `-m "not live"` 是这一行里最重要的部分。
 #   marker 的说明从一开始就写着「默认不跑」，但在 2026-09-01 之前**没有任何东西
 #   在执行它** —— 只是没人用过这个 marker，所以谁都没发现。第一次真的标了

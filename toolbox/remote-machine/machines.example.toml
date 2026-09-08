@@ -1,0 +1,46 @@
+# ~/.remote-machine/machines.toml —— 你要操作哪些机器。
+# 把这份抄到 C:\Users\<你>\.remote-machine\machines.toml 再改。
+# ⚠ 这里有 IP、账号、私钥路径，**别提交进仓库**（仓库的 .gitignore 已经挡了同名文件）。
+
+# 没有别的线索时用哪一台（在项目目录里跑会自动按 local 选，见下）
+default = "b"
+
+[machines.b]
+label = "主力机（跑常驻服务的那台）"
+
+# 地址可以给多个：**顺序不是形式** —— 排在前面的先试，
+# 连不上要等满 ConnectTimeout 才换下一个。把常年断着的那个放前面，
+# 等于每条命令都白等十秒。上次连通的那个会被记住并自动排到最前。
+hosts = ["192.168.1.20", "203.0.113.10"]
+
+# ⚠ 这里要填**账号**，不是计算机名。填错时 sshd 只回
+# `Permission denied (publickey,...)` —— 跟「公钥不对」是同一句话，
+# 在这边分不出来，能白查两轮密钥。
+user = "Administrator"
+key  = "~/.ssh/id_ed25519_myremote"
+
+# 对面的项目目录（check 会去这里看代码到哪一版；push 的相对路径也从这里算）
+root  = "D:/Projects/my-project"
+# 本机对应的项目目录：在这个目录里跑 remote.py，就自动选中这台机器
+local = "D:/dev/my-project"
+
+# 「上线」怎么做 —— 交给项目自己的脚本，因为只有它知道该重启哪些常驻进程。
+# ⚠ 部署 ≠ 把文件换掉：光 git pull，跑着的服务会继续跑旧代码，而且看不出来。
+deploy_cmd = "python host/deploy/update.py"
+
+# 日志可能在哪（{name} 是 `remote.py logs <name>` 给的名字）。
+# 允许多条是因为：写死一个的话，连上去只看到「文件不存在」，
+# 那看起来像「服务没在写日志」—— 会让人查错方向。
+logs = ["data/logs/{name}.log", "logs/{name}.log"]
+default_log = "my_service"
+
+# `remote.py task <名字>` 只允许触发这里列出的（防手滑，不是防坏人）
+tasks = ["MyWatcher", "OllamaService"]
+
+# 作业通道（`remote.py job`）用的计划任务名与落脚目录。
+# 放在项目目录之外：项目目录迟早会搬，这条通道不该跟着搬。
+job_task = "RemoteAgentJob"
+job_dir  = "C:/ProgramData/remote-agent"
+
+# 可选：对面的 MAC，用于 wake 发唤醒包（不填也行，连通时会自动记下来）
+# mac = "AA-BB-CC-DD-EE-FF"

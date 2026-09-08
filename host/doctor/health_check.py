@@ -48,10 +48,15 @@ def code_files():
     """
     def keep(f):
         b = os.path.basename(f)
-        return not (b.startswith('_tmp') or b in ('_t.py', '_h.py', '_c.py', '_f.py'))
+        if b.startswith('_tmp') or b in ('_t.py', '_h.py', '_c.py', '_f.py'):
+            return False
+        # 噪音目录一律跳过。2026-09-08 toolbox 并进来后才有实际影响：
+        # toolforge/template/ 里是带 {{占位符}} 的骨架，**不是能运行的 Python**，
+        # 扫到就报语法错。判据收在 paths.NOISE_DIRS，别在这里另起一份。
+        return not (set(os.path.normpath(f).split(os.sep)) & paths.NOISE_DIRS)
 
     files = []
-    for _ring in paths.CODE_ROOTS:                     # 顶层代码包
+    for _ring in paths.SCANNED_ROOTS:                  # 顶层代码包 + toolbox
         files += [f for f in glob.glob(_ring + '/**/*.py', recursive=True) if keep(f)]
     files = [f for f in files if keep(f)]
     for d in workflow_dirs():
@@ -128,7 +133,11 @@ def c_no_secrets():
             s = open(f, encoding='utf-8', errors='replace').read()
         except Exception:
             continue
-        if pat.search(s):
+        # 逐行看，且认 `# preflight-ok` 豁免标记：测密钥探测器的测试**必须**
+        # 种一个长得像真密钥的假货，否则那个探测器根本没被验证过。
+        # 标记写在那一行上 = 豁免留痕，比整个文件加白名单安全
+        # （2026-09-08 toolbox/toolforge 并进来时引入，那是它自己的约定）。
+        if any(pat.search(ln) and 'preflight-ok' not in ln for ln in s.splitlines()):
             hits.append(os.path.basename(f))
     return (OK, '源码无明文密钥') if not hits else (FAIL, f'发现明文密钥: {hits}')
 

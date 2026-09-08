@@ -32,6 +32,7 @@ shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
 specs/ （0 个脚本）
 tests/ （3 个脚本）
     test_architecture.py、test_constitution.py、test_no_undefined_names.py
+toolbox/ （0 个脚本）
 tools/  ← 工具切片：一个工具 = 一个自包含的包（11 块）
     ask、askworld、curate、deepread、digitize、direction、discover、extract、getpdf、library、paperdb
 
