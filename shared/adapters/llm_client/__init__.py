@@ -162,6 +162,14 @@ def _cfg(provider, model, key):
 USAGE = {'calls': 0, 'prompt': 0, 'completion': 0, 'reasoning': 0, 'model': ''}
 
 
+def _ollama_usage(r):
+    """Ollama 的回话 → OpenAI 那套 usage 字段名。**两家的字段名不同，一处翻译。**"""
+    if not isinstance(r, dict) or 'prompt_eval_count' not in r and 'eval_count' not in r:
+        return None
+    return {'prompt_tokens': r.get('prompt_eval_count') or 0,
+            'completion_tokens': r.get('eval_count') or 0}
+
+
 def _note_usage(u, model=''):
     if not u:
         return
@@ -357,7 +365,9 @@ def chat_vision(system, user, image_b64, provider=None, model=None, key=None,
         req = urllib.request.Request(host + '/api/chat',
             data=json.dumps(body).encode(), method='POST',
             headers={'Content-Type': 'application/json'})
-        return json.loads(urllib.request.urlopen(req, timeout=600).read())['message']['content']
+        r = json.loads(urllib.request.urlopen(req, timeout=600).read())
+        _note_usage(_ollama_usage(r), model)
+        return r['message']['content']
     else:
         # 云端 OpenAI 兼容（deepseek / siliconflow / gemini / dashscope）
         _e, key_env, _t, default_model = PROVIDERS.get(
@@ -380,7 +390,12 @@ def chat_vision(system, user, image_b64, provider=None, model=None, key=None,
         req = urllib.request.Request(endpoint,
             data=json.dumps(body, ensure_ascii=False).encode(), method='POST',
             headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'})
-        return json.loads(urllib.request.urlopen(req, timeout=300).read())['choices'][0]['message']['content']
+        r = json.loads(urllib.request.urlopen(req, timeout=300).read())
+        # 看图也要记账（2026-09-07 补）。此前只有 `_cloud_chat` 记，于是
+        # **最贵的那类调用反而是唯一不记账的** —— 试跑两张图后问「花了多少」，
+        # 得到的是「调用 0 次、0 token」，正是 USAGE 当初要消灭的那种回答。
+        _note_usage(r.get('usage'), model)
+        return r['choices'][0]['message']['content']
 
 
 def _parse_json_lenient(txt):

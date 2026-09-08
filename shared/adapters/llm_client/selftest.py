@@ -106,6 +106,36 @@ def main():
     else:
         print(f'  [FAIL] 本地/云端认错家：{p_local} / {p_cloud}')
 
+    # ── 记账：花钱的调用必须留下痕迹（2026-09-07 补）────────────────
+    # 此前**看图这条最贵的路是唯一不记账的**：试跑完问「花了多少」，
+    # 答的是「调用 0 次、0 token」。没有账就没法估价，也没法优化。
+    total += 1
+    before = dict(llm_client.USAGE)
+    llm_client._note_usage({'prompt_tokens': 7, 'completion_tokens': 3}, 'some-vision')
+    after = llm_client.usage_snapshot()
+    if (after['calls'] == before['calls'] + 1 and after['prompt'] == before['prompt'] + 7
+            and after['completion'] == before['completion'] + 3
+            and after['model'] == 'some-vision'):
+        print('  [PASS] 记账入口会累加（调用数 / 输入 / 输出 / 模型名）'); ok += 1
+    else:
+        print(f'  [FAIL] 记账没加上：{before} → {after}')
+
+    total += 1
+    u = llm_client._ollama_usage({'prompt_eval_count': 11, 'eval_count': 5,
+                                  'message': {'content': 'x'}})
+    if (u == {'prompt_tokens': 11, 'completion_tokens': 5}
+            and llm_client._ollama_usage({'message': {'content': 'x'}}) is None):
+        print('  [PASS] Ollama 的字段名翻译到 OpenAI 那套（没有就不记）'); ok += 1
+    else:
+        print(f'  [FAIL] Ollama 用量翻译不对：{u}')
+
+    total += 1
+    import inspect
+    if inspect.getsource(llm_client.chat_vision).count('_note_usage') >= 2:
+        print('  [PASS] chat_vision 的两条分支（云端 / 本地）都记账'); ok += 1
+    else:
+        print('  [FAIL] chat_vision 有分支不记账 —— 那条路花的钱会查不到')
+
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)
 
