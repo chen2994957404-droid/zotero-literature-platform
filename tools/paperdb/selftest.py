@@ -46,7 +46,15 @@ def main():
         paths.ABSTRACTS = os.path.join(d, 'abstracts')
         paths.STRUCTURED = os.path.join(d, 'structured')
         paths.RAW = os.path.join(d, 'raw')      # 表格扫描读全文，raw 也是源了
+        # ⚠ CURATED 必须**从一开始**就隔离（2026-09-07 补，踩坑 #140）：
+        # `_curves()` 与 `_chunk_measurements()` 都遍历 `paths.all_keys()`，
+        # 那读的就是 CURATED。本来只在下面的曲线小节才把它指到临时目录 ——
+        # 于是前面的几次 rebuild 读的是**用户真实的 curated/**。
+        # 这个洞一直没发作，只因为**全世界一个 curves.json 都还没有**；
+        # 抠出第一张图的当天它就红了，而且红在主力机上（同 #127 的教训）。
+        paths.CURATED = os.path.join(d, 'curated')
         os.makedirs(paths.STRUCTURED)
+        os.makedirs(paths.CURATED)
         paperdb.db_path = lambda: os.path.join(d, 'papers.db')
         paperdb.close()
         try:
@@ -139,7 +147,6 @@ def main():
                 print(f'  [FAIL] 兼容视图不对：{n_view}')
 
             # ── 曲线：抠下来的点要能进库、能比大小 ──────────────────────
-            paths.CURATED = os.path.join(d, 'curated')
             os.makedirs(os.path.join(paths.CURATED, 'DDDD0004'), exist_ok=True)
             json.dump({'3': {'chart_type': 'line', 'confidence': 'medium',
                              'caption': 'Stress-strain curves',
