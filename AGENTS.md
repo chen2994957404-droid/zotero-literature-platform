@@ -15,7 +15,7 @@
 
 ```
 docs/  ← 跨工具的档案（另有 3 份日志直接躺在下面）
-    explain/（6）、howto/（3）、reference/（5）、incidents/（2）  ← 为什么 / 怎么做 / 事实 / 坑
+    explain/（6）、howto/（3）、reference/（6）、incidents/（2）  ← 为什么 / 怎么做 / 事实 / 坑
 host/  ← 平台自身：让平台活着的东西（没人 import 它）（8 块）
     autosync、codegen、deploy、doctor、mcp、panel、watcher、wechat_import
 launch/  ← 给人双击的入口（9 个）
