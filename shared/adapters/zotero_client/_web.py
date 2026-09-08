@@ -277,6 +277,7 @@ def upload_attachment(parent_key, filepath, display_name,
     ⚠ 要更新已有附件，**别删了重传**（踩坑 #28）——
     用 `find_child_attachment` 找到旧条目复用，只覆盖本地 storage 里的文件。
     """
+    from shared.adapters.zotero_client import file_sync_mode
     role.require_prod(action, force=force)
     fname = os.path.basename(filepath)
     filesize = os.path.getsize(filepath)
@@ -315,6 +316,16 @@ def upload_attachment(parent_key, filepath, display_name,
         r = _call('/items', 'POST', json.dumps(item).encode(),
                   {'Content-Type': 'application/json'})
         att_key = r['successful']['0']['key']
+
+    # 1.5 桌面端走网盘同步时，**到此为止**：不做后面那次云端上传。
+    #
+    # 用户的 Zotero 如果配了 WebDAV（坚果云之类），它点开附件时只去自己的网盘找，
+    # **官方存储那份它根本不看**。传上去唯一的效果是烧掉 300 MB 免费配额，
+    # 烧满之后所有回写一律 413（踩坑 #148）。
+    # 调用方紧接着会调 `put_local` 把文件铺进本地 storage，桌面端自己会推上网盘 ——
+    # B 机 442 个附件里 437 个「已同步」，就是这条路一直在工作的证据。
+    if file_sync_mode() == 'webdav':
+        return att_key
 
     # 2. 要上传授权
     #

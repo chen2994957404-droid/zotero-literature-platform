@@ -140,17 +140,64 @@ def find_child_attachment(item_key, title):
     return None
 
 
+_SYNC_MODE = None
+
+
+def file_sync_mode():
+    """Zotero 桌面端的**文件**同步走哪条路：'webdav' / 'zotero' / 'unknown'。
+
+    **为什么要问这个**（2026-09-08，踩坑 #148 的第二层）：
+    用户的桌面端如果配了 WebDAV（坚果云之类），它**根本不读 Zotero 官方存储** ——
+    点开附件时只去自己的网盘找。而我们却把每个 summary / PDF / SI 都往官方存储传，
+    那 300 MB 免费配额于是被白白烧满，之后所有回写一律 413。
+
+    实测过的事实（B 机，442 个附件）：走 WebDAV 时，我们只要把文件铺进本地
+    storage（`put_local`），**桌面端自己会把它推上网盘** —— 437 个显示「已同步」。
+    也就是说那次云端上传从头到尾都是多余的。
+
+    判据在 Zotero profile 的 prefs.js 里，不在数据目录里。
+    读不到就返回 'unknown'，调用方按老样子上传（保守，绝不因为探测失败而少传）。
+    """
+    global _SYNC_MODE
+    if _SYNC_MODE is not None:
+        return _SYNC_MODE
+    import glob
+    import re
+    _SYNC_MODE = 'unknown'
+    pats = [os.path.expanduser(r'~\Zotero\prefs.js'),
+            os.path.expanduser(r'~\AppData\Roaming\Zotero\Zotero\Profiles\*\prefs.js')]
+    for pat in pats:
+        for f in glob.glob(pat):
+            try:
+                t = open(f, encoding='utf-8', errors='replace').read()
+            except Exception:
+                continue
+            m = re.search(r'extensions\.zotero\.sync\.storage\.protocol"\s*,\s*"(\w+)"', t)
+            if m:
+                _SYNC_MODE = m.group(1).lower()
+                return _SYNC_MODE
+    return _SYNC_MODE
+
+
 def storage_filename(att_key, default='attachment'):
     """Zotero 给这个附件记的文件名。
 
     **必须按它写**，不能自己起名：用户点开附件时，Zotero 找的是它记下的那个名字，
     名字对不上就是「在此路径无法找到附件」（si_batch 的老教训）。
+
+    ⚠ **先问云端，再退回本地**（踩坑 #64 的同一条判据）：
+    这个函数几乎总是在「刚建完附件条目」之后立刻被调用，而本地 API 要等桌面端
+    同步才看得见那个条目 —— 问本地必然落空、退回 `default`，于是铺下去的文件名
+    和 Zotero 记下的名字对不上。2026-09-08 改成「不往云端传文件」之后，
+    这个洞会直接变成「点开找不到附件」，因为再没有云端那份兜底了。
     """
-    try:
-        info = zget(f'/users/{USER_ID}/items/{att_key}')
-        return info['data'].get('filename') or default
-    except Exception:
-        return default
+    for fetch in (lambda: zweb(f'/items/{att_key}'),
+                  lambda: zget(f'/users/{USER_ID}/items/{att_key}')):
+        try:
+            return fetch()['data'].get('filename') or default
+        except Exception:
+            continue
+    return default
 
 
 def put_local(att_key, src, default_name='attachment'):

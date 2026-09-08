@@ -122,7 +122,10 @@ def process_item(item):
                 #   调用它必然 AttributeError，然后被下面的 except 吞成一行日志 ——
                 #   连带**后面那句 set_state_tag 也一起不执行**。
                 #   它一直没暴露，只因为 09-05 之后 watcher 一次都没上传成功过。
-                put_local(att_key, out_html, 'summary.html')
+                # 兜底名用**真实文件名**，不要写死 'summary.html' ——
+                # 这一档在正文/SI/全文三种精读下分别是 summary.html /
+                # si_summary.html / summary_full.html，写死就会张冠李戴。
+                put_local(att_key, out_html, os.path.basename(out_html))
                 print(f'  [附件已更新] summary（本地storage已就位，点开即图文精读）')
             # 按实际完成情况置状态标签
             set_state_tag(key, state_tag, log=print)
