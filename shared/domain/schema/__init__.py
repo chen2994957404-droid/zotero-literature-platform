@@ -552,13 +552,36 @@ def tidy_unit(unit):
         u = parts[0]
     return u.strip().strip('.,;:')[:24]
 
+# 光杆幂次：`10^-10 M` → `1×10^-10 M`（2026-09-08 加）。
+# 为什么必须在这里也做一遍：`scan.clean_body` 洗的是**正文**，
+# 而模型是照着正文抄给我们的 —— 它抄回来的 `10^-10` 不经过那一步。
+# 不认的后果不是报错，是**读成 10**：检出限 1e-10 M 会变成 10 M，
+# 一个错了十个数量级、却长得完全正常的数字。
+# 科学计数法的各种写法 → 解析器认得的那一种（2026-09-08 加）。
+# **一条正则同时管两种**：`1.2 × 10^4` 与光杆的 `10^-10`（系数省略 = 1）。
+# 分成两条会互相踩：先补光杆的那条会把 `1.2 x 10^4` 里的 `10^4` 也补上系数，
+# 变成 `1.2 x 1×10^4`，值被读成 1.2 —— 实测踩过。
+#
+# 为什么在这里也要做：`scan.clean_body` 洗的是**正文**，而模型是照着正文抄给我们的，
+# 它抄回来的 `10^-10` 不经过那一步。不认的后果不是报错，是**读成 10** ——
+# 检出限 1e-10 M 变成 10 M，一个错了十个数量级、却长得完全正常的数字。
+_SCI_POW = re.compile(
+    r'(?<![\d.\w])(?:(\d+(?:\.\d+)?)\s*[×xX*]\s*)?10\s*\^\s*([-+−]?\d+)')
+
+
+def _norm_pow(text):
+    return _SCI_POW.sub(
+        lambda m: (m.group(1) or '1') + chr(215) + '10^'
+        + m.group(2).replace(chr(8722), '-'), text)
+
+
 def parse_property(text):
     """`'tensile strength: 12 MPa'` → `{'name','value','unit','cmp','value_max','raw'}`。
 
     拆不出数字时 value 为 None（`'self-healing: yes'` 这种照样保留，
     只是不能参与大小比较）。**不换算单位**，unit 原样留着。
     """
-    raw = str(text).strip()
+    raw = _norm_pow(str(text).strip())
     name, _, rest = raw.partition(':')
     if not rest:                       # 没有冒号：整句当名字，试着从里面找数
         name, rest = raw, raw
