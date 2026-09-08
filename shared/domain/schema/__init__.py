@@ -504,6 +504,35 @@ def _to_float(m, base=1):
     return v
 
 
+# ── 单位要洗干净再入库 ────────────────────────────────────────────────
+# 2026-09-08 实测：`parse_property` 把数字后面的**一整截话**都当成了单位，
+# 于是库里出现了 `'% in the first cycle to '`、`'h of healing'`、`'% to 15%'`
+# 这种「单位」。后果不是难看，是**同一个数被算成两条**：
+#   `1484.9 mJ mm-1` 与 `1484.9 mJ mm -1` 去重时对不上号。
+# 云端模型和本地模型都会这样写 —— 这是**我们的解析太宽**，不是谁笨。
+#
+# 三条规则，都不需要「理解」：
+#   1. 指数前的空格去掉：`kJ m -2` → `kJ m-2`
+#   2. 遇到英文虚词就截断：`% in the first cycle` → `%`
+#   3. 同一个符号连着重复的收成一个：`% %` → `%`
+_UNIT_STOP = re.compile(
+    r'\s+(?:to|in|at|of|on|for|after|and|or|with|the|an?|when|while|under|'
+    r'over|from|by|which|that|its?|was|were|is|are)(?![a-z]).*$', re.I)
+
+
+def tidy_unit(unit):
+    """单位串洗干净。洗不出东西就返回空串（**空单位好过假单位**）。"""
+    u = re.sub(r'\s+', ' ', str(unit or '')).strip().strip('.,;:')
+    if not u:
+        return ''
+    u = _UNIT_STOP.sub('', u).strip()
+    u = re.sub(r'\s+(?=[-−+]\s*\d)', '', u)      # kJ m -2 → kJ m-2
+    u = re.sub(r'([-−+])\s+(\d)', r'', u)      # kJ m- 2 → kJ m-2
+    parts = u.split()
+    if len(parts) > 1 and len(set(parts)) == 1:   # '% %' → '%'
+        u = parts[0]
+    return u.strip().strip('.,;:')[:24]
+
 def parse_property(text):
     """`'tensile strength: 12 MPa'` → `{'name','value','unit','cmp','value_max','raw'}`。
 
@@ -532,7 +561,7 @@ def parse_property(text):
         tail = rest[m.end():]
     else:
         return out
-    out['unit'] = tail.strip().strip('.,;').strip()[:24]
+    out['unit'] = tidy_unit(tail)
     return out
 
 

@@ -370,6 +370,33 @@ def main():
 
 
 
+    # ── 单位要洗干净（2026-09-08 实测驱动）────────────────────────────
+    # 库里真出现过这些「单位」：'% in the first cycle to '、'h of healing'、
+    # 'mJ mm -1'。后两者最阴 —— `1484.9 mJ mm-1` 与 `1484.9 mJ mm -1`
+    # 去重时对不上号，**同一个数被算成两条**。云端模型也这么写，
+    # 所以这是我们解析太宽，不是谁笨。
+    total += 1
+    cases = [('puncture energy: 1484.9 mJ mm -1', 'mJ mm-1'),
+             ('toughness: 2059 kJ m -2', 'kJ m-2'),
+             ('residual strain: 110 % in the first cycle to 150%', '%'),
+             ('healing time: 18 h of healing', 'h'),
+             ('residual strain: 10 % %', '%'),
+             ('tensile strength: 12 MPa', 'MPa'),
+             ('modulus: 3.2 MPa at 25 C', 'MPa')]
+    bad = [(t, schema.parse_property(t)['unit']) for t, want in cases
+           if schema.parse_property(t)['unit'] != want]
+    if not bad:
+        print('  [PASS] 脏单位洗干净（指数空格、拖着的整句话、重复符号）'); ok += 1
+    else:
+        print(f'  [FAIL] 单位没洗干净：{bad}')
+
+    total += 1
+    if (schema.parse_property('tensile strength: 12 MPa')['value'] == 12
+            and schema.tidy_unit('') == '' and schema.tidy_unit('  ') == ''):
+        print('  [PASS] 洗单位不影响数值，空单位仍是空'); ok += 1
+    else:
+        print('  [FAIL] 洗单位把别的弄坏了')
+
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)
 
