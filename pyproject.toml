@@ -17,9 +17,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "zotero-literature-platform"
+name = "literature-platform"
 version = "2.0.0.dev0"
-description = "文献自动化科研平台（围绕 Zotero）"
+description = "文献自动化科研平台（证据库为核心，Zotero 是最重要的来源与展示面）"
 requires-python = ">=3.11"
 
 # 运行期依赖，与 requirements.txt 保持一致（刻意保持极少，见架构宪法「少依赖」）

@@ -1,10 +1,12 @@
-# 文献自动化科研平台 · 给所有 agent 的正本
+# literature-platform · 给所有 agent 的正本
 
-围绕 Zotero 的文献科研平台。用户是材料方向研究者（聚硼硅氧烷 / 动态键弹性体），
+文献自动化科研平台，**核心是证据库**，Zotero 是最重要的来源 + 精读成果的展示面。
+用户是材料方向研究者（聚硼硅氧烷 / 动态键弹性体），
 **不懂编程**。给他看的一律用中文大白话，别讲技术细节。
 
 **这份是唯一入口。** 帮他干活看【第一部分】，改代码看【第二部分】。
 `CLAUDE.md` 只是指向这里的一行。
+**「这件事该动哪个文件夹」单独有一份：根目录的 `各部分的关系.md`。**
 
 <!-- AUTO:结构 开始 · 由 host/codegen/handover.py 生成，勿手改 -->
 
@@ -18,8 +20,8 @@ docs/  ← 跨工具的档案（另有 3 份日志直接躺在下面）
     explain/（6）、howto/（3）、reference/（6）、incidents/（2）  ← 为什么 / 怎么做 / 事实 / 坑
 host/  ← 平台自身：让平台活着的东西（没人 import 它）（8 块）
     autosync、codegen、deploy、doctor、mcp、panel、watcher、wechat_import
-launch/  ← 给人双击的入口（9 个）
-    取全文用的浏览器.bat、导入公众号精读.bat、控制面板.bat、更新平台.bat、比一比两个模型.bat、精读监听.bat、诊断报告.bat、重抽缺SI的文献.bat、重跑精读PRO.bat
+launch/  ← 给人双击的入口（10 个）
+    一次性_改名并重组.bat、取全文用的浏览器.bat、导入公众号精读.bat、控制面板.bat、更新平台.bat、比一比两个模型.bat、精读监听.bat、诊断报告.bat、重抽缺SI的文献.bat、重跑精读PRO.bat
 shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
     kernel/  ← 基础设施：谁都依赖它，它不依赖任何人（12 块）
         cli、config、proc_lock、prompts、subproc、errors.py、heartbeat.py、jobs.py、log.py、mcp_prompt.py、paths.py、role.py
@@ -33,7 +35,7 @@ tests/ （3 个脚本）
 tools/  ← 工具切片：一个工具 = 一个自包含的包（11 块）
     ask、askworld、curate、deepread、digitize、direction、discover、extract、getpdf、library、paperdb
 
-根目录文件：AGENTS.md、CLAUDE.md、LICENSE、README.md、REBUILD.md、pyproject.toml、requirements.txt
+根目录文件：AGENTS.md、CLAUDE.md、LICENSE、README.md、REBUILD.md、pyproject.toml、requirements.txt、各部分的关系.md
 
 （data/ 是数据目录（五层），3000+ 文件，**不要去 glob 它**）
 ```
@@ -70,7 +72,7 @@ A 机默认不写 Zotero、不跑常驻服务、不跑花钱的批量作业 —�
 | `troubleshoot` | 报错 / 卡住 / 没反应 / 数字不对 / 明明改了却没变 |
 | `code-redlines` | **要动任何 .py 之前**（七条红线 + 四条硬规则 + 验证顺序）|
 | `research-first` | 要做新东西、选技术路线、或要断言外部世界现状 |
-| `two-machines` | 写 Zotero / 部署 / 连 B / 起常驻服务（连机器的机械细节在**全局**技能 `remote-machine`，源在 `D:/dev/remote-machine`）|
+| `two-machines` | 写 Zotero / 部署 / 连 B / 起常驻服务（连机器的机械细节在**全局**技能 `remote-machine`，源在 `toolbox/remote-machine/`）|
 | 十个工具各一份 | 要用某个工具时（含**什么时候别用我**）|
 
 ---

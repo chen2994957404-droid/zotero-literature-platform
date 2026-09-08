@@ -25,7 +25,7 @@ import urllib.request
 from shared.kernel import errors
 
 BASE = 'https://api.crossref.org'
-UA = 'zotero-literature-platform/1.0'
+UA = 'literature-platform/1.0'
 
 
 class CrossrefError(errors.ExternalServiceError):

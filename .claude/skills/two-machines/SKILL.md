@@ -69,7 +69,7 @@ emote-machine`，
 本节只留下「本项目特有」的那部分。
 
 ```bash
-python D:/dev/remote-machine/remote.py check     # ← 用这个，别手敲 ssh
+python toolbox/remote-machine/remote.py check     # ← 用这个，别手敲 ssh
 ```
 
 它把三个用血换来的细节包好了：**用户名是 `Administrator` 不是计算机名**（踩坑 #74）、
@@ -100,8 +100,8 @@ ssh -i ~/.ssh/id_ed25519_zotero_b -o BatchMode=yes Administrator@192.168.123.216
 **`job` 通道**（2026-09-03 打通，已实测）：**没有这个限制**。
 
 ```bash
-python D:/dev/remote-machine/remote.py job --install        # 只做一次（B 上已经装过了）
-python D:/dev/remote-machine/remote.py job "<PowerShell>"   # B 用自己的身份跑，密钥读得到
+python toolbox/remote-machine/remote.py job --install        # 只做一次（B 上已经装过了）
+python toolbox/remote-machine/remote.py job "<PowerShell>"   # B 用自己的身份跑，密钥读得到
 ```
 
 原理：它触发一个 `LogonType=Interactive` 的计划任务，那个会话跑在 `SessionId=1`，

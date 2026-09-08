@@ -461,10 +461,17 @@ def c_role():
 
 def c_installed():
     """项目是否已装成 Python 包 —— 现在所有 import 都依赖这一步。"""
-    try:
-        import importlib.metadata as md
-        ver = md.version('zotero-literature-platform')
-    except Exception:
+    # 两个名字都认：2026-09-08 项目改名 zotero-literature-platform → literature-platform，
+    # 但 B 机要等下次部署才会重装。只认新名字会让 B 机的体检凭空变红（而它其实好好的）。
+    ver = None
+    for _name in ('literature-platform', 'zotero-literature-platform'):
+        try:
+            import importlib.metadata as md
+            ver = md.version(_name)
+            break
+        except Exception:
+            continue
+    if ver is None:
         return FAIL, ('项目没装成包！所有脚本的 import 都会失败。'
                       '修复：在项目根目录跑  pip install -e . --no-deps')
     # 装了，但可能指向别的目录（换过盘符/复制过项目）

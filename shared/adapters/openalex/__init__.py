@@ -44,7 +44,7 @@ import urllib.request
 from shared.kernel import errors
 
 BASE = 'https://api.openalex.org'
-UA = {'User-Agent': 'zotero-literature-platform (research tool)'}
+UA = {'User-Agent': 'literature-platform (research tool)'}
 
 # ── API key（2026-02 起 OpenAlex 改成按量计费，见踩坑 #77）────────────
 # 无 key：$0.10/天（约 1000 次 filter 查询）；免费 key：$1/天（约 10000 次）。
