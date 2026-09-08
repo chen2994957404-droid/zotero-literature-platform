@@ -74,7 +74,12 @@ _RULES = (
     (METHODS, r'method|experimental|characteriz|measurement|instrument|'
               r'\btests?\b|testing|computational|simulation\s+detail|apparatus|'
               r'方法|表征|测试'),
-    (DISCUSSION, r'discussion|mechanism|analysis|机理|讨论'),
+    # ⚠ 光杆的 `analysis` **不作数**（2026-09-08 真跑一篇时发现）：
+    # `2.3.3 | Thermogravimetric Analysis (TGA)` 是方法节、`3.7 | DSC Analysis`
+    # 在结果章下面 —— 两个都被这个词拽成了「讨论」。
+    # 拿掉它，两节各自继承父节（方法 / 结果），反而全对。
+    # **判据太弱的关键词，不如不写** —— 让它落到父节继承那一档。
+    (DISCUSSION, r'discussion|mechanism|机理|讨论'),
     # Nature/Science 风格的论文用**描述性小标题**，全篇没有 Results 字样：
     # 「Anti-impact ability of PDBS」「Thermal stiffening behavior of PDU-PDBA」
     # 「Autonomous Self-Healing Property」「The effect of the B/Si atomic ratio」

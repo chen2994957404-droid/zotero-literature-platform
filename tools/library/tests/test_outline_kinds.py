@@ -60,3 +60,23 @@ def test_大块的非正文不会被菜单藏起来():
     m = O.menu(o)
     assert 's1' not in m, '小块参考文献该藏起来'
     assert 's2' in m, '上万字的块不许藏 —— 里面多半是真正文'
+
+
+class Test判据太弱的关键词:
+    """`analysis` 这个词太弱，谁都能沾（2026-09-08 真跑一篇 Wiley 论文时发现）。
+
+    `2.3.3 | Thermogravimetric Analysis (TGA)` 是方法节，
+    `3.7 | DSC Analysis` 在结果章下面 —— 两个都被这个词拽成了「讨论」。
+    **判据太弱的关键词不如不写**，让它落到父节继承那一档，反而全对。
+    """
+
+    def test_TGA是方法不是讨论(self):
+        assert O.classify('2.3.3 | Thermogravimetric Analysis (TGA)',
+                          parent_kind=O.METHODS) == O.METHODS
+
+    def test_结果章下的DSC分析算结果(self):
+        assert O.classify('3.7 | DSC Analysis', parent_kind=O.RESULTS) == O.RESULTS
+
+    def test_真正的机理节还是讨论(self):
+        assert O.classify('3.6.1 | Mechanism', parent_kind=O.RESULTS) == O.DISCUSSION
+        assert O.classify('Discussion') == O.DISCUSSION
