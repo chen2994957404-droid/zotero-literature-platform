@@ -365,6 +365,19 @@ def curves(key):
     return os.path.join(paper_dir(key), 'curves.json')
 
 
+def outline(key):
+    """★ curated/<key>/outline.json —— 这篇的**骨架**（章节地址 + 类别 + 密度）。
+
+    2026-09-08 加。它是「给模型点菜的菜单」：全文平均 5 万字符（约 1.3 万 token），
+    而一个问题真正要看的往往是两三节。先给菜单再按地址取原文，
+    读菜单的成本大约是读全文的三十分之一。
+
+    **纯派生**：由 `full.md` 用 `schema.outline` 现算，删了跑一次就有，
+    所以它住 curated 而不是 raw（跟 curves.json / chunk_measurements.json 同待遇）。
+    """
+    return os.path.join(paper_dir(key), 'outline.json')
+
+
 def chunk_measurements(key):
     """★ curated/<key>/chunk_measurements.json —— 拆段扫正文抽到的数值。
 

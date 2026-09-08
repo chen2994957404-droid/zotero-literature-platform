@@ -66,6 +66,31 @@ def register(server):
         lambda a: _fulltext(library.fulltext(
             a['itemKey'], max_chars=a.get('maxChars', library.MAX_CHARS))))
 
+    # ── 菜单与切片（2026-09-08 加）──────────────────────────────────
+    # 为什么要这两个：`library_fulltext` 一口气吐几万字符，模型读三篇就把
+    # 上下文吃掉一半。先给菜单（几百 token）、再按地址取需要的那两三节，
+    # 成本大约是整篇的三十分之一。两个都只读免费，所以可以是 tool。
+    server.register_tool(
+        'library_outline',
+        '这篇文献的骨架菜单：每节的地址(id)、类别(摘要/背景/合成/方法/结果/讨论/结论)、'
+        '字数、含多少数字与表图。**读全文之前先看它**，然后用 library_section 只取要看的那几节。',
+        {'type': 'object', 'properties': dict(_KEY), 'required': ['itemKey']},
+        lambda a: _outline(library.outline(a['itemKey'])))
+
+    server.register_tool(
+        'library_section',
+        '按地址取这篇文献的某一节原文（地址 id 来自 library_outline）。'
+        '要补充材料 SI 里的那一节就传 si=true。',
+        {'type': 'object', 'properties': dict(_KEY, **{
+            'sectionId': {'type': 'string', 'description': '节地址，如 s4（来自 library_outline）'},
+            'si': {'type': 'boolean', 'description': '取补充材料 SI 里的节，默认 false'},
+            'maxChars': {'type': 'integer', 'minimum': 100, 'maximum': 100000,
+                         'description': f'返回字符上限，默认 {library.MAX_CHARS}'}}),
+         'required': ['itemKey', 'sectionId']},
+        lambda a: _section(library.section(
+            a['itemKey'], a['sectionId'], si=bool(a.get('si')),
+            max_chars=a.get('maxChars', library.MAX_CHARS))))
+
     server.register_tool(
         'library_collections', '列出全部合集（含父子层级）。',
         {'type': 'object', 'properties': {}},
@@ -137,3 +162,15 @@ def _collections(cols):
 def _tags(rows):
     return {'text': library.render_tags(rows),
             'structured': {'count': len(rows), 'tags': rows}}
+
+
+def _outline(d):
+    return {'text': library.render_outline(d), 'structured': d}
+
+
+def _section(r):
+    if not r['chars']:
+        return {'text': '%s 的 %s 取不到：%s' % (r['itemKey'], r['id'], r['why_empty']),
+                'structured': r}
+    return {'text': r['text'] + ('\n…（已截断）' if r.get('truncated') else ''),
+            'structured': {k: v for k, v in r.items() if k != 'text'}}
