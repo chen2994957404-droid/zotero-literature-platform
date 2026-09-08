@@ -18,9 +18,15 @@ from shared.kernel import paths
 ROOT = paths.ROOT
 
 # 不扫描的目录：数据、历史存档、构建产物
-SKIP_DIRS = {'data', 'workflow_data', '.git', '__pycache__', '归档_旧版本',
-             '.venv', 'venv', 'build', 'dist', '.pytest_cache',
-             'zotero_literature_platform.egg-info'}
+#
+# ⚠ **判据取自 `paths.NOISE_DIRS` 这个正本，不许在这里另抄一份。**
+# 2026-09-08 抓到的现场：这里原本是一份手抄件，结果跟正本漂移了两处 ——
+#   ① 只有改名前的 `zotero_literature_platform.egg-info`，新名字的构建产物会被扫进来
+#   ② 没有 `template`，于是 toolbox/toolforge/template 里那些带 {{占位符}} 的
+#      骨架文件（**不是能运行的 Python**）会被架构守卫当成源码
+# 正是宪法那句「重复的规矩必然漂移」的实例。
+# `归档_旧版本` 是本文件独有的（只有扫源码时才需要跳过它），所以额外并上。
+SKIP_DIRS = set(paths.NOISE_DIRS) | {'归档_旧版本'}
 
 # 单行豁免标记：确实需要写这个字符串（例如遍历时排除数据目录）的地方，
 # 在行尾加 `# paths-exempt` 并说明理由。刻意做成显眼的，让豁免难以泛滥。
