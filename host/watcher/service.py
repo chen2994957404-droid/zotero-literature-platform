@@ -17,7 +17,7 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from shared.kernel import heartbeat, paths, role
+from shared.kernel import errors, heartbeat, paths, role
 from shared.kernel.cli import flag
 
 from shared.kernel.config import get_key
@@ -34,7 +34,7 @@ print = get_logger('zotero_watcher')       # 保留 print 这个名字，下方�
 # has_si / SUPP_PAT，与 shared/adapters/zotero_client 里的同名实现并存（违反宪法铁律 1）。
 from shared.adapters.zotero_client import (zget, find_pdf as _find_pdf, has_si,
                                     find_child_attachment, upload_attachment,
-                                    USER_ID)
+                                    put_local, USER_ID)
 # 标签状态机（哪些标签互斥、做成了什么打哪个标签）在 tags.py —— 它是纯规则，
 # 不该藏在常驻服务里，否则「跑一批 SI」也得把心跳和单实例锁一起拖进来。
 from tools import deepread
@@ -102,14 +102,27 @@ def process_item(item):
                         att_key = upload_attachment(key, out_html, 'summary')
                         break
                     except Exception as ue:
+                        # **不认识的错、和明确不该重试的错，都不重试**（踩坑 #148）：
+                        # 存储配额满了返回 413，重试三次必然三次都失败，
+                        # 而且当时每次重试都会新建一个附件条目 —— 用户看到
+                        # 「三个 summary，点开都说找不到」。判据统一走 errors.is_retryable。
+                        if not errors.is_retryable(ue):
+                            print(f'  [上传失败，重试也没用] {ue}')
+                            break
                         wait = 5 * (attempt + 1)
                         print(f'  [上传失败 {attempt+1}/3] {str(ue)[:80]} → {wait}s 后重试')
                         time.sleep(wait)
                 if not att_key:
-                    print('  [上传三次失败] 精读已生成在本地，下次打「待处理」会自动重传')
+                    print('  [没能传上 Zotero] 精读已生成在本地，没有丢；'
+                          '解决上面说的问题后，重新打一次「待处理」标签即可重传')
             # 直接写入本地Zotero storage，点开即最新精读
             if att_key:
-                _batch._put_local(att_key, out_html)
+                # ⚠ 这里 2026-09-05 起是一颗哑弹：`_batch._put_local` 当天被下沉到
+                #   shared.adapters.zotero_client.put_local，这一行没跟着改，
+                #   调用它必然 AttributeError，然后被下面的 except 吞成一行日志 ——
+                #   连带**后面那句 set_state_tag 也一起不执行**。
+                #   它一直没暴露，只因为 09-05 之后 watcher 一次都没上传成功过。
+                put_local(att_key, out_html, 'summary.html')
                 print(f'  [附件已更新] summary（本地storage已就位，点开即图文精读）')
             # 按实际完成情况置状态标签
             set_state_tag(key, state_tag, log=print)

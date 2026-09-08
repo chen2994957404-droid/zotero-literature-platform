@@ -235,6 +235,38 @@ def add_to_collection(item_key, collection_key,
     return True
 
 
+def _translate(e):
+    """把 zotero.org 的 HTTP 错误翻成「调用方能据此做决定」的异常。
+
+    分类的唯一目的是让调用方知道**该不该重试**（见 shared/kernel/errors.py）。
+    2026-09-08 真机上就吃了这个亏：存储配额满了返回 413，
+    而调用方把它当成普通故障重试了三次 —— 三次都必然失败，
+    还每次留下一个空附件条目（踩坑 #148）。
+
+    **配额满不是「外面抖了一下」，是用户必须去处理的事**，所以给 ConfigError：
+    它不可重试，且消息会原样显示给一个不懂编程的人看。
+    """
+    from shared.kernel import errors
+    body = ''
+    try:
+        body = e.read().decode('utf-8', 'replace')[:300]
+    except Exception:
+        pass
+    if e.code == 413 and 'quota' in body.lower():
+        return errors.ConfigError(
+            'Zotero 的云端存储满了，传不上去了（服务端原话：%s）。\n'
+            '        精读报告已经生成在本地，没有丢。\n'
+            '        怎么办：去 zotero.org 清理或扩容，'
+            '或者改成不往云端传（你的文件同步走的是自己的网盘，本来就不需要云端这份）。'
+            % body.replace('&gt;', '>').strip())
+    if e.code in (401, 403):
+        return errors.AuthError(f'Zotero 拒绝了这次写入（HTTP {e.code}）：{body}')
+    if e.code >= 500:
+        return errors.ExternalServiceError(
+            f'zotero.org 暂时出问题（HTTP {e.code}）：{body}', service='zotero')
+    return e
+
+
 def upload_attachment(parent_key, filepath, display_name,
                       action='上传附件到 Zotero', force=False):
     """把本地文件作为附件传到某条文献下，返回附件 key。
@@ -254,35 +286,70 @@ def upload_attachment(parent_key, filepath, display_name,
     mtime = int(os.path.getmtime(filepath) * 1000)
     ctype = mimetypes.guess_type(fname)[0] or 'application/octet-stream'
 
-    # 1. 建 imported_file 附件条目
-    item = [{'itemType': 'attachment', 'parentItem': parent_key,
-             'linkMode': 'imported_file', 'title': display_name,
-             'filename': fname, 'contentType': ctype, 'md5': None, 'mtime': None}]
-    r = _call('/items', 'POST', json.dumps(item).encode(),
-              {'Content-Type': 'application/json'})
-    att_key = r['successful']['0']['key']
+    # 1. 附件条目：**先找有没有同名的，有就复用，没有才新建**
+    #
+    # ⚠ 这一步 2026-09-08 之前是无条件新建，后果在真机上暴露得很难看：
+    #   调用方（watcher）对失败会重试三次，而每次重试都从这里重新开始 ——
+    #   于是**一次失败的上传留下三个附件条目，每个都没有文件**。
+    #   用户在 Zotero 里看到「三个 summary，点开都说找不到」（踩坑 #148）。
+    #   本文件开头的约定 2 早就写着「要更新附件，请复用已有条目」，
+    #   只是这个函数自己没遵守。
+    #
+    # 用云端查而不是本地查：这是在问「我自己上次写上去的还在不在」，
+    # 必须问权威源（踩坑 #64）。
+    att_key, old_md5 = None, None
+    try:
+        for c in _call(f'/items/{parent_key}/children'):
+            d = c['data']
+            if (d.get('itemType') == 'attachment'
+                    and (d.get('title') or '').strip() == display_name):
+                att_key, old_md5 = c['key'], d.get('md5')
+                break
+    except Exception:
+        att_key, old_md5 = None, None        # 查不到就当没有，最多多建一个
+
+    if att_key is None:
+        item = [{'itemType': 'attachment', 'parentItem': parent_key,
+                 'linkMode': 'imported_file', 'title': display_name,
+                 'filename': fname, 'contentType': ctype, 'md5': None, 'mtime': None}]
+        r = _call('/items', 'POST', json.dumps(item).encode(),
+                  {'Content-Type': 'application/json'})
+        att_key = r['successful']['0']['key']
 
     # 2. 要上传授权
-    auth = _call(f'/items/{att_key}/file', 'POST',
-                 urllib.parse.urlencode({'md5': md5, 'filename': fname,
-                                         'filesize': filesize, 'mtime': mtime,
-                                         'contentType': ctype}).encode(),
-                 {'Content-Type': 'application/x-www-form-urlencoded',
-                  'If-None-Match': '*'})
+    #
+    # ⚠ 前置条件头必须跟「这个条目现在有没有文件」对上，否则 412：
+    #     没有文件 → If-None-Match: *   （「仅当它还是空的」）
+    #     已有文件 → If-Match: <旧 md5> （「我知道现在是哪一版，要覆盖它」）
+    #   2026-09-08 改成复用条目之后，第二次上传当场 412 —— 就是漏了这一条。
+    #   （真跑才发现的：以前每次都新建条目，永远走「没有文件」那一支。）
+    precond = {'If-Match': old_md5} if old_md5 else {'If-None-Match': '*'}
+    try:
+        auth = _call(f'/items/{att_key}/file', 'POST',
+                     urllib.parse.urlencode({'md5': md5, 'filename': fname,
+                                             'filesize': filesize, 'mtime': mtime,
+                                             'contentType': ctype}).encode(),
+                     dict({'Content-Type': 'application/x-www-form-urlencoded'},
+                          **precond))
+    except urllib.error.HTTPError as e:
+        raise _translate(e) from e
     if auth.get('exists'):
         return att_key                       # 服务端已有同 md5 的文件
 
     # 3. 传到授权 URL（Zotero 格式：prefix + 文件内容 + suffix）
     body = auth['prefix'].encode('utf-8') + content + auth['suffix'].encode('utf-8')
-    urllib.request.urlopen(urllib.request.Request(
-        auth['url'], data=body, method='POST',
-        headers={'Content-Type': auth['contentType']}), timeout=180)
+    try:
+        urllib.request.urlopen(urllib.request.Request(
+            auth['url'], data=body, method='POST',
+            headers={'Content-Type': auth['contentType']}), timeout=180)
 
-    # 4. 注册完成（返回 204 空 body）
-    _call(f'/items/{att_key}/file', 'POST',
-          urllib.parse.urlencode({'upload': auth['uploadKey']}).encode(),
-          {'Content-Type': 'application/x-www-form-urlencoded',
-           'If-None-Match': '*'}, raw=True)
+        # 4. 注册完成（返回 204 空 body）—— 前置条件头要和第 2 步一致
+        _call(f'/items/{att_key}/file', 'POST',
+              urllib.parse.urlencode({'upload': auth['uploadKey']}).encode(),
+              dict({'Content-Type': 'application/x-www-form-urlencoded'},
+                   **precond), raw=True)
+    except urllib.error.HTTPError as e:
+        raise _translate(e) from e
     return att_key
 
 
