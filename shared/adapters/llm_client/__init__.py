@@ -70,8 +70,12 @@ def _chat_endpoint(provider):
 # 所以「换一家模型」在这里只是多一行，不是多一条代码路径 ——
 # 这正是「联网只许在 adapters」那条铁律买来的东西。
 PROVIDERS = {
+    # ⚠ 第 4 位是**看图**用的默认模型。`deepseek-vl2` 已被下线（2026-09-07 实测，
+    # 服务端原话：「supported API model names are deepseek-v4-pro, deepseek-v4-flash,
+    # and deepseek-v4-flash-vision-exp」）—— 这一位过期的症状是 HTTP 400，
+    # 而 400 不会告诉不懂编程的人「换个模型名就好了」。踩坑 #139。
     'deepseek': (DEEPSEEK_API, 'DEEPSEEK_KEY',
-                 'deepseek-v4-pro', 'deepseek-vl2'),
+                 'deepseek-v4-pro', 'deepseek-v4-flash-vision-exp'),
     'siliconflow': ('https://api.siliconflow.cn/v1/chat/completions', 'SILICONFLOW_KEY',
                     'Qwen/Qwen2.5-72B-Instruct', 'Qwen/Qwen2.5-VL-72B-Instruct'),
     'gemini': ('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
@@ -333,7 +337,9 @@ def chat_vision(system, user, image_b64, provider=None, model=None, key=None,
     if _owner and provider != 'ollama' and _owner != provider:
         provider, key = _owner, ''
     elif not provider:
-        provider = os.environ.get('VISION_PROVIDER', 'deepseek')
+        # 走三级加载（环境变量 → 凭据库 → .env），不只读环境变量 ——
+        # 面板把设置写进 .env，而 .env 的值进不了 os.environ（红线 #3 的老坑）。
+        provider = _cfg_get('VISION_PROVIDER') or 'deepseek'
     if model is None and provider == 'ollama':
         model = _cfg_get('OLLAMA_VISION_MODEL') or 'qwen2.5vl:7b'
     # 规范化 base64（去掉 data:image 前缀取纯数据；同时保留完整 data uri 供云端用）

@@ -248,6 +248,10 @@ MODEL_SETTINGS = {
     'BRAINSTORM_MODEL': ('研究构想',   'deepseek-v4-pro'),
     # 方向层：一篇摘要一次调用，要跑上万篇 —— 输出很短，所以上便宜那档。
     'DIRECTION_QUAD_MODEL': ('方向层摘要抽取', 'qwen3.8-flash'),
+    # 看图这条线必须是**视觉**模型，且必须是云端的（本地 7B 会编假数据）。
+    # 2026-09-07 加：在此之前它没有配置项，模型名写死在 adapters 里，
+    # 于是模型一下线，用户在面板上换不了，只会看到 HTTP 400（踩坑 #139）。
+    'DIGITIZE_MODEL':   ('图表数字化', 'deepseek-v4-flash-vision-exp'),
 }
 
 

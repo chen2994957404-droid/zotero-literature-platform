@@ -43,3 +43,33 @@ qwen3-vl-plus 读六联图里的 a 图：横跨全图的主曲线读得基本准
 - 提示词加入「不要外推到坐标轴末端；看不清就说看不清」——已验证有效
 
 **给使用者的边界**：同一张图里数量级差 10 倍以上时，小的那条不要入库。
+
+
+## 踩坑 #139：写死的视觉模型被下线，看图这条线整条哑了一天（2026-09-07）
+
+**现象**：`digitize` 抠图全部失败，唯一的信息是 `视觉模型调用失败: HTTP Error 400`。
+主力机上 42 篇能裁出 **292 张图**，`curves.json` **一个都没有** —— 从来没成功过。
+
+**根因**（问服务端问出来的，不是猜的）：`shared/adapters/llm_client` 的
+`PROVIDERS['deepseek']` 第 4 位（看图默认模型）写着 `deepseek-vl2`，而服务端原话是：
+
+> The supported API model names are deepseek-v4-pro, deepseek-v4-flash,
+> and deepseek-v4-flash-vision-exp, but you passed deepseek-vl2.
+
+**真正的毛病不是模型名过期**（那是外部世界变了，本来就会发生），
+**是它没有配置项**：`MODEL_SETTINGS` 里精读/抽取/问答/打标签/构想/方向层各有一项，
+唯独看图没有。于是模型一下线，不懂编程的用户在控制面板上**找不到任何地方可以改**，
+只能看见一个 400。宪法第二条（可理解性）踩在这里。
+
+顺带查出第二处：`chat_vision` 里 `provider = os.environ.get('VISION_PROVIDER', ...)`
+**只读环境变量**，而面板把设置写进 `.env` —— 就算加了这一项，用户改了也不生效（红线 #3 的老坑）。
+
+**解法**：
+1. `MODEL_SETTINGS` 加 `DIGITIZE_MODEL`（默认 `deepseek-v4-flash-vision-exp`），面板自动出现这一项。
+2. `PROVIDERS['deepseek']` 的看图默认值换成服务端确认存在的名字。
+3. `chat_vision` 取 provider 改走 `_cfg_get`（三级加载）。
+4. `tools/digitize` 不指定模型时从 `get_model('DIGITIZE_MODEL')` 取。
+5. 守卫：`tools/digitize/tests/test_model_from_config.py`（3 条）钉住「模型名是配置项」。
+
+**判据（值得记住）**：**凡是外部世界会变的东西，都必须有一个用户够得着的开关。**
+模型名、端点、限额都属于这一类。写死它 = 把「外面变了」变成「平台坏了」。
