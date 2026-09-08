@@ -59,9 +59,11 @@ KINDS = (ABSTRACT, BACKGROUND, SYNTHESIS, METHODS, RESULTS, DISCUSSION,
 # 标题关键词 → 类别。**顺序即优先级**：先匹配到的赢。
 # 「results and discussion」要在「discussion」前面，否则合并章节会被归成讨论。
 _RULES = (
-    (NONBODY, r'reference|bibliograph|acknowledg|author\s+information|'
+    (NONBODY, r'reference|bibliograph|acknowledg|author|'
               r'conflict|competing\s+interest|funding|orcid|copyright|'
-              r'associated\s+content|supporting\s+information|附录|参考文献|致谢'),
+              r'associated\s+content|supporting\s+information|'
+              r'received.*accepted|published\s+online|data\s+availability|'
+              r'附录|参考文献|致谢'),
     (ABSTRACT, r'^abstract|^a\s*b\s*s\s*t\s*r\s*a\s*c\s*t|graphical\s+abstract|'
                r'^summary$|摘要|^highlights?$'),
     (CONCLUSION, r'conclusion|concluding|outlook|perspective\s*$|^summary\b|总结|结论'),
@@ -73,6 +75,12 @@ _RULES = (
               r'\btests?\b|testing|computational|simulation\s+detail|apparatus|'
               r'方法|表征|测试'),
     (DISCUSSION, r'discussion|mechanism|analysis|机理|讨论'),
+    # Nature/Science 风格的论文用**描述性小标题**，全篇没有 Results 字样：
+    # 「Anti-impact ability of PDBS」「Thermal stiffening behavior of PDU-PDBA」
+    # 「Autonomous Self-Healing Property」「The effect of the B/Si atomic ratio」
+    # —— 这些全是结果章。实测 43 篇里有 6 篇因此大面积未分类。
+    (RESULTS, r'\babilit|behaviou?r|propert|stabilit|effects?\s+of|influence\s+of|'
+              r'\bversus\b|dependence|comparison\s+of'),
     (BACKGROUND, r'introduction|background|literature\s+review|引言|前言|绪论'),
 )
 _RULES = tuple((kind, re.compile(pat, re.I)) for kind, pat in _RULES)
@@ -92,16 +100,25 @@ def classify(title, parent_kind=''):
     单看判不出，但它显然属于父节「实验部分」。
     """
     t = scan.clean_label(title or '').strip()
-    # 去掉编号前缀（`2.1.` / `II.` / `一、`），它们对判类别没有信息
-    t = re.sub(r'^[\dIVXivx]+[\.\)、]?\s*', '', t).strip()
+    # 去掉编号前缀（`2.1.` / `II.` / `一、`），它们对判类别没有信息。
+    # ⚠ **分隔符必须存在**（2026-09-08 全库实测）：原来写成
+    # `^[\dIVXivx]+[.)、]?\s*`，分隔符可有可无，于是 `INTRODUCTION` 开头那个
+    # `I` 被当成罗马数字剥掉，变成 `NTRODUCTION` —— 43 篇里**每一篇的引言**
+    # 都成了「未分类」，而且看统计完全看不出原因。
+    t = re.sub(r'^(?:\d+(?:\.\d+)*[.)]?|[IVXivx]+[.)]|[一二三四五六七八九十]+[、.])\s+',
+               '', t).strip()
     if not t:
         return parent_kind or UNKNOWN
+    if _ALL_CJK.match(t):          # 纯中文标题 = 中文题名/中文摘要
+        return ABSTRACT
     for kind, pat in _RULES:
         if pat.search(t):
             return kind
     return parent_kind or UNKNOWN
 
 
+_ALL_CJK = re.compile(r'^[\u4e00-\u9fa5\uff08\uff09\uff0c\u3001\uff1a\s'
+                      r'\u2014\u2018\u2019\u201c\u201d0-9-]+$')
 _NUM_PREFIX = re.compile(r'^\s*(\d+(?:\.\d+)*)\.?\s')
 
 
@@ -229,7 +246,10 @@ def menu(outline, skip=(NONBODY,)):
     """
     rows = []
     for s in outline.get('sections') or []:
-        if s['kind'] in skip or s['chars'] < 80:
+        # 非正文默认隐藏（参考文献数字多、性能一条没有，留着只会诱导模型去点）。
+        # **但大块的不隐藏**：MineRU 常把投稿信息识别成标题，后面挂着上万字真正文
+        # （实测有一篇 13462 字）—— 一刀切隐藏会把正文一起弄丢。
+        if s['chars'] < 80 or (s['kind'] in skip and s['chars'] < 2000):
             continue
         bits = ['%s [%s] %s' % (s['id'], s['kind'], s['title'][:60]),
                 '%d 字' % s['chars']]
