@@ -117,3 +117,17 @@ def test_摘要里说清楚每篇是怎么来的(env):
     rs = F.many([DOI], gap=0)
     txt = F.summarize(rs)
     assert '刚去取的' in txt and 'library_outline' in txt, '要告诉模型下一步怎么读'
+
+
+def test_命令行的参数顺序(monkeypatch):
+    """位置参数必须在选项**前面**（`shared.kernel.cli` 的约定）。
+
+    第一次真跑时把顺序写成 `--fulltext <DOI>`，`positionals()` 在第一个 `--`
+    就停了，于是拿到空列表 —— **不报错，只是安静地什么都不做**。
+    MCP 后台那条路拼的是同一个命令，一起错。
+    """
+    from shared.kernel import cli
+    monkeypatch.setattr(cli, '_argv', lambda: ['10.1002/pat.70289', '--fulltext'])
+    assert cli.positionals() == ['10.1002/pat.70289']
+    monkeypatch.setattr(cli, '_argv', lambda: ['--fulltext', '10.1002/pat.70289'])
+    assert cli.positionals() == [], '写反了就是空的 —— 这就是那次空跑的原因'

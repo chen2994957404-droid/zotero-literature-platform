@@ -130,7 +130,9 @@ def _fulltext(a):
              'results': []}, ensure_ascii=False))
     except OSError:
         pass
-    cmd = [sys.executable, '-m', 'tools.getpdf', '--fulltext'] + dois
+    # 位置参数必须在选项**前面**（shared.kernel.cli 的约定）。写反了不会报错，
+    # 只会安静地空跑 —— 第一次真跑时就是这么发现的（2026-09-08）。
+    cmd = [sys.executable, '-m', 'tools.getpdf'] + dois + ['--fulltext']
     if not allow:
         cmd.append('--no-fetch')
     subproc.spawn(cmd, cwd=paths.ROOT)

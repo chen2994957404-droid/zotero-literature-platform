@@ -3,8 +3,8 @@
 
 用法:
     python -m tools.getpdf --probe                       # 浏览器在不在（先跑这个）
-    python -m tools.getpdf --fulltext 10.1021/xxx        # DOI → 可读全文（四层回退）
-    python -m tools.getpdf --fulltext 10.1021/xxx --no-fetch   # 只看手上有没有，零代价
+    python -m tools.getpdf 10.1021/xxx --fulltext        # DOI → 可读全文（四层回退）
+    python -m tools.getpdf 10.1021/xxx --fulltext --no-fetch   # 只看手上有没有，零代价
     python -m tools.getpdf 10.1016/j.cej.2025.164092     # 取一篇
     python -m tools.getpdf 10.1016/xxx 10.1002/yyy       # 取几篇
     python -m tools.getpdf --file dois.txt               # 从文件读，一行一个
@@ -81,7 +81,9 @@ def main():
         from tools.getpdf import fulltext as F
         keys = list(positionals())
         if not keys:
-            print('用法：python -m tools.getpdf --fulltext <DOI> [DOI...]')
+            # ⚠ 位置参数必须在选项**前面**（shared.kernel.cli 的约定）——
+            # 我第一次真跑时就把顺序写反了，命令直接空跑（2026-09-08）
+            print('用法：python -m tools.getpdf <DOI> [DOI...] --fulltext')
             return 2
         allow = not flag('--no-fetch')
         if allow:
