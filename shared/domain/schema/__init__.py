@@ -133,7 +133,10 @@ PROPERTY_ALIASES = {
                               'modulus', '弹性模量', '杨氏模量'),
     'storage modulus':       ('storage modulus', "g'", '储能模量'),
     'loss modulus':          ('loss modulus', 'g"', '损耗模量'),
-    'toughness':             ('toughness', 'work of fracture', 'fracture energy', 'energy dissipation', '韧性'),
+    # ⚠ 'energy dissipation' 从这里挪走了（2026-09-08）：耗散能与韧性是两个量，
+    # 混在一起会让「这个体系耗散了多少能量」和「它有多韧」在库里变成同一列。
+    'toughness':             ('toughness', 'work of fracture', 'fracture energy',
+                              'tensile toughness', '韧性'),
     'self-healing efficiency': ('self-healing efficiency', 'self healing efficiency', 'healing efficiency',
                                 'recovery efficiency', '自修复效率', '修复效率'),
     'mn':                    ('mn', 'number average molecular weight', 'number-average molecular weight'),
@@ -150,6 +153,22 @@ PROPERTY_ALIASES = {
     'impact strength':       ('impact strength', 'impact resistance', 'impact energy', 'ballistic limit',
                               '冲击强度', '抗冲击'),
     'crosslink density':     ('crosslink density', 'cross-link density', '交联密度'),
+    # ── 论文里的符号名（2026-09-08 加，金标量出来的）────────────────────
+    # 作者常只在正文里定义一次符号（`the plateau elastic modulus, Ge`），
+    # 之后整篇都用符号。抽取时照抄符号是**正确行为**，词表不认就会被判成错标。
+    'plateau elastic modulus': ('plateau elastic modulus', 'plateau modulus', 'ge',
+                                'ge,exp', 'ge,fit', 'g_e', 'g_e,exp', 'g_e,fit',
+                                'gn0', '平台模量'),
+    'relaxation time':       ('relaxation time', 'characteristic relaxation time',
+                              'tauc', 'tau_c', 'tau c', 'τc', 'τ_c', 'τ', '松弛时间'),
+    'dissipated energy':     ('dissipated energy', 'energy dissipation', 'wd', 'w_d',
+                              'hysteresis energy', '耗散能'),
+    'energy dissipation ratio': ('energy dissipation ratio', 'dissipation ratio',
+                                 'denergy', 'd_energy', '耗散比'),
+    'detection limit':       ('detection limit', 'limit of detection', 'lod',
+                              'detection limit (aq.)', '检出限'),
+    'ceramic yield':         ('ceramic yield', 'char yield', 'residual mass',
+                              '陶瓷产率', '残炭率'),
 }
 
 # 反查表：别名 → 正名。长别名优先匹配（'ultimate tensile strength' 要盖过 'tensile strength'）

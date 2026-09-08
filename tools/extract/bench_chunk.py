@@ -49,6 +49,14 @@ SYS = prompts.load('extract', 'chunk@v1')
 _NUM_TOKEN = re.compile(r'\d+(?:\.\d+)?')
 
 
+# 不该喂给模型的段落：参考文献、致谢、作者信息、投稿信息。
+# 它们数字很多（年份、卷期、页码），靠数字判据挡不住，只能靠标题。
+_SKIP_SECTION = re.compile(
+    r'(?i)^#{0,4}\s*(references|bibliography|acknowledg|author\s+information|notes|supporting\s+information|associated\s+content|conflicts?\s+of\s+interest|\(\d+\)\s+[A-Z][a-z]+,)')
+# 两位以上的数字（个位数在长文里必然命中，没有区分度）
+_LOOSE_NUM = re.compile(r'(?<![\w.])\d{2,}(?:\.\d+)?|(?<![\w.])\d+\.\d+')
+
+
 def split_chunks(md, target=2400, min_numbers=2):
     """按章节切段，太长的再切；**只留含 ≥2 个「数值+单位」的段**。
 
@@ -56,6 +64,10 @@ def split_chunks(md, target=2400, min_numbers=2):
     比按字数硬切好，因为一个测量的名字、条件、数值通常在同一节里。
     没有数字的段不用喂模型（省下的就是钱），脚本判得出来。
     """
+    # **先把 LaTeX 洗掉再切**（2026-09-08，踩坑 #143）：不洗的话
+    # `$10^{-10}\;\mathrm{M}$` 这种压根不被认成数字，下面那句「这段有没有 ≥2 个数」
+    # 就会把整段判成没数字丢掉 —— 模型连看都没看见。洗完还顺带让模型读起来更省劲。
+    md = scan.clean_body(md)
     parts = re.split(r'(?m)^(#{1,4}\s+.*)$', md)
     blocks, buf = [], ''
     for seg in parts:
@@ -77,9 +89,16 @@ def split_chunks(md, target=2400, min_numbers=2):
     out = []
     for b in blocks:
         b = b.strip()
-        if len(b) < 200:
+        if len(b) < 200 or _SKIP_SECTION.search(b[:80]):
             continue
-        if len(scan.scan_numbers(b)) >= min_numbers:
+        # **选段用「宽松数字」，不用 `scan_numbers`**（2026-09-08，踩坑 #143）：
+        # `scan_numbers` 要「数字 + 认得的单位」才算数，于是 `10^-10 M`
+        # （M 不在单位词表里）整段被判成「没有数字」丢掉 —— 模型连看都没看见。
+        #
+        # 判据换成「两位以上的数字出现 ≥2 次」。**这里要往宽了错**：
+        # 多喂一段的代价是几厘钱，漏喂一段的代价是那一段的数据永远不存在。
+        # 参考文献那类全是数字的段落，靠上面的标题判据挡掉，不靠数字判据。
+        if len(_LOOSE_NUM.findall(b)) >= min_numbers:
             out.append(b[:target * 2])
     return out
 

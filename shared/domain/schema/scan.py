@@ -205,6 +205,12 @@ _GREEK = {
 _TEXT_CMD = re.compile(_BS_RE + r'(?:text|mathrm|mathit|mathbf|rm|overline|bar|hat|vec)\s*')
 _CMD = re.compile(_BS_RE + r'([A-Za-z]+)')
 _SUBSUP = re.compile(r'[_^]\s*\{([^{}]*)\}')
+# 排版用的空格命令（`\;` `\,` `\!` `\:`）—— 不去掉会在正文里留下裸分号
+_SPACE_CMD = re.compile(_BS_RE + r'[;,:!> ]')
+# `10^{-10}` / `10 ^ -10` 里的幂次：**这个 `^` 必须留住**
+_EXP_RE = re.compile(r'(?<=\d)\s*\^\s*\{?\s*([-+−]?\d+)\s*\}?')
+# 光杆的 `10^-10`（前面没有「A ×」）
+_BARE_POW_RE = re.compile(r'(?<![\d.×xX*])\s*\b10\^([-+]?\d+)')
 
 
 def clean_label(text):
@@ -227,6 +233,44 @@ def clean_label(text):
     t = _CMD.sub(lambda m: _GREEK.get(m.group(1), ' '), t)
     t = t.replace('{', '').replace('}', '').replace(_BS, ' ')
     return re.sub(r'\s+', ' ', t).strip()
+
+
+def clean_body(md):
+    r"""**整段正文**里的 LaTeX → 数字探测器和模型都读得懂的写法。保留换行与表格行。
+
+    `clean_label` 的正文版。为什么必须有它（2026-09-08 实测，踩坑 #143）：
+    `clean_label` 是为表头写的，正文这条线从来没洗过 LaTeX，于是
+    `$10^{-10}\;\mathrm{M}$`、`$9.8 \pm 0.3$ MPa` 这些**根本没被认成数字**——
+    `split_chunks` 的「这段有没有 ≥2 个数」筛子把整段判成「没数字」直接丢掉，
+    模型连看都没看见。实测：P2Q5TYFR 只有 38% 的正文被喂进去，CL2HILJ9 只有 52%。
+
+    与 `clean_label` 的唯一区别：**不塌换行**（塌了 markdown 的段落与表格就没了），
+    只压同一行内的连续空格。
+    """
+    t = str(md or '')
+    if not t:
+        return ''
+    t = t.replace('$', ' ')
+    t = _SPACE_CMD.sub(' ', t)            # \; \, \! 这类排版空格，先去掉反斜杠
+    t = _TEXT_CMD.sub(' ', t)
+    # **指数要留住 `^`**：`10^{-10}` 塌成 `10-10` 就变成了一个「区间」，
+    # 数字探测器和人都会读错。先把幂次单独接出来，再让下面的规则去处理下标。
+    t = _EXP_RE.sub(lambda m: '^' + m.group(1).replace('−', '-'), t)
+    t = _SUBSUP.sub(lambda m: m.group(1), t)
+    # 只塌下标与「字母上标」；**数字上标（幂次）刚保住，别在这里又吃掉**
+    t = re.sub(r'_\s*([A-Za-z0-9+-])', lambda m: m.group(1), t)
+    t = re.sub(r'\^\s*([A-Za-z])', lambda m: m.group(1), t)
+    t = _CMD.sub(lambda m: _GREEK.get(m.group(1), ' '), t)
+    t = t.replace('{', '').replace('}', '').replace(_BS, ' ')
+    # 光杆的 `10^-10` 补成 `1×10^-10` —— 数值正则认得后者，认不得前者。
+    t = _BARE_POW_RE.sub(
+        lambda m: (' ' if m.group(0)[:1].isspace() else '')
+        + '1' + chr(215) + '10^' + m.group(1), t)
+    # 千分位空格：`40 000 g/mol` 不并起来会被读成 40（实测漏过一条金标）
+    # 误差棒剥掉：`9.8 ± 0.3 MPa` 不剥会被读成 0.3（±0.3 才是被当成值的那个）
+    t = re.sub(r'\s*[±]\s*\d+(?:\.\d+)?', '', t)
+    t = re.sub(r'(?<=\d)[  ](?=\d{3}(?!\d))', '', t)
+    return re.sub(r'[ 	]+', ' ', t)
 
 
 def _known_property(name):
