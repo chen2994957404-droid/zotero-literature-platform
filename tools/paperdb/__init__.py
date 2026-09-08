@@ -21,7 +21,8 @@
   + shared.domain.schema（有哪些字段、来源档次、性能字符串怎么拆成数）
 
 两张表：
-    papers      一篇一行，schema 的每个字段一列，外加 tier / source / si_used / schema_ver
+    papers      一篇一行，schema 的每个字段一列，外加 zotero_key / tier / source /
+                si_used / schema_ver
     properties  一条性能一行（key, name, value, value_max, unit, cmp, raw）—— 能比大小的那张
 
 **对外契约**（别的地方只许调这些；`cli.py` / `mcp.py` 也只许调这些）：
@@ -57,7 +58,12 @@ from shared.domain.schema import scan
 # schema 的字段都存成 TEXT（列表字段 join 成一行文本，原样可读）
 _FIELDS = list(schema.SCHEMA.keys())
 
-_PAPER_COLS = (['key', 'title', 'doi', 'tier', 'source', 'si_used', 'schema_ver',
+# 'key' 是**来源无关的文献 id**（2026-09-07 起，见 shared/kernel/paths.py）：
+# 可能是 Zotero 编号、OpenAlex id，也可能是由 DOI 生成的。
+# 'zotero_key' 单独一列，答的是另一个问题 ——「这篇在不在他自己的库里」。
+# 两边对账靠 'doi'，不靠 'key'。
+_PAPER_COLS = (['key', 'title', 'doi', 'zotero_key', 'tier', 'source', 'si_used',
+                'schema_ver',
                 'is_review', 'journal', 'issn', 'journal_tier', 'publisher',
                 'model'] + _FIELDS)
 _SAMPLE_COLS = ['key', 'sample_id', 'composition', 'preparation', 'dynamic_bond',
@@ -69,9 +75,10 @@ _CURVE_COLS = ['key', 'fig', 'series', 'chart_type', 'x_label', 'x_unit', 'y_lab
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS papers (
-  key         TEXT PRIMARY KEY,
+  key         TEXT PRIMARY KEY,   -- 来源无关的文献 id
   title       TEXT,
-  doi         TEXT,
+  doi         TEXT,                -- 跨来源对账就靠它
+  zotero_key  TEXT,                -- 非空 = 这篇在用户自己的 Zotero 库里
   tier        TEXT,
   source      TEXT,
   si_used     INTEGER,
@@ -131,6 +138,7 @@ CREATE INDEX IF NOT EXISTS idx_meas_name    ON measurements(name);
 CREATE INDEX IF NOT EXISTS idx_meas_value   ON measurements(value);
 CREATE INDEX IF NOT EXISTS idx_meas_key     ON measurements(key, sample_id);
 CREATE INDEX IF NOT EXISTS idx_papers_tier  ON papers(tier);
+CREATE INDEX IF NOT EXISTS idx_papers_zkey  ON papers(zotero_key);
 """ % (',\n  '.join(f'"{f}" TEXT' for f in _FIELDS))
 
 _conn_cache = {}
@@ -352,11 +360,13 @@ def _table_measurements(keys):
     """
     meas, comp = {}, {}
     for key in sorted(keys):
-        # 方向层的 key 是 OpenAlex 的（`W1081348687`），不是 Zotero 的 8 位 key，
-        # 本来就没有全文 —— 不先滤掉，`paths.fulltext()` 会直接抛 BadKeyError。
-        if not paths.KEY_RE.match(key.upper()):
-            continue
-        p = paths.fulltext(key)
+        # 只扫**本地有全文**的那些。2026-09-07 前这里写的是「不是 8 位 Zotero
+        # 编号就跳过」—— 那是身份证锁死在 Zotero 上留下的补丁，会漏掉
+        # 「有全文但不在他库里」的文献。现在只问一件该问的事：全文在不在盘上。
+        try:
+            p = paths.fulltext(key)
+        except paths.BadKeyError:
+            continue               # id 本身不合契约（空串、脏数据），当这篇不存在
         if not os.path.exists(p):
             continue
         try:
@@ -435,7 +445,10 @@ def rebuild(records=None, log=print):
         conn.execute('DELETE FROM curves')
         for r in records:
             key = r.get('key') or ''
-            row = [key, r.get('title', ''), r.get('doi', ''),
+            # 这篇在不在他自己的库里：id 本身就是 Zotero 编号的直接算数，
+            # 别的来源则看记录里有没有登记（将来由「对账」那一步按 DOI 回填）
+            zkey = key if paths.is_zotero_key(key) else (r.get('zotero_key') or '')
+            row = [key, r.get('title', ''), r.get('doi', ''), zkey,
                    schema.tier_label(r), r.get('source', schema.SOURCE_FINE),
                    1 if r.get('si_used') else 0, r.get('schema_ver'),
                    1 if schema.is_review(r) else 0]

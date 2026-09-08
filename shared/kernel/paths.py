@@ -24,6 +24,7 @@
     · 函数**不做 I/O**，除非显式传 create=True。
     · 只依赖标准库。
 """
+import hashlib
 import os
 import re
 
@@ -129,14 +130,36 @@ def direction_bands():
     return out
 
 
-# ── Zotero item key 的形状 ────────────────────────────────────────────
-# 数据契约保证「文件夹名 = Zotero item key，8 位字母数字」。
-# 这里把它变成可执行的校验，防止有人拿标题、路径当 key 传进来。
-KEY_RE = re.compile(r'^[A-Z0-9]{8}$')
+# ── 文献 id 的形状（2026-09-07 放宽，用户拍板）──────────────────────
+# **原来这里写死 `^[A-Z0-9]{8}$` —— 即「文献的身份证 = Zotero 条目编号」。**
+# 直接后果：一篇文献想在库里有位置，必须先是用户 Zotero 里的一条。
+# 于是方向层那上万条公开文献只能另开一个目录、另起一套 id，
+# 并在 paperdb / digitize / extract 里到处写「不是 8 位就跳过」的补丁。
+#
+# 用户的判断（2026-09-07）：
+#   **数据库是这个领域的公共账本，Zotero 是他个人的阅读桌。**
+#   账本不该被书架的编号限制住 —— Zotero 编号降级成「这篇我个人收藏了」这个属性。
+#
+# 所以身份证改成**来源无关的文献 id**，三种合法形状：
+#   `2T6H4S3D`                  Zotero 条目编号（8 位大写字母数字）—— 老数据原样有效
+#   `W2741809687`               OpenAlex 作品 id —— 方向层本来就在用
+#   `doi_10.1021-acs.macro...`  由 DOI 生成（见 `paper_id_from_doi`）—— 两边都没有时用
+# 加一种来源 = 往 `_ID_PREFIXES` 里加一个前缀，不用改别的地方。
+#
+# **对账靠 DOI，不靠 id**：同一篇文献在不同来源下可能拿到不同 id，
+# 谁跟谁是同一篇由 `papers.doi` 回答（见 tools/paperdb）。
+ZOTERO_KEY_RE = re.compile(r'^[A-Z0-9]{8}$')
+OA_ID_RE = re.compile(r'^W\d{4,12}$')
+_ID_PREFIXES = ('doi',)
+SLUG_ID_RE = re.compile(r'^(?:%s)_[a-z0-9][a-z0-9._-]{0,79}$' % '|'.join(_ID_PREFIXES))
+
+# 旧名字保留：既有代码里 `KEY_RE.match(x)` 问的都是「这是不是 Zotero 编号」，
+# 那个含义没变，变的只是「文献 id 不再只有这一种」。新代码请用 is_zotero_key()。
+KEY_RE = ZOTERO_KEY_RE
 
 
 class BadKeyError(errors.BadInputError):
-    """传进来的东西不是合法的 Zotero item key。
+    """传进来的东西不是合法的文献 id。
 
     归入 `shared.kernel.errors.BadInputError`：调用方传错了，重试没有意义。
     （它同时仍是 ValueError，旧代码里 `except ValueError` 照样接得住。）
@@ -144,15 +167,56 @@ class BadKeyError(errors.BadInputError):
 
 
 def check_key(key):
-    """校验并规范化一个 item key，返回大写形式。不合法就抛 BadKeyError。
+    """校验并规范化一个文献 id。不合法就抛 BadKeyError。
 
-    这是数据契约第 1 条（文件夹名 = 8 位字母数字 item key）的执行点。
+    这是数据契约第 1 条（一篇文献一个目录，目录名 = 文献 id）的执行点。
+    Zotero 编号与 OpenAlex id 归一成大写，前缀式 id 归一成小写 ——
+    **同一篇永远只算出同一个目录名**，这是全系统不错位的前提。
     """
-    k = str(key).strip().upper()
-    if not KEY_RE.match(k):
-        raise BadKeyError(
-            f'不是合法的 Zotero item key: {key!r}（应为 8 位字母数字，如 2T6H4S3D）')
-    return k
+    s = str(key).strip() if key is not None else ''
+    up = s.upper()
+    if ZOTERO_KEY_RE.match(up) or OA_ID_RE.match(up):
+        return up
+    low = s.lower()
+    if SLUG_ID_RE.match(low):
+        return low
+    raise BadKeyError(
+        f'不是合法的文献 id: {key!r}'
+        f'（应为 8 位 Zotero 编号如 2T6H4S3D、OpenAlex id 如 W2741809687，'
+        f'或 doi_ 开头的 id —— 用 paths.paper_id_from_doi() 生成）')
+
+
+def is_zotero_key(key):
+    """这个 id 是不是 Zotero 条目编号（即：这篇在用户自己的库里）？
+
+    取代此前散在各处的 `KEY_RE.match(k)` —— 那个写法问的是形状，
+    真正想知道的是**这篇在不在他的阅读桌上**。名字写对了，读代码的人才不会误解。
+    """
+    try:
+        return bool(ZOTERO_KEY_RE.match(check_key(key)))
+    except BadKeyError:
+        return False
+
+
+_DOI_PREFIX_RE = re.compile(r'^(?:https?://(?:dx\.)?doi\.org/|doi:)', re.I)
+
+
+def paper_id_from_doi(doi):
+    """DOI → 文献 id（`10.1021/acs.x` → `doi_10.1021-acs.x`）。
+
+    为什么不直接拿 DOI 当目录名：DOI 里的 `/` 是路径分隔符，Windows 上根本建不出来。
+    所以做一次**只进不出的**净化：非 `a-z0-9._-` 的字符一律换成 `-`。
+    净化不可逆是故意的 —— 目录名只需要「唯一且稳定」，
+    **规范的 DOI 原文另存在 `meta.json` 与 `papers.doi` 里**，要引用时取那份。
+    太长的截断后缀一段哈希，保证仍然唯一。
+    """
+    d = _DOI_PREFIX_RE.sub('', str(doi or '').strip()).strip().lower()
+    if not d.startswith('10.') or len(d) < 8:
+        raise BadKeyError(f'不像是 DOI: {doi!r}（应形如 10.1021/acs.macromol.1c00123）')
+    slug = re.sub(r'-{2,}', '-', re.sub(r'[^a-z0-9._-]+', '-', d)).strip('-.')
+    if len(slug) > 72:
+        slug = slug[:64] + '-' + hashlib.sha1(d.encode('utf-8')).hexdigest()[:8]
+    return check_key('doi_' + slug)
 
 
 # ── 单篇文献的产物（★ 标记的是下游可以依赖的稳定文件）────────────────
@@ -340,13 +404,15 @@ def journals():
 
 
 # ── 方向层：摘要抽出来的记录 ──────────────────────────────────────────
-# 为什么另起一个目录而不是塞进 structured/：那边一个文件对应一篇**库里的**文献
-# （文件名就是 8 位 Zotero key）；方向层的料是 OpenAlex 上的公开文献，
-# 库里根本没有它们，也不该为了「像」而伪造一个 Zotero key。
+# 为什么另起一个目录而不是塞进 structured/：两边的**代价与可信度**不同 ——
+# structured/ 是读全文（+SI）抽的，abstracts/ 只读得到摘要。
+# 分目录 = 分档，`tier` 才有据可依。
+# （2026-09-07 前这里的理由是「方向层没有 Zotero key，不该伪造一个」；
+#  身份证放宽之后那个理由已经不成立了，但**分目录这件事仍然对**，理由换成上面这条。）
 # 两个目录、同一种记录格式（schema 的 samples/measurements），
 # `tools/paperdb` 两边都读 —— 于是方向层与细节层住进同一张表，靠 tier 分辨。
 ABSTRACTS = os.path.join(SERVING, 'abstracts')
-_OA_RE = re.compile(r'^W\d{4,12}$')
+_OA_RE = OA_ID_RE
 
 
 def check_work_id(work_id):
@@ -433,7 +499,10 @@ def junk_list(ext='json'):
 
 # ── 遍历 ──────────────────────────────────────────────────────────────
 def all_keys():
-    """列出所有已归档文献的 key（已按契约过滤掉非法目录名）。
+    """列出所有已归档文献的 id（已按契约过滤掉非法目录名）。
+
+    **id 不一定是 Zotero 编号**（2026-09-07 起）：库里可能有他没收藏的文献。
+    要挑出「他自己库里那些」，用 `is_zotero_key()` 过滤。
 
     以 **curated/** 为准：只解析了没精读的半成品不算「已归档」，
     要查那种半成品用 host/doctor/artifact_gaps。
@@ -442,8 +511,12 @@ def all_keys():
         return []
     keys = []
     for name in os.listdir(CURATED):
-        if KEY_RE.match(name.upper()) and os.path.isdir(os.path.join(CURATED, name)):
-            keys.append(name.upper())
+        if not os.path.isdir(os.path.join(CURATED, name)):
+            continue
+        try:                       # 认所有合法文献 id，不再只认 Zotero 编号
+            keys.append(check_key(name))
+        except BadKeyError:
+            continue               # 不合契约的目录名（临时文件、手工建的）一律不算
     return sorted(keys)
 
 
