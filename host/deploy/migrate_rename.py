@@ -24,8 +24,11 @@ except Exception:
     pass
 
 import io
+import json
 import shutil
 import subprocess
+
+_NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
 
 DEV = r'D:\dev'
 OLD_NAME = 'zotero-literature-platform'
@@ -103,6 +106,116 @@ def s1_toolbox(root):
         skip(lab, '两个都已经在里面了')
 
 
+def _all_procs():
+    """问系统要一份进程清单（pid / 父 pid / 名字 / 命令行）。
+
+    不用第三方库：走 PowerShell 的 CIM 查询，结果按 JSON 拿回来。
+    查不到就返回空清单 —— 这一步是**帮忙**，查不动也不该挡住搬迁。
+    """
+    ps = ('Get-CimInstance Win32_Process | Select-Object '
+          'ProcessId,ParentProcessId,Name,CommandLine | ConvertTo-Json -Compress')
+    try:
+        r = subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-Command', ps],
+                           capture_output=True, text=True, encoding='utf-8',
+                           errors='replace', timeout=60, creationflags=_NOWIN)
+        data = json.loads(r.stdout or '[]')
+    except Exception:
+        return []
+    return data if isinstance(data, list) else [data]
+
+
+def _blockers():
+    """谁占着项目文件夹？返回 [(pid, 名字, 命令行)]。
+
+    **判据是命令行里提到项目路径**：一个进程只要工作目录在文件夹里，
+    Windows 就不让重命名这个文件夹，而工作目录是从启动它的 .bat 继承来的。
+
+    典型元凶是 `pythonw.exe host/panel/launcher.py` —— 控制面板的后台进程。
+    `pythonw` **没有窗口**，用户在任务栏上根本看不见它，
+    所以「关掉 Claude Code 再试」这种提示对他毫无用处
+    （2026-09-08 第一次真跑就栽在这上面，见踩坑 #146）。
+
+    要排除「我自己这条线」：本脚本从 %TEMP% 跑，自己的命令行里没有项目路径，
+    但启动它的那个 .bat 有 —— 所以把自己的**祖先进程**整条链剔掉。
+    """
+    procs = _all_procs()
+    if not procs:
+        return []
+    parent = {p.get('ProcessId'): p.get('ParentProcessId') for p in procs}
+    mine, pid = set(), os.getpid()
+    while pid and pid not in mine:
+        mine.add(pid)
+        pid = parent.get(pid)
+
+    key = OLD_NAME.lower()
+    out = []
+    for p in procs:
+        cmd = p.get('CommandLine') or ''
+        if key in cmd.lower() and p.get('ProcessId') not in mine:
+            out.append((p['ProcessId'], p.get('Name') or '?', cmd))
+    return out
+
+
+# 平台自己的后台进程：可以放心停掉，用户随时能重新双击打开
+_OURS = ('host\\panel', 'host/panel', 'host.panel',
+         'host\\watcher', 'host/watcher', 'host.watcher')
+
+
+def _friendly(name, cmd):
+    """把进程翻译成用户认得出的东西。
+
+    直接甩十行 `bash.exe` 给一个不懂编程的人 = 等于没说。
+    他需要的是「哦，那是 Claude Code，我去关掉」。
+    """
+    low = (name + ' ' + cmd).lower()
+    if 'shell-snapshots' in low or 'claude' in low:
+        return 'Claude Code'
+    if name.lower() in ('cmd.exe', 'powershell.exe', 'pwsh.exe',
+                        'windowsterminal.exe', 'conhost.exe'):
+        return '命令行窗口'
+    if name.lower() in ('code.exe', 'devenv.exe', 'pycharm64.exe',
+                        'sublime_text.exe', 'notepad++.exe'):
+        return '编辑器'
+    if name.lower() == 'explorer.exe':
+        return '资源管理器（停在这个文件夹里的窗口）'
+    return name
+
+
+def s0_free_folder():
+    """把占着项目文件夹的进程清掉，否则第 2 步的改名一定失败。"""
+    lab = step('第 0 步：腾出文件夹（关掉占着它的后台程序）')
+    blockers = _blockers()
+    if not blockers:
+        skip(lab, '没有程序占着，可以直接改名')
+        return True
+
+    ours, others = [], []
+    for pid, name, cmd in blockers:
+        (ours if any(k in cmd.lower() for k in _OURS) else others).append((pid, name, cmd))
+
+    for pid, name, cmd in ours:
+        which = '控制面板' if 'panel' in cmd.lower() else '精读监听'
+        print(f'   → 停掉平台自己的后台进程：{name} (pid {pid}，{which})')
+        subprocess.run(['taskkill', '/PID', str(pid), '/F', '/T'],
+                       capture_output=True, creationflags=_NOWIN)
+
+    if others:
+        # 按「用户认得出的名字」归并，而不是一行一个进程
+        groups = {}
+        for pid, name, cmd in others:
+            groups.setdefault(_friendly(name, cmd), []).append(pid)
+        print('\n   ⚠ 下面这些还占着项目文件夹，我不敢替你关 ——'
+              '\n     请你自己关掉它们，然后再双击一次本文件：\n')
+        for label, pids in sorted(groups.items()):
+            n = f'（{len(pids)} 个进程）' if len(pids) > 1 else ''
+            print(f'      ● {label}{n}')
+        fail(lab, f'还有 {len(groups)} 类程序占着文件夹，没法改名')
+        return False
+
+    ok(lab, f'停掉了 {len(ours)} 个平台自己的后台进程')
+    return True
+
+
 def s2_rename():
     """把项目文件夹改名。"""
     lab = step('第 2 步：文件夹改名')
@@ -115,8 +228,15 @@ def s2_rename():
     try:
         os.rename(OLD_ROOT, NEW_ROOT)
     except OSError as e:
-        fail(lab, f'改不动：{e}\n      （多半是还有程序占着这个文件夹 —— '
-                  f'关掉 Claude Code、编辑器、命令行窗口再试）')
+        # 别再说「多半是有程序占着」—— 用户看不见一个没有窗口的进程，
+        # 这种提示等于没提示（踩坑 #146）。把真凶的名字列出来。
+        names = [f'pid {p} {n}' for p, n, _ in _blockers()]
+        if names:
+            hint = '还占着它的是：' + '、'.join(names)
+        else:
+            hint = ('没查到是谁占着 —— 也可能是杀毒软件或资源管理器正在扫这个文件夹，'
+                    '等十几秒再双击一次本文件试试')
+        fail(lab, f'改不动：{e}\n      {hint}')
         return False
     ok(lab, f'{OLD_NAME} → {NEW_NAME}')
     return True
@@ -208,8 +328,10 @@ def main():
     print('\n这一步只动 A 机（你现在这台）。B 机完全不受影响。')
 
     root = NEW_ROOT if os.path.isdir(NEW_ROOT) else OLD_ROOT
+    # 先腾文件夹再干别的 —— 腾不出来就别去撞改名，那只会再抱怨一遍同样的话
+    freed = s0_free_folder() or os.path.isdir(NEW_ROOT)
     s1_toolbox(root)
-    if s2_rename() or os.path.isdir(NEW_ROOT):
+    if freed and (s2_rename() or os.path.isdir(NEW_ROOT)):
         s3_memory()
         s4_global_skills()
         s5_machines_toml()
@@ -220,6 +342,15 @@ def main():
     print('=' * 62)
     for f in _fail:
         print('  ❌ ' + f)
+
+    if _fail:
+        # 失败时**别**打印后续清单：那会叫用户去打开一个还不存在的新文件夹。
+        # 什么都没改坏，把这句说清楚比什么都重要。
+        print("""
+   这次什么都没有改动 —— 项目还在原来的位置，一切照旧。
+   按上面说的把占着文件夹的程序关掉，再双击一次本文件就行。
+""")
+        return 1
 
     print("""
 接下来还要你自己做的（脚本碰不了的）：
@@ -235,10 +366,13 @@ def main():
        git remote set-url origin  <新地址>
        git remote set-url backup  <新地址>
 
-  4. B 机这次没动，还是老路径老名字，照常工作。
+  4. 刚才如果停掉了控制面板的后台进程，重新双击一次
+     launch\\控制面板.bat 就回来了（不用管，用到再开）。
+
+  5. B 机这次没动，还是老路径老名字，照常工作。
      等第二步（搬 tools/ 那四条线）时再一起处理。
 """)
-    return 1 if _fail else 0
+    return 0
 
 
 if __name__ == '__main__':
