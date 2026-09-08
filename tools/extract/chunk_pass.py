@@ -62,6 +62,68 @@ def _digits(text):
             if len(t.replace('.', '')) >= 2]
 
 
+# ── 模型把三样东西装错了盒子时，脚本按内容认回来 ──────────────────────
+# 2026-09-08 实测（`gemma3:1b`，一篇 13 段）：34 条被判「没有数值」，
+# 逐条看下来**模型其实认对了** —— `43.1 MPa`、`600% strain`、`2059 kJ m^-2`
+# 都是那段里真实的性能数据，它只是把值写进了 `name`、把性能名写进了 `value_text`。
+#
+# 这正是「模型只做判断、脚本负责把关」该覆盖的情况：
+# **判断（这个数是不是性能）它做对了，装箱（哪个字段放哪个）它做错了。**
+# 装箱是纯格式活，脚本比任何模型都强 —— 三个格子里：
+#   · 能解析出「数值+单位」的那个 → 值
+#   · 词表认得出是性能名的那个   → 性能
+#   · 在名单里、或在这段原文里逐字出现的那个 → 样品
+# 每一步仍然要过接地校验，**认盒子不会放宽「数字必须在原文里」这条**。
+_MASSY_UNITS = ('g', 'mg', 'kg', 'ml', 'l', 'mol', 'mmol', 'μl', 'ul')
+
+
+def _is_known_property(name):
+    """词表认得出这是个性能名吗？（只问名字，不碰数值）"""
+    n = schema.normalize_property_name(name)
+    return bool(n) and n in schema.PROPERTY_ALIASES
+
+
+def _is_recipe(name, parsed):
+    """这是投料量（配方），不是性能。
+
+    判据与 `scan.py` 一致：单位是 wt%/phr 这类配比单位，或 g/mL 这类用量单位，
+    **且性能名词表不认识它**。`2.0 g 的 PUU sheet` 属于这一类 ——
+    它是「怎么做出来的」，不是「做出来有多强」。
+    """
+    if _is_known_property(name):
+        return False
+    unit = str(parsed.get('unit') or '').strip().lower()
+    return unit in scan._COMPOSITION_UNITS or unit in _MASSY_UNITS
+
+
+def _unscramble(m, samples, src, chunk):
+    """三个字段按内容重新归位。认不出来就返回 None（认不出就丢，不猜）。"""
+    fields = [str(m.get('sample_id') or ''), str(m.get('name') or ''),
+              str(m.get('value_text') or '')]
+    fields = [f.strip() for f in fields if f.strip()]
+    val_txt = val_parsed = None
+    for f in fields:                       # 值：能解析出数值、且数字在原文里
+        text = scan.clean_value_text(f)
+        toks = _digits(text)
+        if not toks or not all(t in src or t.rstrip('0').rstrip('.') in src for t in toks):
+            continue
+        pr = schema.parse_property(text)
+        if pr['value'] is not None:
+            val_txt, val_parsed = text, pr
+            break
+    if val_parsed is None:
+        return None
+    rest = [f for f in fields if scan.clean_value_text(f) != val_txt]
+    name = next((f for f in rest if _is_known_property(f)), '')
+    sid = next((f for f in rest if f in samples), '')
+    if not sid:                            # 名单里没有，但原文里逐字有 → 不是编的
+        sid = next((f for f in rest
+                    if f != name and len(f) >= 2 and f in chunk), '')
+    if not name and not sid:
+        return None                        # 三个格子里只认得出一个数 —— 没法用
+    return sid or 'unknown', name, val_txt
+
+
 def validate(rows, chunk, samples, table_rows=()):
     """模型这一段的输出 → 留得下的那些。返回 (留下的, 各种理由丢掉的计数)。
 
@@ -81,7 +143,8 @@ def validate(rows, chunk, samples, table_rows=()):
     seen_table = {(t.get('sample_id'), t.get('name'), t.get('value'))
                   for t in table_rows}
     kept = []
-    drop = {'编的数字': 0, '编的样品': 0, '没有数值': 0, '跟表格重了': 0}
+    drop = {'编的数字': 0, '编的样品': 0, '没有数值': 0, '跟表格重了': 0,
+            '配方投料量': 0}
     for m in rows:
         if not isinstance(m, dict):
             continue
@@ -90,18 +153,37 @@ def validate(rows, chunk, samples, table_rows=()):
         text = scan.clean_value_text(m.get('value_text'))
         sid = str(m.get('sample_id') or 'unknown').strip() or 'unknown'
         toks = _digits(text)
-        if not toks:
-            drop['没有数值'] += 1
-            continue
-        if not all(t in src or t.rstrip('0').rstrip('.') in src for t in toks):
-            drop['编的数字'] += 1
-            continue
-        if sid not in allowed:
-            drop['编的样品'] += 1
-            continue
-        parsed = schema.parse_property(('%s: %s' % (name, text)) if name else text)
+        grounded = bool(toks) and all(
+            t in src or t.rstrip('0').rstrip('.') in src for t in toks)
+        parsed = (schema.parse_property(('%s: %s' % (name, text)) if name else text)
+                  if grounded else {'value': None})
         if parsed['value'] is None:
-            drop['没有数值'] += 1
+            # 按字段面值读不通 —— 可能只是装错了盒子，按内容认一次再判
+            fixed = _unscramble(m, samples, src, str(chunk))
+            if fixed is None:
+                # 分清两件事：**模型给了数字但那数字不在原文里**（编的），
+                # 还是**三个格子里压根没有数字**（没答上来）。
+                # 只看 value_text 会把前者错记成后者 —— 装错盒子时数字在别的格里。
+                all_toks = _digits(' '.join(
+                    str(m.get(f) or '') for f in ('sample_id', 'name', 'value_text')))
+                drop['编的数字' if all_toks else '没有数值'] += 1
+                continue
+            sid, name, text = fixed
+            parsed = schema.parse_property(('%s: %s' % (name, text)) if name else text)
+            if parsed['value'] is None:
+                drop['没有数值'] += 1
+                continue
+            toks = _digits(text)          # 出处要按**认回来之后**的值去定位
+        if _is_recipe(name, parsed):
+            # **先判配方再判样品**：`2.0 g 的 PUU sheet` 无论挂在谁名下都不是性能。
+            # 顺序反了会把它记成「编的样品」，于是统计告诉你「模型爱编样品名」，
+            # 而真相是「模型把投料量当成了性能」—— 两者要改的地方完全不同。
+            drop['配方投料量'] += 1
+            continue
+        if sid not in allowed and sid not in str(chunk):
+            # 名单外的样品名，**只要这段原文里逐字有，就不算编的** ——
+            # 名单来自表格，而正文常写表格里没有的写法（PUU-1 vs PUU）。
+            drop['编的样品'] += 1
             continue
         canon = schema.normalize_property_name(name or parsed['name'])
         if (sid, canon, parsed['value']) in seen_table:
