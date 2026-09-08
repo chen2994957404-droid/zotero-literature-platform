@@ -59,10 +59,19 @@ def _same_sample(a, b, single=False):
 
 
 def _same_name(a, b):
-    """性能名对得上吗。一端包含另一端也算（`tensile strength` vs `ultimate tensile strength`）。"""
+    """性能名对得上吗。
+
+    **先过一遍项目自己的词表再比**（2026-09-08 加）：`mn` 与
+    `number-average molecular weight` 在 `PROPERTY_ALIASES` 里本来就是同一条，
+    不归一就会把「抽对了」判成「错标」—— 尺子比被量的东西还糙。
+    归一之后再退回字面包含（`tensile strength` vs `ultimate tensile strength`）。
+    """
+    from shared.domain import schema
     x, y = _norm(a), _norm(b)
     if not x or not y:
         return False
+    if schema.normalize_property_name(x) == schema.normalize_property_name(y):
+        return True
     return x == y or x in y or y in x
 
 

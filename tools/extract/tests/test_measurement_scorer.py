@@ -100,3 +100,21 @@ def test_多体系论文里unknown照样不算对():
     s = M.score_paper(g, [{'sample_id': 'unknown', 'name': 'plateau elastic modulus',
                            'value': 243, 'unit': 'kPa'}])
     assert s['recall'] == 0.0, '多体系论文里 unknown 不能算抽对'
+
+
+def test_同义的性能名不算错标():
+    """`mn` 与 `number-average molecular weight` 在项目词表里就是同一条。
+
+    尺子不走词表的话，会把抽对了的判成错标 —— 比被量的东西还糙。
+    """
+    g = _gold('P2Q5TYFR')
+    s = M.score_paper(g, [{'sample_id': 'unknown', 'name': 'mn',
+                           'value': 40000, 'unit': 'g/mol'}])
+    assert s['recall'] > 0 and s['mislabel_rate'] == 0.0, s
+
+
+def test_真正的错标照样抓得住():
+    g = _gold('CL2HILJ9')
+    s = M.score_paper(g, [{'sample_id': 'SPU/10D-SiO2', 'name': 'storage modulus',
+                           'value': 19.5, 'unit': 'MPa'}])
+    assert s['mislabel_rate'] == 1.0, '拉伸强度标成储能模量必须算错'
