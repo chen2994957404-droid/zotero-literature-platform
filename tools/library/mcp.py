@@ -66,7 +66,7 @@ def register(server):
         lambda a: _fulltext(library.fulltext(
             a['itemKey'], max_chars=a.get('maxChars', library.MAX_CHARS))))
 
-    # ── 菜单与切片（2026-09-08 加）──────────────────────────────────
+    # ── 菜单与分组（2026-09-08 加）──────────────────────────────────
     # 为什么要这两个：`library_fulltext` 一口气吐几万字符，模型读三篇就把
     # 上下文吃掉一半。先给菜单（几百 token）、再按地址取需要的那两三节，
     # 成本大约是整篇的三十分之一。两个都只读免费，所以可以是 tool。

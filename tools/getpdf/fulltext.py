@@ -157,7 +157,7 @@ def one(doi, zotero_index=None, allow_fetch=True):
 
 def _fetch_one(doi):
     """真正去取。**单独一个函数是为了能在测试里替换掉**（别真敲出版商）。"""
-    from tools import getpdf                  # 同一个切片内，不违反工具隔离
+    from tools import getpdf                  # 同一个工具包内，不违反工具隔离
     return getpdf.fetch_one(doi)
 
 

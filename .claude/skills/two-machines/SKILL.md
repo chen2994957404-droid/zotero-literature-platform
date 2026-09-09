@@ -56,7 +56,7 @@ description: 涉及写回 Zotero、跑花钱的批量作业、起常驻服务（
 软的是 `role.require_prod` 会核对 `ZOTERO_WEB_USER_ID == ZOTERO_TEST_USER_ID`，
 对不上就拒绝 —— 挡的是「配置切回真实账号却忘了改角色」。
 
-**换账号的血泪提醒**：要么新建 profile + 新数据目录，要么**先退出账号、再清空本地数据**。
+**换账号的实测教训**：要么新建 profile + 新数据目录，要么**先退出账号、再清空本地数据**。
 顺序反了（登着旧账号做「重置」）可能把本地状态推上服务器，清空真实库并同步到 B。
 
 ## 四、连 B 机（A 能直接连了，2026-08-28）
@@ -72,7 +72,7 @@ emote-machine`，
 python toolbox/remote-machine/remote.py check     # ← 用这个，别手敲 ssh
 ```
 
-它把三个用血换来的细节包好了：**用户名是 `Administrator` 不是计算机名**（踩坑 #74）、
+它把三个实测得出的细节包好了：**用户名是 `Administrator` 不是计算机名**（踩坑 #74）、
 中文要套 UTF-8 外壳、连不上时把「该往哪查、不该往哪查」直接打出来（踩坑 #97）。
 B 机的地址、账号、任务名、日志位置都在 `~/.remote-machine/machines.toml` 里（机器名 `zotero-b`）。
 

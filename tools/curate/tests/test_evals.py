@@ -75,7 +75,7 @@ def test_每条金标都写了为什么要验它(g):
 
 
 def test_SI判据全项目只有一份():
-    """宪法铁律 1。
+    """架构准则铁律 1。
 
     2026-09-01 之前有两份（`zotero_client.SUPP_PAT` 与 `curate.rename.SUPP`），
     而且**内容不一样** —— 同一个 `..._MOESM1_ESM.pdf`，精读线认得出是 SI，

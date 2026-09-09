@@ -51,7 +51,7 @@ def main():
     else:
         print('  [FAIL] out() 没有正确兜底')
 
-    # 5. Windows 上必须带「不弹窗」标志 —— 这是本积木存在的首要理由
+    # 5. Windows 上必须带「不弹窗」标志 —— 这是本模块存在的首要理由
     if os.name == 'nt':
         if _NO_WINDOW != 0:
             print('  [PASS] 已启用不弹窗标志'); ok += 1

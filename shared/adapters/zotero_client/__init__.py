@@ -41,12 +41,12 @@ except Exception:
 STORAGE_DIR = os.environ.get('ZOTERO_STORAGE', _STORAGE)
 # ⚠ 地址必须走 config（踩坑 #46）：原来只读 ZOTERO_LOCAL_API 这个键，
 # 而控制面板存的是 ZOTERO_API_HOST —— 键名对不上，用户在面板里改地址永远不生效，
-# 建在本积木之上的 MCP 服务也跟着一起失效。ZOTERO_LOCAL_API 保留作旧配置兼容。
+# 建在本模块之上的 MCP 服务也跟着一起失效。ZOTERO_LOCAL_API 保留作旧配置兼容。
 LOCAL_API = (os.environ.get('ZOTERO_LOCAL_API')
              or (_gsite('ZOTERO_API_HOST') or 'http://localhost:23119') + '/api')
 _H = {'Zotero-Allowed-Request': 'true'}
 
-# 「这个附件是补充材料吗」——**全项目唯一的判据**（宪法铁律 1）。
+# 「这个附件是补充材料吗」——**全项目唯一的判据**（架构准则铁律 1）。
 #
 # 2026-09-01 之前有两份：这一份，和 `tools/curate/rename.py` 里的 `SUPP`。
 # 两份内容还不一样：这份有踩坑 #15 的 Springer `MOESM/ESM` 补丁，那份没有；
@@ -305,7 +305,7 @@ def alive(timeout=6):
     """本地 API 通不通。Zotero 没开就是 False —— 不抛异常，供调用方决定跳过还是拉起。
 
     R3 窗（2026-08-30）收进来的：库房维护的定时同步原本自己 urlopen 探活，
-    那是「联网只在 adapters」的破口（红线 #5）。探活也是联网。
+    那是「联网只在 adapters」的破口（强制规范 #5）。探活也是联网。
     """
     try:
         zget(f'/users/{_local_uid()}/items/top?limit=1')
@@ -348,7 +348,7 @@ def library_index():
 
 # ── 库房只读浏览（R4 窗从 host/mcp/zotero_server.py 收进来）───────────
 # 收进来的理由：那边原来自己拼 `/users/<id>/collections?...` 这类 Zotero API 路径、
-# 自己 urlopen 读 Total-Results 头 —— 那是「联网只在 adapters」的破口（红线 #5）。
+# 自己 urlopen 读 Total-Results 头 —— 那是「联网只在 adapters」的破口（强制规范 #5）。
 # API 路径长什么样、返回什么形状，是**外部世界的事**，只该有这一处知道。
 
 def count_of(path):

@@ -23,7 +23,7 @@ from shared.kernel import paths
 
 
 def item_data(key):
-    """取一条 Zotero 条目的 data 字段。走适配层，红线 #5。"""
+    """取一条 Zotero 条目的 data 字段。走适配层，强制规范 #5。"""
     return zotero.zget(f'/users/{zotero.USER_ID}/items/{key}')['data']
 
 

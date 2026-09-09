@@ -53,7 +53,7 @@ def build_index(force=False):
     now = time.time()
     if not force and _index_cache['t'] and now - _index_cache['t'] < CACHE_TTL:
         return _index_cache['titles'], _index_cache['dois']
-    # 取库存这件事本身在适配层（红线 #5：联网只在 adapters）。
+    # 取库存这件事本身在适配层（强制规范 #5：联网只在 adapters）。
     # 这里只负责「缓存 5 分钟」这一层编排，避免一次批量对照反复拉 Zotero。
     from shared.adapters.zotero_client import library_index
     titles, dois = library_index()   # Zotero 没开时它返回两个空集合，不抛异常

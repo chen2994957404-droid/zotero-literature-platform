@@ -30,8 +30,8 @@ from shared.kernel.log import get_logger
 print = get_logger('zotero_watcher')       # 保留 print 这个名字，下方几十处调用不用改
 
 # ===== 配置 =====
-# Zotero 的读取能力全部走公理件 —— 重构前这里重复实现了 zget / find_pdf /
-# has_si / SUPP_PAT，与 shared/adapters/zotero_client 里的同名实现并存（违反宪法铁律 1）。
+# Zotero 的读取能力全部走原子模块 —— 重构前这里重复实现了 zget / find_pdf /
+# has_si / SUPP_PAT，与 shared/adapters/zotero_client 里的同名实现并存（违反架构准则铁律 1）。
 from shared.adapters.zotero_client import (zget, find_pdf as _find_pdf, has_si,
                                     find_child_attachment, upload_attachment,
                                     put_local, USER_ID)

@@ -19,7 +19,7 @@
 | `load_curves(item_key)` / `save_curves(item_key, results)` | 读/存这篇抠过的曲线（`curated/<key>/curves.json`）|
 
 ⚠ **必须用云端大模型**：本地 7B 视觉模型会**编出看似合理的假数据**
-（宪法零号判据的反面教材 —— 编的数字最像事实）。
+（架构准则调研先行原则的反面教材 —— 编的数字最像事实）。
 
 配置：视觉模型经 llm_client 的 chat_vision，走 VISION_PROVIDER/DEEPSEEK_VISION_MODEL 等。
 成本策略：先用云端验证效果；后接本地视觉模型（OLLAMA_VISION_MODEL）实现零成本大规模。

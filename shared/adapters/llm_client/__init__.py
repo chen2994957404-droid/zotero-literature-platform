@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""llm_client · LLM 调用基础件（公理：文本 → LLM → 文本/JSON）
+"""llm_client · LLM 调用基础件（原子能力：文本 → LLM → 文本/JSON）
 
 职责：统一封装对大模型的调用。此前散在 9 个脚本、6 个函数各写各的
 （deepseek/ollama/call_llm/deepseek_json/ollama_json/llm_json），导致重复 +
-密钥注入混乱（踩坑 #17）。收敛成单一公理件，一处正确、处处复用。
+密钥注入混乱（踩坑 #17）。收敛成单一原子模块，一处正确、处处复用。
 
-公理特征：只做「给 messages，返回模型输出」这一件不可再分的事。
+原子模块的特征：只做「给 messages，返回模型输出」这一件不可再分的事。
 
 对外接口：
   - chat(system, user, ...)      → 纯文本输出（对话/精读/问答）
@@ -22,7 +22,7 @@
   - OLLAMA_MODEL   : 默认 qwen2.5:7b-instruct
   - OLLAMA_HOST    : 默认 http://localhost:11434
 
-模型选择原则（宪法·两把尺子的沉淀）：输出少的活用 pro（抽取），输出多的用 flash（精读）。
+模型选择原则（架构准则·两把尺子的沉淀）：输出少的活用 pro（抽取），输出多的用 flash（精读）。
 """
 import os, json, re, urllib.request, urllib.error
 try:
@@ -321,7 +321,7 @@ def chat_messages(messages, provider=None, model=None, key=None,
     """多轮对话：直接给完整 messages 列表（含 system / 历史 user+assistant）。
 
     R3 窗（2026-08-30）加的：创意讨论（tools/direction/brainstorm）要带上下文连续追问，
-    而它原本自己 urlopen 打 DeepSeek —— 那是「联网只在 adapters」的破口（红线 #5）。
+    而它原本自己 urlopen 打 DeepSeek —— 那是「联网只在 adapters」的破口（强制规范 #5）。
     `chat()` 是它的单轮特例。
     """
     provider, model, key = _cfg(provider, model, key)
@@ -346,7 +346,7 @@ def chat_vision(system, user, image_b64, provider=None, model=None, key=None,
         provider, key = _owner, ''
     elif not provider:
         # 走三级加载（环境变量 → 凭据库 → .env），不只读环境变量 ——
-        # 面板把设置写进 .env，而 .env 的值进不了 os.environ（红线 #3 的老坑）。
+        # 面板把设置写进 .env，而 .env 的值进不了 os.environ（强制规范 #3 的老坑）。
         provider = _cfg_get('VISION_PROVIDER') or 'deepseek'
     if model is None and provider == 'ollama':
         model = _cfg_get('OLLAMA_VISION_MODEL') or 'qwen2.5vl:7b'

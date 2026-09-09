@@ -22,11 +22,11 @@ def card(what, cost, steps, notes=''):
     """拼一段提示词。what=要做什么，cost=代价，steps=命令列表，notes=补充说明。"""
     lines = [f'用户想{what}。', '']
     if cost:
-        lines += [f'⚠ 这件事{cost}。**先把要做的事和代价用大白话讲给用户听，'
+        lines += [f'⚠ 这件事{cost}。**先把要做的事和代价用通俗表述讲给用户听，'
                   f'等他明确点头再动手。**', '']
     lines.append('照这样做：')
     lines += [f'    {s}' for s in steps]
     if notes:
         lines += ['', notes]
-    lines += ['', '（用户不懂编程：别贴 traceback，用大白话汇报结果。）']
+    lines += ['', '（用户不懂编程：别贴 traceback，用通俗表述汇报结果。）']
     return '\n'.join(lines)

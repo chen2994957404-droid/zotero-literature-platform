@@ -32,7 +32,7 @@ def main():
         print(f'  [FAIL] 文件名不对：{n}')
 
     total += 1
-    # 红线 #4：路径必须从 paths 来，不许自己拼 data
+    # 强制规范 #4：路径必须从 paths 来，不许自己拼 data
     d = getpdf.out_dir()
     if d.startswith(paths.INCOMING):
         print('  [PASS] 落盘位置走 paths.INCOMING'); ok += 1

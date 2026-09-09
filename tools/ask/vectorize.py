@@ -171,7 +171,7 @@ def deep_all(rebuild=False, log=print, with_si=True):
 
 # ── 粗层：Zotero 全文索引 → 向量库 ────────────────────────────────────
 def fetch_top_items():
-    """取 Zotero 所有顶层文献（分页，每页 100 条）。走适配层，红线 #5。"""
+    """取 Zotero 所有顶层文献（分页，每页 100 条）。走适配层，强制规范 #5。"""
     tops = []
     start = 0
     while True:

@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""embed · 文本向量化基础件（公理：文本 → 向量 + 文本预处理原子操作）
+"""embed · 文本向量化基础件（原子能力：文本 → 向量 + 文本预处理原子操作）
 
 职责：把文本转成向量（bge-m3 本地嵌入模型），以及向量化前的通用文本预处理
 （去参考文献、切块）。此前 embed/strip_references/chunk 在 vectorize.py 和
-vectorize_library.py 各有一份重复拷贝，收敛成单一公理件。
+vectorize_library.py 各有一份重复拷贝，收敛成单一原子模块。
 
-公理特征：embedding 只做「文本→向量」的映射，不理解内容（区别于 llm_client 的生成）。
+原子模块的特征：embedding 只做「文本→向量」的映射，不理解内容（区别于 llm_client 的生成）。
 strip_references / chunk 是可复用的文本预处理原子操作。
 
 对外接口：
@@ -24,12 +24,12 @@ try:
     import sys as _s2, os as _o2
     _s2.path.insert(0, _o2.path.dirname(_o2.path.dirname(_o2.path.dirname(_o2.path.abspath(__file__)))))
     from shared.kernel.config import get_site as _cfg_site
-except Exception:                      # 积木要能被单独拷走用，取不到 config 就退回环境变量
+except Exception:                      # 模块要能被单独拷走用，取不到 config 就退回环境变量
     _cfg_site = lambda n: __import__('os').environ.get(n) or _DEFAULTS.get(n, '')
 
 
 def _embed_url():
-    # 地址走 config（控制面板「Ollama 地址」可改），不再写死（红线 #3）
+    # 地址走 config（控制面板「Ollama 地址」可改），不再写死（强制规范 #3）
     host = _cfg_site('OLLAMA_HOST') or _DEFAULTS['OLLAMA_HOST']
     return host + '/api/embed'
 
@@ -80,7 +80,7 @@ def chunk(text, max_chars=800):
 
 
 def alive(timeout=6):
-    """Ollama 通不通（探活也是联网，所以放在适配层，红线 #5）。
+    """Ollama 通不通（探活也是联网，所以放在适配层，强制规范 #5）。
 
     R3 窗收进来的：库房维护的定时同步原本自己 urlopen 探 /api/tags。
     """

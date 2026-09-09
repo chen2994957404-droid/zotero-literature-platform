@@ -1,7 +1,7 @@
-# pdf_parse · PDF 解析基础件（公理层）
+# pdf_parse · PDF 解析基础件（原子模块层）
 
-**公理**：PDF → 结构化文本(full.md) + 版面/图坐标(layout.json) + 图片。
-精读 / 结构化抽取 / 向量化 三条定理都依赖它。底层用 MineRU 云端 API。
+**原子能力**：PDF → 结构化文本(full.md) + 版面/图坐标(layout.json) + 图片。
+精读 / 结构化抽取 / 向量化 三条工作流都依赖它。底层用 MineRU 云端 API。
 
 ## 接口
 ```python

@@ -33,7 +33,7 @@ def norm(t):
 
 
 def fetch_tops():
-    """取全部顶层条目（分页）。走适配层，红线 #5。"""
+    """取全部顶层条目（分页）。走适配层，强制规范 #5。"""
     tops = []
     start = 0
     while True:

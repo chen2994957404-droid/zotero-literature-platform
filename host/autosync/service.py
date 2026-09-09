@@ -28,13 +28,13 @@ from shared.kernel import role
 from shared.kernel.cli import flag
 from shared.kernel.log import get_logger
 from shared.kernel.paths import ROOT as _ROOT
-from shared.kernel.subproc import run as _sub_run   # 子进程统一走积木：不弹窗+超时+UTF-8
+from shared.kernel.subproc import run as _sub_run   # 子进程统一走模块：不弹窗+超时+UTF-8
 
 # 日志名一直叫 auto_sync（模块搬过两次家了）：日志是**数据流**不是代码路径，
 # 面板的日志下拉、诊断报告、B 机上已有的 auto_sync.log 都认这个名字。
 log = get_logger('auto_sync')   # 统一日志：时间戳 + 落盘 + 自动轮转
 
-# 两个依赖服务：探活函数在各自的适配层里（探活也是联网，红线 #5）
+# 两个依赖服务：探活函数在各自的适配层里（探活也是联网，强制规范 #5）
 DEPS = (('ZoteroApp', 'Zotero', _zot.alive),
         ('OllamaService', 'Ollama', _embed.alive))
 

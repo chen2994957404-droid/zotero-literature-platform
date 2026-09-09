@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""cli 积木自测：把 sys.argv 换掉跑六组用例，全过即算数。"""
+"""cli 模块自测：把 sys.argv 换掉跑六组用例，全过即算数。"""
 import os, sys
 
 # 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）

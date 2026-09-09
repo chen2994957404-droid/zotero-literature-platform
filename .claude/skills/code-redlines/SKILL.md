@@ -1,17 +1,17 @@
 ---
 name: code-redlines
-description: 要新增或修改本项目任何 .py 文件之前必须先读这份。七条有守卫强制的红线（标准开头 / shared.kernel.cli 取参 / shared.kernel.config 取配置 / shared.kernel.paths 取路径 / 联网只许在 shared/adapters / shared.kernel.log 打日志 / 有副作用要加机器角色守卫）、四条硬规则（工具不许互相 import、联网只在 adapters、domain 不许知道路径、没人 import host）、新增积木与新增工具的准入标准，以及改完必跑的验证顺序。凡是动代码、加积木、加工具、搬模块、改脚本都适用。
+description: 要新增或修改本项目任何 .py 文件之前必须先读这份。七条有守卫强制的强制规范（标准开头 / shared.kernel.cli 取参 / shared.kernel.config 取配置 / shared.kernel.paths 取路径 / 联网只许在 shared/adapters / shared.kernel.log 打日志 / 有副作用要加机器角色守卫）、四条硬规则（工具不许互相 import、联网只在 adapters、domain 不许知道路径、没人 import host）、新增模块与新增工具的准入标准，以及改完必跑的验证顺序。凡是动代码、加模块、加工具、搬模块、改脚本都适用。
 ---
 
 <!-- 本文件由 host/codegen/skills.py 生成，**别手改**。改源：docs/howto/skills/code-redlines.md -->
 
-# 改代码红线
+# 改代码强制规范
 
 **这些不是风格建议，是 `python -m pytest` 里的架构守卫会当场变红的硬约束**
 （守卫在 `tests/test_architecture.py`）。完整原文见
 `docs/howto/代码规范_标准脚本模板.md`；本页是执行清单。
 
-## 一、七条红线
+## 一、七条强制规范
 
 ### 1. 标准开头只有 4 行
 ```python
@@ -94,19 +94,19 @@ host  →  tools  →  shared.domain / shared.adapters  →  shared.kernel
 | `host/` | 平台自身的运维方式变了（面板、体检、部署、MCP、常驻服务） | 否 |
 
 **铁律 1 的反面判据**：「如果一个能力还能被拆成『先做 A 再做 B』，
-它就不是公理，是定理」→ 定理放 `tools/`，公理放 `shared/domain/` 或 `shared/adapters/`。
+它就不是原子能力，是工作流」→ 工作流放 `tools/`，原子能力放 `shared/domain/` 或 `shared/adapters/`。
 
 ## 三、新增东西的准入
 
-### 新增共用件 `shared/<环>/<名>/`：三件套缺一不可
+### 新增共用件 `shared/<环>/<名>/`：必备文件缺一不可
 - `__init__.py` —— docstring 写清「解决的真实问题 + 用法」，公开函数列表用表格注释
 - `selftest.py` —— **不联网、不依赖用户数据**的纯逻辑自测（体检会挨个跑）
 - `CLAUDE.md` —— 照 `shared/kernel/config/CLAUDE.md` 的版式
 
-**只做一件不可再分的事。** 想在积木里加「顺便还做 XX」时，XX 属于上层。
+**只做一件不可再分的事。** 想在模块里加「顺便还做 XX」时，XX 属于上层。
 **且先确认有第二个使用者** —— 只有一个使用者的东西不许住 `shared/`（硬规则 1）。
 
-### 新增工具 `tools/<名>/`：七件套缺一不可
+### 新增工具 `tools/<名>/`：必备文件缺一不可
 `tool.toml` · `__init__.py` · `cli.py` · `mcp.py` · `SKILL.md` · `README.md` · `tests/`
 （另加 `selftest.py`、`prompts/`、`evals/`）。
 

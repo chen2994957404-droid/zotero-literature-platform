@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""pdf_parse · PDF 解析基础件（公理：PDF → 结构化文本+图坐标）
+"""pdf_parse · PDF 解析基础件（原子能力：PDF → 结构化文本+图坐标）
 
 职责：把一个 PDF 解析成 full.md（全文）+ layout.json（版面/图坐标）+ images/ + 原PDF副本。
-这是「公理层」的一块——精读/结构化抽取/向量化三条定理都依赖它。
+这是「原子模块层」的一块——精读/结构化抽取/向量化三条工作流都依赖它。
 底层用 MineRU 云端 API（VLM 模型，处理公式/表格/版面）。
 
-公理特征：只做「PDF→解析结果」这一件不可再分的事，不依赖任何上层模块。
+原子模块的特征：只做「PDF→解析结果」这一件不可再分的事，不依赖任何上层模块。
 
 对外接口：
   - parse_pdf(pdf_path, out_dir) → out_dir（含 full.md/layout.json/images/*_origin.pdf）
@@ -25,7 +25,7 @@ class PDFParseError(Exception):
 
 
 def _token():
-    """取 MineRU token：走 config 公理件（环境变量 → .env），避免子进程拿不到。"""
+    """取 MineRU token：走 config 原子模块（环境变量 → .env），避免子进程拿不到。"""
     t = os.environ.get('MINERU_TOKEN')
     if not t:
         try:

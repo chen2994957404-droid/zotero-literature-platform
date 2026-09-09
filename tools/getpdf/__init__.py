@@ -49,7 +49,7 @@ def probe():
 
 
 def out_dir(create=False):
-    """PDF 落在哪：临时处理区。**不写死路径**（红线 #4）。"""
+    """PDF 落在哪：临时处理区。**不写死路径**（强制规范 #4）。"""
     d = os.path.join(paths.INCOMING, 'getpdf')
     if create:
         os.makedirs(d, exist_ok=True)
@@ -121,7 +121,7 @@ def summarize(results):
 # 不幂等的后果不是「白跑」，是库里多出一堆重复条目，而重复条目**只能人工合并**
 # （删掉一个会丢掉它身上的合集和标签，这是 Zotero 的已知行为）。
 
-# 合集名字走 config，用户可以在控制面板改，改了不用动代码（红线 #3）。
+# 合集名字走 config，用户可以在控制面板改，改了不用动代码（强制规范 #3）。
 DEFAULT_TOP = 'LLM导入'
 PURPOSES = {
     '建库': ('建库用', '只解析 + 向量化，补数据库用，不精读'),

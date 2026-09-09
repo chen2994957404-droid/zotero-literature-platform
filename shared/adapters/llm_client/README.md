@@ -1,11 +1,11 @@
-# llm_client · LLM 调用基础件（公理层）
+# llm_client · LLM 调用基础件（原子模块层）
 
-**公理**：文本 → LLM → 文本 / JSON。统一封装对大模型的调用，
+**原子能力**：文本 → LLM → 文本 / JSON。统一封装对大模型的调用，
 支持云端 DeepSeek 和本地 Ollama。
 
 ## 为什么存在
 此前 LLM 调用散在 9 个脚本、6 个函数各写各的，导致重复 + 密钥注入混乱（踩坑 #17）。
-收敛成单一公理件：一处正确，处处复用。
+收敛成单一原子模块：一处正确，处处复用。
 
 ## 接口
 ```python
@@ -29,7 +29,7 @@ chat_json(system, user, provider='ollama')  # 本地 qwen 抽取
 | OLLAMA_MODEL | qwen2.5:7b-instruct | 本地默认模型 |
 | OLLAMA_HOST | http://localhost:11434 | Ollama 地址 |
 
-## 模型选择原则（宪法沉淀）
+## 模型选择原则（架构准则沉淀）
 输出少的活用 pro（结构化抽取，输出仅十几字段）；输出多的用 flash（精读，9000字长文）。
 pro/flash 主要差在输出价，输出轻则 pro 几乎不增成本却更准。
 

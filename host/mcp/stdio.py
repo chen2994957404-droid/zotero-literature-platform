@@ -11,10 +11,10 @@ except Exception:
 启动本服务；上层的 zotero_server.py 等注册好业务工具后调 serve() 跑起来。
 
 为什么手写协议、不引官方 mcp SDK（决策依据，详见 变更记录 2026-08-26）：
-  - 平台「少依赖」宪法：一个只读工具面只需 ~200 行，引 SDK 会拖进 pydantic/httpx 等一堆包；
+  - 平台「少依赖」架构准则：一个只读工具面只需 ~200 行，引 SDK 会拖进 pydantic/httpx 等一堆包；
   - 协议极稳定且已实测：JSON-RPC 2.0 + 换行分隔，官方 SDK 的 ReadBuffer 就是按 \n 切帧
     （见 .dsh 部署里 @modelcontextprotocol/sdk/dist/esm/shared/stdio.js，序列化 = JSON + '\\n'）；
-  - 可理解性：主导者能读懂这一层每行在干什么（宪法：牺牲可理解性换聪明实现，违背宪法）。
+  - 可理解性：主导者能读懂这一层每行在干什么（架构准则：牺牲可理解性换聪明实现，违背架构准则）。
   日后若需非 stdio 传输（SSE/HTTP）再换官方 SDK，本层对外接口不变。
 
 对外接口：

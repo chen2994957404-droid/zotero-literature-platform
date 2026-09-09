@@ -38,7 +38,7 @@ def main():
     else:
         print('  [FAIL] 同进程再抢被拒，说明会自锁')
 
-    # 3. 另一个进程抢同一把锁应失败 —— 这是本积木存在的唯一理由
+    # 3. 另一个进程抢同一把锁应失败 —— 这是本模块存在的唯一理由
     # 子进程直接 import：项目已装成包（pip install -e .），不需要塞 sys.path
     code = (f"from shared.kernel.proc_lock import single_instance;"
             f"print('GOT' if single_instance('{NAME}') else 'BLOCKED')")

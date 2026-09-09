@@ -64,7 +64,7 @@ vectorize.deep_all()       # 精层增量
 
 | 你想改 | 改哪 |
 |---|---|
-| 用哪个模型作答 | 控制面板的 `ASK_MODEL`（别在代码里写模型名，红线 #3）|
+| 用哪个模型作答 | 控制面板的 `ASK_MODEL`（别在代码里写模型名，强制规范 #3）|
 | 检索几块 | `TOP_K`（本文件）|
 | 切块策略 | `shared/adapters/embed.chunk` —— **改完要重建向量库** |
 | 换向量库 | `shared/adapters/vectordb`（这里一行不用动）|

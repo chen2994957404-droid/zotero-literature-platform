@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""pdf_fetch · 出版商全文基础件（公理：一个 DOI → 这篇文献的 PDF 字节）
+"""pdf_fetch · 出版商全文基础件（原子能力：一个 DOI → 这篇文献的 PDF 字节）
 
 **为什么有这块（2026-09-04 建）**：库里补文献时，元数据能从 crossref 拿，
 正文 PDF 却一直得人工一篇篇点。付费文献拿不到的根因不是权限，是**运输方式** ——
@@ -74,7 +74,7 @@ class PlaywrightMissing(errors.ConfigError):
 
 
 def cdp_url():
-    """浏览器调试口地址。走 config，不写死（红线 #3）。"""
+    """浏览器调试口地址。走 config，不写死（强制规范 #3）。"""
     return config.get_key('BROWSER_CDP_URL', default='') or DEFAULT_CDP
 
 

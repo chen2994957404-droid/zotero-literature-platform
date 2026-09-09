@@ -70,7 +70,7 @@ _PKG_DESC = {
     'shared/domain':   '纯逻辑：不联网、不知道文件放在哪',
     'shared/adapters': '外接口：唯一允许联网/用第三方库的一环',
     'host':            '平台自身：让平台活着的东西（没人 import 它）',
-    'tools':           '工具切片：一个工具 = 一个自包含的包',
+    'tools':           '工具包：一个工具 = 一个自包含的包',
 }
 
 
@@ -78,7 +78,7 @@ def _members(p):
     """一个包底下有哪些成员（子包 + 直接躺着的 .py），返回排好序的名字列表。
 
     **「是不是一块」的判据只有一个：有没有 `__init__.py`** —— 与
-    `paths.block_dirs()`（体检、面板枚举积木用的那个）完全一致。
+    `paths.block_dirs()`（体检、面板枚举模块用的那个）完全一致。
 
     此前这里用的是「目录在不在」，于是两处口径对不上，出过两种事故：
       · 删包时只 `git rm`，目录以「只剩 __pycache__」的形态活着，结构树照画（踩坑 #87）
@@ -228,7 +228,7 @@ def blocks():
     """所有「块」：[(名字, 一句话, 住在哪一环)]。
 
     环也要带出来 —— `block_dirs()` 枚举的是 `CODE_RINGS`，里面既有
-    `shared/*` 的共用件也有 `tools/*` 的工具切片。混成一句「积木层 shared/」
+    `shared/*` 的共用件也有 `tools/*` 的工具包。混成一句「模块层 shared/」
     会让读的人以为工具也住在 shared 里，正好和第三节硬规则 1 说反。
     """
     rows = []
@@ -368,7 +368,7 @@ def build():
             a(f'| `{d}` | {n} | {desc} |')
         a('')
     bs = blocks()
-    for ring, label in (('tools', '工具切片 `tools/`'),
+    for ring, label in (('tools', '工具包 `tools/`'),
                         ('shared/kernel', '基础设施 `shared/kernel/`'),
                         ('shared/domain', '纯逻辑 `shared/domain/`'),
                         ('shared/adapters', '外接口 `shared/adapters/`')):
@@ -397,7 +397,7 @@ def build():
     a('')
     for f, why in (('docs/incidents/踩坑记录.md', '所有踩过的坑，含根因与解法'),
                    ('docs/变更记录.md', '每次改动的来龙去脉'),
-                   ('docs/explain/架构宪法_第一性原理.md', '最高纲领（分级版）：每条带【事实】/【硬约束】/【启发式】，启发式的可以推翻'),
+                   ('docs/explain/架构准则_第一性原理.md', '最高纲领（分级版）：每条带【事实】/【硬约束】/【启发式】，启发式的可以推翻'),
                    ('<某文件夹>/CLAUDE.md', '那一块的完整说明书，改哪块就读哪份')):
         size = ''
         p = os.path.join(ROOT, f)
@@ -408,7 +408,7 @@ def build():
 
     a('## 铁律提醒')
     a('')
-    a('- **【零号判据】先看真实世界，别用记忆代替调研。**'
+    a('- **【调研先行原则】先看真实世界，别用记忆代替调研。**'
       '涉及外部现状/具体数字/API 行为，必须查、必须测。')
     a('- 改完**先跑体检再重启服务**：`python host/doctor/health_check.py`')
     a('- 花钱、不可逆、影响 Zotero 库的操作，**先问用户**。')
@@ -438,7 +438,7 @@ def sync_agents_md():
     此时它还没读到 HANDOVER 里那句「不要 glob」。
     一个只能保护「已经读过它的人」的警告是没用的，必须提前到正本里。
 
-    同时解决数字过时：手写的「10 块公理件」早已落后于实际的 16 块，
+    同时解决数字过时：手写的「10 块原子模块」早已落后于实际的 16 块，
     而新会话若只读正本就会**自信地答错**。自动生成即永不过时。
     """
     # ⚠ 只有编程端才写 AGENTS.md。
@@ -461,7 +461,7 @@ def sync_agents_md():
     body += ['```', '']
     fl = flows()
     bl = blocks()
-    body += [f'**可枚举的块 {len(bl)} 个**（`tools/` 工具切片 + `shared/` 共用件，'
+    body += [f'**可枚举的模块 {len(bl)} 个**（`tools/` 工具包 + `shared/` 共用件，'
              f'每个都有 `__init__.py` 与 `selftest.py`）'
              + (f' · **还没切进 `tools/` 的老文件夹 {len(fl)} 个**' if fl else ''), '',
              '进度、健康状况、下一步做什么 → 见 `HANDOVER.md`', '',
@@ -482,34 +482,34 @@ def sync_agents_md():
     return True
 
 
-# ── 零号判据：一处为源，两处照抄 ──────────────────────────────────
-# 2026-09-07：这条判据原本在三个地方各写一份（宪法 / AGENTS.md / research-first
+# ── 调研先行原则：一处为源，两处照抄 ──────────────────────────────────
+# 2026-09-07：这条判据原本在三个地方各写一份（架构准则 / AGENTS.md / research-first
 # skill），改一处另两处就漂移 —— 跟「别落第三份 JSON」是同一个病。
-# 现在宪法里那段被 `<!-- 摘:零号判据 -->` 圈起来，是唯一的源，其余两处由这里抄过去。
-宪法 = os.path.join(ROOT, 'docs', 'explain', '架构宪法_第一性原理.md')
-摘_BEGIN_RE = r'<!-- 摘:零号判据 开始[^>]*-->'
-摘_END = '<!-- 摘:零号判据 结束 -->'
-零号_BEGIN = ('<!-- AUTO:零号判据 开始 · 源在 docs/explain/架构宪法_第一性原理.md，'
+# 现在架构准则里那段被 `<!-- 摘:调研先行原则 -->` 圈起来，是唯一的源，其余两处由这里抄过去。
+架构准则 = os.path.join(ROOT, 'docs', 'explain', '架构准则_第一性原理.md')
+摘_BEGIN_RE = r'<!-- 摘:调研先行原则 开始[^>]*-->'
+摘_END = '<!-- 摘:调研先行原则 结束 -->'
+零号_BEGIN = ('<!-- AUTO:调研先行原则 开始 · 源在 docs/explain/架构准则_第一性原理.md，'
               '由 host/codegen/handover.py 抄过来，勿手改 -->')
-零号_BEGIN_RE = r'<!-- AUTO:零号判据 开始[^>]*-->'
-零号_END = '<!-- AUTO:零号判据 结束 -->'
+零号_BEGIN_RE = r'<!-- AUTO:调研先行原则 开始[^>]*-->'
+零号_END = '<!-- AUTO:调研先行原则 结束 -->'
 _NL_ = chr(10)   # 换行常量：写成字面量会被各种工具链的转义吃掉（同 tests/ 的做法）
 零号_目标 = (AGENTS_MD, os.path.join(ROOT, 'docs', 'howto', 'skills', 'research-first.md'))
 
 
-def 取零号判据():
-    """从宪法里抠出那段唯一的源；抠不到就返回 None（宁可不同步，也不写半截）。"""
-    src = io.open(宪法, encoding='utf-8').read()
+def 取调研先行原则():
+    """从架构准则里抠出那段唯一的源；抠不到就返回 None（宁可不同步，也不写半截）。"""
+    src = io.open(架构准则, encoding='utf-8').read()
     m = re.search(摘_BEGIN_RE + r'([\s\S]*?)' + re.escape(摘_END), src)
     return m.group(1).strip() if m else None
 
 
 def sync_zero_criterion():
-    """把宪法里的零号判据同步进 AGENTS.md 与 research-first skill 源。
+    """把架构准则里的调研先行原则同步进 AGENTS.md 与 research-first skill 源。
 
     只写已经有 AUTO 区块的文件 —— 不自作主张往别处插内容。
     """
-    正文 = 取零号判据()
+    正文 = 取调研先行原则()
     if not 正文:
         return []
     块 = _NL_.join([零号_BEGIN, '', 正文, '', 零号_END])
@@ -537,7 +537,7 @@ def main():
     抄了 = sync_zero_criterion() if ok else []
     print(f'已生成 {HANDOVER}（{len(txt)} 字符）'
           + ('；AGENTS.md 的结构区块已同步' if ok else '')
-          + ('；零号判据已同步到 ' + '、'.join(抄了) if 抄了 else ''))
+          + ('；调研先行原则已同步到 ' + '、'.join(抄了) if 抄了 else ''))
 
 
 if __name__ == '__main__':

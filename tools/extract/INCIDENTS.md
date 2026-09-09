@@ -30,7 +30,7 @@
 **根因**：`tools/extract/cli.py` 里**根本没有 `--stale` 这个开关**，
 `--list` 也只在 `--upgrade-local` 与 `--si-pending` 两个分支里被认。
 两个参数都没人认领 → 落到最后的 else → `keys = paths.all_keys()` → 全库作业。
-`shared.kernel.cli` 的红线原话就是这个病：
+`shared.kernel.cli` 的强制规范原话就是这个病：
 **「没人认识的参数会被当成『没给参数』，于是走进最贵那条路」**（踩坑 #85 是 `--help` 触发全库抽取）。
 
 **这次为什么没花钱**：库里那 42 篇早就是 schema v3，逐篇都被

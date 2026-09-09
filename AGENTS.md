@@ -2,7 +2,7 @@
 
 文献自动化科研平台，**核心是证据库**，Zotero 是最重要的来源 + 精读成果的展示面。
 用户是材料方向研究者（聚硼硅氧烷 / 动态键弹性体），
-**不懂编程**。给他看的一律用中文大白话，别讲技术细节。
+**不懂编程**。给他看的一律用中文通俗表述，别讲技术细节。
 
 **这份是唯一入口。** 帮他干活看【第一部分】，改代码看【第二部分】。
 `CLAUDE.md` 只是指向这里的一行。
@@ -31,9 +31,9 @@ shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
         crossref、embed、llm_client、openalex、pdf_fetch、pdf_parse、query_expand、sciverse、snowball、vectordb、wechat_seed、zotero_client
 specs/ （0 个脚本）
 tests/ （3 个脚本）
-    test_architecture.py、test_constitution.py、test_no_undefined_names.py
+    test_architecture.py、test_no_undefined_names.py、test_principles.py
 toolbox/ （0 个脚本）
-tools/  ← 工具切片：一个工具 = 一个自包含的包（11 块）
+tools/  ← 工具包：一个工具 = 一个自包含的包（11 块）
     ask、askworld、curate、deepread、digitize、direction、discover、extract、getpdf、library、paperdb
 
 根目录文件：AGENTS.md、CLAUDE.md、LICENSE、README.md、REBUILD.md、pyproject.toml、requirements.txt、各部分的关系.md
@@ -41,7 +41,7 @@ tools/  ← 工具切片：一个工具 = 一个自包含的包（11 块）
 （data/ 是数据目录（五层），3000+ 文件，**不要去 glob 它**）
 ```
 
-**可枚举的块 30 个**（`tools/` 工具切片 + `shared/` 共用件，每个都有 `__init__.py` 与 `selftest.py`）
+**可枚举的模块 30 个**（`tools/` 工具包 + `shared/` 共用件，每个都有 `__init__.py` 与 `selftest.py`）
 
 进度、健康状况、下一步做什么 → 见 `HANDOVER.md`
 
@@ -71,7 +71,7 @@ A 机默认不写 Zotero、不跑常驻服务、不跑花钱的批量作业 —�
 | skill | 什么时候读 |
 |---|---|
 | `troubleshoot` | 报错 / 卡住 / 没反应 / 数字不对 / 明明改了却没变 |
-| `code-redlines` | **要动任何 .py 之前**（七条红线 + 四条硬规则 + 验证顺序）|
+| `code-redlines` | **要动任何 .py 之前**（七条强制规范 + 四条硬规则 + 验证顺序）|
 | `research-first` | 要做新东西、选技术路线、或要断言外部世界现状 |
 | `two-machines` | 写 Zotero / 部署 / 连 B / 起常驻服务（连机器的机械细节在**全局**技能 `remote-machine`，源在 `toolbox/remote-machine/`）|
 | 十个工具各一份 | 要用某个工具时（含**什么时候别用我**）|
@@ -120,10 +120,10 @@ A 机默认不写 Zotero、不跑常驻服务、不跑花钱的批量作业 —�
 
 ## ⚠ 最高优先级：先看真实世界，别用记忆代替调研
 
-宪法【零号判据】（2026-08-09 立）。用户原话：
+架构准则【调研先行原则】（2026-08-09 立）。用户原话：
 > **你下意识回答我的往往还是预训练的结果，我们还是要主动去看真实实时的世界是怎么样。**
 
-<!-- AUTO:零号判据 开始 · 源在 docs/explain/架构宪法_第一性原理.md，由 host/codegen/handover.py 抄过来，勿手改 -->
+<!-- AUTO:调研先行原则 开始 · 源在 docs/explain/架构准则_第一性原理.md，由 host/codegen/handover.py 抄过来，勿手改 -->
 
 - 外部世界现状的断言（有无某功能、定价、限额、版本、行业惯例）→ **必须查**
 - 具体数字 → 查到出处才说，查不到就明说查不到
@@ -138,7 +138,7 @@ A 机默认不写 Zotero、不跑常驻服务、不跑花钱的批量作业 —�
 
 **唯一停止判据**：这次调研能不能改变我接下来的做法？能就查，不能就别查。
 
-<!-- AUTO:零号判据 结束 -->
+<!-- AUTO:调研先行原则 结束 -->
 
 → 四步调研法见 `research-first` skill。
 
@@ -148,13 +148,13 @@ A 机默认不写 Zotero、不跑常驻服务、不跑花钱的批量作业 —�
 
 ## 最高纲领
 
-**先读 `docs/explain/架构宪法_第一性原理.md`** —— 它定义整个系统怎么构筑：
-公理→定理→组合，以及「按稳定性决定自己做还是用现成」的首要判据。
+**先读 `docs/explain/架构准则_第一性原理.md`** —— 它定义整个系统怎么构筑：
+原子模块 → 工作流 → 编排，以及「按稳定性决定自己做还是用现成」的选型判据。
 **它是分级的**：每条带【事实】/【硬约束】/【启发式】标记，
 **标着【启发式】的你可以推翻** —— 遇到反例有义务说出来并给证据，闷头照办才是违规。
-（旧版 288 行的哲学与推导原文在 `架构宪法_v1_历史存档.md`，已不生效，查「为什么」时用。）
+（旧版 288 行的哲学与推导原文在 `架构准则_v1_历史存档.md`，已不生效，查「为什么」时用。）
 
-## 核心归属（2026-09-07 用户拍板，宪法第四节）
+## 核心归属（2026-09-07 用户拍板，架构准则第四节）
 
 **核心是「证据库」，Zotero 是它最重要的来源 + 精读成果的展示面，不是核心。**
 
@@ -183,9 +183,9 @@ host  →  tools  →  shared.domain / shared.adapters  →  shared.kernel
 3. **联网只在** `shared/adapters/`（这是「换掉 MineRU 只改一个文件」的全部保证）
 4. **没人 import `host/`**；`host/` 可以 import 一切
 
-**改任何 .py 之前先读 `code-redlines` skill**（七条红线 + 三件套/七件套准入 + 验证顺序）。
+**改任何 .py 之前先读 `code-redlines` skill**（七条强制规范 + 必备文件/必备文件准入 + 验证顺序）。
 
-## 工具切片的形状（`tools/<名>/`，七件缺一不可）
+## 工具包的形状（`tools/<名>/`，七件缺一不可）
 
 `tool.toml` · `__init__.py` · `cli.py` · `mcp.py` · `SKILL.md` · `README.md` · `tests/`
 （另有 `selftest.py` · `INCIDENTS.md` · `prompts/` · `evals/`）。

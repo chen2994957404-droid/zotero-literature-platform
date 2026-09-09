@@ -123,7 +123,7 @@ def main():
             print(f'--purpose 只能是 {" / ".join(getpdf.PURPOSES)}，'
                   f'给的是「{purpose}」')
             return 2
-        # 写 Zotero 是不可逆的副作用 —— 守卫写在函数体里，不能写模块顶层（红线 #7）
+        # 写 Zotero 是不可逆的副作用 —— 守卫写在函数体里，不能写模块顶层（强制规范 #7）
         role.require_prod('把文献收进你的 Zotero 库（建条目、挂 PDF、归合集）',
                           force=flag('--force'))
         # **先确认拿得到密钥再动手**，别等 PDF 都下完了才在入库那步炸出 traceback。

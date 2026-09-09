@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""proc_lock · 单实例锁基础件（公理：保证同一个程序同时只跑一份）
+"""proc_lock · 单实例锁基础件（原子能力：保证同一个程序同时只跑一份）
 
 解决的真实问题（踩坑 #30）：
 zotero_watcher 反复出现 2 个实例并存 —— 任务计划自启一份、看门狗又启一份，
@@ -9,7 +9,7 @@ zotero_watcher 反复出现 2 个实例并存 —— 任务计划自启一份、
 杀是事后补救，永远有时间窗（旧的还没死、新的已经在跑）；
 锁是事前阻断，第二份根本起不来。从源头杜绝优于事后清理。
 
-公理特征：只做「抢占一个具名的独占权」这一件不可再分的事。
+原子模块的特征：只做「抢占一个具名的独占权」这一件不可再分的事。
 
 用法：
     from shared.kernel.proc_lock import single_instance
@@ -38,7 +38,7 @@ def _pid_alive(pid):
         return False
     if os.name == 'nt':
         try:
-            # 走 subproc 积木：裸调 tasklist 会弹控制台窗口（踩坑 #31）
+            # 走 subproc 模块：裸调 tasklist 会弹控制台窗口（踩坑 #31）
             from shared.kernel.subproc import out as _out
             # ⚠ 默认值必须是 None 而不是 ''（踩坑 #44）：
             # tasklist 超时/失败时 out() 返回默认值，若默认值是 '' 则 `pid in ''` == False，

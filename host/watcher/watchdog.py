@@ -58,7 +58,7 @@ def ages():
 def find_watcher_pids():
     """找正在跑的 watcher 进程（Windows）。
 
-    走 subproc 积木：本函数每 60 秒被调一次，裸调 wmic 会不停弹控制台窗口（踩坑 #31）。
+    走 subproc 模块：本函数每 60 秒被调一次，裸调 wmic 会不停弹控制台窗口（踩坑 #31）。
     wmic 在新版 Windows 已弃用，改用 PowerShell 的 CIM 查询，更可靠。
 
     ⚠ **认模块路径，不认单个词**（踩坑 #81 的第三次复发预防）。这里搬过两次家：

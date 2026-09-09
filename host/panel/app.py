@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""控制面板 · 平台的仪表盘与开关（定理件，不含任何业务逻辑）
+"""控制面板 · 平台的仪表盘与开关（工作流件，不含任何业务逻辑）
 
-设计原则（服从架构宪法）：
+设计原则（服从架构准则）：
   本文件**一行业务逻辑都不实现**。状态取自 health_check 的检查函数，配置取自
-  shared.kernel.config，进程取自系统查询。它只是「现有积木的视图 + 遥控器」。
-  任何新功能都应先做成积木，再由面板调用 —— 绝不在面板里写实现。
+  shared.kernel.config，进程取自系统查询。它只是「现有模块的视图 + 遥控器」。
+  任何新功能都应先做成模块，再由面板调用 —— 绝不在面板里写实现。
 
 能做什么（都是可逆、零风险的事）：
   - 看：各服务是否正常、哪些进程在跑、数据资产统计、最近日志
@@ -96,7 +96,7 @@ def collect_processes():
           "Where-Object {$_.CommandLine -match 'deepread|watchdog|watcher|"
           "extract|vectorize|curate|discover|direction|panel'} | "
           "Select-Object ProcessId,CreationDate,CommandLine | ConvertTo-Json -Compress")
-    # 走 subproc 积木：面板每 15 秒刷新一次，裸调 powershell 会不停闪窗口（踩坑 #31）
+    # 走 subproc 模块：面板每 15 秒刷新一次，裸调 powershell 会不停闪窗口（踩坑 #31）
     try:
         raw = powershell(ps, timeout=25).strip()
         data = json.loads(raw) if raw else []
@@ -421,7 +421,7 @@ def action_rate(payload):
 
 
 def collect_blocks():
-    """积木与工作流一览。说明取自各文件夹的 CLAUDE.md 首段，不另写一份。
+    """模块与工作流一览。说明取自各文件夹的 CLAUDE.md 首段，不另写一份。
 
     这样面板上看到的介绍，永远等于 LLM 读到的介绍 —— 不会出现两套说法。
     """
@@ -471,11 +471,11 @@ def collect_blocks():
 
 
 def action_selftest(name):
-    """跑某块积木的自测。只读、可重复，是安全操作。"""
+    """跑某块模块的自测。只读、可重复，是安全操作。"""
     d = paths.block_dir(name) if name and '/' not in name and '..' not in name else None
     p = os.path.join(d, 'selftest.py') if d else ''
     if not p or not os.path.exists(p):
-        return False, '没有这块积木或它没有自测'
+        return False, '没有这个模块或它没有自测'
     try:
         r = _run([sys.executable, p], timeout=120, cwd=ROOT)
         tail = (r.stdout or r.stderr or '').strip().split('\n')[-1][:120]
@@ -871,7 +871,7 @@ pre{background:#20232a;color:#c8d0dc;padding:12px;border-radius:8px;font-size:12
   <div id="flows"></div>
 </div>
 
-<div class="card"><h2>积木（底层能力，上面所有功能由它们搭成）</h2>
+<div class="card"><h2>模块（底层能力，上面所有功能由它们搭成）</h2>
   <div class="hint" style="margin-bottom:10px">
     点「自测」可单独检验某块是否正常。只读操作，随便点。</div>
   <div id="blocks"></div>
@@ -1005,7 +1005,7 @@ async function load(force){
         <td>${f.files}</td><td>${f.doc?'✓':'<span class="bad">缺</span>'}</td></tr>`).join('')
     + `</table>`;
 
-  $('#blocks').innerHTML = `<table><tr><th>积木</th><th>能力</th><th>说明书</th><th></th></tr>`
+  $('#blocks').innerHTML = `<table><tr><th>模块</th><th>能力</th><th>说明书</th><th></th></tr>`
     + st.blocks.map(b=>`<tr><td><b>${esc(b.name)}</b></td><td>${esc(b.desc)}</td>
         <td>${b.doc?'✓':'<span class="bad">缺</span>'}</td>
         <td>${b.selftest?`<button class="ghost" onclick="selftest('${b.name}')">自测</button>`

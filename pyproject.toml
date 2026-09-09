@@ -22,7 +22,7 @@ version = "2.0.0.dev0"
 description = "文献自动化科研平台（证据库为核心，Zotero 是最重要的来源与展示面）"
 requires-python = ">=3.11"
 
-# 运行期依赖，与 requirements.txt 保持一致（刻意保持极少，见架构宪法「少依赖」）
+# 运行期依赖，与 requirements.txt 保持一致（刻意保持极少，见架构准则「少依赖」）
 dependencies = [
     "chromadb==1.5.9",   # 向量库（问答检索）
     "python-docx==1.2.0", # 读 .docx 格式的 SI
@@ -45,7 +45,7 @@ namespaces = true
 [tool.pytest.ini_options]
 # 离线测试：不碰网络、不碰外部服务，必须永远全绿（见设计文档第五节）
 # **测试跟着它测的东西住**（REBUILD.md 第三节的位置表，R7 窗落实）：
-#   tests/           只放跨工具的架构守卫（四条硬规则、七件套、下沉规则…）
+#   tests/           只放跨工具的架构守卫（四条硬规则、必备文件、下沉规则…）
 #   tools/<t>/tests/ 那个工具自己的判据
 #   shared/**/tests/ 公用件自己的判据
 #   host/**/tests/   平台自身（面板 / 体检 / 常驻服务）的判据
@@ -63,13 +63,13 @@ norecursedirs = ["template"]
 #   在执行它** —— 只是没人用过这个 marker，所以谁都没发现。第一次真的标了
 #   `@pytest.mark.live`（tools/library 的金标）就穿帮了：它们照跑不误。
 #   后果不是「多跑几条」：没开 Zotero 的机器上 `pytest` 会红，
-#   而「离线测试必须永远全绿」是本项目最重要的一条红线 —— 它一旦会因为
+#   而「离线测试必须永远全绿」是本项目最重要的一条强制规范 —— 它一旦会因为
 #   「本机没开某个服务」变红，人就会开始习惯性忽略红色。
 # `--import-mode=importlib`：允许不同工具下有同名测试文件。
 #   `tools/{deepread,paperdb,library}/tests/test_evals.py` 三个同名，
 #   默认的 prepend 模式按「文件名 = 模块名」导入，于是三份互相顶掉，
 #   报的是 import file mismatch，**看起来完全不像是重名引起的**。
-#   工具切片就是要每个工具长得一样，同名测试文件只会越来越多。
+#   工具包就是要每个工具长得一样，同名测试文件只会越来越多。
 addopts = '-q --strict-markers -m "not live" --import-mode=importlib'
 markers = [
     "live: 需要真实外部服务（Zotero / Ollama / 各云 API），默认不跑；用 -m live 单独跑",

@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""crossref · DOI 元数据基础件（公理：一个 DOI → 这篇文献的书目信息）
+"""crossref · DOI 元数据基础件（原子能力：一个 DOI → 这篇文献的书目信息）
 
 **为什么有这块（R3 窗 2026-08-30 建）**：按 DOI 收文献进 Zotero 时要先拿到
 标题/作者/期刊/年份。这段 HTTP 原本直接写在「找新文献/import_by_doi.py」里 ——
-那是「联网只在 adapters」这条红线的破口（红线 #5）。
+那是「联网只在 adapters」这条强制规范的破口（强制规范 #5）。
 换掉元数据源（Crossref → DataCite / OpenAlex）本该只改一个文件。
 
 Crossref 免费、无需密钥。礼貌起见 User-Agent 带项目名（官方推荐做法）。

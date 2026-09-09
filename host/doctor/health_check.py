@@ -3,7 +3,7 @@
 
 覆盖分两档（见 docs/explain/架构重构_v2总体设计.md 第五节）：
   离线档：包安装 → 离线测试 → 语法 → 静态检查        ← 必须永远全绿
-  实测档：配置 → Zotero/Ollama → 公理件自测 → 数据 → 后台服务  ← 本机没配就会红，正常
+  实测档：配置 → Zotero/Ollama → 原子模块自测 → 数据 → 后台服务  ← 本机没配就会红，正常
 
 用法: python host/doctor/health_check.py            两档都跑
       python host/doctor/health_check.py --offline  只跑离线档（改完代码先跑这个）
@@ -27,7 +27,7 @@ os.chdir(ROOT)
 OK, WARN, FAIL = '[OK]  ', '[WARN]', '[FAIL]'
 results = []
 
-# 工作流文件夹 = 项目根下、含 .py 且不是积木层/数据/文档的目录。
+# 工作流文件夹 = 项目根下、含 .py 且不是模块层/数据/文档的目录。
 # 自动发现而非写死清单：以后新增一条工作流线，体检自动纳入，不用改这里。
 _SKIP_DIRS = paths.NON_WORKFLOW_DIRS
 
@@ -40,11 +40,11 @@ def workflow_dirs():
 
 
 def code_files():
-    """所有需要检查的源码：各工作流文件夹 + 积木层。
+    """所有需要检查的源码：各工作流文件夹 + 模块层。
 
     排除 `_tmp*` / `_t.py` 这类一次性临时脚本 —— 它们常由 PowerShell 生成（带 BOM），
     会让体检报语法错，制造与真实代码无关的噪声。
-    **注意不能简单排除下划线开头**：`__init__.py` 正是积木的入口，必须检查。
+    **注意不能简单排除下划线开头**：`__init__.py` 正是模块的入口，必须检查。
     """
     def keep(f):
         b = os.path.basename(f)
@@ -156,7 +156,7 @@ def c_no_popup():
     for f in code_files():
         np = os.path.normpath(f)
         if np.startswith(os.path.join('shared', 'kernel', 'subproc')):
-            continue                       # 积木自己就是正确实现，豁免
+            continue                       # 模块自己就是正确实现，豁免
         # 测试也豁免：它们只在 pytest 里跑，本来就在控制台里，弹不弹窗与用户无关；
         # 而且测试要的是「原样跑一遍那个脚本、拿它的退出码」，
         # 套一层 subproc 反而遮住被测对象的真实行为。
@@ -217,11 +217,11 @@ def c_secret_storage():
 
 
 def c_hardcoded():
-    """守住红线 #3：配置与地址一律走 shared/kernel/config，不许 hardcode。
+    """守住强制规范 #3：配置与地址一律走 shared/kernel/config，不许 hardcode。
 
     为什么要有这一项：2026-08-23 的「36 个脚本框架化」漏了 5 个文件，
     但体检全绿 —— 因为当时根本没有任何一项在查硬编码。
-    红线写在文档里而没有检查项守着，等于没写。
+    强制规范写在文档里而没有检查项守着，等于没写。
     """
     import re
     # 这些值都已经在 shared/kernel/config 的 SITE_SETTINGS 里可配，源码里不该再出现
@@ -239,7 +239,7 @@ def c_hardcoded():
         except Exception:
             continue
         # 已经在向 config 要这个设置的文件就放过：它里面的字面量是
-        # 「config 取不到时的兜底默认值」或文档示例，那是积木能被单独拷走用的前提，
+        # 「config 取不到时的兜底默认值」或文档示例，那是模块能被单独拷走用的前提，
         # 不是漏掉的硬编码。判据放在文件粒度 —— 宁可漏报也不要天天误报到没人看。
         consults_config = ('get_site' in src or '_cfg_site' in src or '_gsite' in src)
         if consults_config:
@@ -324,7 +324,7 @@ SLOW_TESTS = set()
 
 
 def c_modules():
-    """跑各公理件的 selftest（每个限时 60s，避免单个卡死整个检查）。"""
+    """跑各原子模块的 selftest（每个限时 60s，避免单个卡死整个检查）。"""
     full = flag('--full')
     mods = [d for _r, _n, d in paths.block_dirs()
             if os.path.exists(os.path.join(d, 'selftest.py'))]
@@ -341,7 +341,7 @@ def c_modules():
         except subprocess.TimeoutExpired:
             failed.append(f'{name}(超时)')
     total = len(paths.block_dirs())
-    msg = f'{len(passed)}/{len(mods)-len(skipped)} 自测通过（共 {total} 个公理件）'
+    msg = f'{len(passed)}/{len(mods)-len(skipped)} 自测通过（共 {total} 个原子模块）'
     if skipped:
         msg += f'；跳过慢测试 {skipped}（--full 可跑）'
     if failed:
@@ -360,7 +360,7 @@ KEY_MODULES = [
     'tools.library', 'host.mcp.server',
 ]
 # R3 窗（2026-08-30）起十个工具全是包，散脚本入口连同 find_script 一起退休了。
-# R4 窗（2026-08-31）加 tools.library（新切片）与 host.mcp.server（聚合后的 MCP 入口）。
+# R4 窗（2026-08-31）加 tools.library（新工具包）与 host.mcp.server（聚合后的 MCP 入口）。
 
 
 def c_importable():
@@ -392,10 +392,10 @@ def c_importable():
 
 
 def c_no_selftest():
-    """哪些公理件还缺自测（文档声称每个都有）。"""
+    """哪些原子模块还缺自测（文档声称每个都有）。"""
     lack = [n for _r, n, d in paths.block_dirs()
             if not os.path.exists(os.path.join(d, 'selftest.py'))]
-    return (OK, '所有公理件都有自测') if not lack else (WARN, f'缺自测: {lack}')
+    return (OK, '所有原子模块都有自测') if not lack else (WARN, f'缺自测: {lack}')
 
 
 def c_data():
@@ -529,7 +529,7 @@ if __name__ == '__main__':
         check('密钥有效性', c_keys_valid)
         check('Zotero 服务', c_zotero)
         check('Ollama 服务', c_ollama)
-        check('公理件自测', c_modules)
+        check('原子模块自测', c_modules)
         check('数据资产', c_data)
         check('后台服务', c_services)
 

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""架构守卫 —— 把架构宪法里「说了但没人执行」的规则，变成会变红的测试。
+"""架构守卫 —— 把架构准则里「说了但没人执行」的规则，变成会变红的测试。
 
-宪法铁律 2 写着「严格单向依赖，永不循环」，但在此之前**没有任何机制阻止违反它**。
+架构准则铁律 2 写着「严格单向依赖，永不循环」，但在此之前**没有任何机制阻止违反它**。
 数据契约写着「路径稳定」，但路径在 53 处被手工拼装，随时可能被违反而无人发现。
 
 这个文件就是那两条规则的执行者。它不测功能，只测**结构**。
@@ -24,7 +24,7 @@ ROOT = paths.ROOT
 #   ① 只有改名前的 `zotero_literature_platform.egg-info`，新名字的构建产物会被扫进来
 #   ② 没有 `template`，于是 toolbox/toolforge/template 里那些带 {{占位符}} 的
 #      骨架文件（**不是能运行的 Python**）会被架构守卫当成源码
-# 正是宪法那句「重复的规矩必然漂移」的实例。
+# 正是架构准则那句「重复的规矩必然漂移」的实例。
 # `归档_旧版本` 是本文件独有的（只有扫源码时才需要跳过它），所以额外并上。
 SKIP_DIRS = set(paths.NOISE_DIRS) | {'归档_旧版本'}
 
@@ -93,7 +93,7 @@ def test_数据目录路径只在core_paths里拼装():
 
 
 # ══════════════════════════════════════════════════════════════════════
-# 守卫二：依赖只能从上往下（宪法铁律 2 / REBUILD.md 第三节硬规则 3、4）
+# 守卫二：依赖只能从上往下（架构准则铁律 2 / REBUILD.md 第三节硬规则 3、4）
 # ══════════════════════════════════════════════════════════════════════
 # 环的层级，数字越小越底层。上层可以 import 下层，反之绝对不行。
 #
@@ -105,7 +105,7 @@ RINGS = {
     'shared/kernel':   0,      # 基础设施：谁都依赖它，它不依赖任何人
     'shared/domain':   1,      # 纯逻辑：不联网、不知道文件放在哪
     'shared/adapters': 1,      # 外部世界：唯一允许联网的一环
-    'tools':           2,      # 工具切片：把上面三者按顺序组合
+    'tools':           2,      # 工具包：把上面三者按顺序组合
     'host':            3,      # 平台自身：可以 import 一切，但没人可以 import 它
 }
 
@@ -151,7 +151,7 @@ def test_依赖方向不许反向():
             if bad:
                 violations.append(f'{rel}: 「{ring}」环 import 了「{target}」环')
     assert not violations, (
-        '依赖方向反了（违反架构宪法铁律 2）：' + _NL + _NL.join(sorted(set(violations)))
+        '依赖方向反了（违反架构准则铁律 2）：' + _NL + _NL.join(sorted(set(violations)))
         + _NL + '允许的方向：host → tools → shared.domain / shared.adapters → shared.kernel'
         + _NL + '（domain 连同层的 adapters 也不许碰 —— 那会让它没法离线测试）')
 
@@ -263,7 +263,7 @@ def test_纯逻辑环不许有IO也不许知道数据放在哪():
 
 
 # ══════════════════════════════════════════════════════════════════════
-# 守卫三：工具切片的形状（REBUILD.md 第二节、第三节硬规则 1 与 2）
+# 守卫三：工具包的形状（REBUILD.md 第二节、第三节硬规则 1 与 2）
 # ══════════════════════════════════════════════════════════════════════
 TOOLS_DIR = os.path.join(ROOT, 'tools')
 
@@ -322,7 +322,7 @@ def test_每个工具都有全套七件():
         if missing:
             offenders.append(f'tools/{t}: 缺 {missing}')
     assert not offenders, (
-        '工具切片的形状不完整（REBUILD.md 第二节）：' + _NL + _NL.join(offenders))
+        '工具包的形状不完整（REBUILD.md 第二节）：' + _NL + _NL.join(offenders))
 
 
 def test_工具的tests目录里真的有测试():
@@ -514,7 +514,7 @@ def _shared_block_users():
     return users
 
 
-def test_每个共用件都有三件套():
+def test_每个共用件都有必备文件():
     """`shared/` 里的每一块都要有 `__init__.py` / `selftest.py` / `CLAUDE.md`。
 
     这三件各挡一种失败：
@@ -540,7 +540,7 @@ def test_每个共用件都有三件套():
             if missing:
                 offenders.append(f'{ring}/{name}: 缺 {missing}')
     assert not offenders, (
-        '这些共用件的三件套不全（见 code-redlines skill「新增共用件」）：' + _NL
+        '这些共用件的必备文件不全（见 code-redlines skill「新增共用件」）：' + _NL
         + _NL.join(offenders))
 
 
@@ -622,7 +622,7 @@ def test_claude目录必须是生成物而不是手写的():
 
 
 def test_每个工具都有INCIDENTS且总目录是同步的():
-    """工具切片七件之外的第八件：`INCIDENTS.md`（这个工具特有的坑）。
+    """工具包七件之外的第八件：`INCIDENTS.md`（这个工具特有的坑）。
 
     为什么值得单独有一份：`docs/incidents/踩坑记录.md` 是 140 KB 的时间流水，
     **它进不了上下文**。改 deepread 的人不会去通读 93 条记录，

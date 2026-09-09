@@ -568,7 +568,7 @@ NOISE_DIRS = {
     'template',
 }
 
-# ② 非工作流目录 = 噪音 + 代码环 + 积木/文档/测试。
+# ② 非工作流目录 = 噪音 + 代码环 + 模块/文档/测试。
 #    用于「自动发现有哪几条工作流线」（体检、面板、交接文件都要这个判断）。
 NON_WORKFLOW_DIRS = NOISE_DIRS | {
     'shared', 'host', 'tools',              # 重构后的三个顶层代码包
@@ -589,18 +589,18 @@ CODE_ROOTS = ('shared', 'host', 'tools')
 #    放在 tools/ 里会违反「联网只在 adapters」）—— 它不是平台的能力层。
 SCANNED_ROOTS = CODE_ROOTS + ('toolbox',)
 
-# ④ 积木住的环。**带斜杠的相对路径**，因为 kernel/domain/adapters 现在住在 shared/ 底下。
+# ④ 模块住的环。**带斜杠的相对路径**，因为 kernel/domain/adapters 现在住在 shared/ 底下。
 #    依赖只能从上往下：host → tools → shared.domain / shared.adapters → shared.kernel
-#    'tools' 也在里面：工具切片一样是「有 __init__ + 自测」的块，体检要枚举到它们
+#    'tools' 也在里面：工具包一样是「有 __init__ + 自测」的块，体检要枚举到它们
 #    （R2 窗漏掉这一行的话，搬进 tools/ 的工具会静悄悄地不再被自测覆盖）。
 CODE_RINGS = ('shared/kernel', 'shared/domain', 'shared/adapters', 'tools')
 
 
 def block_dirs():
-    """列出四环里所有「积木」（带 __init__.py 的子包），返回 [(环, 名字, 目录)]。
+    """列出四环里所有「模块」（带 __init__.py 的子包），返回 [(环, 名字, 目录)]。
 
-    体检、控制面板、交接文件都要枚举积木。重构前它们各自 glob `modules/*/`，
-    积木一搬家三处全瞎 —— 所以这个枚举也收在契约层。
+    体检、控制面板、交接文件都要枚举模块。重构前它们各自 glob `modules/*/`，
+    模块一搬家三处全瞎 —— 所以这个枚举也收在契约层。
     """
     out = []
     for ring in CODE_RINGS:
@@ -615,7 +615,7 @@ def block_dirs():
 
 
 def block_dir(name):
-    """按名字找一块积木在哪个环，返回目录；找不到返回 None。"""
+    """按名字找一个模块在哪个环，返回目录；找不到返回 None。"""
     for _ring, n, d in block_dirs():
         if n == name:
             return d

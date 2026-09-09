@@ -35,7 +35,7 @@
   + shared.adapters.llm_client（谁来抽）
   + shared.kernel.jobs（谁抽的、哪版 schema、失败在哪）
 
-**自我评估循环**（借鉴 KnowMat，用自己的公理件实现，不引第三方框架）：
+**自我评估循环**（借鉴 KnowMat，用自己的原子模块实现，不引第三方框架）：
 抽完对照原文自检，发现漏抽/幻觉就带着反馈重抽一轮。
 `EXTRACT_NO_EVAL=1` 可关掉省钱；本地模型（ollama）自检不可靠，自动跳过。
 
@@ -76,7 +76,7 @@ def _model():
 
 
 def llm_json(system, user):
-    """按 provider 分流到公理件。**联网只发生在 adapters 里**（宪法铁律）。"""
+    """按 provider 分流到原子模块。**联网只发生在 adapters 里**（架构准则铁律）。"""
     if _provider() == 'ollama':
         return _chat_json(system, user, provider='ollama', model=_model())
     return _chat_json(system, user, provider='deepseek', model=_model(),

@@ -34,7 +34,7 @@ def embed(text):
 
 
 def chat(messages):
-    """多轮讨论走适配层（红线 #5：联网只在 adapters）。温度 0.7 —— 创意要发散。"""
+    """多轮讨论走适配层（强制规范 #5：联网只在 adapters）。温度 0.7 —— 创意要发散。"""
     return chat_messages(messages, provider='deepseek', model=CHAT_MODEL,
                          key=DEEPSEEK_KEY, temperature=0.7, max_tokens=4000)
 

@@ -68,7 +68,7 @@ REQUIRED = ('name', 'one_line', 'expose')
 
 
 def slices():
-    """所有工具切片：[(name, dir, manifest)]。没有 tool.toml 的目录 manifest 为 None。"""
+    """所有工具包：[(name, dir, manifest)]。没有 tool.toml 的目录 manifest 为 None。"""
     out = []
     if not os.path.isdir(TOOLS_DIR):
         return out

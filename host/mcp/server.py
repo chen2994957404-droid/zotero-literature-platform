@@ -5,7 +5,7 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-"""host.mcp.server · 平台的 MCP 服务：把各工具切片的 `mcp.py` 聚合成一个服务。
+"""host.mcp.server · 平台的 MCP 服务：把各工具包的 `mcp.py` 聚合成一个服务。
 
 MCP 客户端（Claude Code / Cursor / DSH…）以 stdio 子进程方式启动本文件。
 服务端自己**不知道有哪些工具** —— 它去 `tools/*/tool.toml` 现读现挂
@@ -26,12 +26,12 @@ from shared.kernel.cli import flag
 from host.mcp import registry
 from host.mcp.stdio import MCPStdioServer
 
-VERSION = '0.2.0'          # 0.1 = 手写 10 个 zotero 工具；0.2 = 按工具切片聚合
+VERSION = '0.2.0'          # 0.1 = 手写 10 个 zotero 工具；0.2 = 按工具包聚合
 NAME = 'zotero-platform'
 
 
 def build_server():
-    """装配服务：先挂服务自己的 ping，再把各工具切片挂上去。"""
+    """装配服务：先挂服务自己的 ping，再把各工具包挂上去。"""
     s = MCPStdioServer(NAME, VERSION)
     s.register_tool('ping', '存活检查：确认 MCP 服务本身在跑。',
                     {'type': 'object', 'properties': {}},
@@ -39,9 +39,9 @@ def build_server():
                                'structured': {'ok': True, 'server': NAME,
                                               'version': VERSION}})
     # 「取全文跑到哪了」——**平台自身的运行状态**，跟 ping 同类，所以挂在这里。
-    # 为什么不挂在 getpdf 切片里（2026-09-08）：那个切片是「花钱」档，
+    # 为什么不挂在 getpdf 工具包里（2026-09-08）：那个工具包是「花钱」档，
     # 守卫要求它的每个 tool 都带 confirm；而轮询工具每次弹窗，
-    # 等于把「后台发起 + 轮询」这个设计废掉。只读的东西不该被切片的档位连坐。
+    # 等于把「后台发起 + 轮询」这个设计废掉。只读的东西不该被工具包的档位连坐。
     s.register_tool('fulltext_status',
                     '看后台取全文跑到哪了（只读、零成本、不弹窗）。'
                     '跑完会给出每篇的 id 与来源，然后用 library_outline 看菜单。',
@@ -88,7 +88,7 @@ def print_list(s):
                          for a in p['arguments'])
         print(f"    {p['name']:<26} {p['description']}" + (f'   ({args})' if args else ''))
 
-    print('\n■ 工具切片')
+    print('\n■ 工具包')
     for name, man, got in s._report:
         kinds = ' '.join(f'{k}×{len(v)}' for k, v in got.items() if v) or '（没注册东西）'
         print(f"    {name:<12} expose={man.get('expose'):<9} {kinds}")

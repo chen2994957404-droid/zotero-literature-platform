@@ -4,7 +4,7 @@
 
 ## 这是什么
 
-**平台对外的 MCP 接口层**（宪法里的「界面层」）：让 Claude Code / Cursor / DSH 等 agent
+**平台对外的 MCP 接口层**（架构准则里的「界面层」）：让 Claude Code / Cursor / DSH 等 agent
 通过标准协议直接调用平台能力。
 
 R4 窗（2026-08-31）改成**聚合**：服务端自己不知道有哪些工具，
@@ -21,7 +21,7 @@ R4 窗（2026-08-31）改成**聚合**：服务端自己不知道有哪些工具
 | `stdio.py` | 手写 MCP stdio 协议层（JSON-RPC 2.0 + 换行分隔，零第三方依赖）|
 | `selftest.py` | 协议层离线自测（不联网、不依赖用户数据）|
 
-为什么不用官方 SDK：平台「少依赖」宪法 + 协议已实测稳定（官方 SDK 的 ReadBuffer
+为什么不用官方 SDK：平台「少依赖」架构准则 + 协议已实测稳定（官方 SDK 的 ReadBuffer
 就是按 `\n` 切帧，序列化 = `JSON + '\n'`）；日后要接 SSE/HTTP 再换 SDK，本层接口不变。
 
 ## 三类暴露 —— 这就是安全边界
@@ -33,11 +33,11 @@ R4 窗（2026-08-31）改成**聚合**：服务端自己不知道有哪些工具
 | `prompt` | **人在客户端里点** | 花钱的、有副作用的一律走这里 |
 
 **一条铁律，`registry.check()` 强制**：
-`costs_money=true` 或 `side_effects` 非空的工具切片，**不许注册 tool 类**。
+`costs_money=true` 或 `side_effects` 非空的工具包，**不许注册 tool 类**。
 钱和副作用必须停在人这一侧。故意违反会让 `--list` 变红、自测变红。
 
 现状：`library`（9 个）与 `paperdb`（4 个）是 tool；`extract` 出 3 份 resource；
-其余 8 个切片各出 1 条 prompt。
+其余 8 个工具包各出 1 条 prompt。
 
 ## 协议实现到什么程度
 
