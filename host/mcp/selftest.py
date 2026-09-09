@@ -62,6 +62,9 @@ def build_fake_server():
         lambda a: '我是一个裸字符串')
     s.register_tool('bad_type', '返回错误类型的工具', {'type': 'object', 'properties': {}},
         lambda a: 42)
+    # 踩坑 #151：工具往 stdout 打日志会污染报文流。协议流必须是私有的。
+    s.register_tool('noisy', '往 stdout 打日志的工具', {'type': 'object', 'properties': {}},
+        lambda a: (print('[日志] 我污染了 stdout'), {'text': '干完了'})[1])
     return s
 
 
@@ -89,7 +92,7 @@ def main():
         tools = rs[0]['result']['tools']
         names = [t['name'] for t in tools]
         check('tools/list 按注册顺序列出全部假工具',
-              names == ['echo', 'boom', 'bare_str', 'bad_type'], str(names))
+              names == ['echo', 'boom', 'bare_str', 'bad_type', 'noisy'], str(names))
         check('tools/list 工具带 inputSchema', all('inputSchema' in t for t in tools))
 
     # 4. tools/call 成功（含中文与 structured）
@@ -120,6 +123,30 @@ def main():
     check('handler 返回错误类型 → isError 而非协议错误',
           len(rs) == 1 and 'error' not in rs[0] and res.get('isError') is True, txt[:80])
     check('失败信息里带工具名（不带就没法排查）', 'bad_type' in txt, txt[:80])
+
+    # 5d. 协议流必须私有：工具往 stdout 打的东西不许混进报文（踩坑 #151）
+    proto = io.StringIO()
+    s._out = proto
+    noise = io.StringIO()
+    _old = sys.stdout
+    sys.stdout = noise                 # 模拟入口把 sys.stdout 指向 stderr 之后的样子
+    try:
+        s._handle(json.loads(
+            '{"jsonrpc":"2.0","id":33,"method":"tools/call",'
+            '"params":{"name":"noisy","arguments":{}}}'))
+    finally:
+        sys.stdout = _old
+        s._out = None
+    lines = [l for l in proto.getvalue().splitlines() if l.strip()]
+    clean = True
+    for l in lines:
+        try:
+            json.loads(l)
+        except Exception:
+            clean = False
+    check('协议流里每一行都是合法 JSON（工具的日志没混进来）',
+          clean and len(lines) == 1, repr(proto.getvalue())[:100])
+    check('工具打的日志确实落在了另一条流上', '我污染了 stdout' in noise.getvalue())
 
     # 6. 未知工具
     rs = feed(s, '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"nope","arguments":{}}}')

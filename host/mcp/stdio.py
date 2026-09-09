@@ -111,8 +111,16 @@ class MCPStdioServer:
 
     # ── 运行 ──────────────────────────────────────────────────────────
 
-    def serve(self):
-        """阻塞读 stdin 逐行处理，直到 EOF（客户端断开即退出）。stdout 只写协议。"""
+    def serve(self, out=None):
+        """阻塞读 stdin 逐行处理，直到 EOF（客户端断开即退出）。
+
+        `out`：协议专用的输出流。入口（`host/mcp/server.py`）会在**注册工具之前**
+        把真 stdout 私有化交给这里，同时把 `sys.stdout` 指向 stderr ——
+        于是工具打的任何日志都污染不到报文流（踩坑 #151）。
+        不传就退回 `sys.stdout`（自测就是这么用的）。
+        """
+        if out is not None:
+            self._out = out
         # ⚠ stdin 必须显式设成 UTF-8（踩坑 #43）。
         # MCP 协议规定报文是 UTF-8，但 Windows 上 sys.stdin 默认跟随系统代码页（本机 gbk），
         # 于是客户端发来的中文参数会被按 gbk 解码成乱码 ——
@@ -332,8 +340,11 @@ class MCPStdioServer:
 
     def _send(self, msg):
         # 换行分隔 + ensure_ascii=False：官方 SDK 按 \n 切帧，中文保持可读
-        sys.stdout.write(json.dumps(msg, ensure_ascii=False) + '\n')
-        sys.stdout.flush()
+        # `self._out` 是协议专用流（见 serve 的 out 参数）；没设就退回 sys.stdout，
+        # 自测就是靠这条退路把报文接走的。
+        out = getattr(self, '_out', None) or sys.stdout
+        out.write(json.dumps(msg, ensure_ascii=False) + '\n')
+        out.flush()
 
     def _respond(self, req_id, result):
         self._send({'jsonrpc': '2.0', 'id': req_id, 'result': result})

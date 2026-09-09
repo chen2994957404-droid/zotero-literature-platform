@@ -103,12 +103,38 @@ def print_list(s):
     return 0
 
 
+def _claim_stdout_for_protocol():
+    """把 stdout 私有化给协议用，再让 `sys.stdout` 指向 stderr。返回真正的 stdout。
+
+    **stdio 传输里 stdout 是协议通道，只许跑 JSON-RPC。** 而工具用
+    `shared.kernel.log.get_logger()` 打的日志默认就往 stdout 写 ——
+    `getpdf_one` 取到 PDF 时打的那行「DOI → 路径（N 字节）」直接混进了报文流里，
+    宽容的客户端逐行解析能扛住，严格的会当场断会话（踩坑 #151）。
+
+    为什么必须在**注册工具之前**做：日志器是模块级的
+    （`tools/getpdf/__init__.py` 里 `log = get_logger('getpdf')`），
+    `logging.StreamHandler(sys.stdout)` 在构造时就抓住了流对象，
+    等 `serve()` 再换已经晚了。
+
+    为什么不放进 `MCPStdioServer.__init__`：`--list` 是给人看的，那条路径要真 stdout。
+    所以由入口按模式决定，别让协议层替所有调用方做这个决定。
+    """
+    real = sys.stdout
+    try:
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+    sys.stdout = sys.stderr      # 之后任何 print / 日志都落到 stderr，不污染协议
+    return real
+
+
 def main():
     """入口：--list 打印清单（给人看），否则启动 MCP stdio 服务。"""
-    s = build_server()
     if flag('--list'):
-        return print_list(s)
-    s.serve()
+        return print_list(build_server())        # 给人看的那条路，走真 stdout
+    protocol_out = _claim_stdout_for_protocol()  # ⚠ 必须在 build_server() 之前
+    s = build_server()
+    s.serve(out=protocol_out)
     return 0
 
 
