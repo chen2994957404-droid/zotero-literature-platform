@@ -215,6 +215,13 @@ def stash(doi, pdf_path, purpose='建库', col_key=None, index=None, force=False
         else:
             _web.add_to_collection(key, col_key,
                                    action=f'把 {doi} 放进「{sub}」', force=force)
+            # ⚠ 条目**不是本流水线建的**时候，它身上不会有平台约定的那两个标签，
+            #   摘要也可能是空的 —— 于是它对下游整个隐形：`curate` 认不出来源，
+            #   粗层向量化没有可检索的内容。2026-09-09 真实发生过：
+            #   外部 agent 绕过本函数、直接调 `create_items` 建了三条，
+            #   元数据（DOI/期刊/作者）都对，唯独缺标签和摘要。
+            #   所以这条分支要**补齐**，而不是只把它放进合集就完事。
+            _backfill(key, doi, purpose, force=force)
             out['action'] = 'exists'
         out['item'] = key
 
@@ -242,6 +249,43 @@ def stash(doi, pdf_path, purpose='建库', col_key=None, index=None, force=False
         out['note'] = f'{type(e).__name__}: {e}'
         log.info(f'{doi} 收进库失败：{out["note"]}')
     return out
+
+
+def _backfill(item_key, doi, purpose, force=False):
+    """把库里已有条目缺的那几样补上：平台标签 + 空摘要。**只补，绝不覆盖。**
+
+    只在两种东西缺失时才动手，且只动这两样：
+      · 平台约定的标签 `来源/自动` 与 `用途/<purpose>` —— 缺哪个补哪个
+      · `abstractNote` **为空**时才去 Crossref 取一份填上
+
+    为什么不覆盖已有内容：用户可能手工改过标题、加过自己的标签、写过笔记。
+    「补齐」和「以我为准」是两件事，这里只做前者。
+
+    补不上不算失败（Crossref 查不到、网络不通都可能），静默跳过 ——
+    调用方要的是 PDF 挂上去，元数据是顺带的。
+    """
+    from shared.adapters import crossref
+    from shared.adapters.zotero_client import _web
+    want = {'来源/自动', f'用途/{purpose}'}
+    try:
+        cur = _web.get_item(item_key)
+        d = cur.get('data') or {}
+        have = {t.get('tag') for t in (d.get('tags') or [])}
+        patch = {}
+        if not want.issubset(have):
+            patch['tags'] = [{'tag': t} for t in sorted(have | want) if t]
+        if not (d.get('abstractNote') or '').strip():
+            m = crossref.work(doi)
+            ab = (crossref.to_zotero_item(m).get('abstractNote') or '').strip()
+            if ab:
+                patch['abstractNote'] = ab
+        if patch:
+            _web.patch_item(item_key, patch,
+                            action=f'补齐 {doi} 的标签/摘要（只补空的，不覆盖）',
+                            force=force)
+            log.info(f'{doi} 补齐了：{"、".join(patch)}')
+    except Exception as e:
+        log.info(f'{doi} 补齐元数据没成（不影响挂 PDF）：{type(e).__name__}: {e}')
 
 
 def _has_pdf_child(item_key):
