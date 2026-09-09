@@ -268,9 +268,21 @@ class MCPStdioServer:
             return
         try:
             out = tool['handler'](arguments)
+            # handler 的约定是返回 {'text', 'structured'?, 'is_error'?}。
+            # ⚠ 但**返回一个裸字符串是最容易犯的错**（踩坑 #150）：以前这里直接
+            # `out.get('text')`，字符串会炸成 `'str' object has no attribute 'get'`，
+            # 而且那行在 try 外面 —— 报出来是协议级「内部错误」，**不带工具名**，
+            # 排查时完全看不出是谁的问题。裸字符串的意图毫无歧义，直接收下；
+            # 顺便把结果组装挪进 try，这样任何组装期的异常也能带上工具名回给模型。
+            if isinstance(out, str):
+                out = {'text': out}
+            elif not isinstance(out, dict):
+                raise TypeError(
+                    f'工具 {name} 的 handler 返回了 {type(out).__name__}，'
+                    f'只接受 dict（{{"text": ...}}）或 str')
         except Exception as e:  # 业务异常 → 作为工具错误回给模型（isError），而非协议错误
             self._respond(req_id, {
-                'content': [{'type': 'text', 'text': f'工具执行失败：{e}'}],
+                'content': [{'type': 'text', 'text': f'工具 {name} 执行失败：{e}'}],
                 'isError': True,
             })
             return

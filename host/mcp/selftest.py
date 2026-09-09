@@ -55,6 +55,13 @@ def build_fake_server():
         lambda a: {'text': f'回显：{a["text"]}', 'structured': {'echoed': a['text']}})
     s.register_tool('boom', '必然失败的工具', {'type': 'object', 'properties': {}},
         lambda a: (_ for _ in ()).throw(RuntimeError('模拟业务异常')))
+    # 踩坑 #150：handler 返回裸字符串是最容易犯的错。以前它会炸成协议级
+    # 「内部错误」且不带工具名。下面两个工具把「宽容收下」和「其它类型要报清楚」
+    # 都钉住。
+    s.register_tool('bare_str', '返回裸字符串的工具', {'type': 'object', 'properties': {}},
+        lambda a: '我是一个裸字符串')
+    s.register_tool('bad_type', '返回错误类型的工具', {'type': 'object', 'properties': {}},
+        lambda a: 42)
     return s
 
 
@@ -81,7 +88,8 @@ def main():
     if rs:
         tools = rs[0]['result']['tools']
         names = [t['name'] for t in tools]
-        check('tools/list 含 echo/boom', names == ['echo', 'boom'], str(names))
+        check('tools/list 按注册顺序列出全部假工具',
+              names == ['echo', 'boom', 'bare_str', 'bad_type'], str(names))
         check('tools/list 工具带 inputSchema', all('inputSchema' in t for t in tools))
 
     # 4. tools/call 成功（含中文与 structured）
@@ -97,6 +105,21 @@ def main():
     # 5. tools/call 业务异常
     rs = feed(s, '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"boom","arguments":{}}}')
     check('tools/call 业务异常转 isError', len(rs) == 1 and rs[0]['result'].get('isError') is True)
+
+    # 5b. handler 返回裸字符串 → 宽容收下，不许炸（踩坑 #150）
+    rs = feed(s, '{"jsonrpc":"2.0","id":31,"method":"tools/call","params":{"name":"bare_str","arguments":{}}}')
+    ok = (len(rs) == 1 and 'result' in rs[0]
+          and rs[0]['result']['content'][0]['text'] == '我是一个裸字符串'
+          and not rs[0]['result'].get('isError'))
+    check('handler 返回裸字符串也能用（不炸成协议错误）', ok, str(rs[:1])[:120])
+
+    # 5c. handler 返回其它类型 → 报成工具错误，且**必须带工具名**
+    rs = feed(s, '{"jsonrpc":"2.0","id":32,"method":"tools/call","params":{"name":"bad_type","arguments":{}}}')
+    res = rs[0].get('result', {}) if rs else {}
+    txt = (res.get('content') or [{}])[0].get('text', '')
+    check('handler 返回错误类型 → isError 而非协议错误',
+          len(rs) == 1 and 'error' not in rs[0] and res.get('isError') is True, txt[:80])
+    check('失败信息里带工具名（不带就没法排查）', 'bad_type' in txt, txt[:80])
 
     # 6. 未知工具
     rs = feed(s, '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"nope","arguments":{}}}')

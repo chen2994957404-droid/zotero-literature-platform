@@ -31,10 +31,20 @@ def _line(it):
         (it.get('venue') or '?')[:40], it.get('doi') or '(无 DOI)')
 
 
-def _rows(items, head=''):
-    if not items:
-        return (head + '\n' if head else '') + '（没有结果）'
-    return (head + '\n' if head else '') + '\n'.join(_line(it) for it in items)
+def _rows(items, head='', total=None):
+    """→ `{'text', 'structured'}`。
+
+    ⚠ **handler 必须返回 dict，不能返回字符串** —— `host/mcp/stdio.py` 的
+    `_handle_call` 拿到返回值直接 `out.get('text')`，返回字符串会在那里炸成
+    `'str' object has no attribute 'get'`，而且那行在 try 外面，
+    报出来是协议级「内部错误」，看不出是哪个工具的问题（踩坑 #150）。
+    """
+    text = (head + '\n' if head else '') + (
+        '\n'.join(_line(it) for it in items) if items else '（没有结果）')
+    st = {'count': len(items or []), 'items': items or []}
+    if total is not None:
+        st['total_worldwide'] = total
+    return {'text': text, 'structured': st}
 
 
 def _search(a):
@@ -44,16 +54,18 @@ def _search(a):
     head = '全世界命中 %d 篇，返回前 %d 篇。' % (total, len(items))
     if total > len(items):
         head += '（命中远多于返回时，说明检索词还可以再收窄）'
-    return _rows(items, head)
+    return _rows(items, head, total=total)
 
 
 def _abstract(a):
     it = litsearch.abstract(a.get('doi') or '')
     if not it:
-        return '查不到这个 DOI（OpenAlex 里没有收录，或 DOI 写错了）。'
-    return '%s\n\n%s\n\n摘要：\n%s' % (
+        return {'text': '查不到这个 DOI（OpenAlex 里没有收录，或 DOI 写错了）。',
+                'structured': {'found': False}}
+    return {'text': '%s\n\n%s\n\n摘要：\n%s' % (
         it.get('title') or '(无标题)', _line(it),
-        (it.get('abstract') or '(这篇没有摘要)'))
+        (it.get('abstract') or '(这篇没有摘要)')),
+        'structured': {'found': True, 'item': it}}
 
 
 def register(server):
