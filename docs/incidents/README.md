@@ -93,6 +93,10 @@
 | #10 | Zotero API 限流 429 + 重复处理 | 批量查要限速 |
 | #9 | 本地 API 请求被 PowerShell 拒 / curl 中文乱码 | 别用 shell 拼请求，走 `shared.adapters.zotero_client` |
 
+### litsearch（0 条）
+
+还没有本工具特有的坑。
+
 ### paperdb（1 条）
 
 | 坑号 | 现象 | 对这个工具意味着什么 |

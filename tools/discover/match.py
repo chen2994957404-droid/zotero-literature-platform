@@ -25,27 +25,26 @@
 
 依赖：shared.adapters.embed（本地 bge-m3，免费）、shared.adapters.zotero_client、shared.adapters.vectordb。
 
-## 为什么住在 discover 里而不是 shared/（R3 窗，2026-08-30）
+## 纯判断已经下沉，这里只剩编排（2026-09-09 拆「找文献」）
 
-下沉规则：**一段代码被 ≥2 个工具用到才允许下沉到 `shared/`**。
-本块只有 `tools/discover` 一个使用者（面板调的也是 discover 这条线），
-所以留在工具里。REBUILD.md 第四节曾把它划给 `tools/ask`，
-但那会逼出一次 `tools/discover` → `tools/ask` 的跨工具 import，
-违反同一份文件第三节的硬规则 2（工具之间不许互相 import）——**规则优先于映射表**。
+R3 窗（2026-08-30）当时的结论是「本块只有 `tools/discover` 一个使用者，所以留在工具里」。
+2026-09-09 拆「找文献」时这个前提变了：新增的 `tools/litsearch`（对抗式检索取原料）
+也要问「这篇我有没有」，于是**纯判断部分**（标题归一、余弦、字符重合度、
+标注 in_library、两个阈值）下沉进了 `shared/domain/libmatch`，满足下沉规则的「≥2 个使用者」。
+
+**留在这里的是编排**：拉库索引并缓存、批量向量化、按语义挑种子、排序。
+它们要 `embed` / `vectordb` / `zotero_client` 三个适配器，且只有 discover 这一条线在用。
+
+下面把下沉出去的名字**再导出**一次 —— `selftest.py` 与 `tests/test_evals.py`
+一直按 `match.norm_title` / `match._overlap` 引用，保持它们不用改。
 """
-import re
 import time
 
-# 判定阈值（实测可调）。语义相似度用 1-余弦距离。
-DUP_SIM = 0.92        # 高于此值 + 标题也像 → 基本可断定是同一篇（换了写法）
-STRONG_SIM = 0.75     # 高于此值 → 与我的方向强相关，值得优先看
+from shared.domain.libmatch import (
+    DUP_SIM, STRONG_SIM, char_overlap as _overlap, cosine as _cos, norm_title)
+
 _index_cache = {'t': 0, 'titles': set(), 'dois': set()}
 CACHE_TTL = 300       # 库索引缓存 5 分钟，避免一次批量对照反复拉 Zotero
-
-
-def norm_title(t):
-    """标题归一：去标点、空白、大小写。用于精确层比对。"""
-    return re.sub(r'[^a-z0-9]', '', (t or '').lower())
 
 
 def build_index(force=False):
@@ -142,27 +141,6 @@ def match_many(papers, top_n=3, topic=None):
         except Exception:
             continue
     return results
-
-
-def _cos(a, b):
-    """余弦相似度。向量维度不一致或全零时返回 0，不抛异常。"""
-    try:
-        s = sum(x * y for x, y in zip(a, b))
-        na = sum(x * x for x in a) ** 0.5
-        nb = sum(y * y for y in b) ** 0.5
-        return s / (na * nb) if na and nb else 0.0
-    except Exception:
-        return 0.0
-
-
-def _overlap(a, b):
-    """粗略字符级重合度，用于「标题也像吗」的二次确认。"""
-    if not a or not b:
-        return 0.0
-    sa, sb = set(a[i:i + 4] for i in range(len(a) - 3)), set(b[i:i + 4] for i in range(len(b) - 3))
-    if not sa or not sb:
-        return 0.0
-    return len(sa & sb) / min(len(sa), len(sb))
 
 
 def match(paper):
