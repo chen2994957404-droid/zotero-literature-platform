@@ -22,7 +22,7 @@ MCP 客户端（Claude Code / Cursor / DSH…）以 stdio 子进程方式启动�
   resource 模型可以自己读 —— 只读数据（对比表这种）
   prompt   **由人在客户端里点** —— 花钱的、有副作用的一律走这里
 """
-from shared.kernel.cli import flag
+from shared.kernel.cli import flag, opt
 from host.mcp import registry
 from host.mcp.stdio import MCPStdioServer
 
@@ -129,9 +129,23 @@ def _claim_stdout_for_protocol():
 
 
 def main():
-    """入口：--list 打印清单（给人看），否则启动 MCP stdio 服务。"""
+    """入口：--list 看清单 · --http 起 HTTP 服务 · 默认 stdio。
+
+    **两条腿的区别不在协议，在「谁来跑这个进程」**：
+      · stdio  —— 客户端把本服务当子进程拉起来。客户端在哪台机器，进程就在哪台。
+                  从 SSH 拉起时会落进**网络登录会话**，读不到系统凭据库（踩坑 #101），
+                  于是所有要密钥的工具（写 Zotero、调大模型）都用不了。
+      · http   —— 服务由**主力机自己**以交互式会话常驻（跟 watcher 一样），
+                  凭据库正常可读，32 个工具全部可用；客户端只是连上来。
+                  跨机访问走 SSH 端口转发，不开公网端口。
+    """
     if flag('--list'):
         return print_list(build_server())        # 给人看的那条路，走真 stdout
+    if flag('--http'):
+        from host.mcp import http_transport as mcp_http
+        # HTTP 那条腿不占用 stdout，日志照常打屏幕，所以不做私有化切换
+        return mcp_http.serve(build_server(),
+                              port=int(opt('--port') or mcp_http.DEFAULT_PORT)) or 0
     protocol_out = _claim_stdout_for_protocol()  # ⚠ 必须在 build_server() 之前
     s = build_server()
     s.serve(out=protocol_out)

@@ -222,6 +222,89 @@ def main():
     check('工具清单自洽（tool.toml ↔ 实际注册）', not problems,
           ' / '.join(problems[:3]))
 
+    # 16. HTTP 传输（2026-09-09）。**只绑 127.0.0.1、端口取 0 让系统随便给**，
+    #     所以它仍然满足「不联网、不依赖用户数据」——绑本机不是联网，也不会撞端口。
+    #     测的是对着 2025-03-26 规范的那几条硬要求。
+    import threading
+    import urllib.error
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+
+    from host.mcp import http_transport as H
+
+    check('Origin 判定：空 Origin 放行（非浏览器客户端不发这个头）',
+          H._is_local_origin('') and H._is_local_origin(None))
+    check('Origin 判定：本机放行', H._is_local_origin('http://127.0.0.1:8778'))
+    check('Origin 判定：外站拒绝', not H._is_local_origin('https://evil.example.com'))
+
+    httpd = ThreadingHTTPServer(('127.0.0.1', 0), H.make_handler(build_fake_server(), ''))
+    port = httpd.server_address[1]
+    th = threading.Thread(target=httpd.serve_forever, daemon=True)
+    th.start()
+    base = f'http://127.0.0.1:{port}{H.ENDPOINT}'
+
+    def call(method='POST', body=None, headers=None, path=None):
+        req = urllib.request.Request(
+            path or base, method=method,
+            data=(body.encode('utf-8') if body else None),
+            headers=headers or {'Content-Type': 'application/json'})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, r.headers.get('Content-Type', ''), r.read().decode('utf-8')
+        except urllib.error.HTTPError as e:
+            return e.code, e.headers.get('Content-Type', ''), e.read().decode('utf-8')
+
+    try:
+        st, ct, body = call(body='{"jsonrpc":"2.0","id":1,"method":"ping"}')
+        check('HTTP：含请求 → 200 + application/json',
+              st == 200 and 'application/json' in ct, f'{st} {ct}')
+        check('HTTP：响应就是那条 JSON-RPC 结果',
+              json.loads(body).get('id') == 1, body[:80])
+
+        st, _, _ = call(body='{"jsonrpc":"2.0","method":"notifications/initialized"}')
+        check('HTTP：只含通知 → 202 空体（规范 MUST）', st == 202, str(st))
+
+        st, _, _ = call(method='GET', headers={'Accept': 'text/event-stream'})
+        check('HTTP：GET → 405（本服务不推流，规范允许这么答）', st == 405, str(st))
+
+        st, _, _ = call(body='{"jsonrpc":"2.0","id":2,"method":"ping"}',
+                        headers={'Content-Type': 'application/json',
+                                 'Origin': 'https://evil.example.com'})
+        check('HTTP：外站 Origin → 403（防 DNS 重绑定，规范 MUST）', st == 403, str(st))
+
+        st, _, _ = call(body='not json')
+        check('HTTP：坏 JSON → 400', st == 400, str(st))
+
+        st, _, body = call(body='[{"jsonrpc":"2.0","id":10,"method":"ping"},'
+                                '{"jsonrpc":"2.0","id":11,"method":"tools/list"}]')
+        arr = json.loads(body)
+        check('HTTP：批请求 → 返回数组，一条对一条',
+              st == 200 and isinstance(arr, list) and len(arr) == 2, f'{st} {body[:60]}')
+
+        st, _, _ = call(body='{"jsonrpc":"2.0","id":3,"method":"ping"}',
+                        path=f'http://127.0.0.1:{port}/nope')
+        check('HTTP：错端点 → 404', st == 404, str(st))
+
+        # 令牌那道闸
+        httpd2 = ThreadingHTTPServer(('127.0.0.1', 0),
+                                     H.make_handler(build_fake_server(), 'sekrit'))
+        p2 = httpd2.server_address[1]
+        threading.Thread(target=httpd2.serve_forever, daemon=True).start()
+        try:
+            st, _, _ = call(body='{"jsonrpc":"2.0","id":4,"method":"ping"}',
+                            path=f'http://127.0.0.1:{p2}{H.ENDPOINT}')
+            check('HTTP：配了令牌时，不带 Authorization → 401', st == 401, str(st))
+            st, _, _ = call(body='{"jsonrpc":"2.0","id":5,"method":"ping"}',
+                            headers={'Content-Type': 'application/json',
+                                     'Authorization': 'Bearer sekrit'},
+                            path=f'http://127.0.0.1:{p2}{H.ENDPOINT}')
+            check('HTTP：带对令牌 → 200', st == 200, str(st))
+        finally:
+            httpd2.shutdown(); httpd2.server_close()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
     print(f'\n结果：{len(_PASS)} 过 / {len(_FAIL)} 挂')
     if _FAIL:
         print('挂掉项：', ', '.join(_FAIL))
