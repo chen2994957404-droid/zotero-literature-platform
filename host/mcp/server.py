@@ -47,8 +47,43 @@ def build_server():
                     '跑完会给出每篇的 id 与来源，然后用 library_outline 看菜单。',
                     {'type': 'object', 'properties': {}},
                     lambda a: {'text': _fulltext_status()})
+    # 「这篇精读到哪一步了」——同一条判例（2026-09-10）：deepread 那个工具包是
+    # 「花钱」档，守卫要求它注册的每个 tool 都 confirm；而查进度是**发起之后必然
+    # 要反复做的动作**，每次弹窗等于把「排队 + 轮询」这个设计废掉。
+    # 只读、零成本的东西不该被工具包的档位连坐，所以挂在平台层。
+    s.register_tool('deepread_status',
+                    '看某篇文献精读到哪一步了（只读、零成本、不弹窗）。'
+                    '同时报 Zotero 的状态标签与本地产物 —— 两者可能不一致'
+                    '（回写失败时产物已经在盘上了）。用 deepread_request 排队之后靠它轮询。',
+                    {'type': 'object',
+                     'properties': {'itemKey': {'type': 'string',
+                                                'description': 'Zotero 条目 key'}},
+                     'required': ['itemKey']},
+                    lambda a: {'text': _deepread_status(a.get('itemKey') or ''),
+                               'structured': _deepread_status_raw(a.get('itemKey') or '')})
     s._report = registry.register_all(s)      # --list 与自测要看这份账
     return s
+
+
+def _deepread_status_raw(key):
+    from tools import deepread
+    return deepread.status(key)
+
+
+def _deepread_status(key):
+    """→ 给人/模型看的一行话。不猜、不报错：查不到就说查不到。"""
+    if not key:
+        return '要给 itemKey（Zotero 条目 key，8 位字母数字）。'
+    d = _deepread_status_raw(key)
+    made = []
+    if d['summary']:
+        made.append('正文精读')
+    if d['summary_full']:
+        made.append('正文+SI 合并版')
+    return ('{0}{1}\n  状态标签：{2}\n  本地产物：{3}{4}'.format(
+        key, ('　' + d['title']) if d['title'] else '',
+        d['tag'] or '（没有）', '、'.join(made) or '（还没有）',
+        ('\n  ' + d['note']) if d.get('note') else ''))
 
 
 def _fulltext_status():

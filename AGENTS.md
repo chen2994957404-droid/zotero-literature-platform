@@ -17,21 +17,22 @@
 
 ```
 docs/  ← 跨工具的档案（另有 3 份日志直接躺在下面）
-    explain/（6）、howto/（3）、reference/（6）、incidents/（2）  ← 为什么 / 怎么做 / 事实 / 坑
+    explain/（7）、howto/（3）、reference/（6）、incidents/（2）  ← 为什么 / 怎么做 / 事实 / 坑
 host/  ← 平台自身：让平台活着的东西（没人 import 它）（8 块）
     autosync、codegen、deploy、doctor、mcp、panel、watcher、wechat_import
 launch/  ← 给人双击的入口（10 个）
     取全文用的浏览器.bat、导入公众号精读.bat、控制面板.bat、更新平台.bat、比一比两个模型.bat、精读监听.bat、诊断报告.bat、连上文献平台（Antigravity用）.bat、重抽缺SI的文献.bat、重跑精读PRO.bat
+scratch/ （0 个脚本）
 shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
-    kernel/  ← 基础设施：谁都依赖它，它不依赖任何人（12 块）
-        cli、config、proc_lock、prompts、subproc、errors.py、heartbeat.py、jobs.py、log.py、mcp_prompt.py、paths.py、role.py
+    kernel/  ← 基础设施：谁都依赖它，它不依赖任何人（13 块）
+        cli、config、proc_lock、prompts、subproc、budget.py、errors.py、heartbeat.py、jobs.py、log.py、mcp_prompt.py、paths.py、role.py
     domain/  ← 纯逻辑：不联网、不知道文件放在哪（3 块）
         figure_crop、libmatch、schema
     adapters/  ← 外接口：唯一允许联网/用第三方库的一环（12 块）
         crossref、embed、llm_client、openalex、pdf_fetch、pdf_parse、query_expand、sciverse、snowball、vectordb、wechat_seed、zotero_client
 specs/ （0 个脚本）
-tests/ （3 个脚本）
-    test_architecture.py、test_no_undefined_names.py、test_principles.py
+tests/ （4 个脚本）
+    test_architecture.py、test_budget.py、test_no_undefined_names.py、test_principles.py
 toolbox/ （0 个脚本）
 tools/  ← 工具包：一个工具 = 一个自包含的包（12 块）
     ask、askworld、curate、deepread、digitize、direction、discover、extract、getpdf、library、litsearch、paperdb

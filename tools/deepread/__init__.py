@@ -230,3 +230,82 @@ def _ensure_parsed(key, pdf_path, force=False, log=print):
     with jobs.track(key, STEP_PARSE, producer='mineru'):
         parse_pdf(pdf_path, parsed, reuse=not force)
     return parsed
+
+
+# ── 排队与查进度（2026-09-10 加）──────────────────────────────────────
+# **为什么是「排队」而不是「精读」**：精读一篇要跑几分钟，远超 MCP 约 60 秒的
+# 调用上限，做不成同步 tool（`tool.toml` 里早写着这个判断）。
+# 而平台本来就有一条更省事的路 —— 在 Zotero 打「待处理」标签，常驻服务自动做完全套。
+# 所以给模型开的入口是**打标签**：快、幂等、可逆，真正花钱的活由 watcher 在后台干，
+# 那一侧有 `shared.kernel.budget` 的当日额度闸兜着。
+
+def request(item_key, log=print):
+    """把一篇排进精读队列（= 打「待处理」标签）。返回 dict(ok, action, note)。
+
+    **幂等**：已经在队列里就说在队列里，已经精读完的会告诉你到哪一步了 ——
+    不重复打标签，也不谎称「已安排」。
+
+    action：`queued`（排上了）/ `already_queued`（本来就在队里）/
+            `already_done`（已经精读过，附带当前状态）/ `failed`
+    """
+    from shared.kernel import role
+    from shared.adapters import zotero_client as zotero
+    from tools.deepread import tags as T
+
+    out = {'ok': False, 'action': 'failed', 'note': '', 'state': ''}
+    try:
+        role.require_prod(f'把文献 {item_key} 排进精读队列（会写 Zotero 标签，'
+                          f'随后常驻服务会真的去精读 —— 那一步要花钱）')
+        cur = zotero.get_item(item_key)
+        have = [t.get('tag') for t in (cur.get('data') or {}).get('tags', [])
+                if t.get('tag') in T.ALL_STATE_TAGS]
+        out['state'] = '/'.join(have)
+        if any(t in T.TRIGGER_TAGS for t in have):
+            out.update(ok=True, action='already_queued',
+                       note='本来就在队列里，没有重复打标签。')
+            return out
+        done = [t for t in have if t in (T.TAG_FULL, T.TAG_MAIN, T.TAG_MAIN_WX, T.TAG_SI)]
+        if done:
+            out.update(ok=True, action='already_done',
+                       note=f'已经精读过（{"/".join(done)}）。'
+                            f'要补 SI 或重跑，仍然可以再打一次「待处理」——'
+                            f'状态机只会补缺的那部分，不会整篇重来。')
+            return out
+        T.set_state_tag(item_key, T.TRIGGER_TAG, log=log)
+        out.update(ok=True, action='queued',
+                   note='排上了。常驻服务下一轮轮询（约一分钟内）会接手，'
+                        '一篇要跑几分钟。用 deepread_status 查进度，别干等。')
+    except Exception as e:
+        out['note'] = f'{type(e).__name__}: {e}'
+    return out
+
+
+def status(item_key):
+    """这篇精读到哪一步了。**只读、免费** —— 给「发起后轮询」用。
+
+    同时看两处，因为它们可能不一致（写回 Zotero 失败时产物已经在盘上了）：
+      · Zotero 的状态标签  —— 用户在客户端里看到的
+      · 本地产物文件       —— 真正做出来了什么
+    """
+    import os
+
+    from shared.adapters import zotero_client as zotero
+    from tools.deepread import tags as T
+
+    out = {'key': item_key, 'tag': '', 'summary': False, 'summary_full': False,
+           'title': '', 'note': ''}
+    try:
+        it = zotero.item(item_key)
+        d = it.get('data', it)
+        out['title'] = (d.get('title') or '')[:80]
+        out['tag'] = '/'.join(t.get('tag') for t in (d.get('tags') or [])
+                              if t.get('tag') in T.ALL_STATE_TAGS)
+    except Exception as e:
+        out['note'] = f'读 Zotero 失败：{type(e).__name__}'
+    out['summary'] = os.path.exists(paths.summary(item_key))
+    out['summary_full'] = os.path.exists(paths.summary_full(item_key))
+    if not out['tag'] and not out['summary']:
+        out['note'] = out['note'] or '还没排队，也没有任何精读产物。'
+    elif out['tag'] in T.TRIGGER_TAGS and not out['summary']:
+        out['note'] = '在队列里，还没轮到或正在跑。'
+    return out

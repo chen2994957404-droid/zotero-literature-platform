@@ -12,4 +12,9 @@ prompts       = ["main@v1"]
 #   单次、便宜、可重来        → 可以进这里（调用时客户端强制弹窗，且没有「不再询问」）
 #   全库作业 / 不可逆写 Zotero → 一律不许，留给人点
 # 注册成 tool 的名字必须都在这张表里，且必须带 confirm —— registry.check() 强制。
-agent_tools   = []   # 一次要打 Sciverse + 大模型，留给人点（以后可考虑放开）
+agent_tools   = ["askworld_ask"]
+# 2026-09-10 放开（原注释写的就是「以后可考虑放开」）。
+# 判据完全对得上「单次、便宜、可重来」：问一个问题就是一次，
+# `side_effects` 是空的（它不写任何东西），问错了再问一次即可。
+# 代价那一侧现在也有兜底：`shared.kernel.budget` 的当日额度闸装在 llm_client 上，
+# 不依赖客户端 —— MCP 的 confirm 是 Claude Code 专有标记，换个客户端会被忽略。
