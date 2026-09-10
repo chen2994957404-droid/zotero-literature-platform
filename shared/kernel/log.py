@@ -90,7 +90,13 @@ class Log:
                 self._logger.addHandler(fh)
             except Exception:
                 pass                             # 写不了文件也不能让主流程挂掉
-        if to_stdout and not have_stdout:
+        # ⚠ `sys.stdout is None` 是 **pythonw.exe** 下的常态（无控制台）。
+        #   照旧挂 `StreamHandler(sys.stdout)` 的话：StreamHandler 见 stream 是 None
+        #   会退回 sys.stderr，而那个**也是 None** —— 于是往后每写一条日志都在
+        #   handler 内部抛一次异常再被 logging 吞掉。文件那一路还在写，所以
+        #   **表面上一切正常**，只是白白抛异常，而且真出事时你一点线索都没有。
+        #   计划任务改用 pythonw 启动（为了不弹控制台窗口）时会走到这里。
+        if to_stdout and not have_stdout and sys.stdout is not None:
             sh = logging.StreamHandler(sys.stdout)
             sh.setFormatter(fmt)
             self._logger.addHandler(sh)

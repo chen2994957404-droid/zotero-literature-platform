@@ -428,14 +428,34 @@ def c_services():
         return OK, f'{role.label()}不注册自启任务（常驻服务只在主力机跑），跳过检查'
     try:
         from shared.kernel.subproc import powershell
+        # 一次问全：任务名 + 它的动作。动作要用来查「会不会弹控制台窗口」。
         out = powershell(
             "Get-ScheduledTask | Where-Object {$_.TaskName -in "
             "@('ZoteroLiteratureWatcher','OllamaService','ZoteroApp','LiteratureAutoSync')} "
-            "| Select-Object -ExpandProperty TaskName", timeout=30)
-        tasks = [t.strip() for t in out.splitlines() if t.strip()]
+            "| ForEach-Object { $_.TaskName + '|' + ($_.Actions | "
+            "Select-Object -First 1 -ExpandProperty Execute) }", timeout=30)
+        rows = [r.strip() for r in out.splitlines() if r.strip() and '|' in r]
+        tasks = {r.split('|', 1)[0]: r.split('|', 1)[1] for r in rows}
         want = {'ZoteroLiteratureWatcher', 'OllamaService', 'ZoteroApp', 'LiteratureAutoSync'}
         miss = want - set(tasks)
-        return (OK, f'{len(tasks)} 个自启任务在') if not miss else (WARN, f'缺任务: {miss}')
+        if miss:
+            return WARN, f'缺任务: {miss}'
+
+        # ⚠ 计划任务用 **python.exe** 启动 = 每次都在用户桌面上弹一个控制台窗口。
+        #   这些任务都是 LogonType=Interactive（必须的：只有交互式会话读得到凭据库），
+        #   而 python.exe 是控制台程序，Windows 一定给它分配控制台。
+        #   四个任务里有两个每小时跑一次 —— 用户看到的就是「时不时弹 python 窗口」
+        #   （2026-09-09 用户报的，踩坑 #153）。
+        #   `c_no_popup` 查不到这里：它查的是**代码里的 subprocess 调用**，
+        #   而这一层在任务计划里，不在代码里。**两层都要查。**
+        #   正解是 pythonw.exe（无控制台版）。
+        noisy = sorted(n for n, exe in tasks.items()
+                       if os.path.basename(exe or '').lower() == 'python.exe')
+        if noisy:
+            return WARN, (f'{len(tasks)} 个自启任务在，但这些用 python.exe 启动、'
+                          f'会在桌面弹控制台窗口：{"、".join(noisy)}'
+                          f'（改成同目录的 pythonw.exe 即可）')
+        return OK, f'{len(tasks)} 个自启任务在，且都不弹窗'
     except Exception as e:
         return WARN, f'无法查询任务计划: {e}'
 
