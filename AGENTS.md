@@ -195,6 +195,20 @@ host  →  tools  →  shared.domain / shared.adapters  →  shared.kernel
 其中「单次、便宜、可重来」的入口（问一次库 / 抽一篇 / 读一张图）可以逐个写进
 `tool.toml` 的 `agent_tools` 白名单放开成 tool，但必须 `confirm=True`
 （客户端每次弹窗且无「不再询问」）。**两道闸缺一不可，守卫双向查。**
+
+⚠ **第三道闸（2026-09-10 加）：白名单本身也要准入。**
+往 `agent_tools` 加一个名字，必须同时在 `tests/test_architecture.py` 的
+`AGENT_TOOLS_APPROVED` 里登记**并写明理由**，否则守卫变红。
+第二处存在的意义就是逼人把「为什么它是单次/便宜/可重来」写成一句话。
+`curate` / `discover` / `direction` / 整批 `getpdf` / 整篇 `deepread` 列在
+`HUMAN_ONLY` 里，**永远只给人点**。
+
+⚠ 而且要知道：**弹窗那道闸不是硬的。** `confirm` 是 Claude Code 专有标记，
+换个客户端（Antigravity）会被直接忽略 —— 2026-09-10 外部 agent 批量精读 10 篇，
+全程无人确认，余额从 2.48 掉到 1.04 元。真正硬的是服务端的当日额度闸
+（`shared/kernel/budget.py`，在控制面板设 `DAILY_LLM_CALLS` / `DAILY_LLM_TOKENS`）。
+**加白名单之前先问：如果客户端不弹窗，这件事我还敢让它自己做吗？**
+
 提示词进 `prompts/<名>_v<N>.txt`，**只增不改**，版本在 `tool.toml` 里声明。
 
 ## `.claude/` 全部是生成物，**手写即违规**（有守卫）

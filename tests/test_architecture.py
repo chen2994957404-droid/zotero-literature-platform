@@ -998,3 +998,119 @@ def test_引导脚本不许在模块顶层import项目包():
         + _NL.join(offenders)
         + _NL + '做法：放进函数里延迟 import，并写好 import 失败时的降级路径'
         + _NL + '（顶层写在 try/except 里也可以 —— 那不算模块顶层的裸 import）')
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 谁能自己发起花钱/写库的操作 —— 这道闸的**准入名单**（2026-09-10 加）
+# ══════════════════════════════════════════════════════════════════════
+#
+# `host/mcp/registry.check()` 已经管住了三件**机制**上的事：
+#   · 花钱/有副作用的 tool 必须写进 tool.toml 的 agent_tools
+#   · 白名单里写着的必须真的存在（名单不许说谎）
+#   · 这些 tool 必须带 confirm=True
+#
+# 它管不到的是**准入本身**：谁都能往某个 agent_tools 里加一行，三条机制照样全绿。
+# 于是这道安全边界的实际宽度，取决于「最近一次改它的人有没有想清楚」。
+#
+# 本表把那个判断**固定下来**：白名单里出现的每一个名字，都必须在这里登记并写明理由。
+# 加一个新入口 = 改两个地方（tool.toml + 这里），而且第二处逼你把理由写成一句话。
+# 这跟 SINK_EXEMPT「必须写理由」是同一套办法，也跟 expose 那条「两道闸缺一不可、
+# 守卫双向查」是同一个思路。
+#
+# ── 准入判据（AGENTS.md 与各 tool.toml 里反复出现的那条）──────────────
+#   单次、便宜、可重来        → 可以进（客户端每次弹窗，且没有「不再询问」）
+#   全库作业 / 不可逆写 Zotero → **一律不许**，留给人在客户端里点 prompt
+#
+# ⚠ 而且要记住：**弹窗那道闸不是硬的**。`confirm` 是 Claude Code 专有标记
+#   （`anthropic/requiresUserInteraction`），换个客户端（Antigravity）会被直接忽略
+#   —— 2026-09-10 实际发生过：外部 agent 批量精读 10 篇，全程无人确认。
+#   真正硬的是服务端的当日额度闸（`shared/kernel/budget.py`）。
+#   **所以往这张表里加东西之前，先问「如果没有弹窗，这件事我还敢让它自己做吗」。**
+AGENT_TOOLS_APPROVED = {
+    'ask_library': '问一次自己的库。单次、几分钱、只读，问错了再问一次即可。',
+    'askworld_ask': '问全世界一个问题。单次、只读（side_effects 为空），可重来。',
+    'extract_one': '抽**一篇**的结构化字段。单次、可重来；全库增量抽取仍走 prompt。',
+    'digitize_figure': '读**一张**图。单次、可重来；整篇每张都读仍走 prompt。',
+    'getpdf_one': '取**一篇**的 PDF。不花钱、盘上有了会跳过；'
+                  '一整批的量能触发出版商风控（封的是整个机构的 IP），所以只放开单篇。',
+    'paper_fulltext': 'DOI → 可读全文，默认最多 3 篇；前三层（缓存/本地/Zotero）零成本，'
+                      '只有第四层才真去敲出版商。',
+    'getpdf_stash_one': '收**一篇**进 Zotero（建/补条目、挂 PDF、归合集、打标签）。'
+                        '与「不可逆写 Zotero 一律走 prompt」有张力，是用户 2026-09-10 '
+                        '拍板放开的：外部 agent 在看不见本工具包时会自己读代码绕过去，'
+                        '给正规入口比假装它没有路更安全。代价被一次一篇框住。',
+    'deepread_request': '把**一篇**排进精读队列（= 打「待处理」标签）。打标签本身'
+                        '单次、便宜、可逆。⚠ 但它会引出昂贵的后果（watcher 随后真去精读）'
+                        '—— 靠服务端的当日额度闸兜底，不是靠弹窗。',
+}
+
+# 永远不给模型自己发起的**那一类**。列在这里是为了让边界可读，
+# 也让「有人想把它挪进白名单」时先撞上这段话。
+HUMAN_ONLY = {
+    'curate': '批量改用户的库（打标签/改名/去重/删条目）。不可逆，且量级由不得模型定。',
+    'discover': '一次检索要打好几个外部源，收取那步还会按 DOI 写 Zotero。',
+    'direction': '建一条窄带是几百次请求、十几分钟的全库作业。',
+    'deepread': '整篇精读跑几分钟且最贵 —— 模型能发起的是「排队」，不是「精读」。',
+    'extract': '全库增量抽取是全库作业。',
+    'getpdf': '整批取 PDF 会触发出版商风控，**被封的是整个机构的 IP**，'
+              '代价不可逆、也不由本人承担。',
+}
+
+
+def _agent_tools_in_manifests():
+    """{工具包名: [白名单里的 tool 名]}，直接读各 tool.toml。"""
+    import tomllib
+    out = {}
+    d = os.path.join(ROOT, 'tools')
+    for name in sorted(os.listdir(d)):
+        f = os.path.join(d, name, 'tool.toml')
+        if os.path.isfile(f):
+            with open(f, 'rb') as fh:
+                out[name] = list(tomllib.load(fh).get('agent_tools') or [])
+    return out
+
+
+def test_白名单里的每个入口都要登记过理由():
+    """加一个「模型能自己发起的花钱入口」，必须同时改 tool.toml 和本文件。
+
+    第二处存在的全部意义，是逼改动的人把理由写成一句话 ——
+    写不出「为什么它是单次/便宜/可重来」的，就不该进白名单。
+    """
+    offenders = []
+    for pkg, names in _agent_tools_in_manifests().items():
+        for n in names:
+            if n not in AGENT_TOOLS_APPROVED:
+                offenders.append(f'tools/{pkg}/tool.toml 的 agent_tools 里有 {n!r}')
+    assert not offenders, (
+        '这些入口没在 tests/test_architecture.py 的 AGENT_TOOLS_APPROVED 里登记：' + _NL
+        + _NL.join(offenders) + _NL
+        + '判据：单次、便宜、可重来 → 可以进；全库作业 / 不可逆写 Zotero → 留给人点。' + _NL
+        + '登记时必须写明理由。写不出理由，就是不该放开。' + _NL
+        + '⚠ 先问自己：**如果客户端不弹窗（Antigravity 就不弹），我还敢让它自己做吗？**')
+
+
+def test_登记表里不许有已经不存在的入口():
+    """名单不许说谎 —— 反向也要查，否则删掉入口后这里会留一条过期的许可。"""
+    live = {n for names in _agent_tools_in_manifests().values() for n in names}
+    stale = sorted(set(AGENT_TOOLS_APPROVED) - live)
+    assert not stale, (
+        'AGENT_TOOLS_APPROVED 里登记着、但已经没有哪个 tool.toml 在用的入口：' + _NL
+        + _NL.join(stale) + _NL
+        + '入口删掉了就把这里的登记一并删掉，别留着一条随时可能被重新用上的许可。')
+
+
+def test_只给人的那几类不许出现在任何白名单里():
+    """`curate` / `discover` / `direction` 这些整包永远只给人点。
+
+    查的是「有没有人把整包的主入口塞进白名单」—— 那等于把一整类作业交给模型。
+    """
+    offenders = []
+    for pkg, names in _agent_tools_in_manifests().items():
+        for n in names:
+            if n in HUMAN_ONLY:
+                offenders.append(f'tools/{pkg}: {n}（{HUMAN_ONLY[n]}）')
+    assert not offenders, (
+        '这些是**永远只给人**的入口，却出现在了 agent_tools 白名单里：' + _NL
+        + _NL.join(offenders) + _NL
+        + '要放开的话，先改 HUMAN_ONLY 并说明为什么它不再属于那一类 —— '
+        + '别绕过这段话。')
