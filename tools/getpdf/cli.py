@@ -77,7 +77,7 @@ def main():
     # ── 跨付费墙的原子入口（2026-09-08）─────────────────────────────
     # 后台作业也走这条路（MCP 的 paper_fulltext 就是 spawn 它）。
     if flag('--fulltext'):
-        from shared.kernel import paths, role
+        from shared.kernel import paths
         from tools.getpdf import fulltext as F
         keys = list(positionals())
         if not keys:
