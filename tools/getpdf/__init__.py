@@ -165,6 +165,53 @@ def doi_index(limit=100):
     return out
 
 
+def resolve_collection(spec, force=False):
+    """把「阿课题/抗冲丙烯酸酯」这样的路径（或一个 8 位 key）解析成合集 key。
+
+    **为什么要有它**（2026-09-10）：`stash` 原来只会把条目归进固定的
+    「<顶层>/建库用」。用户说「收进阿课题下的某某文件夹」时，外部 agent 没有入口，
+    于是自己去调底层接口 —— 失败之后**给失败编了一套「跨账号安全隔离」的解释**，
+    而那个机制根本不存在。缺入口的代价不只是干不成，还有一份听起来很合理的假汇报。
+
+    规矩（刻意的）：
+      · **中间层必须已经存在**，不存在就报错并列出那一层实际有什么 ——
+        让调用方照着改，而不是让它自由发挥
+      · **只有最后一层允许新建**（用户说「建个子文件夹」指的就是这一层）
+      · 传 8 位 key 就直接用它，不做路径解析
+    """
+    from shared.adapters.zotero_client import _web
+    spec = (spec or '').strip().strip('/')
+    if not spec:
+        return None
+    cols = _web.list_collections()
+    by_key = {c['key']: c for c in cols}
+    if spec in by_key:                       # 直接给了 key
+        return spec
+
+    parent, walked = None, []
+    parts = [p.strip() for p in spec.split('/') if p.strip()]
+    for i, name in enumerate(parts):
+        last = (i == len(parts) - 1)
+        hit = _web.find_collection(name, parent, cols=cols)
+        if hit:
+            parent, walked = hit, walked + [name]
+            continue
+        if not last:
+             # 中间层缺失 —— 把这一层真实有什么列出来，比一句「找不到」有用得多
+            siblings = sorted(c['data']['name'] for c in cols
+                              if (c['data'].get('parentCollection') or None) == parent)
+            where = '/'.join(walked) or '（顶层）'
+            raise ValueError(
+                f'合集路径「{spec}」里的「{name}」不存在。'
+                f'{where} 下面现有：{("、".join(siblings[:12]) or "（空）")}'
+                f'{"…" if len(siblings) > 12 else ""}。'
+                f'**只有最后一层允许新建**，中间层请用真实存在的名字。')
+        parent = _web.ensure_collection(name, parent,
+                                        action=f'建合集「{spec}」', force=force, cols=cols)
+        walked.append(name)
+    return parent
+
+
 def ensure_tree(purpose, force=False):
     """确保「<顶层>/<用途>」这棵合集树在，返回用途那一层的 key。"""
     from shared.adapters.zotero_client import _web
@@ -180,7 +227,8 @@ def ensure_tree(purpose, force=False):
                                   force=force, cols=cols)
 
 
-def stash(doi, pdf_path, purpose='建库', col_key=None, index=None, force=False):
+def stash(doi, pdf_path, purpose='建库', col_key=None, index=None, force=False,
+          collection=None):
     """把一篇收进 Zotero → dict(doi, ok, action, item, note)。
 
     `action` 说明这次到底做了什么，四种：
@@ -195,9 +243,17 @@ def stash(doi, pdf_path, purpose='建库', col_key=None, index=None, force=False
     from shared.adapters.zotero_client import _web
 
     sub, _ = PURPOSES[purpose]
-    out = {'doi': doi, 'ok': False, 'action': 'failed', 'item': '', 'note': ''}
+    out = {'doi': doi, 'ok': False, 'action': 'failed', 'item': '', 'note': '',
+           'collection': ''}
     try:
+        # `collection` 给了就归到那里，**取代**默认的「<顶层>/建库用」——
+        # 用户说「收进某某文件夹」时要的就是这个。那棵默认树只是组织用的，
+        # 没有任何下游在读它（查过：只有公众号导入的提示语提了一句）。
+        if collection:
+            col_key = resolve_collection(collection, force=force)
+            sub = collection
         col_key = col_key or ensure_tree(purpose, force=force)
+        out['collection'] = sub
         # 整批共用一份索引：既省请求，也让**这一批里的重复**当场就被认出来
         if index is None:
             index = doi_index()

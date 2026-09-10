@@ -16,6 +16,8 @@
     python -m tools.getpdf --file dois.txt --to-zotero             # 默认「建库」用途
     python -m tools.getpdf 10.1016/xxx --to-zotero --purpose 精读   # 标成重点文章
     python -m tools.getpdf --file dois.txt --to-zotero --with-si   # 连补充材料一起
+    python -m tools.getpdf 10.1016/xxx --to-zotero --collection "阿课题/抗冲丙烯酸酯"
+        └ 归到指定合集。**中间层必须已存在**，只有最后一层会自动新建
 
 **跑之前**：那台机器上要有一个带调试口启动的浏览器，**里面得有人过过一次人机验证**
 （机构订阅靠出口 IP 自动生效，不用登录；人机验证的通行证跟着浏览器的用户资料走）。
@@ -170,7 +172,8 @@ def main():
     if with_si:
         _fetch_si_all(results, where, gap)
     if to_zotero:
-        _stash_all(results, purpose, with_si=with_si)
+        _stash_all(results, purpose, with_si=with_si,
+                   collection=opt('--collection'))
     return 0
 
 
@@ -195,21 +198,23 @@ def _fetch_si_all(results, where, gap):
             time.sleep(gap)
 
 
-def _stash_all(results, purpose, with_si=False):
+def _stash_all(results, purpose, with_si=False, collection=None):
     """把拿到的那些收进 Zotero，逐篇报告。"""
     got = [r for r in results if r['ok'] and r['path']]
     if not got:
         print('\n没有可以收进 Zotero 的（这批一篇都没拿到）。')
         return
     sub, why = getpdf.PURPOSES[purpose]
-    print(f'\n收进 Zotero → 「{getpdf.collection_top()}/{sub}」（{why}）')
+    where = collection or f'{getpdf.collection_top()}/{sub}'
+    print(f'\n收进 Zotero → 「{where}」（{why}）')
 
     words = {'created': '新建了条目并挂上 PDF', 'attached': '条目本来就有，补了 PDF',
              'exists': '本来就在库里', 'failed': '没成'}
     print('  先取一份全库 DOI 索引用来查重…')
     index = getpdf.doi_index()
     print(f'  库里现有 {len(index)} 篇带 DOI 的文献')
-    col = getpdf.ensure_tree(purpose)
+    col = (getpdf.resolve_collection(collection) if collection
+           else getpdf.ensure_tree(purpose))
     counts = {}
     for i, r in enumerate(got, 1):
         s = getpdf.stash(r['doi'], r['path'], purpose=purpose,

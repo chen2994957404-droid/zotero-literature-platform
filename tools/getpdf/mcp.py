@@ -67,14 +67,16 @@ def _stash_one(a):
     r = getpdf.fetch_one(doi) if p['ok'] else {'ok': False, 'reason': 'no_browser', 'path': ''}
     pdf_path = r.get('path') if (r.get('ok') or r.get('reason') == 'exists') else ''
 
-    s = getpdf.stash(doi, pdf_path, purpose=purpose)
+    collection = (a.get('collection') or '').strip()
+    s = getpdf.stash(doi, pdf_path, purpose=purpose, collection=collection or None)
     if not s['ok']:
         return f'{doi} 收进库没成：{s["note"]}'
     words = {'created': '新建了条目', 'attached': '条目本来就有，补了 PDF',
              'exists': '条目本来就有'}
     sub, _why = getpdf.PURPOSES[purpose]
+    where = collection or f'{getpdf.collection_top()}/{sub}'
     out = (f'{doi} → {words.get(s["action"], s["action"])}（{s["item"]}），'
-           f'已归入「{getpdf.collection_top()}/{sub}」')
+           f'已归入「{where}」')
     if s.get('note'):
         out += f'\n  {s["note"]}'
     if not pdf_path:
@@ -124,7 +126,13 @@ def register(server):
             'doi': {'type': 'string',
                     'description': 'DOI，形如 10.1016/j.compositesb.2025.112845'},
             'purpose': {'type': 'string', 'enum': ['建库', '精读'],
-                        'description': '建库=只解析向量化（默认）；精读=标成重点文章'}},
+                        'description': '建库=只解析向量化（默认）；精读=标成重点文章'},
+            'collection': {'type': 'string',
+                           'description': '归到哪个合集，用路径写，如 「阿课题/抗冲丙烯酸酯」。'
+                                          '**中间层必须已经存在**（不存在会报错并告诉你那一层'
+                                          '实际有什么），只有最后一层会自动新建。'
+                                          '不给就归进默认的「LLM导入/建库用」。'
+                                          '不确定名字就先用 library_collections 看一眼'}},
          'required': ['doi']},
         lambda a: _stash_one(a),
         confirm=True)      # ← 写库，必须每次弹窗
