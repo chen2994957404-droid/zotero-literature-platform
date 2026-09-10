@@ -170,7 +170,13 @@ def _ollama_usage(r):
             'completion_tokens': r.get('eval_count') or 0}
 
 
-def _note_usage(u, model=''):
+def _note_usage(u, model='', paid=False):
+    """记这次调用的用量。`paid=True` 时**同时记进跨进程的当日账本**。
+
+    进程内的 `USAGE` 只活到进程结束，调用方拿它算「这一篇花了多少」；
+    而 `shared.kernel.budget` 是落盘的当日账本，watcher / 面板 / MCP 三个进程
+    各花各的，只有落盘才加得到一起。本地 Ollama 不计（免费），所以要 `paid` 这个参数。
+    """
     if not u:
         return
     USAGE['calls'] += 1
@@ -179,6 +185,10 @@ def _note_usage(u, model=''):
     det = u.get('completion_tokens_details') or {}
     USAGE['reasoning'] += int(det.get('reasoning_tokens') or 0)
     USAGE['model'] = model or USAGE['model']
+    if paid:
+        from shared.kernel import budget
+        budget.record(prompt=u.get('prompt_tokens') or 0,
+                      completion=u.get('completion_tokens') or 0, model=model)
 
 
 def usage_snapshot():
@@ -232,6 +242,12 @@ def _cloud_chat(messages, model, key, temperature, json_mode, max_tokens,
     endpoint = _chat_endpoint(provider)
     if not key:
         raise LLMError(f'未提供 {key_env}')
+    # ⚠ 当日额度闸。**装在发请求之前** —— 一次调用要么完整发生要么不发生，
+    #   半截的精读比不精读更难收拾。没设限额时它永远放行（只记账）。
+    #   这道闸不依赖客户端：MCP 的 confirm 是 Claude Code 专有标记，
+    #   换个客户端（Antigravity）会被直接忽略（2026-09-10 实际发生过）。
+    from shared.kernel import budget
+    budget.check(f'调用 {model}')
     body = {'model': model, 'temperature': temperature, 'messages': messages}
     # 「少想一点」这件事，两家的说法不一样，得各说各的话。
     #
@@ -271,7 +287,7 @@ def _cloud_chat(messages, model, key, temperature, json_mode, max_tokens,
             hint = ('\n  429 在免费档一般是**额度用光**（每分钟或每天的上限），'
                     '不是服务器忙 —— 重试帮不上，要等下一个额度窗口。')
         raise LLMError(f'{provider} 服务端异常，重试 4 次仍失败: {last}{hint}')
-    _note_usage(r.get('usage'), model)
+    _note_usage(r.get('usage'), model, paid=True)
     ch = r['choices'][0]
     out = ch['message'].get('content') or ''
     # 输出被 max_tokens 截断时明确报错，避免静默产出半截/空结果
@@ -380,6 +396,11 @@ def chat_vision(system, user, image_b64, provider=None, model=None, key=None,
         key = key or _cfg_get(key_env)
         if not key:
             raise LLMError(f'未提供 {key_env}')
+        # ⚠ 看图这条路**自己发请求，不经过 `_cloud_chat`**，所以闸门要单独装一份。
+        #   2026-09-07 记账那次栽过同样的形状：只有 `_cloud_chat` 记账，于是
+        #   **最贵的那类调用反而是唯一没被管住的**。加闸时别重蹈覆辙。
+        from shared.kernel import budget
+        budget.check(f'看图（{model}）')
         content = [{'type': 'text', 'text': user},
                    {'type': 'image_url', 'image_url': {'url': data_uri}}]
         body = {'model': model, 'temperature': temperature,
@@ -394,7 +415,7 @@ def chat_vision(system, user, image_b64, provider=None, model=None, key=None,
         # 看图也要记账（2026-09-07 补）。此前只有 `_cloud_chat` 记，于是
         # **最贵的那类调用反而是唯一不记账的** —— 试跑两张图后问「花了多少」，
         # 得到的是「调用 0 次、0 token」，正是 USAGE 当初要消灭的那种回答。
-        _note_usage(r.get('usage'), model)
+        _note_usage(r.get('usage'), model, paid=True)
         return r['choices'][0]['message']['content']
 
 

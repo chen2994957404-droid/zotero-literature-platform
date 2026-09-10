@@ -254,7 +254,20 @@ def collect_config():
                    'options': SITE_OPTIONS.get(n, [])}
                   for n, lb, _d, hp in SITE_SETTINGS],
         'env_file': ENV_FILE,
+        # 今天花了多少。**光能填限额、看不见用量，等于让人盲填** ——
+        # 用户得先看见「一篇精读大概多少 token」才定得出那个数。
+        # 这里只是把 shared.kernel.budget 的账原样端出来，面板不算账（面板铁律）。
+        'budget': _budget_today(),
     }
+
+
+def _budget_today():
+    """当日大模型用量与上限。取不到就说取不到 —— 面板不猜、不报错。"""
+    try:
+        from shared.kernel import budget
+        return budget.today()
+    except Exception as e:
+        return {'error': f'{type(e).__name__}: {e}'}
 
 
 # 哪些本机设置是「选一个」而不是「填一段」。**选项从 shared.kernel.role 取，不在前端写死**。

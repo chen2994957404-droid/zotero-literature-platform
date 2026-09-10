@@ -417,6 +417,32 @@ def c_data():
     return OK, msg
 
 
+def c_budget():
+    """今天花了多少大模型额度，以及有没有设上限。
+
+    **为什么要有这一项**：平台原本的花钱防线是 MCP 的 `confirm=True`，
+    而那是 Claude Code 专有标记，换个客户端（Antigravity）会被直接忽略 ——
+    2026-09-10 外部 agent 一次批量精读 10 篇，全程无人确认。
+    所以闸挪到了服务端（`shared/kernel/budget`），而这一项负责让它**可见**：
+    看不见的开销既没法优化，也没法让人放心。
+    """
+    from shared.kernel import budget
+    d = budget.today()
+    used = f"今天 {d['calls']} 次调用 / 产出 {d['completion']} token"
+    if d['models']:
+        top = sorted(d['models'].items(), key=lambda kv: -kv[1]['completion'])[:2]
+        used += '（' + '、'.join(f"{m}×{v['calls']}" for m, v in top) + '）'
+    if not d['limit_calls'] and not d['limit_tokens']:
+        return WARN, (used + '；**没设当日上限** —— 外部 agent 可以无人确认地花钱。'
+                      '去控制面板设 DAILY_LLM_CALLS 或 DAILY_LLM_TOKENS')
+    lim = []
+    if d['limit_calls']:
+        lim.append(f"次数 {d['calls']}/{d['limit_calls']}")
+    if d['limit_tokens']:
+        lim.append(f"产出 {d['completion']}/{d['limit_tokens']}")
+    return OK, used + '；上限 ' + '、'.join(lim)
+
+
 def c_services():
     """四个自启任务在不在。**只对运行端有意义** —— 编程端/测试端都不该注册它们。
 
@@ -551,6 +577,7 @@ if __name__ == '__main__':
         check('Ollama 服务', c_ollama)
         check('原子模块自测', c_modules)
         check('数据资产', c_data)
+        check('大模型花销', c_budget)
         check('后台服务', c_services)
 
     nf = sum(1 for s, _, _ in results if s == FAIL)
