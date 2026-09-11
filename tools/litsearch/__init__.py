@@ -67,8 +67,14 @@ from shared.domain.libmatch import mark_have
 CACHE_TTL = 300
 _index_cache = {'t': 0, 'titles': set(), 'dois': set()}
 
-# 一次最多给多少条。给太多会把 agent 的上下文吃掉，而对抗式检索靠的是多轮窄查询。
-MAX_LIMIT = 100
+# 一次最多给多少条。**200 是 OpenAlex 单页的真实上限**，不是我们拍的数。
+#
+# ⚠ 2026-09-10 从 100 提到 200，理由是用户那句话：
+# 「现在 LLM 自己也能检索到合适的论文，中间这层会不会反而限制它」。
+# 分界线在这里：**递事实 = 增强，替判断 = 限制**。
+# 「这个领域一共 112 篇」是事实，那就应该一次能捞干净；
+# 把它切成 100 篇一页，是我们替调用方决定了「先看这些就够了」。
+MAX_LIMIT = 200
 
 
 def _index(force=False):
@@ -115,15 +121,23 @@ def search(term, limit=25, year_from=None, year_to=None):
 
 
 def abstract(doi):
-    """取一篇的完整记录（**含摘要**）。查不到返回 None。
+    """取一篇的完整记录，**摘要不截断**。查不到返回 None。
 
     对抗式检索里这一步最要紧 —— 判断一篇贴不贴题、有没有配方，
     靠的就是读摘要，而不是看标题猜。
+
+    ⚠ 和 `search()` 的分工是刻意的：列表里给**预览**（截到 1500 字，省上下文，
+    并如实标 `abstract_truncated`），这里给**全文摘要**。
+    「我要完整看这一篇」的时候再截断，就是替调用方判断「剩下的不重要」——
+    而剩下的常常正是方法那一段（2026-09-10 实战里那条决定性证据就藏在靠后位置）。
     """
     w = openalex.work_by_doi(doi)
     if not w:
         return None
     item = openalex.normalize(w)
+    item['abstract'] = openalex.restore_abstract(
+        w.get('abstract_inverted_index'), limit=0)
+    item['abstract_truncated'] = False
     return _finish([item], 1)[0]
 
 

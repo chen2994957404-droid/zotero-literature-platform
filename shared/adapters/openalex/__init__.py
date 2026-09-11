@@ -115,6 +115,14 @@ def restore_abstract(inv, limit=1500):
 
     这是 OpenAlex 为规避版权做的历史设计。不还原摘要就没法用 ——
     而摘要正是判断「这篇跟我的方向相不相关」的主要依据。
+
+    `limit=0`（或 None）= **不截断**。
+
+    ⚠ 为什么要有「不截断」这条路（2026-09-10）：截断是在调用方看到之前
+    **替它做判断**，而被截掉的常常正是方法那一段 —— 这次实战里决定性的那条证据
+    （「二苯基硅二醇 + 对甲苯硼酸回流 12 小时，90% 产率得到八元环」）
+    就藏在一篇标题讲废水处理的文章摘要靠后的位置。
+    列表预览可以截（省上下文），但**「我要完整看这一篇」时必须给全**。
     """
     if not inv:
         return ''
@@ -123,7 +131,8 @@ def restore_abstract(inv, limit=1500):
         for word, idxs in inv.items():
             for i in idxs:
                 pos[i] = word
-        return ' '.join(pos[i] for i in sorted(pos))[:limit]
+        text = ' '.join(pos[i] for i in sorted(pos))
+        return text[:limit] if limit else text
     except Exception:
         return ''      # 摘要还原失败不该让整次检索失败
 
@@ -141,13 +150,19 @@ def normalize(w):
     is_oa = bool((w.get('open_access') or {}).get('is_oa'))
     if not is_oa and isinstance(loc, dict):
         is_oa = bool(loc.get('is_oa'))
+    _abs_full = restore_abstract(w.get('abstract_inverted_index'), limit=0)
+    _abs_preview = _abs_full[:1500]
     return {
         'title': (w.get('title') or '').strip(),
         'doi': doi,
         'year': w.get('publication_year'),
         'venue': src.get('display_name') or '',
         'citations': w.get('cited_by_count') or 0,     # ← 全平台统一叫 citations
-        'abstract': restore_abstract(w.get('abstract_inverted_index')),
+        # 摘要默认截断（列表预览要省上下文），但**要如实说出「还有更多」**——
+        # 悄悄截断等于替调用方判断「剩下的不重要」，而剩下的常常是方法那一段。
+        # 想看全的走 restore_abstract(..., limit=0) 或 tools.litsearch.abstract()。
+        'abstract': _abs_preview,
+        'abstract_truncated': len(_abs_full) > len(_abs_preview),
         'is_oa': is_oa,
         'oa_url': (loc.get('landing_page_url') or '') if isinstance(loc, dict) else '',
         'openalex_id': (w.get('id') or '').split('/')[-1],

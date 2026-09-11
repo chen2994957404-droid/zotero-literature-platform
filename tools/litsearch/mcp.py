@@ -18,8 +18,9 @@ except Exception:
 from tools import litsearch
 
 _DOI = {'doi': {'type': 'string', 'description': '文献的 DOI，如 10.1021/ma500632f'}}
-_LIMIT = {'limit': {'type': 'integer', 'minimum': 1, 'maximum': 100,
-                    'description': '返回条数上限，默认见各工具'}}
+_LIMIT = {'limit': {'type': 'integer', 'minimum': 1, 'maximum': 200,
+                    'description': '返回条数上限（200 是 OpenAlex 单页的真实上限），'
+                                   '默认见各工具'}}
 
 
 def _line(it):
@@ -76,7 +77,10 @@ def register(server):
         '**精确检索**全世界的文献：检索词必须真的出现在标题或摘要里（不是模糊相关性排序）。'
         '返回里带「这篇我库里有没有」，并告诉你全世界一共有多少篇 —— 命中数远大于返回数时，'
         '说明这个词还太宽，该收窄。免费、只读。'
-        '词组要加引号，多词用 AND，例：`"phenylboronic acid" AND siloxane`。',
+        '词组要加引号，多词用 AND，例：`"phenylboronic acid" AND siloxane`。'
+        '⚠ 列表里的摘要是**预览**（截到 1500 字，会标出 abstract_truncated）；'
+        '要完整判断一篇，用 lit_abstract 取不截断的全文摘要。'
+        '一次最多 200 条 —— 一个几十上百篇的领域可以一次捞干净。',
         {'type': 'object', 'properties': dict(
             {'term': {'type': 'string', 'description': '检索词（支持引号词组与 AND）'},
              'yearFrom': {'type': 'integer', 'description': '起始年份（含）'},
@@ -86,8 +90,9 @@ def register(server):
 
     server.register_tool(
         'lit_abstract',
-        '按 DOI 取一篇的**完整摘要**。判断一篇贴不贴题、有没有你要的配方，靠读摘要，'
-        '不要看标题猜。免费、只读。',
+        '按 DOI 取一篇的**完整摘要（不截断）**。判断一篇贴不贴题、有没有你要的配方，'
+        '靠读摘要，不要看标题猜 —— 关键的方法描述常常在摘要靠后的位置，'
+        'lit_search 列表里的预览可能正好把它切掉。免费、只读。',
         {'type': 'object', 'properties': dict(_DOI), 'required': ['doi']},
         _abstract)
 
