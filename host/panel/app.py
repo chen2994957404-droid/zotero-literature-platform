@@ -1105,11 +1105,11 @@ function renderRouting(r, b){
   h += `<h3 style="margin:18px 0 6px;font-size:15px">② 谁用哪条通道<span class="hint" style="font-weight:normal">（每个环节：走哪条通道 + 用哪个模型；主用不行自动切备用）</span></h3>
   <table><tr><th>用途</th><th>主用通道</th><th>模型</th><th>备用通道</th><th>备用模型</th><th>状态</th></tr>`
   + Object.keys(RT.purposes).map(pid=>{const u=RT.purposes[pid]; const sel=(id,val,allowEmpty)=>`<select onchange="RT.purposes['${pid}'].${id}=this.value">${allowEmpty?`<option value="">（无）</option>`:''}${chNames.map(n=>`<option value="${esc(n)}"${val===n?' selected':''}>${esc(n)}</option>`).join('')}</select>`;
-    return `<tr><td><b>${esc(u.label)}</b><div class="hint">${(u.needs||[]).join('/')}</div></td>
+    return `<tr><td><b>${esc(u.label)}</b><div class="hint">${(u.needs||[]).join('/')}${u.note?'<br>⚠ '+esc(u.note):''}</div></td>
      <td>${sel('channel',u.channel,false)}</td>
      <td><input style="width:190px" value="${esc(u.model||'')}" onchange="RT.purposes['${pid}'].model=this.value.trim()"></td>
-     <td>${sel('fallback',u.fallback,true)}</td>
-     <td><input style="width:150px" value="${esc(u.fallback_model||'')}" placeholder="留空=同主用" onchange="RT.purposes['${pid}'].fallback_model=this.value.trim()"></td>
+     <td>${u.no_fallback?'<span class="hint">不许配备用<br>（换模型=向量库重建）</span>':sel('fallback',u.fallback,true)}</td>
+     <td>${u.no_fallback?'':`<input style="width:150px" value="${esc(u.fallback_model||'')}" placeholder="留空=同主用" onchange="RT.purposes['${pid}'].fallback_model=this.value.trim()">`}</td>
      <td>${u.inferred?'<span class="bad">按模型名猜的</span>':'<span class="ok">已指定</span>'}</td></tr>`;}).join('')
   + `</table><div class="row" style="margin-top:8px"><button onclick="saveRouting()">保存通道与用途</button>
      <span class="hint">保存到 ${esc(r.file||'llm_routing.json')}（不进版本库；密钥值请在上表填好后点最上面的「保存」）</span></div>`;

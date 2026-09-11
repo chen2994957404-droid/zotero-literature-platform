@@ -168,3 +168,18 @@ def test_账本按用途通道模型记(tmp_path, monkeypatch):
     assert bp['DEEPREAD']['阿里云-中转/deepseek-flash'] == {'calls': 2, 'completion': 150}
     assert bp['ASK']['gemini-官方/gemini-3.8-flash'] == {'calls': 1, 'completion': 7}
     assert '(未标用途)' in bp, '没接进路由的调用要一眼可见'
+
+
+# ── 向量化的特殊约束 ──────────────────────────────────────────────────
+def test_向量化在路由表里_默认本地bge(隔离的路由文件):
+    p = routing.purposes()['EMBED']
+    assert p['channel'] == 'ollama-本地' and p['model'] == 'bge-m3'
+    assert p['no_fallback'] is True
+
+
+def test_向量化即使配了备用也只解析出主用(隔离的路由文件):
+    """换嵌入模型 = 整个向量库作废。所以备用**不生效**，且体检直接红。"""
+    routing.save(purposes={'EMBED': {'channel': 'ollama-本地', 'model': 'bge-m3',
+                                     'fallback': 'aliyun-百炼'}})
+    assert [n for n, _, _ in routing.resolve('EMBED')] == ['ollama-本地']
+    assert any(lvl == 'fail' and '向量库' in m for lvl, m in routing.problems())

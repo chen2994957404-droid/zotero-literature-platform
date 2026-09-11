@@ -65,7 +65,7 @@ BUILTIN_CHANNELS = {
         'note': '大陆版 key 打不通国际版，反之亦然'},
     'ollama-本地': {
         'base': 'http://localhost:11434', 'key': '', 'kind': 'ollama',
-        'caps': ['text', 'json'],
+        'caps': ['text', 'json', 'embed'],
         'note': '免费，但 7B 看图会编假数据，别拿它做图表数字化'},
 }
 
@@ -92,6 +92,13 @@ PURPOSES = {
                        'needs': ['text', 'json']},
     'DIGITIZE':       {'label': '图表数字化',     'setting': 'DIGITIZE_MODEL',
                        'needs': ['vision']},
+    # 向量化（2026-09-11 纳入）。以前走另一个适配器、本地独占、裸 os.environ 读模型名、不记账。
+    # ⚠ 它和别的用途有一条本质区别：**不许有备用通道**。换了嵌入模型，
+    #   整个向量库（主力机 13906 块）全部作废要重建 —— 两家的向量互不兼容。
+    #   别的用途「主用不行切备用」是好事，向量化这么干是灾难。problems() 会拦。
+    'EMBED':          {'label': '向量化',         'setting': None, 'default': 'bge-m3',
+                       'needs': ['embed'], 'no_fallback': True,
+                       'note': '换模型 = 整个向量库要重建（跑一次全库向量化）'},
 }
 
 
@@ -145,7 +152,7 @@ def channels():
 def guess_channel(model):
     """按模型名前缀猜通道 —— **兜底用**。带冒号的是本地 Ollama 的 tag 语法。"""
     m = str(model or '')
-    if ':' in m:
+    if ':' in m or m.startswith('bge-') or m.startswith('nomic-'):
         return 'ollama-本地'
     for prefix, ch in _PREFIX_GUESS:
         if m.startswith(prefix):
@@ -163,12 +170,19 @@ def purposes():
     out = {}
     for pid, meta in PURPOSES.items():
         u = user.get(pid) if isinstance(user.get(pid), dict) else {}
-        model = (u.get('model') or '').strip() or get_model(meta['setting'])
+        if meta.get('setting'):
+            default_model = get_model(meta['setting'])
+        else:
+            # 没有老配置项的用途：认一下老的环境变量（向量化以前用 EMBED_MODEL），再用内置默认
+            from shared.kernel.config import get_key
+            default_model = get_key('EMBED_MODEL', default='') or meta.get('default', '')
+        model = (u.get('model') or '').strip() or default_model
         channel = (u.get('channel') or '').strip()
         inferred = not channel
         if inferred:
             channel = guess_channel(model)
         out[pid] = {'label': meta['label'], 'needs': list(meta['needs']),
+                    'note': meta.get('note', ''), 'no_fallback': bool(meta.get('no_fallback')),
                     'channel': channel, 'model': model,
                     'fallback': (u.get('fallback') or '').strip(),
                     'fallback_model': (u.get('fallback_model') or '').strip(),
@@ -189,7 +203,7 @@ def resolve(purpose):
     order = []
     if p['channel'] in chs:
         order.append((p['channel'], chs[p['channel']], p['model']))
-    if p['fallback'] and p['fallback'] in chs and p['fallback'] != p['channel']:
+    if p['fallback'] and p['fallback'] in chs and p['fallback'] != p['channel']             and not p['no_fallback']:
         order.append((p['fallback'], chs[p['fallback']],
                       p['fallback_model'] or p['model']))
     if not order:
@@ -225,4 +239,7 @@ def problems():
                                 f'现在是按模型名猜的「{p["channel"]}」—— 去面板指定'))
         if p['fallback'] and p['fallback'] not in chs:
             out.append(('warn', f'用途「{p["label"]}」的备用通道 {p["fallback"]!r} 不存在'))
+        if p['no_fallback'] and p['fallback']:
+            out.append(('fail', f'用途「{p["label"]}」不许配备用通道：换嵌入模型会让整个向量库作废，'
+                                f'两家的向量互不兼容。把备用清空'))
     return out
