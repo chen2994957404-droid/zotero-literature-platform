@@ -63,8 +63,8 @@ def embed(text):
 
 def answer_with(system, user):
     """调云端 DeepSeek 作答（问答输出较长，用 flash 省钱；模型可在控制面板切换）。"""
-    return _chat(system, user, provider='deepseek', model=get_model('ASK_MODEL'),
-                 key=get_key('DEEPSEEK_KEY'), temperature=0.3)
+    # 只说「我是问答」——走哪条通道、用哪个模型由路由表决定（2026-09-11）
+    return _chat(system, user, purpose='ASK', temperature=0.3)
 
 
 def ask_answer(question, top_k=TOP_K):

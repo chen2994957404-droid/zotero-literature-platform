@@ -140,9 +140,10 @@ def _abstracts(work_ids):
 
 def one(work_id, title, abstract, doi='', venue='', year='', model=None):
     """一篇摘要 → 记录（已落盘）。返回记录；模型没给出东西时返回 None。"""
+    # 走「方向层摘要抽取」这个用途的通道；调用方显式给了 model 就用它
     data = llm_client.chat_json(
         SYS, _build_prompt(title, abstract, venue, year),
-        model=model or _model(), key=None)
+        purpose='DIRECTION_QUAD', model=model)
     if not isinstance(data, dict) or not data:
         return None
     # 摘要天然没有出处，模型若硬填也在这里被 schema 的 clean_location 洗掉

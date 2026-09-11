@@ -48,9 +48,12 @@ WEB_API_KEY = get_key('ZOTERO_API_KEY')    # zotero.org 写权限key
 LIBRARY = paths.CURATED
 os.makedirs(LIBRARY, exist_ok=True)
 
-DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')
-PROVIDER = os.environ.get('DEEPREAD_PROVIDER', 'deepseek')
-MODEL = os.environ.get('DEEPREAD_MODEL', 'deepseek-v4-flash')  # 默认flash省钱；重要文献用 重跑精读_pro.bat 切pro
+# 2026-09-11 起：精读走哪条通道、用哪个模型由路由表决定（shared.kernel.config.routing），
+# 这里**不再写死**。原来那三行是 os.environ.get + 写死默认值 —— 前者读不到 .env
+# （config 文档里专门警告过），后者会盖掉用户在面板上的设置。
+DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')      # 只用于启动时的密钥自检
+PROVIDER = 'deepseek'
+MODEL = None                                 # None = 让路由表定
 def process_item(item):
     """状态机：检测有哪些附件、哪些还没精读 → 补做缺的 → 置对应状态标签。
 

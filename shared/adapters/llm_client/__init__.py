@@ -111,7 +111,15 @@ def provider_of(model):
 
 
 class LLMError(Exception):
-    pass
+    """大模型调用失败。
+
+    `failover=True` 表示**换一条通道可能有救**（额度用光、鉴权失败、连不上、
+    服务端持续 5xx）；False 表示换了也一样（请求本身有问题、输出被截断……）。
+    路由执行器只在前一种情况下试备用通道 —— 否则会把配置错误藏起来。
+    """
+    def __init__(self, msg, failover=False):
+        super().__init__(msg)
+        self.failover = failover
 
 
 def _cfg(provider, model, key):
@@ -170,7 +178,7 @@ def _ollama_usage(r):
             'completion_tokens': r.get('eval_count') or 0}
 
 
-def _note_usage(u, model='', paid=False):
+def _note_usage(u, model='', paid=False, purpose='', channel=''):
     """记这次调用的用量。`paid=True` 时**同时记进跨进程的当日账本**。
 
     进程内的 `USAGE` 只活到进程结束，调用方拿它算「这一篇花了多少」；
@@ -188,7 +196,8 @@ def _note_usage(u, model='', paid=False):
     if paid:
         from shared.kernel import budget
         budget.record(prompt=u.get('prompt_tokens') or 0,
-                      completion=u.get('completion_tokens') or 0, model=model)
+                      completion=u.get('completion_tokens') or 0, model=model,
+                      purpose=purpose, channel=channel)
 
 
 def usage_snapshot():
@@ -229,7 +238,8 @@ def apply_thinking(body, provider, thinking):
 
 
 def _cloud_chat(messages, model, key, temperature, json_mode, max_tokens,
-                thinking=None, provider='deepseek'):
+                thinking=None, provider='deepseek', endpoint=None,
+                purpose='', channel=''):
     """打一家 OpenAI 兼容的云端模型。thinking 三家三种说法，本函数负责翻译。
 
     thinking: True=开推理链, False=关, None=随 API 默认（V4 默认开）。
@@ -239,9 +249,10 @@ def _cloud_chat(messages, model, key, temperature, json_mode, max_tokens,
     长文生成（精读）应关掉 thinking 或把 max_tokens 放大。
     """
     _e, key_env, _m, _v = PROVIDERS.get(provider, PROVIDERS['deepseek'])
-    endpoint = _chat_endpoint(provider)
+    # endpoint 显式给了就用（走通道表那条路）；没给才按 provider 查老表（兜底）
+    endpoint = endpoint or _chat_endpoint(provider)
     if not key:
-        raise LLMError(f'未提供 {key_env}')
+        raise LLMError(f'未提供 {key_env}', failover=True)
     # ⚠ 当日额度闸。**装在发请求之前** —— 一次调用要么完整发生要么不发生，
     #   半截的精读比不精读更难收拾。没设限额时它永远放行（只记账）。
     #   这道闸不依赖客户端：MCP 的 confirm 是 Claude Code 专有标记，
@@ -275,7 +286,10 @@ def _cloud_chat(messages, model, key, temperature, json_mode, max_tokens,
         except urllib.error.HTTPError as e:
             last = e
             if e.code not in (429, 500, 502, 503, 504):
-                raise LLMError(f'HTTP {e.code}: {e.read()[:300].decode("utf8","replace")}')
+                # 401/402/403 = 钥匙不对 / 没钱 / 没权限 —— 换条通道可能有救；
+                # 其余 4xx 是请求本身的问题，换了也一样，别把配置错误藏起来
+                raise LLMError(f'HTTP {e.code}: {e.read()[:300].decode("utf8","replace")}',
+                               failover=(e.code in (401, 402, 403)))
             if attempt < 3:
                 import time as _t; _t.sleep(5 * 2 ** attempt)   # 5s/10s/20s
     else:
@@ -286,8 +300,9 @@ def _cloud_chat(messages, model, key, temperature, json_mode, max_tokens,
         if getattr(last, 'code', None) == 429 and provider != 'deepseek':
             hint = ('\n  429 在免费档一般是**额度用光**（每分钟或每天的上限），'
                     '不是服务器忙 —— 重试帮不上，要等下一个额度窗口。')
-        raise LLMError(f'{provider} 服务端异常，重试 4 次仍失败: {last}{hint}')
-    _note_usage(r.get('usage'), model, paid=True)
+        raise LLMError(f'{channel or provider} 服务端异常，重试 4 次仍失败: {last}{hint}',
+                       failover=True)
+    _note_usage(r.get('usage'), model, paid=True, purpose=purpose, channel=channel)
     ch = r['choices'][0]
     out = ch['message'].get('content') or ''
     # 输出被 max_tokens 截断时明确报错，避免静默产出半截/空结果
@@ -301,8 +316,8 @@ def _cloud_chat(messages, model, key, temperature, json_mode, max_tokens,
     return out
 
 
-def _ollama(messages, model, temperature, json_mode, num_ctx):
-    host = _cfg_site('OLLAMA_HOST') or _OLLAMA_DEFAULT
+def _ollama(messages, model, temperature, json_mode, num_ctx, host=None):
+    host = host or _cfg_site('OLLAMA_HOST') or _OLLAMA_DEFAULT
     body = {'model': model, 'stream': False,
             'options': {'temperature': temperature, 'num_ctx': num_ctx,
                         'think': False},   # 实测：qwen3.5 思考模式+中文会卡几分钟（stream:false 静默等待），本地调用一律关
@@ -316,91 +331,175 @@ def _ollama(messages, model, temperature, json_mode, num_ctx):
     return r['message']['content']
 
 
+# ── 按「用途」走「通道」（2026-09-11，用户拍板的三段式：通道 / 用途 / 账本）────
+# 调用方只说「我是精读」：`chat(..., purpose='DEEPREAD')`。
+# 走哪条通道、用哪个模型、备用是谁，由 `shared.kernel.config.routing` 查表决定；
+# 主用失败且**换条路可能有救**（额度用光 / 鉴权失败 / 连不上）时自动试备用。
+# 老的 provider/model/key 三件套仍然能用 —— 那是兜底，不是主路。
+
+def _attempts(purpose, provider, model, key):
+    """→ 依次可尝试的 [(通道名, 通道dict, 模型)]。给了 purpose 就查路由表，否则走老路。"""
+    if purpose:
+        from shared.kernel.config import routing
+        order = routing.resolve(purpose)
+        if model:
+            # 同时给了 purpose 和 model = 「走这个用途的通道，但用我指定的模型」
+            # （精读线「用 pro 重跑」就是这种用法）。备用通道若自己配了模型则不动。
+            p = routing.purposes()[purpose]
+            order = [(n, ch, (model if i == 0 or not p['fallback_model'] else m))
+                     for i, (n, ch, m) in enumerate(order)]
+        return order
+    provider, model, key = _cfg(provider, model, key)
+    if provider == 'ollama':
+        return [('ollama-本地', {'kind': 'ollama', 'base': _cfg_site('OLLAMA_HOST')
+                                 or _OLLAMA_DEFAULT, 'key': ''}, model)]
+    ep = _chat_endpoint(provider)
+    base = ep[:-len('/chat/completions')] if ep.endswith('/chat/completions') else ep
+    return [(provider, {'kind': 'openai', 'base': base,
+                        'key': PROVIDERS.get(provider, PROVIDERS['deepseek'])[1],
+                        '_key_value': key, '_provider': provider}, model)]
+
+
+def _run(purpose, attempts, call):
+    """按顺序试每条通道。`call(通道名, 通道dict, 模型)` 抛 LLMError(failover=True) 就换下一条。
+
+    只在「换条路可能有救」的错上切换 —— 请求本身的错（400、截断、JSON 解析失败）
+    换了也一样，切换只会把配置错误藏起来。
+    """
+    from shared.kernel.log import get_logger
+    log = get_logger('llm_client')
+    errs = []
+    for i, (name, ch, model) in enumerate(attempts):
+        last = (i == len(attempts) - 1)
+        try:
+            return call(name, ch, model)
+        except LLMError as e:
+            errs.append(f'{name}/{model}: {e}')
+            if not e.failover or last:
+                raise
+            log.warn(f'{purpose or "调用"} 走「{name}」失败（{str(e)[:80]}），'
+                     f'切到备用「{attempts[i + 1][0]}」')
+        except (urllib.error.URLError, OSError) as e:
+            errs.append(f'{name}/{model}: {e}')
+            if last:
+                raise LLMError('；'.join(errs), failover=True)
+            log.warn(f'{purpose or "调用"} 连不上「{name}」（{e}），'
+                     f'切到备用「{attempts[i + 1][0]}」')
+    raise LLMError('；'.join(errs))
+
+
+def _channel_key(ch):
+    """通道的密钥值。老路（_attempts 的兜底分支）会把值直接塞在 _key_value 里。"""
+    if ch.get('_key_value'):
+        return ch['_key_value']
+    return _cfg_get(ch['key']) if ch.get('key') else ''
+
+
+def _text_call(messages, temperature, json_mode, max_tokens, num_ctx, thinking, purpose):
+    """造一个「在某条通道上发这组 messages」的调用，给 _run 用。"""
+    def call(name, ch, model):
+        if ch.get('kind') == 'ollama':
+            return _ollama(messages, model, temperature, json_mode, num_ctx,
+                           host=ch.get('base'))
+        base = (ch.get('base') or '').rstrip('/')
+        ep = base if base.endswith('/chat/completions') else base + '/chat/completions'
+        return _cloud_chat(messages, model, _channel_key(ch), temperature, json_mode,
+                           max_tokens, thinking, ch.get('_provider') or name,
+                           endpoint=ep, purpose=purpose, channel=name)
+    return call
+
+
 def chat(system, user, provider=None, model=None, key=None,
-         temperature=0.3, max_tokens=None, num_ctx=16384, thinking=None):
+         temperature=0.3, max_tokens=None, num_ctx=16384, thinking=None, purpose=None):
     """纯文本输出。用于对话/精读/问答。
 
+    **推荐只传 `purpose`**（如 'DEEPREAD'），通道与模型由路由表决定、主用失败自动切备用。
+    provider/model/key 三件套是老路，仍可用。
     thinking=False 建议用于长文生成（精读）：省 token、省钱、避免正文被推理链挤掉。
     """
-    provider, model, key = _cfg(provider, model, key)
     messages = [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}]
-    if provider == 'ollama':
-        out = _ollama(messages, model, temperature, False, num_ctx)
-    else:
-        out = _cloud_chat(messages, model, key, temperature, False, max_tokens,
-                          thinking, provider)
+    out = _run(purpose, _attempts(purpose, provider, model, key),
+               _text_call(messages, temperature, False, max_tokens, num_ctx, thinking, purpose))
     return re.sub(r'<think>[\s\S]*?</think>', '', out).strip()  # 去掉推理模型的 think 段
 
 
 def chat_messages(messages, provider=None, model=None, key=None,
-                  temperature=0.3, max_tokens=None, num_ctx=16384, thinking=None):
+                  temperature=0.3, max_tokens=None, num_ctx=16384, thinking=None,
+                  purpose=None):
     """多轮对话：直接给完整 messages 列表（含 system / 历史 user+assistant）。
 
     R3 窗（2026-08-30）加的：创意讨论（tools/direction/brainstorm）要带上下文连续追问，
     而它原本自己 urlopen 打 DeepSeek —— 那是「联网只在 adapters」的破口（强制规范 #5）。
     `chat()` 是它的单轮特例。
     """
-    provider, model, key = _cfg(provider, model, key)
-    if provider == 'ollama':
-        out = _ollama(messages, model, temperature, False, num_ctx)
-    else:
-        out = _cloud_chat(messages, model, key, temperature, False, max_tokens,
-                          thinking, provider)
+    out = _run(purpose, _attempts(purpose, provider, model, key),
+               _text_call(messages, temperature, False, max_tokens, num_ctx, thinking, purpose))
     return re.sub(r'<think>[\s\S]*?</think>', '', out).strip()
 
 
 def chat_vision(system, user, image_b64, provider=None, model=None, key=None,
-                temperature=0.1, json_mode=False):
+                temperature=0.1, json_mode=False, purpose=None):
     """看图输出。image_b64 是图片的 base64（可含或不含 data:image 前缀）。
-    用于图表数字化等视觉任务。默认 provider 用支持视觉的模型。
+    用于图表数字化等视觉任务。
 
+    **推荐只传 `purpose='DIGITIZE'`**，通道与模型由路由表决定、主用失败自动切备用。
     云端走 OpenAI 兼容的 image_url 格式；本地 Ollama 走其 images 字段。
     """
-    # 同 _cfg：模型名能推翻调用方说的家，并把另一家的钥匙一起丢掉。
-    _owner = provider_of(model)
-    if _owner and provider != 'ollama' and _owner != provider:
-        provider, key = _owner, ''
-    elif not provider:
-        # 走三级加载（环境变量 → 凭据库 → .env），不只读环境变量 ——
-        # 面板把设置写进 .env，而 .env 的值进不了 os.environ（强制规范 #3 的老坑）。
-        provider = _cfg_get('VISION_PROVIDER') or 'deepseek'
-    if model is None and provider == 'ollama':
-        model = _cfg_get('OLLAMA_VISION_MODEL') or 'qwen2.5vl:7b'
     # 规范化 base64（去掉 data:image 前缀取纯数据；同时保留完整 data uri 供云端用）
     raw_b64 = re.sub(r'^data:image/\w+;base64,', '', image_b64)
     data_uri = image_b64 if image_b64.startswith('data:') else f'data:image/png;base64,{raw_b64}'
 
-    if provider == 'ollama':
-        host = _cfg_site('OLLAMA_HOST') or _OLLAMA_DEFAULT
-        body = {'model': model, 'stream': False,
-                'options': {'temperature': temperature},
-                'messages': [{'role': 'system', 'content': system},
-                             {'role': 'user', 'content': user, 'images': [raw_b64]}]}
-        if json_mode:
-            body['format'] = 'json'
-        req = urllib.request.Request(host + '/api/chat',
-            data=json.dumps(body).encode(), method='POST',
-            headers={'Content-Type': 'application/json'})
-        r = json.loads(urllib.request.urlopen(req, timeout=600).read())
-        _note_usage(_ollama_usage(r), model)
-        return r['message']['content']
+    if purpose:
+        from shared.kernel.config import routing
+        attempts = routing.resolve(purpose)
     else:
-        # 云端 OpenAI 兼容（deepseek / siliconflow / gemini / dashscope）
-        _e, key_env, _t, default_model = PROVIDERS.get(
-            provider, PROVIDERS['deepseek'])
-        endpoint = _chat_endpoint(provider)
-        model = model or default_model
-        # ⚠ 这里原来写的是 `os.environ.get(key_env)` —— **凭据库里的密钥读不到**。
-        #   密钥搬进系统凭据库之后，看图这条路就只在「密钥恰好也在环境变量里」时能用，
-        #   而那正是开发机的样子，主力机上不是。走 _cfg_get 才是三级加载。
-        key = key or _cfg_get(key_env)
-        if not key:
-            raise LLMError(f'未提供 {key_env}')
+        # 老路：同 _cfg，模型名能推翻调用方说的家，并把另一家的钥匙一起丢掉。
+        _owner = provider_of(model)
+        if _owner and provider != 'ollama' and _owner != provider:
+            provider, key = _owner, ''
+        elif not provider:
+            # 走三级加载（环境变量 → 凭据库 → .env），不只读环境变量 ——
+            # 面板把设置写进 .env，而 .env 的值进不了 os.environ（强制规范 #3 的老坑）。
+            provider = _cfg_get('VISION_PROVIDER') or 'deepseek'
+        if provider == 'ollama':
+            model = model or _cfg_get('OLLAMA_VISION_MODEL') or 'qwen2.5vl:7b'
+            attempts = [('ollama-本地', {'kind': 'ollama',
+                                         'base': _cfg_site('OLLAMA_HOST') or _OLLAMA_DEFAULT,
+                                         'key': ''}, model)]
+        else:
+            _e, key_env, _t, default_model = PROVIDERS.get(provider, PROVIDERS['deepseek'])
+            ep = _chat_endpoint(provider)
+            base = ep[:-len('/chat/completions')] if ep.endswith('/chat/completions') else ep
+            # ⚠ 密钥走 _cfg_get 三级加载（凭据库里的才读得到），不是裸 os.environ
+            attempts = [(provider, {'kind': 'openai', 'base': base, 'key': key_env,
+                                    '_key_value': key or _cfg_get(key_env),
+                                    '_provider': provider}, model or default_model)]
+
+    def call(name, ch, model):
+        if ch.get('kind') == 'ollama':
+            body = {'model': model, 'stream': False,
+                    'options': {'temperature': temperature},
+                    'messages': [{'role': 'system', 'content': system},
+                                 {'role': 'user', 'content': user, 'images': [raw_b64]}]}
+            if json_mode:
+                body['format'] = 'json'
+            req = urllib.request.Request((ch.get('base') or _OLLAMA_DEFAULT).rstrip('/') + '/api/chat',
+                data=json.dumps(body).encode(), method='POST',
+                headers={'Content-Type': 'application/json'})
+            r = json.loads(urllib.request.urlopen(req, timeout=600).read())
+            _note_usage(_ollama_usage(r), model)
+            return r['message']['content']
+
+        k = _channel_key(ch)
+        if not k:
+            raise LLMError(f'通道「{name}」没有密钥（{ch.get("key") or "未指定"}）', failover=True)
         # ⚠ 看图这条路**自己发请求，不经过 `_cloud_chat`**，所以闸门要单独装一份。
         #   2026-09-07 记账那次栽过同样的形状：只有 `_cloud_chat` 记账，于是
         #   **最贵的那类调用反而是唯一没被管住的**。加闸时别重蹈覆辙。
         from shared.kernel import budget
         budget.check(f'看图（{model}）')
+        base = (ch.get('base') or '').rstrip('/')
+        ep = base if base.endswith('/chat/completions') else base + '/chat/completions'
         content = [{'type': 'text', 'text': user},
                    {'type': 'image_url', 'image_url': {'url': data_uri}}]
         body = {'model': model, 'temperature': temperature,
@@ -408,15 +507,21 @@ def chat_vision(system, user, image_b64, provider=None, model=None, key=None,
                              {'role': 'user', 'content': content}]}
         if json_mode:
             body['response_format'] = {'type': 'json_object'}
-        req = urllib.request.Request(endpoint,
+        req = urllib.request.Request(ep,
             data=json.dumps(body, ensure_ascii=False).encode(), method='POST',
-            headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'})
-        r = json.loads(urllib.request.urlopen(req, timeout=300).read())
+            headers={'Authorization': f'Bearer {k}', 'Content-Type': 'application/json'})
+        try:
+            r = json.loads(urllib.request.urlopen(req, timeout=300).read())
+        except urllib.error.HTTPError as e:
+            raise LLMError(f'HTTP {e.code}: {e.read()[:300].decode("utf8","replace")}',
+                           failover=(e.code in (401, 402, 403, 429, 500, 502, 503, 504)))
         # 看图也要记账（2026-09-07 补）。此前只有 `_cloud_chat` 记，于是
         # **最贵的那类调用反而是唯一不记账的** —— 试跑两张图后问「花了多少」，
         # 得到的是「调用 0 次、0 token」，正是 USAGE 当初要消灭的那种回答。
-        _note_usage(r.get('usage'), model, paid=True)
+        _note_usage(r.get('usage'), model, paid=True, purpose=purpose, channel=name)
         return r['choices'][0]['message']['content']
+
+    return _run(purpose, attempts, call)
 
 
 def _parse_json_lenient(txt):
@@ -432,7 +537,7 @@ def _parse_json_lenient(txt):
 
 
 def chat_json(system, user, provider=None, model=None, key=None,
-              temperature=0.1, num_ctx=16384, thinking=False):
+              temperature=0.1, num_ctx=16384, thinking=False, purpose=None):
     """强制 JSON 输出并解析成 dict。用于结构化抽取。temperature 默认低求稳。
 
     **`thinking` 默认关**（2026-08-28 改）：V4 的推理链默认开启，而推理 token
@@ -440,13 +545,9 @@ def chat_json(system, user, provider=None, model=None, key=None,
     不是解数学题 —— 那条推理链既没用上，又是这件事最大的一笔开销。
     确实需要模型多想一步时，显式传 `thinking=True`。
     """
-    provider, model, key = _cfg(provider, model, key)
     messages = [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}]
-    if provider == 'ollama':
-        out = _ollama(messages, model, temperature, True, num_ctx)
-    else:
-        out = _cloud_chat(messages, model, key, temperature, True, None,
-                          thinking, provider)
+    out = _run(purpose, _attempts(purpose, provider, model, key),
+               _text_call(messages, temperature, True, None, num_ctx, thinking, purpose))
     return _parse_json_lenient(out)
 
 

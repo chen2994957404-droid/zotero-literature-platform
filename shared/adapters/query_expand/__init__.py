@@ -53,8 +53,7 @@ _SYS_PROBLEM = prompts.load(_OWNER, 'problem@v1')
 
 
 def _llm(system, user, max_tokens=400):
-    return chat(system, user, provider='deepseek', model=get_model('ASK_MODEL'),
-                key=get_key('DEEPSEEK_KEY'), temperature=0.4,
+    return chat(system, user, purpose='ASK', temperature=0.4,
                 max_tokens=max_tokens, thinking=False)
 
 

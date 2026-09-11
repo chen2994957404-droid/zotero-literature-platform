@@ -168,9 +168,8 @@ def _call_llm(user, model, log=print):
     last = ''
     for i, budget in enumerate(_BUDGETS, 1):
         try:
-            out = chat(SYS, user, provider='deepseek', model=model,
-                       key=get_key('DEEPSEEK_KEY'), temperature=0.3,
-                       max_tokens=budget)
+            out = chat(SYS, user, purpose='DEEPREAD', model=model,
+                       temperature=0.3, max_tokens=budget)
         except Exception as e:
             log(f'  第{i}次调用失败（额度 {budget}）：{str(e)[:120]}')
             continue

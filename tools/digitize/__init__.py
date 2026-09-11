@@ -54,14 +54,11 @@ def digitize(image_b64, hint='', provider=None, model=None, key=None):
     或 {'error': ...} 当无法解析。
     """
     user = _USER_TMPL.format(hint=('额外提示：' + hint) if hint else '')
-    if model is None:
-        # 用哪个视觉模型是**配置**，不是 adapters 的内部默认值 ——
-        # 用户要能在控制面板里换（模型下线过一次，见踩坑 #139）。
-        from shared.kernel.config import get_model
-        model = get_model('DIGITIZE_MODEL')
     try:
-        out = chat_vision(_SYS, user, image_b64, provider=provider, model=model,
-                          key=key, temperature=0.1, json_mode=True)
+        # 走「图表数字化」用途的通道；哪个视觉模型是**配置**（路由表里），不是这里的默认值。
+        # 调用方显式给了 model 就用它，否则用路由表配的。
+        out = chat_vision(_SYS, user, image_b64, purpose='DIGITIZE', model=model,
+                          temperature=0.1, json_mode=True)
     except LLMError as e:
         return {'error': str(e)}
     except Exception as e:

@@ -103,8 +103,7 @@ def to_nested(apply=False, forced=False):
 def tag_llm(title, abstract):
     """标题+摘要 → 各维度标签（JSON）。打标签用 flash：快、便宜、JSON 稳。"""
     return _chat_json(AUTOTAG_SYS, f'标题：{title}\n\n摘要：{abstract[:2000]}',
-                      provider='deepseek', model=get_model('AUTOTAG_MODEL'),
-                      key=get_key('DEEPSEEK_KEY'))
+                      purpose='AUTOTAG')
 
 
 def to_tags(result):

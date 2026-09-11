@@ -258,7 +258,68 @@ def collect_config():
         # 用户得先看见「一篇精读大概多少 token」才定得出那个数。
         # 这里只是把 shared.kernel.budget 的账原样端出来，面板不算账（面板铁律）。
         'budget': _budget_today(),
+        # 大模型的通道 / 用途 / 备用（2026-09-11，用户拍板的三段式）。
+        # 面板只是把路由表原样端出来 + 收回去，不算账、不猜家（面板铁律）。
+        'routing': _routing_view(),
     }
+
+
+def _routing_view():
+    """通道表 + 用途表 + 体检问题，给面板画。取不到就说取不到。"""
+    try:
+        from shared.kernel.config import routing, get_key
+        chs = routing.channels()
+        for c in chs.values():
+            c['key_set'] = bool(get_key(c['key'])) if c.get('key') else True
+        return {'channels': chs, 'purposes': routing.purposes(),
+                'problems': routing.problems(),
+                'caps_all': ['text', 'json', 'thinking', 'vision'],
+                'file': routing.ROUTING_FILE}
+    except Exception as e:
+        return {'error': f'{type(e).__name__}: {e}'}
+
+
+def action_save_routing(payload):
+    """保存通道表与用途表。密钥**不在这里**（走 /api/config，进凭据库）。
+
+    只收两样：用户加的通道（内置的不落盘，除非被改了地址/密钥名）和用途表。
+    """
+    from shared.kernel.config import routing
+    chans_in = (payload or {}).get('channels') or {}
+    purps_in = (payload or {}).get('purposes') or {}
+    chans = {}
+    for name, c in chans_in.items():
+        name = (name or '').strip()
+        if not name or not isinstance(c, dict):
+            continue
+        base = (c.get('base') or '').strip().rstrip('/')
+        if not base:
+            continue
+        row = {'base': base, 'key': (c.get('key') or '').strip(),
+               'kind': (c.get('kind') or 'openai').strip(),
+               'caps': [x for x in (c.get('caps') or []) if x]}
+        # 内置通道没改动就不落盘 —— 免得把代码里的默认值复制一份进用户文件
+        b = routing.BUILTIN_CHANNELS.get(name)
+        if b and b['base'] == base and b['key'] == row['key'] \
+                and sorted(b['caps']) == sorted(row['caps']):
+            continue
+        chans[name] = row
+    purps = {}
+    for pid, u in purps_in.items():
+        if pid not in routing.PURPOSES or not isinstance(u, dict):
+            continue
+        purps[pid] = {k: (u.get(k) or '').strip()
+                      for k in ('channel', 'model', 'fallback', 'fallback_model')}
+    routing.save(channels=chans, purposes=purps)
+    probs = routing.problems()
+    bad = [m for lvl, m in probs if lvl == 'fail']
+    warn = [m for lvl, m in probs if lvl == 'warn']
+    msg = f'已保存：{len(chans)} 条自定义通道、{len(purps)} 个用途'
+    if bad:
+        msg += '；⚠ ' + '；'.join(bad[:2])
+    elif warn:
+        msg += f'；{len(warn)} 条提醒（见下方）'
+    return True, msg
 
 
 def _budget_today():
@@ -629,6 +690,14 @@ def action_save_config(payload):
     allowed = ({n for n, _, _ in KEY_NAMES}
                | {s[0] for s in SITE_SETTINGS}      # 漏掉过一次
                | set(MODEL_SETTINGS))
+    # 通道表里引用的密钥名（用户给中转站起的，如 ALIYUN_RELAY_KEY）也允许 ——
+    # is_secret() 按后缀认，它们只会进凭据库，不会明文落盘
+    try:
+        from shared.kernel.config import routing, is_secret
+        allowed |= {c.get('key') for c in routing.channels().values()
+                    if c.get('key') and is_secret(c['key'])}
+    except Exception:
+        pass
     updates = {k: v for k, v in (payload or {}).items() if k in allowed}
     written = set_keys(updates)
     if not written:
@@ -769,6 +838,8 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == '/api/migrate_secrets':
             moved, msg = migrate_secrets_to_keyring()
             ok = bool(moved) or '没有需要迁移' in msg
+        elif self.path == '/api/routing':
+            ok, msg = action_save_routing(payload)
         elif self.path == '/api/config':
             ok, msg = action_save_config(payload)
         else:
@@ -1002,15 +1073,74 @@ async function load(force){
       : `<div class="row"><span class="lbl">${esc(s.label)}</span>
          <input id="k_${s.name}" value="${esc(s.value||'')}" placeholder="${esc(s.help)}">
          </div>`).join('')
-  + `<h3 style="margin:18px 0 6px;font-size:15px">模型</h3>`
-  + d.config.models.map(m=>
-      `<div class="row"><span class="lbl">${esc(m.label)} 用的模型</span>
-       <select id="k_${m.name}">
-         <option value="deepseek-v4-flash"${m.value==='deepseek-v4-flash'?' selected':''}>flash（快·便宜，适合长输出）</option>
-         <option value="deepseek-v4-pro"${m.value==='deepseek-v4-pro'?' selected':''}>pro（准·贵3倍，适合短输出）</option>
-       </select>
-       <span class="hint">默认 ${esc(m.default)}</span></div>`).join('');
+  + renderRouting(d.config.routing, d.config.budget);
   cfgReady=true; }
+
+// ── 大模型：通道 / 用途 / 账本（2026-09-11，用户拍板的三段式）────────────
+// 面板只画表、收表，不算账、不猜家。逻辑全在 shared.kernel.config.routing。
+var RT = null;      // 当前编辑中的路由表（通道 + 用途），保存时整体送回
+// ⚠ 用 var 不用 let：这段代码写在 load() 后面，而 load() 一进页面就跑；
+//   let 有暂时性死区，先用到就是 ReferenceError（2026-09-11 真打开页面才抓到）。
+function renderRouting(r, b){
+  if(!r || r.error) return `<h3 style="margin:18px 0 6px;font-size:15px">大模型</h3><div class="hint bad">${esc((r&&r.error)||'读不到路由表')}</div>`;
+  RT = {channels: JSON.parse(JSON.stringify(r.channels)), purposes: JSON.parse(JSON.stringify(r.purposes))};
+  const chNames = Object.keys(RT.channels);
+  const capsAll = r.caps_all || [];
+  // ① 通道
+  let h = `<h3 style="margin:18px 0 6px;font-size:15px">① 大模型通道<span class="hint" style="font-weight:normal">（填入对应的 API：官方的、中转站的都在这里；密钥值仍进凭据库）</span></h3>
+  <table><tr><th>名字</th><th>地址</th><th>密钥名</th><th>密钥值</th><th>能力</th><th></th></tr>`
+  + chNames.map(n=>{const c=RT.channels[n]; return `<tr>
+    <td><b>${esc(n)}</b>${c.builtin?'<div class="hint">内置</div>':''}</td>
+    <td><input style="width:260px" value="${esc(c.base||'')}" onchange="RT.channels['${esc(n)}'].base=this.value"></td>
+    <td><input style="width:150px" value="${esc(c.key||'')}" placeholder="如 ALIYUN_RELAY_KEY" onchange="RT.channels['${esc(n)}'].key=this.value.trim()"></td>
+    <td>${c.key?`<input id="k_${esc(c.key)}" style="width:150px" placeholder="${c.key_set?'已配置，留空即不改':'⚠ 未配置'}">`:'<span class="hint">（不用）</span>'}</td>
+    <td>${capsAll.map(cap=>`<label style="margin-right:6px"><input type="checkbox" ${((c.caps||[]).includes(cap))?'checked':''} onchange="rtCap('${esc(n)}','${cap}',this.checked)">${cap}</label>`).join('')}</td>
+    <td>${c.builtin?'':`<button class="ghost" onclick="rtDelChannel('${esc(n)}')">删</button>`}</td></tr>`;}).join('')
+  + `<tr><td><input id="rt_new_name" placeholder="新通道名字，如 阿里云-优惠中转" style="width:170px"></td>
+       <td><input id="rt_new_base" placeholder="OpenAI 兼容地址，到 /v1 为止" style="width:260px"></td>
+       <td><input id="rt_new_key" placeholder="密钥名（要以 _KEY 结尾）" style="width:150px"></td>
+       <td colspan="2"><span class="hint">先加通道并保存，再回来填密钥值</span></td>
+       <td><button class="ghost" onclick="rtAddChannel()">加一条</button></td></tr></table>`;
+  // ② 用途
+  h += `<h3 style="margin:18px 0 6px;font-size:15px">② 谁用哪条通道<span class="hint" style="font-weight:normal">（每个环节：走哪条通道 + 用哪个模型；主用不行自动切备用）</span></h3>
+  <table><tr><th>用途</th><th>主用通道</th><th>模型</th><th>备用通道</th><th>备用模型</th><th>状态</th></tr>`
+  + Object.keys(RT.purposes).map(pid=>{const u=RT.purposes[pid]; const sel=(id,val,allowEmpty)=>`<select onchange="RT.purposes['${pid}'].${id}=this.value">${allowEmpty?`<option value="">（无）</option>`:''}${chNames.map(n=>`<option value="${esc(n)}"${val===n?' selected':''}>${esc(n)}</option>`).join('')}</select>`;
+    return `<tr><td><b>${esc(u.label)}</b><div class="hint">${(u.needs||[]).join('/')}</div></td>
+     <td>${sel('channel',u.channel,false)}</td>
+     <td><input style="width:190px" value="${esc(u.model||'')}" onchange="RT.purposes['${pid}'].model=this.value.trim()"></td>
+     <td>${sel('fallback',u.fallback,true)}</td>
+     <td><input style="width:150px" value="${esc(u.fallback_model||'')}" placeholder="留空=同主用" onchange="RT.purposes['${pid}'].fallback_model=this.value.trim()"></td>
+     <td>${u.inferred?'<span class="bad">按模型名猜的</span>':'<span class="ok">已指定</span>'}</td></tr>`;}).join('')
+  + `</table><div class="row" style="margin-top:8px"><button onclick="saveRouting()">保存通道与用途</button>
+     <span class="hint">保存到 ${esc(r.file||'llm_routing.json')}（不进版本库；密钥值请在上表填好后点最上面的「保存」）</span></div>`;
+  if(r.problems && r.problems.length){
+    h += `<div style="margin:8px 0">` + r.problems.map(([lvl,m])=>`<div class="msg ${lvl==='fail'?'bad':''}">${lvl==='fail'?'✗':'⚠'} ${esc(m)}</div>`).join('') + `</div>`;
+  }
+  // ③ 账本
+  const bp = (b && b.by_purpose) || {};
+  const rows = Object.keys(bp).flatMap(pid=>Object.keys(bp[pid]).map(k=>({pid, k, ...bp[pid][k]})));
+  h += `<h3 style="margin:18px 0 6px;font-size:15px">③ 今天谁调了哪条通道<span class="hint" style="font-weight:normal">（按 用途 × 通道/模型；换天自动清零）</span></h3>`
+    + (rows.length ? `<table><tr><th>用途</th><th>通道/模型</th><th>次数</th><th>产出 token</th></tr>`
+        + rows.sort((a,b2)=>b2.completion-a.completion).map(x=>`<tr><td>${esc((RT.purposes[x.pid]||{}).label||x.pid)}</td><td>${esc(x.k)}</td><td>${x.calls}</td><td>${x.completion}</td></tr>`).join('') + `</table>`
+      : `<div class="hint">今天还没有调用</div>`)
+    + (b && (b.limit_calls||b.limit_tokens) ? `<div class="hint">上限：${b.limit_calls?`次数 ${b.calls}/${b.limit_calls}`:''} ${b.limit_tokens?`产出 ${b.completion}/${b.limit_tokens}`:''}</div>`
+      : `<div class="msg bad">⚠ 没设当日上限 —— 外部 agent 可以无人确认地花钱。在上面「本机设置」里填 DAILY_LLM_TOKENS</div>`);
+  return h;
+}
+function rtCap(n, cap, on){ const c=RT.channels[n]; c.caps=(c.caps||[]).filter(x=>x!==cap); if(on) c.caps.push(cap); }
+function rtDelChannel(n){ if(!confirm('删掉通道「'+n+'」？')) return; delete RT.channels[n]; saveRouting(); }
+function rtAddChannel(){
+  const n=$('#rt_new_name').value.trim(), base=$('#rt_new_base').value.trim(), key=$('#rt_new_key').value.trim();
+  if(!n||!base){ toast('名字和地址都要填'); return; }
+  if(key && !/_(KEY|TOKEN)$/.test(key)){ toast('密钥名要以 _KEY 或 _TOKEN 结尾，这样它才会进凭据库而不是明文落盘'); return; }
+  RT.channels[n]={base, key, kind:'openai', caps:['text','json']};
+  saveRouting();
+}
+async function saveRouting(){
+  if(!RT) return;
+  const r=await (await fetch('/api/routing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(RT)})).json();
+  toast(r.msg); load(true);
+}
 
   const st = d.structure || {flows:[],blocks:[]};
   $('#flows').innerHTML = `<table><tr><th>文件夹</th><th>是什么</th><th>脚本数</th><th>说明书</th></tr>`

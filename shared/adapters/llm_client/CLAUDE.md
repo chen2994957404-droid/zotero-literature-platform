@@ -25,7 +25,13 @@
 | `chat_json(system, user, ...)` | 强制 JSON 并解析成 dict（结构化抽取） |
 | `chat_vision(system, user, image_b64, ...)` | 看图（图表数字化） |
 
-支持 `provider='deepseek'`（云）/ `'ollama'`（本地）。
+**2026-09-11 起推荐只传 `purpose`**（如 `chat(..., purpose='DEEPREAD')`）：
+走哪条通道、用哪个模型、备用是谁，由 `shared.kernel.config.routing` 的两张表决定，
+主用失败且「换条路可能有救」（额度用光 / 鉴权失败 / 连不上）时自动切备用。
+`provider / model / key` 三件套是老路，仍可用，但那是兜底不是主路。
+`purpose` + `model` 同时给 = 走该用途的通道、但用指定模型（「用 pro 重跑」就是这么用）。
+
+用途 id：`DEEPREAD` `EXTRACT` `ASK` `AUTOTAG` `BRAINSTORM` `DIRECTION_QUAD` `DIGITIZE`。
 
 ## 实测教训教训（都是真实事故）
 

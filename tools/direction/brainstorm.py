@@ -23,7 +23,6 @@ from shared.kernel.cli import positionals
 from shared.kernel.config import get_key, get_model
 
 VECTOR_DB = paths.VECTOR_DB
-DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')
 # 创意讨论用 pro（质量更重要）；模型名统一走 config，控制面板可切换
 CHAT_MODEL = get_model('BRAINSTORM_MODEL')
 TOP_K = 10  # 讨论要更多上下文
@@ -35,8 +34,8 @@ def embed(text):
 
 def chat(messages):
     """多轮讨论走适配层（强制规范 #5：联网只在 adapters）。温度 0.7 —— 创意要发散。"""
-    return chat_messages(messages, provider='deepseek', model=CHAT_MODEL,
-                         key=DEEPSEEK_KEY, temperature=0.7, max_tokens=4000)
+    return chat_messages(messages, purpose='BRAINSTORM',
+                         temperature=0.7, max_tokens=4000)
 
 
 SYSTEM = prompts.load('direction', 'brainstorm@v1')

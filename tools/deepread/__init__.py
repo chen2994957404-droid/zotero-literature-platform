@@ -32,7 +32,7 @@
 用法：
 
     from tools import deepread
-    r = deepread.run(key, provider='deepseek', model='deepseek-v4-flash')
+    r = deepread.run(key)          # 通道与模型由路由表定
 
 **`run()` 不写 Zotero、不改标签**（那是 `host.watcher` / `batch` 的事，
 也是两台机器分工的闸门所在）。`r.state` 是事实，标签怎么打由调用方决定。
@@ -110,7 +110,7 @@ def _write_meta(key, item=None, model=''):
 
 
 def run(key, item=None, pdf_path=_ASK, si_exists=_ASK, provider='deepseek',
-        model='deepseek-v4-flash', llm_key='', force=False, log=print):
+        model=None, llm_key='', force=False, log=print):
     """把一篇文献从 PDF 做成精读。**幂等**：做过的步骤自动跳过。
 
     参数：

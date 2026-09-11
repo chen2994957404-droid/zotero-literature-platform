@@ -42,6 +42,17 @@ SECRET_KEYS = ('DEEPSEEK_KEY', 'ZOTERO_API_KEY', 'MINERU_TOKEN', 'SILICONFLOW_KE
                'SCIVERSE_KEY', 'OPENALEX_KEY', 'GEMINI_KEY', 'DASHSCOPE_KEY')
 
 
+def is_secret(name):
+    """这个名字是不是密钥（该进凭据库、不许明文落盘）。
+
+    固定表之外，**以 _KEY / _TOKEN 结尾的一律当密钥** —— 2026-09-11 起用户可以在
+    面板里给中转站起自己的密钥名（如 ALIYUN_RELAY_KEY），固定表装不下。
+    规则比表稳：表要有人维护，后缀规则谁写谁遵守。
+    """
+    n = str(name or '')
+    return n in SECRET_KEYS or n.endswith('_KEY') or n.endswith('_TOKEN')
+
+
 def _keyring():
     """拿到可用的 keyring 模块；不可用返回 None（降级到 .env，不影响功能）。"""
     try:
@@ -116,7 +127,7 @@ def get_key(name, required=False, default=''):
     """
     global _cache
     v = os.environ.get(name, '')
-    if not v and name in SECRET_KEYS:
+    if not v and is_secret(name):
         v = _kr_get(name)
     if not v:
         if _cache is None:
@@ -297,7 +308,7 @@ def set_keys(updates):
         if v is None or str(v).strip() == '':
             continue
         v = str(v).strip()
-        if k in SECRET_KEYS and _kr_set(k, v):
+        if is_secret(k) and _kr_set(k, v):
             written.append(k)
             existing.pop(k, None)      # 已进凭据库，把 .env 里的明文残留清掉
             continue
@@ -327,7 +338,7 @@ def _write_env(data):
                       encoding='utf-8') as bf:
                 bf.write('# 配置备份（密钥已脱敏，仅用于还原非密配置）\n')
                 for k in sorted(old):
-                    bf.write(f'{k}=' + ('<已脱敏>' if k in SECRET_KEYS else old[k]) + '\n')
+                    bf.write(f'{k}=' + ('<已脱敏>' if is_secret(k) else old[k]) + '\n')
         except Exception:
             pass
     tmp = ENV_FILE + '.tmp'
@@ -347,7 +358,7 @@ def key_location(name):
     """
     if os.environ.get(name):
         return '环境变量'
-    if name in SECRET_KEYS and _kr_get(name):
+    if is_secret(name) and _kr_get(name):
         return '系统凭据库'
     global _cache
     if _cache is None:
@@ -376,7 +387,7 @@ def env_shadow(name):
     env_v = os.environ.get(name)
     if not env_v:
         return None
-    stored = _kr_get(name) if name in SECRET_KEYS else ''
+    stored = _kr_get(name) if is_secret(name) else ''
     return {'env_tail': _tail(env_v), 'stored_tail': _tail(stored) if stored else '',
             'differs': bool(stored) and stored.strip() != env_v.strip()}
 

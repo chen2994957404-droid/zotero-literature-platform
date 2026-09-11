@@ -22,6 +22,7 @@ host/  ← 平台自身：让平台活着的东西（没人 import 它）（8 �
     autosync、codegen、deploy、doctor、mcp、panel、watcher、wechat_import
 launch/  ← 给人双击的入口（10 个）
     取全文用的浏览器.bat、导入公众号精读.bat、控制面板.bat、更新平台.bat、比一比两个模型.bat、精读监听.bat、诊断报告.bat、连上文献平台（Antigravity用）.bat、重抽缺SI的文献.bat、重跑精读PRO.bat
+outputs/ （0 个脚本）
 scratch/ （0 个脚本）
 shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
     kernel/  ← 基础设施：谁都依赖它，它不依赖任何人（13 块）
@@ -31,8 +32,8 @@ shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
     adapters/  ← 外接口：唯一允许联网/用第三方库的一环（12 块）
         crossref、embed、llm_client、openalex、pdf_fetch、pdf_parse、query_expand、sciverse、snowball、vectordb、wechat_seed、zotero_client
 specs/ （0 个脚本）
-tests/ （4 个脚本）
-    test_architecture.py、test_budget.py、test_no_undefined_names.py、test_principles.py
+tests/ （5 个脚本）
+    test_architecture.py、test_budget.py、test_llm_routing.py、test_no_undefined_names.py、test_principles.py
 toolbox/ （0 个脚本）
 tools/  ← 工具包：一个工具 = 一个自包含的包（12 块）
     ask、askworld、curate、deepread、digitize、direction、discover、extract、getpdf、library、litsearch、paperdb
@@ -108,8 +109,12 @@ A 机默认不写 Zotero、不跑常驻服务、不跑花钱的批量作业 —�
 **给用户看的用中文**（精读 HTML、问答答案）；**机器数据用原生英文**（结构化抽取、
 图表数据 —— 用户本来就读英文文献，中间数据是给 LLM 用的）。
 
-向量化 `bge-m3`（本地免费）· 结构化抽取 `deepseek-v4-pro` · 精读 `deepseek-v4-flash` ·
-图表数字化**必须云端大模型**。原则：**输出少的活上 pro，输出多的上 flash**。
+向量化 `bge-m3`（本地免费）· 其余环节走**路由表**（控制面板「① 通道 / ② 用途 / ③ 账本」，
+`shared/kernel/config/routing.py`）：每个用途指定主用通道 + 模型 + 备用通道，
+中转站（如阿里云优惠额度）当正式通道加进去即可。图表数字化**必须云端视觉模型**。
+原则仍是**输出少的活上 pro，输出多的上 flash** —— 但注意 DeepSeek 的现状（2026-09-11 查证）：
+flash 的正式名已是 `deepseek-flash`（旧名 `deepseek-v4-flash` 靠转发仍能用）；
+**9 月 14 日起 `deepseek-v4-pro` 会被官方静默路由到 Flash 并按 Flash 计费**，V4.1 Pro 尚未发布。
 
 ## 运维现状（不用管，已自动化）
 

@@ -76,7 +76,8 @@ def _limits():
 
 def _load():
     """读今天的账。**换了一天就自动从零开始**，不必有人来清。"""
-    blank = {'date': _today(), 'calls': 0, 'prompt': 0, 'completion': 0, 'models': {}}
+    blank = {'date': _today(), 'calls': 0, 'prompt': 0, 'completion': 0,
+             'models': {}, 'by_purpose': {}}
     try:
         d = json.load(io.open(paths.runtime(LEDGER), encoding='utf-8'))
         if d.get('date') != blank['date']:
@@ -84,6 +85,7 @@ def _load():
         for k in ('calls', 'prompt', 'completion'):
             d[k] = int(d.get(k) or 0)
         d.setdefault('models', {})
+        d.setdefault('by_purpose', {})
         return d
     except Exception:
         return blank                          # 没有 / 坏了 / 正在写 → 当作今天还没花过
@@ -134,8 +136,14 @@ def check(what='调用大模型'):
             f'或者等明天自动清零。')
 
 
-def record(prompt=0, completion=0, model=''):
-    """记一笔。**任何异常都吞掉** —— 记账是辅助，不能因为它把主线弄挂。"""
+def record(prompt=0, completion=0, model='', purpose='', channel=''):
+    """记一笔。**任何异常都吞掉** —— 记账是辅助，不能因为它把主线弄挂。
+
+    2026-09-11 起按**用途 × 通道 × 模型**记（用户要的第三部分：
+    「日志记录哪些部分调用了哪些 API」）。`by_purpose` 的形状：
+        {'DEEPREAD': {'deepseek-官方/deepseek-flash': {'calls': 3, 'completion': 29107}}}
+    没传用途的（老路径）记在 '(未标用途)' 下 —— 让「还有谁没接进路由」一眼可见。
+    """
     try:
         d = _load()
         d['calls'] += 1
@@ -145,6 +153,10 @@ def record(prompt=0, completion=0, model=''):
             m = d['models'].setdefault(model, {'calls': 0, 'completion': 0})
             m['calls'] += 1
             m['completion'] += int(completion or 0)
+        pu = d.setdefault('by_purpose', {}).setdefault(purpose or '(未标用途)', {})
+        row = pu.setdefault(f'{channel or "?"}/{model or "?"}', {'calls': 0, 'completion': 0})
+        row['calls'] += 1
+        row['completion'] += int(completion or 0)
         _save(d)
     except Exception:
         pass

@@ -64,8 +64,7 @@ def ask_world(question, top_k=8, year_from=None, min_score=MIN_SCORE):
         ctx += (f"\n【片段{i}·《{e['title'][:60]}》{e['year'] or ''}{page}】\n"
                 f"{e['chunk'][:1200]}\n")
     answer = chat(SYS, f'文献片段：\n{ctx}\n\n用户问题：{question}',
-                  provider='deepseek', model=get_model('ASK_MODEL'),
-                  key=get_key('DEEPSEEK_KEY'), temperature=0.3,
+                  purpose='ASK', temperature=0.3,
                   max_tokens=8000, thinking=False)
     return {'answer': answer, 'evidence': ev, 'query_used': q_en}
 

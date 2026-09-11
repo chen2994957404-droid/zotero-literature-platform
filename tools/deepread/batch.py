@@ -127,7 +127,7 @@ def read_one(key, force=False, model=None, log=print):
     没有解析结果就跳过 —— 要连解析一起做请走 `deepread.run(key)`。
     """
     key = paths.check_key(key)
-    model = model or _model()
+    model = model or None          # None = 让路由表定（显式给 PRO_MODEL 才覆盖）
     parsed = paths.parsed_dir(key)
     if not os.path.exists(paths.layout(key)):
         log('  [跳过] 无 parsed 解析结果（需先精抽/MineRU）')
@@ -145,9 +145,8 @@ def read_one(key, force=False, model=None, log=print):
     # 直接调函数，不再拉子进程 —— 失败拿得到原因，不只是退出码。
     # 每次执行都记进 shared.kernel.jobs（哪个模型、哪版提示词、失败原因）。
     with jobs.track(key, STEP_MAIN, producer=main_text.PRODUCER,
-                    model=model, prompt_ver=main_text.PROMPT_VER):
-        main_text.read_main(parsed, out_html, provider=PROVIDER, model=model,
-                            key=get_key('DEEPSEEK_KEY'), log=log)
+                    model=model or _model(), prompt_ver=main_text.PROMPT_VER):
+        main_text.read_main(parsed, out_html, provider=PROVIDER, model=model, log=log)
     log(f'  [完成] summary.html {round(os.path.getsize(out_html) / 1024)} KB')
     return True
 

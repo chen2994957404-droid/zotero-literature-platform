@@ -139,7 +139,7 @@ def render_html(content):
             + '\n'.join(out) + '</body></html>')
 
 
-def read_main(parsed_dir, out_html, provider='deepseek', model='deepseek-v4-flash',
+def read_main(parsed_dir, out_html, provider='deepseek', model=None,
               key='', log=print, title=None, doi=None):
     """跑完整的一篇正文精读，写出 out_html，返回它的路径。
 
@@ -170,7 +170,8 @@ def read_main(parsed_dir, out_html, provider='deepseek', model='deepseek-v4-flas
     # 两次尝试：先关思考 + 3.2 万额度（快且省）；不够则开思考 + 6.4 万额度（更强）
     for attempt, (mt, think) in enumerate([(32000, False), (64000, True)], 1):
         try:
-            raw = _chat(SYS, llm_input, provider=provider, model=model, key=key,
+            # 走「精读」用途的通道（主用失败自动切备用）；model 显式给了就用它
+            raw = _chat(SYS, llm_input, purpose='DEEPREAD', model=model,
                         temperature=0.3, max_tokens=mt, thinking=think)
             content = re.sub(r'<think>[\s\S]*?</think>', '', raw).strip()
         except Exception as e:

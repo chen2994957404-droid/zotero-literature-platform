@@ -443,6 +443,33 @@ def c_budget():
     return OK, used + '；上限 ' + '、'.join(lim)
 
 
+def c_routing():
+    """大模型的通道 / 用途配得对不对（2026-09-11，用户拍板的三段式）。
+
+    查三件事，都来自 `shared.kernel.config.routing.problems()`，面板显示的是同一份：
+      · 用途指定的通道存不存在（红）
+      · 通道要的密钥填没填、用途要的能力通道支不支持（黄）
+      · 用途是不是还在「按模型名猜通道」的兜底状态（黄）—— 能跑，但该去面板指定
+    **这一项是防「静默换家」的**：2026-09-14 起 deepseek-v4-pro 会被官方路由到 Flash，
+    不报错、只降级 —— 只有把通道和模型明说出来，这种变化才看得见。
+    """
+    from shared.kernel.config import routing
+    probs = routing.problems()
+    fails = [m for lvl, m in probs if lvl == 'fail']
+    warns = [m for lvl, m in probs if lvl == 'warn']
+    n = len(routing.purposes())
+    if fails:
+        return FAIL, f'{len(fails)} 处配错：' + '；'.join(fails[:2])
+    if warns:
+        guessed = sum(1 for m in warns if '没明确指定通道' in m)
+        other = [m for m in warns if '没明确指定通道' not in m]
+        msg = f'{n} 个用途；{guessed} 个还在按模型名猜通道（能跑，建议去面板指定）'
+        if other:
+            msg += '；' + '；'.join(other[:2])
+        return WARN, msg
+    return OK, f'{n} 个用途都明确指定了通道和模型'
+
+
 def c_services():
     """四个自启任务在不在。**只对运行端有意义** —— 编程端/测试端都不该注册它们。
 
@@ -578,6 +605,7 @@ if __name__ == '__main__':
         check('原子模块自测', c_modules)
         check('数据资产', c_data)
         check('大模型花销', c_budget)
+        check('大模型通道', c_routing)
         check('后台服务', c_services)
 
     nf = sum(1 for s, _, _ in results if s == FAIL)

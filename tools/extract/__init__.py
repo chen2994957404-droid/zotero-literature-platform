@@ -79,8 +79,8 @@ def llm_json(system, user):
     """按 provider 分流到原子模块。**联网只发生在 adapters 里**（架构准则铁律）。"""
     if _provider() == 'ollama':
         return _chat_json(system, user, provider='ollama', model=_model())
-    return _chat_json(system, user, provider='deepseek', model=_model(),
-                      key=get_key('DEEPSEEK_KEY'))
+    # 只说「我是抽取」——通道/模型/密钥由路由表决定（2026-09-11）
+    return _chat_json(system, user, purpose='EXTRACT')
 
 
 def evaluate(body, data):

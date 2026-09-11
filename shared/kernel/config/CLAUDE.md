@@ -28,6 +28,8 @@
 | `set_keys({...})` | 写回 `.env`（原子替换 + 自动备份），控制面板用它 |
 | `mask(v)` | 脱敏显示，只留后 4 位 |
 | `site_missing()` | 哪些必填项还没配（新电脑装机时提示用） |
+| `is_secret(name)` | 这个名字是不是密钥（固定表 + `_KEY`/`_TOKEN` 后缀规则），密钥只进凭据库 |
+| `routing.channels()` / `routing.purposes()` / `routing.resolve(purpose)` | **大模型的通道表与用途表**（子模块 `routing.py`，2026-09-11）：官方几家内置，中转站由用户在面板加；每个用途指定主用通道 + 模型 + 备用通道。存 `llm_routing.json`（不进 git，不含密钥值） |
 
 ## 为什么存在（实测教训）
 
