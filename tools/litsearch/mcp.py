@@ -23,13 +23,23 @@ _LIMIT = {'limit': {'type': 'integer', 'minimum': 1, 'maximum': 200,
                                    '默认见各工具'}}
 
 
+_OA_WORDS = {'closed': '付费', 'hybrid': '混合', 'gold': 'OA', 'diamond': 'OA',
+             'green': 'OA·存档', 'bronze': 'OA·免费读'}
+
+
 def _line(it):
-    """一条结果渲染成一行（带「库里有没有」）。"""
+    """一条结果渲染成一行（带「库里有没有」+ 出版商 + 付不付费）。
+
+    出版商和付费状态是**事实**，摆出来让模型按用户的路线挑；不在这里过滤。
+    """
     mark = '【库里有】' if it.get('in_library') else '         '
+    pub = (it.get('publisher') or '').replace(
+        'Multidisciplinary Digital Publishing Institute', 'MDPI')
+    oa = _OA_WORDS.get(it.get('oa_status') or '', '')
+    tail = ' · '.join(x for x in ((it.get('venue') or '?')[:40], pub[:28], oa) if x)
     return '%s [%s] 被引%-5s %s\n           %s | %s' % (
         mark, it.get('year') or '????', it.get('citations') or 0,
-        (it.get('title') or '')[:78],
-        (it.get('venue') or '?')[:40], it.get('doi') or '(无 DOI)')
+        (it.get('title') or '')[:78], tail, it.get('doi') or '(无 DOI)')
 
 
 def _rows(items, head='', total=None):
@@ -80,7 +90,11 @@ def register(server):
         '词组要加引号，多词用 AND，例：`"phenylboronic acid" AND siloxane`。'
         '⚠ 列表里的摘要是**预览**（截到 1500 字，会标出 abstract_truncated）；'
         '要完整判断一篇，用 lit_abstract 取不截断的全文摘要。'
-        '一次最多 200 条 —— 一个几十上百篇的领域可以一次捞干净。',
+        '一次最多 200 条 —— 一个几十上百篇的领域可以一次捞干净。'
+        '**用户的路线**：优先付费的好刊（Nature/Wiley/ACS/Elsevier/RSC 等），'
+        'MDPI、Frontiers 这类只能当兜底、不能当默认 —— 每条结果都标了出版商和'
+        '付费状态，照着挑。**付费 ≠ 拿不到**：用户有机构订阅，'
+        'getpdf_one / paper_fulltext 能取到付费刊的全文，别因为 OA 方便就偏向它。',
         {'type': 'object', 'properties': dict(
             {'term': {'type': 'string', 'description': '检索词（支持引号词组与 AND）'},
              'yearFrom': {'type': 'integer', 'description': '起始年份（含）'},

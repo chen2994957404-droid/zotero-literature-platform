@@ -16,8 +16,8 @@
 
 ## 统一的文献字典（与 shared.adapters.sciverse 同构，全平台通用）
 
-    {'title', 'doi', 'year', 'venue', 'citations', 'abstract',
-     'is_oa', 'oa_url', 'openalex_id', 'first_author'}
+    {'title', 'doi', 'year', 'venue', 'citations', 'abstract', 'abstract_truncated',
+     'is_oa', 'oa_status', 'publisher', 'oa_url', 'openalex_id', 'first_author'}
 
 ⚠ 引用数的字段名是 **`citations`**。这一点曾经出过事：
 `paper_discovery` 发的是 `cited_by`，而 `discover.py` 读的是 `cited` ——
@@ -164,6 +164,13 @@ def normalize(w):
         'abstract': _abs_preview,
         'abstract_truncated': len(_abs_full) > len(_abs_preview),
         'is_oa': is_oa,
+        # 出版商与开放获取状态 —— **两条事实，不是判断**（2026-09-10 加）。
+        # 用户的真实诉求：LLM 找文献总偏向开放获取的（因为它自己读得到），
+        # 不去找付费的好刊。解法不是过滤 MDPI（那是替他判断），
+        # 而是把「谁出版的、付不付费」递出去，让调用方自己按他的路线挑。
+        # OpenAlex 在 work 上直接给这两个字段，零额外请求。
+        'publisher': src.get('host_organization_name') or '',
+        'oa_status': (w.get('open_access') or {}).get('oa_status') or '',
         'oa_url': (loc.get('landing_page_url') or '') if isinstance(loc, dict) else '',
         'openalex_id': (w.get('id') or '').split('/')[-1],
         'first_author': first_author,
