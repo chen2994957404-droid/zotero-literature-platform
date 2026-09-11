@@ -183,3 +183,20 @@ def test_向量化即使配了备用也只解析出主用(隔离的路由文件)
                                      'fallback': 'aliyun-百炼'}})
     assert [n for n, _, _ in routing.resolve('EMBED')] == ['ollama-本地']
     assert any(lvl == 'fail' and '向量库' in m for lvl, m in routing.problems())
+
+
+# ── Ollama 的「关思考」必须在顶层（踩坑 #155）───────────────────────────
+def test_ollama请求里think在顶层不在options里(monkeypatch):
+    """options.think 是无效字段，Ollama 静默忽略 → 模型偷偷推理几千字再答。
+    主力机实测：同一条打标签请求，放 options 里 53 秒，放顶层 2.8 秒。"""
+    import urllib.request, io as _io
+    seen = {}
+    class _R:
+        def read(self): return b'{"message": {"content": "{}"}, "eval_count": 1}'
+    def fake(req, timeout=0):
+        seen['body'] = json.loads(req.data.decode('utf-8')); return _R()
+    monkeypatch.setattr(urllib.request, 'urlopen', fake)
+    L._ollama([{'role': 'user', 'content': 'hi'}], 'qwen3.5:latest', 0.1, True, 4096,
+              host='http://localhost:11434')
+    assert seen['body'].get('think') is False, 'think 必须是顶层参数'
+    assert 'think' not in seen['body'].get('options', {}), '放 options 里等于没关'

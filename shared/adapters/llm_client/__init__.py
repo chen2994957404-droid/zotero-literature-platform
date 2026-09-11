@@ -318,9 +318,13 @@ def _cloud_chat(messages, model, key, temperature, json_mode, max_tokens,
 
 def _ollama(messages, model, temperature, json_mode, num_ctx, host=None):
     host = host or _cfg_site('OLLAMA_HOST') or _OLLAMA_DEFAULT
-    body = {'model': model, 'stream': False,
-            'options': {'temperature': temperature, 'num_ctx': num_ctx,
-                        'think': False},   # 实测：qwen3.5 思考模式+中文会卡几分钟（stream:false 静默等待），本地调用一律关
+    # ⚠ `think` 是 Ollama 请求的**顶层**参数，不是 options 里的（踩坑 #155，2026-09-11）。
+    #   原来写在 options 里，Ollama 静默忽略 —— 于是 qwen3.5 每次都先偷偷推理几千字再答：
+    #   主力机 A/B 实测同一条打标签请求，options 里 53 秒（隐藏推理 8104 字），
+    #   顶层 2.8 秒（0 字）。**20 倍**。此前注释记的「思考模式+中文会卡几分钟」
+    #   症状看对了、修在了错的地方 —— 症状消失过是因为换了模型，不是因为这一行。
+    body = {'model': model, 'stream': False, 'think': False,
+            'options': {'temperature': temperature, 'num_ctx': num_ctx},
             'messages': messages}
     if json_mode:
         body['format'] = 'json'
@@ -477,7 +481,7 @@ def chat_vision(system, user, image_b64, provider=None, model=None, key=None,
 
     def call(name, ch, model):
         if ch.get('kind') == 'ollama':
-            body = {'model': model, 'stream': False,
+            body = {'model': model, 'stream': False, 'think': False,   # 顶层，同 _ollama（踩坑 #155）
                     'options': {'temperature': temperature},
                     'messages': [{'role': 'system', 'content': system},
                                  {'role': 'user', 'content': user, 'images': [raw_b64]}]}
