@@ -200,3 +200,17 @@ def test_ollama请求里think在顶层不在options里(monkeypatch):
               host='http://localhost:11434')
     assert seen['body'].get('think') is False, 'think 必须是顶层参数'
     assert 'think' not in seen['body'].get('options', {}), '放 options 里等于没关'
+
+
+def test_关思考的语法按模型名认家_不按通道名(monkeypatch):
+    """中转站跑 deepseek 模型也得用 deepseek 的写法。传通道名给 apply_thinking 会静默不翻译。"""
+    seen = {}
+    def fake_cloud(messages, model, key, temperature, json_mode, max_tokens,
+                   thinking=None, provider='deepseek', endpoint=None, purpose='', channel=''):
+        seen['provider'] = provider; return 'ok'
+    monkeypatch.setattr(L, '_cloud_chat', fake_cloud)
+    call = L._text_call([{'role': 'user', 'content': 'hi'}], 0.1, False, None, 4096, False, 'ASK')
+    call('阿里云-中转', {'kind': 'openai', 'base': 'https://relay/v1', 'key': ''}, 'deepseek-flash')
+    assert seen['provider'] == 'deepseek', '中转跑 deepseek 模型 → 要用 deepseek 的思考语法'
+    call('aliyun-百炼', {'kind': 'openai', 'base': 'https://x/v1', 'key': ''}, 'qwen3.5-plus')
+    assert seen['provider'] == 'dashscope'

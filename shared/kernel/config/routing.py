@@ -61,8 +61,9 @@ BUILTIN_CHANNELS = {
         # 真实地址走本机设置 DASHSCOPE_BASE（每个用户的业务空间域名不同），这里是兜底
         'base': 'https://dashscope.aliyuncs.com/compatible-mode/v1',
         'key': 'DASHSCOPE_KEY', 'kind': 'openai',
-        'caps': ['text', 'json', 'vision'],
-        'note': '大陆版 key 打不通国际版，反之亦然'},
+        'caps': ['text', 'json', 'thinking', 'vision'],     # qwen3.x 支持 enable_thinking
+        'note': '大陆版 key 打不通国际版，反之亦然；sk-ws-（Coding Plan）的 key 配通用地址'
+                '照样能调 qwen-plus 等通用模型（2026-09-12 实测）'},
     'ollama-本地': {
         'base': 'http://localhost:11434', 'key': '', 'kind': 'ollama',
         'caps': ['text', 'json', 'embed'],

@@ -407,8 +407,13 @@ def _text_call(messages, temperature, json_mode, max_tokens, num_ctx, thinking, 
                            host=ch.get('base'))
         base = (ch.get('base') or '').rstrip('/')
         ep = base if base.endswith('/chat/completions') else base + '/chat/completions'
+        # ⚠ 「关思考」的语法取决于**模型是谁家的**，不是走哪条通道：中转站跑 deepseek
+        #   模型也得用 deepseek 的写法。所以按模型名认家（provider_of），通道名只是兜底。
+        #   2026-09-12 抓到：原来传的是通道名（'aliyun-百炼'），apply_thinking 认不出，
+        #   静默不翻译 —— thinking=False 等于没关，推理链照样吃额度。
+        family = ch.get('_provider') or provider_of(model) or name
         return _cloud_chat(messages, model, _channel_key(ch), temperature, json_mode,
-                           max_tokens, thinking, ch.get('_provider') or name,
+                           max_tokens, thinking, family,
                            endpoint=ep, purpose=purpose, channel=name)
     return call
 
