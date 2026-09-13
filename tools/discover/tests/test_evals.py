@@ -89,3 +89,16 @@ def test_只有个别篇算不出相关度时仍按原逻辑():
     rows = match.rank(papers, ms, year_now=2026)
     assert rows[0][0]['title'] == 'a'
     assert not any(m.get('rank_mode') for _p, m, _s in rows)
+
+
+def test_新方向模式不按近库度排():
+    """用户找新方向时（2026-09-13），默认的 relevance=√(近库×贴题) 会把离库远的压下去 ——
+    正好是反向拉力。explore=True 时只看贴题度；近库度留着当事实给人看。"""
+    papers = [{'title': '离库远但正对题', 'year': 2025, 'citations': 5},
+              {'title': '离库近但跑题',   'year': 2025, 'citations': 5}]
+    ms = [{'relevance': 0.3, 'topic_sim': 0.9, 'lib_sim': 0.1, 'status': 'new'},
+          {'relevance': 0.7, 'topic_sim': 0.5, 'lib_sim': 0.98, 'status': 'new'}]
+    default = [p['title'] for p, _m, _s in match.rank(papers, ms, year_now=2026)]
+    explore = [p['title'] for p, _m, _s in match.rank(papers, ms, year_now=2026, explore=True)]
+    assert default[0] == '离库近但跑题', '默认模式确实会被库拖着走（这正是要给用户开关的理由）'
+    assert explore[0] == '离库远但正对题', '新方向模式必须把它翻过来'

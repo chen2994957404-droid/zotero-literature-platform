@@ -364,6 +364,7 @@ def _run_search(params):
             year_from=params.get('year_from') or None,
             snowball_seeds=params.get('seeds', 3),
             topic_floor=params.get('floor', 0.45),
+            explore=bool(params.get('explore')),      # 新方向：不按「跟我的库像不像」排
             log=_job_log)
         rows = []
         for i, (p, m, score) in enumerate(r['rows'], 1):
@@ -371,7 +372,10 @@ def _run_search(params):
                 'n': i, 'title': p.get('title') or '', 'doi': p.get('doi') or '',
                 'year': p.get('year'), 'venue': (p.get('venue') or '')[:40],
                 'citations': p.get('citations') or 0, 'is_oa': bool(p.get('is_oa')),
-                'status': m.get('status'), 'relevance': m.get('relevance'),
+                'status': m.get('status'),
+                # 新方向模式下给用户看的「相关度」是贴题度；近库度单独给，当事实摆着
+                'relevance': (m.get('topic_sim') if r.get('explore') else m.get('relevance')),
+                'lib_sim': m.get('lib_sim'), 'explore': bool(r.get('explore')),
                 'topic_sim': m.get('topic_sim'), 'lib_sim': m.get('lib_sim'),
                 'from': p.get('from') or 'search',
                 'nearest': (m.get('nearest') or {}).get('title', ''),
@@ -908,6 +912,8 @@ pre{background:#20232a;color:#c8d0dc;padding:12px;border-radius:8px;font-size:12
       <option value="5">雪球种子 5 篇</option>
       <option value="0">不用雪球（快）</option>
     </select>
+    <label title="默认排序会把「离你库远」的文献压下去 —— 深耕现有方向时对，找新方向时反。勾上就只按跟本次主题贴不贴排">
+      <input type="checkbox" id="explore"> 找新方向（不按我库的相近度排）</label>
     <button onclick="doSearch()" id="btnSearch">开始找</button>
   </div>
   <pre id="searchlog" style="display:none;max-height:150px"></pre>
@@ -1286,7 +1292,7 @@ async function doSearch(){
   $('#results').innerHTML=''; $('#collectbar').style.display='none'; $('#searchsum').textContent='';
   const r=await (await fetch('/api/search',{method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({query:q, mode:$('#mode').value,
+    body:JSON.stringify({query:q, mode:$('#mode').value, explore:$('#explore').checked,
       seeds:parseInt($('#seeds').value), limit:25, n_queries:5})})).json();
   if(!r.ok){toast(r.msg); $('#btnSearch').disabled=false; $('#btnSearch').textContent='开始找'; return;}
   clearInterval(searchTimer);

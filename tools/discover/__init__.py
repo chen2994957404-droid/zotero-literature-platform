@@ -141,7 +141,7 @@ def snowball_more(queries, items, seen_keys, n_seeds=3, limit_per_seed=30, say=N
 
 def run_discovery(query, limit=25, n_queries=5, mode='survey', year_from=None,
                   prefer='relevance', snowball_seeds=3, topic_floor=0.45,
-                  use_openalex=False, log=None):
+                  use_openalex=False, log=None, explore=False):
     """完整的混合检索流程，返回结构化结果。
 
     **命令行与控制面板共用本函数** —— 逻辑只有一份。
@@ -225,7 +225,10 @@ def run_discovery(query, limit=25, n_queries=5, mode='survey', year_from=None,
         if filtered:
             say(f'滤掉 {filtered} 篇跨方向文献，留下 {len(items)} 篇')
 
+    if explore:
+        say('新方向模式：不按「跟你的库像不像」排，只按「跟本次主题贴不贴」排；'
+            '「离你的库」一栏是摆给你看的事实 —— 找新方向时，远是好消息')
     return {'queries': queries, 'contrib': contrib, 'seeds': seeds,
             'snow_added': snow_added, 'filtered': filtered,
-            'total_pool': total_pool, 'source': source,
-            'rows': rank(items, ms)}
+            'total_pool': total_pool, 'source': source, 'explore': explore,
+            'rows': rank(items, ms, explore=explore)}

@@ -4,6 +4,9 @@
 用法:
   python -m tools.discover "polyborosiloxane dynamic bond"
   python -m tools.discover "我的材料回弹太差怎么解决" --解决问题
+  python -m tools.discover "离子液体自修复弹性体" --新方向
+        └ 找新方向用：**不按「跟你的库像不像」排**，只按跟本次主题贴不贴排。
+          默认排序会把离你库远的压下去 —— 深耕现有方向时对，找新方向时反。
   python -m tools.discover "shear stiffening gel" 30 --since 2020
   python -m tools.discover "..." --扩展 8      拆更多检索式（更全，更慢更费）
   python -m tools.discover "..." --单查询      只用原话搜（快，但会漏）
@@ -91,7 +94,8 @@ def main():
                           mode='problem' if flag('--解决问题') else 'survey',
                           year_from=opt('--since'), prefer=prefer,
                           snowball_seeds=n_seeds, topic_floor=floor,
-                          use_openalex=flag('--openalex'), log=print)
+                          use_openalex=flag('--openalex'), log=print,
+                          explore=flag('--新方向'))
     except Exception as e:
         print(f'检索失败：{e}')
         return
@@ -122,16 +126,26 @@ def main():
               '不是按贴题度。要看贴题度请在主力机上跑。')
         print('-' * 84)
 
+    explore = bool(r.get('explore'))
+    if explore and shown:
+        print('新方向模式：按「贴题」排，不按「近库」排。「离你的库」远 = 你库里还没有这一类 —— 找新方向时这是好消息。')
+        print('-' * 84)
+
     for i, (p, m, _score) in enumerate(shown, 1):
         tag = {'have': '【已有】', 'likely': '【疑似已有】', 'new': ''}[m['status']]
-        rel = m['relevance']
+        rel = m.get('topic_sim') if explore else m['relevance']
         bar = '█' * int((rel or 0) * 10) if rel is not None else '—'
         detail = ''
         if m.get('topic_sim') is not None:
-            detail = f'（贴题{m["topic_sim"]} 近库{m.get("lib_sim")}）'
+            ls = m.get('lib_sim')
+            if explore:
+                far = '远' if (ls is not None and ls < 0.5) else ('近' if ls is not None else '?')
+                detail = f'（离你的库：{far} {ls}）'
+            else:
+                detail = f'（贴题{m["topic_sim"]} 近库{ls}）'
         src = {'backward': ' [引用源头]', 'forward': ' [跟进工作]'}.get(p.get('from'), '')
         print(f'{i:2d}. {tag}[{p.get("year") or "????"}] '
-              f'相关度 {rel if rel is not None else "—"} {bar:<10} '
+              f'{"贴题" if explore else "相关度"} {rel if rel is not None else "—"} {bar:<10} '
               f'被引{p.get("citations", 0)}{detail}{src}')
         print(f'    {(p.get("title") or "")[:76]}')
         meta = []

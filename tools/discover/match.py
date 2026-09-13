@@ -183,13 +183,20 @@ def pick_seeds(topic, n=4):
     return seeds
 
 
-def rank(papers, matches, w_rel=0.6, w_cite=0.25, w_fresh=0.15, year_now=None):
+def rank(papers, matches, w_rel=0.6, w_cite=0.25, w_fresh=0.15, year_now=None,
+         explore=False):
     """给候选文献排序：**与我的方向相关**为主，影响力与新鲜度为辅。
 
     默认权重刻意让相关度占大头（0.6）—— 因为高被引的通用综述对具体研究帮助有限，
     而正好做你那个体系的小众论文才是金子。库里已有的排最后（你已经有了）。
 
     返回按分数降序的 [(paper, match, score)]。
+
+    `explore=True`（**新方向模式**，2026-09-13 用户要求）：相关度改用 `topic_sim`
+    （跟本次主题贴不贴），**不看** `lib_sim`（跟你的库像不像）。
+    默认的 relevance 是两者的几何平均 —— 离你库远的文献哪怕正对题也会被拉下去，
+    深耕现有方向时这是对的，找新方向时这是反向拉力。
+    库里已有的仍然沉底（你已经有了，不用再收）。
     """
     import datetime
     year_now = year_now or datetime.date.today().year
@@ -212,7 +219,7 @@ def rank(papers, matches, w_rel=0.6, w_cite=0.25, w_fresh=0.15, year_now=None):
         return rows
     rows = []
     for p, m in zip(papers, matches):
-        rel = m.get('relevance')
+        rel = m.get('topic_sim') if explore else m.get('relevance')
         rel = 0.5 if rel is None else rel          # 个别篇算不出时给中性分，不惩罚
         c = p.get('citations') or 0
         cite = min(1.0, (c ** 0.5) / 20.0)         # 开方压缩：避免超高被引一家独大

@@ -87,6 +87,7 @@ A 机默认不写 Zotero、不跑常驻服务、不跑花钱的批量作业 —�
 | 「库里有没有 XX 这篇」「最近加了什么」「有哪些标签」| `python -m tools.library search XX`（只读、免费、秒回）|
 | 「我库里关于 XX 有什么？」| `python -m tools.ask "问题"`（RAG，中文答 + 附来源。**只是找某篇在不在，用上面那条更便宜**）|
 | 「帮我找 XX 方向的文献」| `python -m tools.discover "关键词"`（拆检索式 + 雪球 + 按「跟他多相关」排序）|
+| 「我在找**新方向**」「别被我现有的库拖累」| `python -m tools.discover "关键词" --新方向`（只按贴题排，不按近库排）；或直接用 `lit_search` 对抗式检索（它本来就不看库）。**别用 `ask`** —— 那是问他自己的库 |
 | 「帮我横向比较 XX」「这方向有什么空白」| 读 `data/serving/structured/compare.md`；PBS 方向另有 `compare_PBS.md` |
 | 「精读某篇文献」| 让他在 Zotero 打「待处理」标签。**状态机自动判断**：只有正文→正文精读；有 SI→连 SI 一起→全文精读；已精读的只补缺的。服务已开机自启 |
 | 「把某批文献的数据抽出来」| `python -m tools.extract KEY1 KEY2 --parse` |
