@@ -643,12 +643,35 @@ def _push_via_ssh(local, remote_abs):
     return call(script, timeout=300)
 
 
+def _with_bom_if_ps1(local):
+    """`.ps1` 里有中文就补上 UTF-8 BOM，否则 PowerShell 5.1 会把它当 GBK 读。
+
+    2026-09-13 实测：推过去一个没 BOM 的脚本，里面的 `--新方向` `--解决问题`
+    两个中文开关全被读成乱码，程序**静默**按没给开关跑 —— 没有任何报错，
+    只有细看输出才发现「模式不对」。这是编码咬人的第五个地方：
+    前四个是控制台输出、子进程、读文件、作业通道的 payload；这个是**PowerShell 读脚本文件**。
+    只在需要时改一份临时副本，不动用户的原文件。
+    """
+    import codecs
+    if not local.lower().endswith('.ps1'):
+        return local
+    raw = io.open(local, 'rb').read()
+    if raw.startswith(codecs.BOM_UTF8) or raw.isascii():
+        return local
+    import tempfile
+    fd, tmp = tempfile.mkstemp(suffix='.ps1')
+    with os.fdopen(fd, 'wb') as fh:
+        fh.write(codecs.BOM_UTF8 + raw)
+    return tmp
+
+
 def cmd_push(local, remote_rel):
     """把一个本地文件传到对面的项目目录下（复杂脚本别硬拼引号，传过去再跑）。"""
     if not os.path.isfile(local):
         print(f'找不到本地文件：{local}')
         return 2
     remote_abs = f'{ROOT_R}/{remote_rel}'
+    local = _with_bom_if_ps1(local)
     ok, out = scp_to(local, remote_abs)
     if not ok:
         # scp 全军覆没时的退路：穿透通道常常「ssh 通但 scp 不通」，
