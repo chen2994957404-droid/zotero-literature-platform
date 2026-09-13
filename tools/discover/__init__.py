@@ -110,19 +110,46 @@ def fetch_multi(queries, limit, year_from, use_openalex, prefer):
     return merged, total_hint, source, contrib, seen
 
 
-def snowball_more(queries, items, seen_keys, n_seeds=3, limit_per_seed=30, say=None):
-    """从库里挑种子做雪球扩展，把新文献并进 items（原地改）。
+def _seeds_from_hits(items, n):
+    """新方向模式的种子：从**本次搜到的**文献里挑，不碰用户的库。
+
+    取前 3n 个命中（搜索引擎按相关度给的顺序）里被引最多的 n 篇。
+    「被引多」在这里只是「引用网络够密、雪球滚得动」的代理，不是质量判断。
+    """
+    pool = [it for it in items[:max(n * 3, 10)] if (it.get('doi') or '').strip()]
+    pool.sort(key=lambda it: it.get('citations') or 0, reverse=True)
+    return [{'doi': it['doi'].lower().strip(), 'title': (it.get('title') or '')[:70],
+             'sim': None, 'citations': it.get('citations') or 0} for it in pool[:n]]
+
+
+def snowball_more(queries, items, seen_keys, n_seeds=3, limit_per_seed=30, say=None,
+                  explore=False):
+    """挑种子做雪球扩展，把新文献并进 items（原地改）。
+
+    种子从哪来是这一步的全部要害：
+      · 默认从**用户的库**里挑（跟本题最像的几篇）—— 深耕现有方向时，
+        这是本平台独有的优势（见 `pick_seeds`）。
+      · `explore=True`（新方向模式）从**本次搜到的文献**里挑 —— 2026-09-13 实测：
+        种子仍取自库时，雪球带回的 130 多篇全在库的引用邻域里，前十名「离你的库」
+        清一色是「近」；排序翻了、候选池没翻，等于没找新方向。
 
     返回 (seeds, 新增篇数)。种子挑不出来或雪球失败都只是少几篇，**不影响其余结果**。
     """
     say = say or (lambda s: None)
     from shared.adapters.snowball import expand as snowball
-    # 用扩展式集合挑种子：原始输入可能是「PBS」这种无语义的缩写
-    seeds = pick_seeds(' ; '.join(queries), n=n_seeds)
-    if not seeds:
-        say('库里没找到合适的种子，跳过雪球（Ollama 没跑时也会这样）')
-        return [], 0
-    say(f'从你库里挑了 {len(seeds)} 篇做雪球种子，正在沿引用网络扩展…')
+    if explore:
+        seeds = _seeds_from_hits(items, n_seeds)
+        if not seeds:
+            say('搜到的文献都没有 DOI，没法做雪球')
+            return [], 0
+        say(f'新方向模式：从本次搜到的文献里挑 {len(seeds)} 篇被引最多的做雪球种子（不从你的库里挑）…')
+    else:
+        # 用扩展式集合挑种子：原始输入可能是「PBS」这种无语义的缩写
+        seeds = pick_seeds(' ; '.join(queries), n=n_seeds)
+        if not seeds:
+            say('库里没找到合适的种子，跳过雪球（Ollama 没跑时也会这样）')
+            return [], 0
+        say(f'从你库里挑了 {len(seeds)} 篇做雪球种子，正在沿引用网络扩展…')
     added = 0
     try:
         sr = snowball([s['doi'] for s in seeds], direction='both',
@@ -187,7 +214,8 @@ def run_discovery(query, limit=25, n_queries=5, mode='survey', year_from=None,
     seeds, snow_added = [], 0
     if snowball_seeds > 0:
         seeds, snow_added = snowball_more(queries, items, seen_keys,
-                                          n_seeds=snowball_seeds, say=say)
+                                          n_seeds=snowball_seeds, say=say,
+                                          explore=explore)
 
     # ⚠ 雪球是顺着引用网络扩的，天然会带回老文献 —— 用户说了 --since 就得对它也生效。
     #   原来只在检索那一步过年份，于是要 2024 以后的结果里混着 2016 的（2026-09-13 实测）。

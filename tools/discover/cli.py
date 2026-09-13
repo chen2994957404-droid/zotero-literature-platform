@@ -104,9 +104,14 @@ def main():
         return
 
     if r['seeds']:
-        print('\n雪球种子（你库里跟这个方向最近的几篇）：')
-        for s in r['seeds']:
-            print(f'  相似{s["sim"]}  {s["title"][:62]}')
+        if r.get('explore'):
+            print('\n雪球种子（本次搜到的、被引最多的几篇 —— 新方向模式不从你的库里挑）：')
+            for s in r['seeds']:
+                print(f'  被引{s.get("citations", 0):<5} {s["title"][:62]}')
+        else:
+            print('\n雪球种子（你库里跟这个方向最近的几篇）：')
+            for s in r['seeds']:
+                print(f'  相似{s["sim"]}  {s["title"][:62]}')
     print(f'\n来源 {r["source"]} + 引用网络，合并去重后 {r["total_pool"]} 篇')
     if len(r['queries']) > 1:
         _print_contrib(r['contrib'], r['total_pool'])

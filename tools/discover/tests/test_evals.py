@@ -102,3 +102,16 @@ def test_新方向模式不按近库度排():
     explore = [p['title'] for p, _m, _s in match.rank(papers, ms, year_now=2026, explore=True)]
     assert default[0] == '离库近但跑题', '默认模式确实会被库拖着走（这正是要给用户开关的理由）'
     assert explore[0] == '离库远但正对题', '新方向模式必须把它翻过来'
+
+
+def test_新方向模式的雪球种子来自本次命中而非库():
+    """2026-09-13 主力机实测：排序翻了、种子仍从库里挑，雪球带回的 130 多篇全在库的
+    引用邻域里，前十名「离你的库」清一色是近 —— 候选池没翻等于没找新方向。"""
+    from tools.discover import _seeds_from_hits
+    hits = [{'doi': '10.1/a', 'title': 'A', 'citations': 3},
+            {'title': '没 DOI 的不能当种子', 'citations': 999},
+            {'doi': '10.1/b', 'title': 'B', 'citations': 40},
+            {'doi': '10.1/c', 'title': 'C', 'citations': 12}]
+    seeds = _seeds_from_hits(hits, 2)
+    assert [s['doi'] for s in seeds] == ['10.1/b', '10.1/c'], '取本次命中里被引最多且有 DOI 的'
+    assert all(s['sim'] is None for s in seeds), '不是按近库度挑的，就别给一个近库度'
