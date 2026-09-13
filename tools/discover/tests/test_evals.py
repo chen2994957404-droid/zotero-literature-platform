@@ -68,3 +68,24 @@ def test_每条金标都写了为什么要验它(g):
         bad += [f"{group}/{c.get('name', '?')}" for c in cases
                 if len((c.get('why') or '').strip()) < 8]
     assert not bad, f'这些用例没写 why：{bad}'
+
+
+def test_语义整个不可用时不假装排序():
+    """没有向量库时每篇 relevance 都是 None。原来给一律 0.5，排序只剩被引数 ——
+    万引的通用综述全浮到顶上（2026-09-13 编程端实测，对题的排第 42）。
+    退化时要按检索引擎给的顺序为主，并在 match 上标 rank_mode。"""
+    papers = [{'title': 'on-topic 2026', 'year': 2026, 'citations': 3},
+              {'title': 'on-topic 2025', 'year': 2025, 'citations': 10},
+              {'title': 'generic review 2019', 'year': 2019, 'citations': 2599}]
+    ms = [{'relevance': None, 'status': 'new'} for _ in papers]
+    rows = match.rank(papers, ms, year_now=2026)
+    assert [p['title'] for p, _m, _s in rows][0] == 'on-topic 2026', '检索顺序在前的该在前，不该被万引综述压下去'
+    assert all(m.get('rank_mode') == 'no_semantic' for _p, m, _s in rows)
+
+
+def test_只有个别篇算不出相关度时仍按原逻辑():
+    papers = [{'title': 'a', 'year': 2025, 'citations': 0}, {'title': 'b', 'year': 2025, 'citations': 0}]
+    ms = [{'relevance': 0.9, 'status': 'new'}, {'relevance': None, 'status': 'new'}]
+    rows = match.rank(papers, ms, year_now=2026)
+    assert rows[0][0]['title'] == 'a'
+    assert not any(m.get('rank_mode') for _p, m, _s in rows)

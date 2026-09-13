@@ -193,10 +193,27 @@ def rank(papers, matches, w_rel=0.6, w_cite=0.25, w_fresh=0.15, year_now=None):
     """
     import datetime
     year_now = year_now or datetime.date.today().year
+    # ⚠ 语义整个不可用（没有向量库，每一篇的 relevance 都是 None）时，**别假装在排序**。
+    #   原来给每篇一个「中性分 0.5」，结果相关度这一项对所有人一样，排序只剩被引数 ——
+    #   于是万引的通用综述（COF、伤口敷料水凝胶）全浮到顶上，真正对题的排第 42
+    #   （2026-09-13 在编程端实测）。退化时改用**检索引擎给的顺序**（那本身就是相关度信号）
+    #   为主、年份为辅，并在每条 match 上标 rank_mode，让界面能大声说出来。
+    if papers and all(m.get('relevance') is None for m in matches):
+        rows = []
+        for i, (p, m) in enumerate(zip(papers, matches)):
+            m['rank_mode'] = 'no_semantic'
+            yr = p.get('year') or 0
+            fresh = max(0.0, min(1.0, 1 - (year_now - yr) / 15.0)) if yr else 0.3
+            score = (1.0 - i / max(1, len(papers))) * 0.7 + fresh * 0.3
+            if m.get('status') in ('have', 'likely'):
+                score -= 1.0
+            rows.append((p, m, round(score, 4)))
+        rows.sort(key=lambda r: r[2], reverse=True)
+        return rows
     rows = []
     for p, m in zip(papers, matches):
         rel = m.get('relevance')
-        rel = 0.5 if rel is None else rel          # 语义不可用时给中性分，不惩罚
+        rel = 0.5 if rel is None else rel          # 个别篇算不出时给中性分，不惩罚
         c = p.get('citations') or 0
         cite = min(1.0, (c ** 0.5) / 20.0)         # 开方压缩：避免超高被引一家独大
         yr = p.get('year') or 0

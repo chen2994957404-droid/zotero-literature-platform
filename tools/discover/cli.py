@@ -115,17 +115,23 @@ def main():
     print(f'库里已有 {n_have} 篇 · 新文献 {len(rows) - n_have} 篇'
           + ('' if show_all else '（下面只列新的，加 --all 可看全部）'))
     print('=' * 84)
+    if shown and all(m.get('rank_mode') == 'no_semantic' for _p, m, _s in shown):
+        # 退化要大声说。原来每行打一个「相关度 None ?」，看起来像小毛病，
+        # 实际是整个排序换了依据 —— 用户以为在按「离我多近」排，其实不是。
+        print('⚠ 本机没有向量库，没法算「离你的库多近」。下面按**检索引擎的相关度 + 年份**排，'
+              '不是按贴题度。要看贴题度请在主力机上跑。')
+        print('-' * 84)
 
     for i, (p, m, _score) in enumerate(shown, 1):
         tag = {'have': '【已有】', 'likely': '【疑似已有】', 'new': ''}[m['status']]
         rel = m['relevance']
-        bar = '█' * int((rel or 0) * 10) if rel is not None else '?'
+        bar = '█' * int((rel or 0) * 10) if rel is not None else '—'
         detail = ''
         if m.get('topic_sim') is not None:
             detail = f'（贴题{m["topic_sim"]} 近库{m.get("lib_sim")}）'
         src = {'backward': ' [引用源头]', 'forward': ' [跟进工作]'}.get(p.get('from'), '')
         print(f'{i:2d}. {tag}[{p.get("year") or "????"}] '
-              f'相关度 {rel if rel is not None else "?"} {bar:<10} '
+              f'相关度 {rel if rel is not None else "—"} {bar:<10} '
               f'被引{p.get("citations", 0)}{detail}{src}')
         print(f'    {(p.get("title") or "")[:76]}')
         meta = []

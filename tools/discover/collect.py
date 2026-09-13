@@ -79,10 +79,12 @@ def parse_picks(expr, maxn):
 def show(data):
     print(f'\n上次检索：「{data["query"]}」  {data.get("time","")}')
     print('=' * 82)
+    if data['items'] and all(it.get('relevance') is None for it in data['items']):
+        print('⚠ 这次检索时本机没有向量库，没算「离你的库多近」，是按检索引擎相关度 + 年份排的。')
     for it in data['items']:
         rel = it.get('relevance')
-        bar = '█' * int((rel or 0) * 10) if rel is not None else '?'
-        print(f'{it["n"]:2d}. [{it.get("year") or "????"}] 相关度 {rel} {bar:<10} '
+        bar = '█' * int((rel or 0) * 10) if rel is not None else '—'
+        print(f'{it["n"]:2d}. [{it.get("year") or "????"}] 相关度 {rel if rel is not None else "—"} {bar:<10} '
               f'被引{it.get("citations", 0)}')
         print(f'    {(it.get("title") or "")[:74]}')
     print('=' * 82)

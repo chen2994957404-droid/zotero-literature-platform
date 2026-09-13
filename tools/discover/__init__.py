@@ -189,6 +189,13 @@ def run_discovery(query, limit=25, n_queries=5, mode='survey', year_from=None,
         seeds, snow_added = snowball_more(queries, items, seen_keys,
                                           n_seeds=snowball_seeds, say=say)
 
+    # ⚠ 雪球是顺着引用网络扩的，天然会带回老文献 —— 用户说了 --since 就得对它也生效。
+    #   原来只在检索那一步过年份，于是要 2024 以后的结果里混着 2016 的（2026-09-13 实测）。
+    if year_from:
+        before = len(items)
+        items = [p for p in items if not p.get('year') or int(p['year']) >= int(year_from)]
+        if len(items) < before:
+            say(f'雪球带回的 {before - len(items)} 篇早于 {year_from}，按你的要求去掉')
     total_pool = len(items)
     say(f'正在与你的库对照（共 {total_pool} 篇）…')
     # 贴题度用**全部扩展式拼起来**作参照，而不是用户原始输入（踩坑 #39）。
