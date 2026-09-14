@@ -413,6 +413,13 @@ def fetch(doi, url=None, timeout=90, settle=6, kind='fulltext'):
             page.wait_for_timeout(settle * 1000)
 
             st = page.evaluate(_JS_STATE)
+            # 2026-09-14 实测：Wiley 一篇第一次报 no_pdf_link，几分钟后重取就拿到了 ——
+            # 页面里 `/doi/pdf/` 链接和 citation_pdf_url 都在，只是 6 秒时还没渲染出来。
+            # 空手而归之前再等一个 settle 看第二眼，比让整批停在「找不到直链」便宜得多。
+            if (kind != 'si' and not st.get('candidates') and not st.get('captcha')
+                    and not st.get('paywall')):
+                page.wait_for_timeout(settle * 1000)
+                st = page.evaluate(_JS_STATE)
             out['landing'] = st.get('url', '')
             out['title'] = (st.get('title') or '').strip()
 

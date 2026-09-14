@@ -47,6 +47,7 @@ agent 会自己想检索式（还能根据上一轮读到的东西调整），�
 - **不写 Zotero** —— 收进库是 `tools/getpdf --to-zotero`（它连 PDF 一起挂）。
 - **不取全文** —— 那是 `tools/getpdf` 的 `fulltext`（四层回退）+ `tools/library` 的按节取原文。
 """
+import io
 import os, sys
 # 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
@@ -57,9 +58,9 @@ except Exception:
 import time
 
 from shared.adapters import openalex, snowball
-from shared.kernel import paths
+from shared.kernel import errors, paths
 from shared.adapters.zotero_client import library_index
-from shared.domain.libmatch import mark_have
+from shared.domain.libmatch import looks_like_book, mark_have
 
 # 库索引缓存：一轮对抗式检索会连着调好几次，别每次都去拉一遍 Zotero。
 # （`tools/discover` 里有一份同样口径的缓存 —— 两个工具不许互相 import，
@@ -89,12 +90,50 @@ def _index(force=False):
 
 
 def _finish(items, limit):
-    """统一收尾：截断 → 标「我有没有」→ 标「能不能立刻读」→ 返回。"""
+    """统一收尾：截断 → 标「我有没有」→ 标「能不能立刻读」→ 标「像不像书」→ 返回。"""
     items = list(items or [])[:max(1, min(int(limit), MAX_LIMIT))]
     titles, dois = _index()
     mark_have(items, titles, dois)
     mark_readable(items)
+    for it in items:
+        it['bookish'] = looks_like_book(it)     # 摆事实不过滤：模型自己决定要不要读书章节
     return items
+
+
+def _from_sciverse(term, limit, year_from, year_to):
+    """OpenAlex 限流时的退路：Sciverse 语义检索。**形状对齐成 (items, total)**，调用方不用分辨来源。
+
+    两个检索接口的返回形状本来不一样（`sciverse.search_papers` 给 dict，本函数给元组），
+    2026-09-14 真实任务里脚本因此崩过一次 —— 在这里统一，别让调用方各接一种。
+    """
+    from shared.adapters import sciverse
+    r = sciverse.search_papers(term, limit=limit, year_from=year_from, year_to=year_to)
+    items = r['items'] if isinstance(r, dict) else list(r or [])
+    total = (r.get('total') if isinstance(r, dict) else None) or len(items)
+    for it in items:
+        it.setdefault('publisher', '')
+        it.setdefault('oa_status', '')
+        it['source'] = 'sciverse'
+    return items, total
+
+
+def _log_search(term, total, items, source, filters):
+    """检索留档（PRISMA-S 的精神）：每次检索一行 jsonl，报告里「搜过哪些说法、各多少」有据可查。
+
+    `discover` 有自己的整份留档；`lit_search` 是一条条的原子检索，用追加式日志更合适。
+    写不下就算了，不影响检索。
+    """
+    import json
+    import time
+    try:
+        path = paths.search_record('litsearch_' + time.strftime('%Y%m%d'), create_dir=True)
+        path = path[:-5] + '.jsonl'
+        rec = {'time': time.strftime('%H:%M:%S'), 'term': term, 'total': total, 'source': source,
+               'filters': filters, 'top': [(it.get('doi') or it.get('title') or '')[:120] for it in items[:10]]}
+        with io.open(path, 'a', encoding='utf-8') as fh:
+            fh.write(json.dumps(rec, ensure_ascii=False) + '\n')
+    except OSError:
+        pass
 
 
 def mark_readable(items):
@@ -132,9 +171,21 @@ def search(term, limit=25, year_from=None, year_to=None):
         f['publication_year'] = f'>{int(year_from) - 1}'
     elif year_to:
         f['publication_year'] = f'<{int(year_to) + 1}'
-    items, total = openalex.works_by_filter(
-        f, limit=max(1, min(int(limit), MAX_LIMIT)), sort='publication_year:desc')
-    return _finish(items, limit), total
+    source = 'openalex'
+    try:
+        items, total = openalex.works_by_filter(
+            f, limit=max(1, min(int(limit), MAX_LIMIT)), sort='publication_year:desc')
+    except errors.RateLimited as e:
+        # 2026-09-14 真实任务：没配 OPENALEX_KEY 跑 3 条就 429。有 Sciverse 密钥就退过去，
+        # 没有就把原话抛出去（里面写着去哪领 key）。退路是语义检索，命中口径不同，结果里标明。
+        try:
+            items, total = _from_sciverse(term, limit, year_from, year_to)
+            source = 'sciverse(退路)'
+        except Exception:
+            raise e
+    items = _finish(items, limit)
+    _log_search(term, total, items, source, {'year_from': year_from, 'year_to': year_to})
+    return items, total
 
 
 def abstract(doi):

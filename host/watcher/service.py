@@ -238,6 +238,7 @@ def main():
     while True:
         # 「还活着」由后台线程报；这里只记「有进展」——
         # 两个信号回答的是不同问题，见 shared/kernel/heartbeat.py 开头的说明。
+        items = []            # Zotero 没开这轮就当没有标签在排队（落地流水线据此决定做几篇）
         try:
             q = urllib.parse.quote(' || '.join(TRIGGER_TAGS))
             items = zget(f'/users/{USER_ID}/items?tag={q}&limit=25')
@@ -279,7 +280,9 @@ def main():
         try:
             from host import ingest
             if ingest.backlog() or cycle[0] % 60 == 1:      # 每小时也扫一次向量化的积压
-                c = ingest.run_backlog(limit=2, say=print)
+                # 没人在等精读（这轮没有待处理标签）就多做几篇：批量取回 15 篇曾经要等半小时
+                # （每轮 2 篇 + 睡 60 秒）。有标签在排队时仍只做 2 篇，别让精读等。
+                c = ingest.run_backlog(limit=2 if items else 8, say=print)
                 if any(c.values()):
                     heartbeat.progress('watcher')
         except Exception as e:

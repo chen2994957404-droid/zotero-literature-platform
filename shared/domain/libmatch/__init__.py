@@ -112,3 +112,17 @@ def diversify(cands, n, first_author=None, venue=None, year=None):
         if len(picked) >= n:
             return picked
     return (picked + skipped)[:n]
+
+
+# 书章节 / 百科条目 / 会议文集的 DOI 前缀与刊名特征。2026-09-14 真实检索里 Sciverse 把
+# 「Shear Thickening」这种百科词条、Springer 丛书章节混在结果里，模型会误当成论文去读。
+_BOOKISH_DOI = ('10.1007/978-', '10.1201/', '10.1017/cbo', '10.1093/oso', '10.1002/97', '10.1016/b978',
+                '10.4324/', '10.1039/97', '10.1021/bk-', '10.5772/', '10.1055/sos-', '10.1002/0470', '10.1002/047')
+_BOOKISH_VENUE = ('encyclopedia', 'handbook', 'lecture notes', 'proceedings', 'book', 'thesis', 'dissertation')
+
+
+def looks_like_book(item):
+    """这条结果像不像书章节 / 百科条目 / 学位论文（不是期刊论文）。**只看 DOI 前缀与刊名**，不联网。"""
+    doi = (item.get('doi') or '').lower()
+    venue = (item.get('venue') or '').lower()
+    return doi.startswith(_BOOKISH_DOI) or any(w in venue for w in _BOOKISH_VENUE)

@@ -41,6 +41,7 @@ import re
 from shared.adapters import openalex, sciverse
 from shared.kernel import paths
 from shared.adapters.zotero_client import library_index
+from shared.domain.libmatch import looks_like_book
 
 from tools.discover.match import match_many, pick_seeds, rank
 
@@ -101,6 +102,8 @@ def fetch_multi(queries, limit, year_from, use_openalex, prefer):
         total_hint = max(total_hint, total)
         new = 0
         for it in items:
+            if looks_like_book(it):
+                continue          # 百科词条 / 书章节 / 学位论文不进清单（2026-09-14 实测混进来过）
             k = _key(it)
             if k in seen:
                 continue

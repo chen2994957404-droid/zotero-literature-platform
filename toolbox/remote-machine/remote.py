@@ -11,6 +11,7 @@
     python remote.py job --install        # 装「作业通道」（每台机器只做一次）
     python remote.py job "<PowerShell>"   # 让对面用自己的身份跑（**能读密钥**）
                                           #   --async 不等它 / --tail 看进展
+                                          #   --slot b 走第二条通道（长作业占着默认通道时用；先 --install --slot b）
 
     共用参数：--machine <名字>  指定操作哪台（默认按当前目录自动选，见配置）
 
@@ -703,37 +704,57 @@ def cmd_push(local, remote_rel):
 #   它执行一个固定的外壳；外壳读同目录下的 payload，跑完把输出和退出码落盘。
 #   这边写 payload → 触发 → 等 done 文件 → 取输出。
 #   等于「让它自己去跑」，而不是「我在它上面跑」—— 差的就是那把凭据。
-JOB_TASK = M['job_task']
 # 放在仓库外：项目目录迟早会搬，这条通道不该跟着一起搬
 JOB_DIR = M['job_dir']
-JOB_WRAPPER = JOB_DIR + '/job.ps1'
-JOB_PAYLOAD = JOB_DIR + '/payload.ps1'
-JOB_OUT = JOB_DIR + '/job.out'
-JOB_DONE = JOB_DIR + '/job.done'
 
 
-def wrapper_source():
+def job_slot(slot=''):
+    """一条作业通道的四个文件 + 任务名。`slot` 为空是默认通道，'b' 是第二条。
+
+    **为什么要有第二条**（2026-09-14）：通道一次只跑一个作业，取全文那十几分钟里
+    所有要密钥的事（Sciverse 检索、写 Zotero）都得排队。长作业走默认通道，
+    短的只读检索走 `--slot b`，互不阻塞。每条通道要各自 `job --install --slot <名>` 一次。
+    """
+    slot = (slot or '').strip().lower()
+    sfx = ('-' + slot) if slot else ''
+    return {
+        'task': M['job_task'] + sfx,
+        'wrapper': f'{JOB_DIR}/job{sfx}.ps1',
+        'payload': f'{JOB_DIR}/payload{sfx}.ps1',
+        'out': f'{JOB_DIR}/job{sfx}.out',
+        'done': f'{JOB_DIR}/job{sfx}.done',
+    }
+
+
+# 老名字留给还在 import 它们的地方（默认通道）
+_J0 = job_slot('')
+JOB_TASK, JOB_WRAPPER, JOB_PAYLOAD, JOB_OUT, JOB_DONE = (
+    _J0['task'], _J0['wrapper'], _J0['payload'], _J0['out'], _J0['done'])
+
+
+def wrapper_source(slot=''):
     """外壳脚本的内容。
 
-    由这里生成而不是另存一个 .ps1，是为了让它和上面那几个常量、和 `ROOT_R`
+    由这里生成而不是另存一个 .ps1，是为了让它和 `job_slot()`、和 `ROOT_R`
     **只有一处定义** —— 两份迟早不一致，而不一致的那天看起来像「任务没触发」。
     """
+    J = job_slot(slot)
     return _NL.join([
         "$ErrorActionPreference = 'Continue'",
         '$OutputEncoding = [System.Text.Encoding]::UTF8',
         '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
         "$env:PYTHONIOENCODING = 'utf-8'",
-        f"Remove-Item '{JOB_DONE}' -ErrorAction SilentlyContinue",
+        f"Remove-Item '{J['done']}' -ErrorAction SilentlyContinue",
         f"Set-Location '{ROOT_R}'",
         '$code = 0',
         'try {',
-        f"  & '{JOB_PAYLOAD}' *>&1 | Out-File -FilePath '{JOB_OUT}' -Encoding utf8",
+        f"  & '{J['payload']}' *>&1 | Out-File -FilePath '{J['out']}' -Encoding utf8",
         '  if ($null -ne $LASTEXITCODE) { $code = $LASTEXITCODE }',
         '} catch {',
-        f"  $_ | Out-File -FilePath '{JOB_OUT}' -Encoding utf8 -Append",
+        f"  $_ | Out-File -FilePath '{J['out']}' -Encoding utf8 -Append",
         '  $code = 1',
         '}',
-        f"Set-Content -Path '{JOB_DONE}' -Value $code -Encoding utf8",
+        f"Set-Content -Path '{J['done']}' -Value $code -Encoding utf8",
         '',
     ])
 
@@ -755,8 +776,8 @@ def _write_temp(text, suffix='.ps1'):
     return tmp
 
 
-def cmd_job_install():
-    """在 B 上装好这条通道（只需要做一次）。
+def cmd_job_install(slot=''):
+    """在 B 上装好这条通道（每条通道只需要做一次；`--slot b` 装第二条）。
 
     ⚠ `LogonType` 必须是 `Interactive` —— **能读凭据库的正是这一档**，
     照抄一份「已经在跑付费作业」的任务的配置就对了。改成 S4U / ServiceAccount
@@ -769,8 +790,9 @@ def cmd_job_install():
         print(out)
         return 1
 
-    tmp = _write_temp(wrapper_source())
-    ok, out = scp_to(tmp, JOB_WRAPPER)
+    J = job_slot(slot)
+    tmp = _write_temp(wrapper_source(slot))
+    ok, out = scp_to(tmp, J['wrapper'])
     os.remove(tmp)
     if not ok:
         print('外壳脚本传不过去：' + out)
@@ -781,15 +803,15 @@ def cmd_job_install():
         # 路径里没有空格，所以**不给它套引号** —— 这条命令要穿过
         # ssh → PowerShell 两层解析，每多一层引号就多一个能咬人的地方。
         "-Argument '-NoProfile -NonInteractive -WindowStyle Hidden "
-        f"-ExecutionPolicy Bypass -File {JOB_WRAPPER}'; "
+        f"-ExecutionPolicy Bypass -File {J['wrapper']}'; "
         f"$p = New-ScheduledTaskPrincipal -UserId '{USER}' "
         '-LogonType Interactive -RunLevel Limited; '
         '$s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries '
         '-DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 6) '
         '-MultipleInstances IgnoreNew; '
-        f"Register-ScheduledTask -TaskName '{JOB_TASK}' -Action $a -Principal $p "
+        f"Register-ScheduledTask -TaskName '{J['task']}' -Action $a -Principal $p "
         "-Settings $s -Description '远程按需触发的作业通道' -Force | Out-Null; "
-        f"$t = Get-ScheduledTask -TaskName '{JOB_TASK}'; "
+        f"$t = Get-ScheduledTask -TaskName '{J['task']}'; "
         "Write-Output ('已注册: ' + $t.TaskName + ' / LogonType=' "
         "+ $t.Principal.LogonType + ' / ' + $t.State)", timeout=90)
     print(out)
@@ -798,26 +820,27 @@ def cmd_job_install():
     return 0 if ok else 1
 
 
-def cmd_job(script, wait=True, timeout=1800):
+def cmd_job(script, wait=True, timeout=1800, slot=''):
     """把一段 PowerShell 交给 B，用它自己的身份跑。
 
     等待放在 **B 那边**（一条 ssh 里 `Start-Sleep` 轮询），不是 A 这边反复发 ssh ——
     每次连接都要重新握手，长作业轮询下来光握手就是几百秒。
     """
+    J = job_slot(slot)
     tmp = _write_temp(script + _NL)
-    ok, out = scp_to(tmp, JOB_PAYLOAD)
+    ok, out = scp_to(tmp, J['payload'])
     os.remove(tmp)
     if not ok:
         print('作业内容传不过去（是不是还没 job --install？）：' + out)
         return 1
 
     ok, out = call(
-        f"$t = Get-ScheduledTask -TaskName '{JOB_TASK}' -ErrorAction SilentlyContinue; "
-        "if (-not $t) { Write-Output '还没装通道：先跑 remote.py job --install'; exit 9 }; "
+        f"$t = Get-ScheduledTask -TaskName '{J['task']}' -ErrorAction SilentlyContinue; "
+        f"if (-not $t) {{ Write-Output '还没装通道：先跑 remote.py job --install{(' --slot ' + slot) if slot else ''}'; exit 9 }}; "
         "if ($t.State -eq 'Running') { "
-        "Write-Output '上一个作业还在跑（这条通道一次只跑一个）'; exit 9 }; "
-        f"Remove-Item '{JOB_DONE}','{JOB_OUT}' -ErrorAction SilentlyContinue; "
-        f"Start-ScheduledTask -TaskName '{JOB_TASK}'; Write-Output '已交给对面'",
+        "Write-Output '上一个作业还在跑（这条通道一次只跑一个；短活可以走 --slot b）'; exit 9 }; "
+        f"Remove-Item '{J['done']}','{J['out']}' -ErrorAction SilentlyContinue; "
+        f"Start-ScheduledTask -TaskName '{J['task']}'; Write-Output '已交给对面'",
         timeout=90)
     print(out)
     if not ok:
@@ -825,18 +848,19 @@ def cmd_job(script, wait=True, timeout=1800):
     if not wait:
         print('（没等它跑完 —— 用 remote.py job --tail 看进展）')
         return 0
-    return cmd_job_tail(timeout)
+    return cmd_job_tail(timeout, slot=slot)
 
 
-def cmd_job_tail(timeout=1800):
+def cmd_job_tail(timeout=1800, slot=''):
     """等作业结束并取回输出；超时就先把已有的输出给出来。"""
+    J = job_slot(slot)
     ok, out = call(
         f'$d = (Get-Date).AddSeconds({int(timeout)}); '
-        f"while (-not (Test-Path '{JOB_DONE}') -and (Get-Date) -lt $d) "
+        f"while (-not (Test-Path '{J['done']}') -and (Get-Date) -lt $d) "
         '{ Start-Sleep -Seconds 2 }; '
-        f"if (Test-Path '{JOB_OUT}') {{ Get-Content '{JOB_OUT}' -Encoding utf8 }}; "
-        f"if (Test-Path '{JOB_DONE}') {{ "
-        f"Write-Output ('[退出码] ' + (Get-Content '{JOB_DONE}' -Encoding utf8)) }} "
+        f"if (Test-Path '{J['out']}') {{ Get-Content '{J['out']}' -Encoding utf8 }}; "
+        f"if (Test-Path '{J['done']}') {{ "
+        f"Write-Output ('[退出码] ' + (Get-Content '{J['done']}' -Encoding utf8)) }} "
         "else { Write-Output '[还没跑完] 上面是目前为止的输出' }",
         timeout=int(timeout) + 60)
     print(out)
@@ -882,16 +906,17 @@ def main():
             return 2
         return cmd_push(args[1], args[2])
     if action == 'job':
+        slot = opt('--slot') or ''
         if flag('--install'):
-            return cmd_job_install()
+            return cmd_job_install(slot)
         wait_s = int(opt('--timeout') or 1800)
         if flag('--tail'):
-            return cmd_job_tail(wait_s)
+            return cmd_job_tail(wait_s, slot=slot)
         if len(args) < 2:
             print('要给一段 PowerShell：remote.py job "<命令>"'
-                  + _NL + '（第一次用先 remote.py job --install）')
+                  + _NL + '（第一次用先 remote.py job --install；第二条通道加 --slot b）')
             return 2
-        return cmd_job(args[1], wait=not flag('--async'), timeout=wait_s)
+        return cmd_job(args[1], wait=not flag('--async'), timeout=wait_s, slot=slot)
 
     print(__doc__)
     return 2

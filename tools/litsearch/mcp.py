@@ -35,6 +35,8 @@ def _line(it):
     # 三档：可读（已解析，library_outline 立刻能点）> 库里有（有条目，先 paper_fulltext）> 新
     mark = ('【可读:%s】' % it.get('db_id') if it.get('readable') else
             '【库里有】' if it.get('in_library') else '         ')
+    if it.get('bookish'):
+        mark += '[书/词条]'
     pub = (it.get('publisher') or '').replace(
         'Multidisciplinary Digital Publishing Institute', 'MDPI')
     oa = _OA_WORDS.get(it.get('oa_status') or '', '')
@@ -90,6 +92,8 @@ def register(server):
         '返回里带「这篇我库里有没有」，并告诉你全世界一共有多少篇 —— 命中数远大于返回数时，'
         '说明这个词还太宽，该收窄。免费、只读。'
         '词组要加引号，多词用 AND，例：`"phenylboronic acid" AND siloxane`。'
+        '**检索词控制在 3–5 个词**：它要求每个词都出现，7 个词以上基本搜不到（实测）。'
+        '结果里标 [书/词条] 的是书章节、百科条目、学位论文，不是期刊论文 —— 看清再读。'
         '⚠ 列表里的摘要是**预览**（截到 1500 字，会标出 abstract_truncated）；'
         '要完整判断一篇，用 lit_abstract 取不截断的全文摘要。'
         '一次最多 200 条 —— 一个几十上百篇的领域可以一次捞干净。'
