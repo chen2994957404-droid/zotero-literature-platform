@@ -86,3 +86,17 @@ def test_解析失败不抛异常_也不吞掉(env, monkeypatch):
     r = ingest.ingest_one(pid, say=lambda s: None)
     assert r['main'].startswith('fail') and r['outline'] == 'skip'
     assert ingest.backlog() == [pid], '没做成的下次还得做'
+
+
+def test_刚失败过的先不重试_隔一天再试(env, monkeypatch):
+    """MineRU 拒收的超长 PDF 曾让 watcher 每分钟白敲一次（2026-09-14）。"""
+    from shared.kernel import jobs
+    pid = paths.paper_id_from_doi(DOI)
+    _land(pid)
+    monkeypatch.setattr('shared.adapters.pdf_parse.parse_pdf',
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError('exceeds limit (200 pages)')))
+    ingest.ingest_one(pid, say=lambda s: None)
+    assert ingest.backlog() == [], '刚失败的不该立刻回到积压里'
+    assert ingest.failures() and ingest.failures()[0][0] == pid
+    monkeypatch.setattr(ingest, 'RETRY_AFTER', 0)
+    assert ingest.backlog() == [pid], '过了重试间隔要再试'

@@ -19,6 +19,11 @@ def main():
     print('')
     print(f'做完：解析 {c["parsed"]} 篇 · SI {c["si_parsed"]} 篇 · 骨架 {c["outlined"]} 篇 · '
           f'向量化 {c["vectorized"]} 篇 · 失败 {c["failed"]} 篇')
+    bad = ingest.failures()
+    if bad:
+        print('等重试的（一天后再试）：')
+        for pid, step, err in bad:
+            print(f'  {pid}  {step}  {err}')
     return 0
 
 

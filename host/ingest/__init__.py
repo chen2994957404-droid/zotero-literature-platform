@@ -39,16 +39,50 @@ log = get_logger('ingest')
 PRODUCER = 'ingest'
 
 
+RETRY_AFTER = 24 * 3600      # 解析失败过的，隔一天再试一次（别每分钟都去敲 MineRU）
+
+
+def _failed_recently(pid, step):
+    """这一步最近一次是失败、且还没过重试间隔？
+
+    2026-09-14 实测：一本 200 页以上的学位论文 MineRU 拒收（页数上限），
+    积压判定只看「有正本没解析」，于是 watcher **每轮都去重试一次**，一分钟一次白敲。
+    """
+    try:
+        r = jobs.last(pid, step)
+    except Exception:
+        return False
+    if not r or r.get('status') != jobs.FAILED:
+        return False
+    return (time.time() - (r.get('finished_at') or r.get('started_at') or 0)) < RETRY_AFTER
+
+
 def backlog():
     """还没做完免费三步的文献 id 列表：有正本没解析 / 有 SI 没解析 / 解析了没骨架。
 
+    最近失败过的（如 MineRU 拒收的超长 PDF）先跳过，隔 `RETRY_AFTER` 再试。
     向量化的积压不在这里判（要开向量库才知道），`run_backlog` 里顺手做。
     """
     out = []
     for r in catalog.scan():
-        if (r['pdf'] and not r['fulltext']) or (r['si'] and not r['si_fulltext']) \
-                or (r['fulltext'] and not os.path.isfile(paths.outline(r['id']))):
-            out.append(r['id'])
+        pid = r['id']
+        need_main = r['pdf'] and not r['fulltext'] and not _failed_recently(pid, 'parse')
+        need_si = r['si'] and not r['si_fulltext'] and not _failed_recently(pid, 'parse_si')
+        need_outline = r['fulltext'] and not os.path.isfile(paths.outline(pid))
+        if need_main or need_si or need_outline:
+            out.append(pid)
+    return out
+
+
+def failures():
+    """最近失败、正在等重试的文献：[(id, step, error)]。给人看「哪几篇一直做不成」。"""
+    out = []
+    for r in catalog.scan():
+        for step, need in (('parse', r['pdf'] and not r['fulltext']),
+                           ('parse_si', r['si'] and not r['si_fulltext'])):
+            if need and _failed_recently(r['id'], step):
+                last = jobs.last(r['id'], step) or {}
+                out.append((r['id'], step, (last.get('error') or '')[:100]))
     return out
 
 
