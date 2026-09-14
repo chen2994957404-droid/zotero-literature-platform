@@ -8,6 +8,8 @@
     python -m host.wechat_import --limit 5 --with-pdf --upload-summary  # 精读也传进 Zotero
     python -m host.wechat_import --limit 5 --with-pdf --upload   # 连 PDF 与 SI 一起传
     python -m host.wechat_import --file <某篇.md>       # 只导指定的一篇
+    python -m host.wechat_import --金标 --limit 50        # 配精读金标：推文当范文存起来，原件进证据库
+    python -m host.wechat_import --金标 --只用手上有的      # 同上但不向出版商取，先看手上能配多少
 
 目录默认取配置里的「公众号推送下载目录」，也可以用 `--dir` 指定。
 
@@ -67,6 +69,15 @@ def main():
             n_txt = sum(len(b.get('text', '')) for b in a['blocks'])
             print('  %-9s %d字 %d图  %s' % (a['doi'] or '(没DOI)', n_txt, n_img,
                                             a['title'][:40]))
+        return 0
+
+    if flag('--金标') or flag('--golden'):
+        # 不写 Zotero、不装精读：推文只当**标尺**存成 reference.md（见 golden.py）。
+        # 会向出版商取原件（除非 --只用手上有的），所以不需要 Zotero 那道守卫。
+        from host.wechat_import import golden
+        res = golden.build(files, allow_fetch=not flag('--只用手上有的'))
+        print()
+        print(golden.summarize(res))
         return 0
 
     # 这里**故意不接 --force**：那个开关的意思是「产物重做一遍」，

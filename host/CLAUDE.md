@@ -23,6 +23,7 @@
 | `mcp/` | MCP 协议层：读各 `tools/*/tool.toml` 聚合暴露面 | 在 Claude 里直接用工具 |
 | `codegen/` | 所有生成器：`HANDOVER.md` · `.claude/` · `docs/incidents/` | 不直接碰 |
 | `wechat_import/` | 公众号推送 → Zotero 条目 + **推文本身当正文精读**（串 `getpdf` 与 `deepread`） | 双击 `launch/导入公众号精读.bat` |
+| `wechat_import/golden.py` | 精读**金标集**：推文当范文存成 `reference.md`，原件进证据库，**不写 Zotero 不装精读** | `python -m host.wechat_import --金标` |
 
 ## panel 的设计铁律
 

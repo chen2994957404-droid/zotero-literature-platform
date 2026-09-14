@@ -355,6 +355,15 @@ def meta(key):
     return os.path.join(paper_dir(key), 'meta.json')
 
 
+def reference(key):
+    """curated/<key>/reference.md —— **人写的**精读范文（高分子学人推送原文，纯文本 + 图链接）。
+
+    跟 `summary.html` 是两回事：那份是机器产的、给用户看的；这份是**标尺**，
+    给评测比「我们的精读离范文差多远」用，永远不当精读展示、不进向量库。
+    """
+    return os.path.join(paper_dir(key), 'reference.md')
+
+
 def curves(key):
     """★ curated/<key>/curves.json —— 从图上抠下来的曲线数值（tools.digitize 的产物）。
 
@@ -511,6 +520,12 @@ def evalset():
     住在 state 层但**必须进版本库** —— 这一层别的东西都是索引，只有它是真相。
     """
     return os.path.join(STATE, 'evalset.json')
+
+
+def golden_index():
+    """state/golden_deepread.json —— 精读金标集的索引：哪些篇有人写的范文（`reference()`）
+    配上了英文原件。可重建（扫一遍 curated/ 就能恢复），所以住 state 层。"""
+    return os.path.join(STATE, 'golden_deepread.json')
 
 
 def last_search():
