@@ -173,7 +173,7 @@ def test_长节列到段_短节不列():
     assert res['chars'] > O.LONG_SECTION and res.get('paras'), '超过阈值的节要有段地址'
     assert not intro.get('paras'), '短节一口气读完，不切'
     ids = [p['id'] for p in res['paras']]
-    assert ids[0] == res['id'] + '.p1' and len(ids) >= 11
+    assert ids[0] == res['id'] + '.p1' and 3 <= len(ids) < 11,         '相邻自然段攒到 PARA_TARGET 才算一个地址：11 段 470 字的该并成三四块，不是 11 个地址'
     assert all(p['chars'] >= O.MIN_PARA for p in res['paras']), '太短的块该并进邻段'
 
 
@@ -184,12 +184,82 @@ def test_图片标记不单独成段():
     assert not any(h.startswith('![](') for h in heads), '一行 `![](images/…)` 不是一段'
 
 
-def test_按段地址取到的就是那一段():
+def test_按段地址取到的不重不漏():
     o = O.build_outline(LONG_MD)
     res = next(s for s in o['sections'] if s['title'] == '2. Results')
-    p3 = res['paras'][2]
-    txt = O.section_text(LONG_MD, o, p3['id'])
-    assert 'Paragraph 3' in txt and 'Paragraph 4' not in txt
+    texts = [O.section_text(LONG_MD, o, p['id']) for p in res['paras']]
+    for i in range(1, 12):
+        hits = [t for t in texts if 'Paragraph %d ' % i in t]
+        assert len(hits) == 1, '每个自然段恰好落在一个地址里'
+    p2 = O.section_text(LONG_MD, o, res['paras'][1]['id'])
+    assert 'Paragraph 1 ' not in p2, '第二块不该包含第一块的内容'
+
+
+def test_无编号小标题挂在最近的编号章节下():
+    """`2. RESULTS AND DISCUSSION` 后面跟无编号的 `Accelerating Exchange`：
+    markdown 里同级，逻辑上是子节，该继承「结果」（全库实测一篇 17823 字的结果节成了未分类）。"""
+    md = '''# T
+
+## 1. INTRODUCTION
+
+intro text here.
+
+## 2. RESULTS AND DISCUSSION
+
+overview.
+
+## Accelerating Exchange
+
+tensile strength 12 MPa.
+
+## Accelerating Dissociation
+
+more results.
+
+## 3. CONCLUSIONS
+
+done.
+'''
+    o = O.build_outline(md)
+    kinds = {s['title']: s['kind'] for s in o['sections']}
+    assert kinds['Accelerating Exchange'] == O.RESULTS
+    assert kinds['Accelerating Dissociation'] == O.RESULTS
+    assert kinds['3. CONCLUSIONS'] == O.CONCLUSION, '编号章节仍然是兄弟，不该被拽成子节'
+
+
+def test_引言与结论之间认不出的章节标成主体():
+    """综述 / Nature 式描述性小标题：按位置标「主体」，比「未分类」诚实一步；
+    但引言前、结论后的仍然是「未分类」（位置上就不是正文中段）。"""
+    md = '''# T
+
+## Some odd header
+
+x.
+
+## Introduction
+
+intro.
+
+## SSG Dampers
+
+dampers.
+
+## SSG Sensors
+
+sensors.
+
+## Conclusions and Perspectives
+
+done.
+
+## Another odd header
+
+y.
+'''
+    o = O.build_outline(md)
+    kinds = {s['title']: s['kind'] for s in o['sections']}
+    assert kinds['SSG Dampers'] == O.BODY and kinds['SSG Sensors'] == O.BODY
+    assert kinds['Some odd header'] == O.UNKNOWN and kinds['Another odd header'] == O.UNKNOWN
 
 
 def test_表有地址_取回整张HTML():

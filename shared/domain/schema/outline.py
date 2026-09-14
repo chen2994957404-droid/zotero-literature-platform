@@ -63,10 +63,14 @@ RESULTS = '结果'             # 性能数据（最常被点的一类）
 DISCUSSION = '讨论'          # 机理、结构-性能关系
 CONCLUSION = '结论'
 NONBODY = '非正文'           # 参考文献、致谢、作者信息、版权
+BODY = '主体'                # 位置在引言之后、结论之前，但标题是主题词看不出功能
+                             # （Nature 式描述性小标题、综述的专题章节）。**按位置判的**，
+                             # 比「未分类」诚实一步：它告诉模型「这是正文中段的内容」，
+                             # 不告诉模型「这是结果」—— 综述里它就不是结果。
 UNKNOWN = '未分类'
 
 KINDS = (ABSTRACT, BACKGROUND, SYNTHESIS, METHODS, RESULTS, DISCUSSION,
-         CONCLUSION, NONBODY, UNKNOWN)
+         CONCLUSION, NONBODY, BODY, UNKNOWN)
 
 # 标题关键词 → 类别。**顺序即优先级**：先匹配到的赢。
 # 「results and discussion」要在「discussion」前面，否则合并章节会被归成讨论。
@@ -160,6 +164,9 @@ def _depth(title, hash_level):
 
 LONG_SECTION = 4000      # 超过这个字数的节才列段落地址（短节一口气读完，不必再切）
 MIN_PARA = 150           # 比这短的块（图片标记、孤行、子图标号）并进下一段，不单独占地址
+PARA_TARGET = 1200       # 相邻的自然段攒到这么多字才算一个地址：无小标题的论文
+                         # 单节 50 段会把菜单撑到全文的 20%（2026-09-13 全库实测最大值），
+                         # 攒成 ~1200 字一块后菜单回到 5% 上下，而 1200 字仍是一口能读完的量
 _IMG_RE = re.compile(r'!\[\]\([^)]*\)')
 
 _FIGCAP_RE = re.compile(r'^\s*(?:!\[\]\([^)]*\)\s*)?((?:fig(?:ure)?|scheme)\.?\s*S?\d+[a-z]?)\b[.:]?\s*(.*)',
@@ -183,21 +190,41 @@ def _paragraphs(text, base, sec_id):
         if body.startswith('<table'):
             cur_start, cur = None, ''    # 整块是表：它有自己的地址 t1，不再当一段
             continue
-        if len(body) < MIN_PARA:
-            continue                     # 太短：先攒着，跟下一块合并
+        if len(body) < PARA_TARGET:
+            continue                     # 没攒够：跟下一块合并（短块、短段都在这里被吸收）
         out.append({'id': '%s.p%d' % (sec_id, len(out) + 1),
                     'start': base + cur_start, 'end': base + pos,
                     'chars': len(body), 'n_numbers': len(scan.scan_numbers(body)),
                     'head': re.sub(r'\s+', ' ', body)[:48]})
         cur_start, cur = None, ''
-    if cur.strip() and out:              # 结尾攒下的短块并进最后一段
+    tail = _IMG_RE.sub('', cur).strip()
+    if tail and out and len(tail) < MIN_PARA:     # 结尾攒下的短块并进最后一段
         out[-1]['end'] = base + pos
-    elif _IMG_RE.sub('', cur).strip():
-        body = _IMG_RE.sub('', cur).strip()
+    elif tail:
+        body = tail
         out.append({'id': '%s.p1' % sec_id, 'start': base + (cur_start or 0), 'end': base + pos,
                     'chars': len(body), 'n_numbers': len(scan.scan_numbers(body)),
                     'head': re.sub(r'\s+', ' ', body)[:48]})
     return out
+
+
+def _mark_body(sections):
+    """位置判：引言之后、结论（没有结论就是第一个非正文）之前的「未分类」→「主体」。
+
+    只动「未分类」，不改任何按标题认出来的类别。
+    """
+    kinds = [s['kind'] for s in sections]
+    start = next((i for i, k in enumerate(kinds) if k == BACKGROUND), None)
+    if start is None:
+        start = next((i for i, k in enumerate(kinds) if k == ABSTRACT), None)
+    if start is None:
+        return
+    end = next((i for i in range(start + 1, len(kinds)) if kinds[i] == CONCLUSION), None)
+    if end is None:
+        end = next((i for i in range(start + 1, len(kinds)) if kinds[i] == NONBODY), len(kinds))
+    for s in sections[start + 1:end]:
+        if s['kind'] == UNKNOWN:
+            s['kind'] = BODY
 
 
 def _owner(sections, pos):
@@ -262,6 +289,14 @@ def build_outline(md, si_md=''):
     stack, sections = [], []
     for i, h in enumerate(heads):
         depth = _depth(h['title'], h['level'])
+        # 无编号的小标题（`Accelerating Exchange`）跟在编号章节（`2. RESULTS AND
+        # DISCUSSION`）后面时，markdown 里同级，逻辑上却是它的子节 ——
+        # 挂到最近那个编号章节下面，才能继承「结果」（2026-09-13 全库实测：
+        # 一篇 17823 字的结果节因此成了「未分类」）。
+        if depth < 10:
+            numbered = [x for x in stack if x['depth'] >= 10]
+            if numbered:
+                depth = numbered[-1]['depth'] + 1
         # 一级标题且在文首 = **论文题目**，不是一个章节，更不该当父节：
         # 「Synthesis of Structure-Controlled Polyborosiloxanes...」会把整篇
         # 都带成「合成」，连 INTRODUCTION 都跟着错（2026-09-08 实测）。
@@ -296,6 +331,8 @@ def build_outline(md, si_md=''):
         })
         if not is_title:                      # 论文题目不进继承栈
             stack.append({'depth': depth, 'kind': kind})
+
+    _mark_body(sections)
 
     # 标题之前的那一段（题录、作者、摘要常在这里）也要有个位置
     if heads and heads[0]['start'] > 200:
