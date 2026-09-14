@@ -205,12 +205,12 @@ def section(key, sec_id, max_chars=MAX_CHARS, si=False):
         return {'itemKey': key, 'id': sec_id, 'text': '', 'chars': 0,
                 'why_empty': '这篇没有 SI 全文' if si else '没有正文全文'}
     md = io.open(path, encoding='utf-8').read()
-    src = {'sections': (o.get('si') or {}).get('sections') or []} if si else o
+    src = (o.get('si') or {}) if si else o
     text = _outline.section_text(md, src, sec_id)
     if not text:
-        ids = [x['id'] for x in (src.get('sections') or [])]
+        ids = _outline.addresses(src)
         return {'itemKey': key, 'id': sec_id, 'text': '', 'chars': 0,
-                'why_empty': '没有这个地址；可用的有：%s' % ', '.join(ids[:20])}
+                'why_empty': '没有这个地址；可用的有：%s' % ', '.join(ids[:30])}
     return {'itemKey': key, 'id': sec_id, 'text': text[:max_chars],
             'chars': min(len(text), max_chars),
             'truncated': len(text) > max_chars, 'why_empty': ''}
@@ -223,7 +223,8 @@ def render_outline(d):
         return '%s：%s' % (d.get('itemKey', ''), d.get('why', '没有骨架'))
     st = d.get('stats') or {}
     head = ('%s · 全文 %d 字符 · %d 节%s\n'
-            '（按 id 点菜：library_section itemKey=%s sectionId=s4）\n'
+            '（按 id 点菜：library_section itemKey=%s sectionId=s4 —— '
+            '长节可点到段 s4.p2，表 t1、图注 f2 也能单独取）\n'
             % (d.get('itemKey', ''), st.get('chars', 0), st.get('n_sections', 0),
                '· 有 SI' if d.get('si') else '', d.get('itemKey', '')))
     body = _outline.menu(d)

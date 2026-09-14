@@ -133,3 +133,93 @@ class Test缓存:
         library.outline(paper)
         io.open(paths.outline(paper), 'w', encoding='utf-8').write('{坏的')
         assert library.outline(paper)['available'] is True
+
+
+# ── 2026-09-13 加细：段 / 表 / 图注 三种地址 ─────────────────────────
+LONG_MD = '''# Paper
+
+## 1. Introduction
+
+short intro.
+
+## 2. Results
+
+''' + '\n\n'.join(
+    'Paragraph %d about tensile strength of %d MPa and a lot of filler text %s.' % (i, 10 + i, 'x' * 400)
+    for i in range(1, 12)) + '''
+
+![](images/abc.jpg)
+
+![](images/def.jpg)
+
+Figure 2 | Stress-strain curves of the three gels. a, alginate; b, hybrid.
+
+Table 1. Mechanical properties of samples.
+
+<table><tr><td>Sample</td><td>Strength (MPa)</td><td>Strain (%)</td></tr>
+<tr><td>PBS-1</td><td>12.5</td><td>850</td></tr>
+<tr><td>PBS-2</td><td>15.1</td><td>620</td></tr></table>
+
+## 3. Conclusion
+
+done.
+'''
+
+
+def test_长节列到段_短节不列():
+    o = O.build_outline(LONG_MD)
+    by = {s['title']: s for s in o['sections']}
+    res, intro = by['2. Results'], by['1. Introduction']
+    assert res['chars'] > O.LONG_SECTION and res.get('paras'), '超过阈值的节要有段地址'
+    assert not intro.get('paras'), '短节一口气读完，不切'
+    ids = [p['id'] for p in res['paras']]
+    assert ids[0] == res['id'] + '.p1' and len(ids) >= 11
+    assert all(p['chars'] >= O.MIN_PARA for p in res['paras']), '太短的块该并进邻段'
+
+
+def test_图片标记不单独成段():
+    o = O.build_outline(LONG_MD)
+    res = next(s for s in o['sections'] if s['title'] == '2. Results')
+    heads = [p['head'] for p in res['paras']]
+    assert not any(h.startswith('![](') for h in heads), '一行 `![](images/…)` 不是一段'
+
+
+def test_按段地址取到的就是那一段():
+    o = O.build_outline(LONG_MD)
+    res = next(s for s in o['sections'] if s['title'] == '2. Results')
+    p3 = res['paras'][2]
+    txt = O.section_text(LONG_MD, o, p3['id'])
+    assert 'Paragraph 3' in txt and 'Paragraph 4' not in txt
+
+
+def test_表有地址_取回整张HTML():
+    o = O.build_outline(LONG_MD)
+    assert len(o['tables']) == 1
+    t = o['tables'][0]
+    assert t['id'] == 't1' and t['n_rows'] == 3 and t['n_cols'] == 3
+    assert 'Mechanical properties' in t['caption'] and t['section']
+    html = O.section_text(LONG_MD, o, 't1')
+    assert html.startswith('<table') and 'PBS-2' in html
+
+
+def test_图注有地址_只取图注不含图():
+    o = O.build_outline(LONG_MD)
+    assert [f['ref'] for f in o['figures']] == ['Figure 2']
+    txt = O.section_text(LONG_MD, o, 'f1')
+    assert txt.strip().startswith('Figure 2') and '![](' not in txt
+
+
+def test_菜单列出段表图_且仍然只报路不带货():
+    o = O.build_outline(LONG_MD)
+    m = O.menu(o)
+    assert 's2.p1' in m or 's3.p1' in m
+    assert 't1 [Table 1]' in m and 'f1 [Figure 2]' in m
+    assert '12.5' not in m, '表里的数据不许出现在菜单里'
+    assert len(m) < len(LONG_MD) * 0.25
+
+
+def test_地址错了列出全部可点的():
+    o = O.build_outline(LONG_MD)
+    assert O.section_text(LONG_MD, o, 's99') == '' and O.section_text(LONG_MD, o, 't9') == ''
+    ids = O.addresses(o)
+    assert 't1' in ids and 'f1' in ids and any('.p' in i for i in ids)

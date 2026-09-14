@@ -29,10 +29,22 @@ Experimental 还是 Methods 看期刊，MineRU 偶尔还把图注识别成标题
 
     build_outline(md, si_md='') -> dict
         {'sections': [{'id','title','kind','chars','n_numbers','n_tables',
-                       'n_figures','samples','start','end'}, ...],
-         'tables': [...], 'figures': [...], 'stats': {...}}
+                       'n_figures','start','end','end_tree',
+                       'paras': [{'id':'s5.p3','start','end','chars','n_numbers','head'}]  # 只有长节才有
+                      }, ...],
+         'tables':  [{'id':'t1','ref':'Table 1','caption','n_rows','n_cols','section','start','end'}],
+         'figures': [{'id':'f1','ref':'Figure 2','caption','section','start','end'}],
+         'stats': {...}}
 
-    section_text(md, outline, sec_id) -> str      # 按地址取原文
+    section_text(md, outline, addr) -> str      # 按地址取原文：s5 / s5.p3 / t1 / f2
+
+## 三种地址（2026-09-13 加细：用户说「长节没法再往里指、表和图只被数了不能点」）
+
+    s5      一节（默认连子节）
+    s5.p3   长节（> LONG_SECTION 字）里的第 3 段 —— 模型只要讲拉伸强度的那两段时用
+    t1      第 1 张表（MineRU 吐的 HTML 表，原样给；合成配比几乎全在表里）
+    f2      第 2 条图注（不含图片本身）
+最小可读单位从「一节」降到「一段 / 一张表」。
 
 **认不出就标 `未分类`，不猜。** 空类别是事实，猜一个是错。
 """
@@ -63,7 +75,7 @@ _RULES = (
               r'conflict|competing\s+interest|funding|orcid|copyright|'
               r'associated\s+content|supporting\s+information|'
               r'received.*accepted|published\s+online|data\s+availability|'
-              r'附录|参考文献|致谢'),
+              r'^keywords?\b|附录|参考文献|致谢'),
     (ABSTRACT, r'^abstract|^a\s*b\s*s\s*t\s*r\s*a\s*c\s*t|graphical\s+abstract|'
                r'^summary$|摘要|^highlights?$'),
     (CONCLUSION, r'conclusion|concluding|outlook|perspective\s*$|^summary\b|总结|结论'),
@@ -146,6 +158,87 @@ def _depth(title, hash_level):
     return hash_level
 
 
+LONG_SECTION = 4000      # 超过这个字数的节才列段落地址（短节一口气读完，不必再切）
+MIN_PARA = 150           # 比这短的块（图片标记、孤行、子图标号）并进下一段，不单独占地址
+_IMG_RE = re.compile(r'!\[\]\([^)]*\)')
+
+_FIGCAP_RE = re.compile(r'^\s*(?:!\[\]\([^)]*\)\s*)?((?:fig(?:ure)?|scheme)\.?\s*S?\d+[a-z]?)\b[.:]?\s*(.*)',
+                        re.I | re.S)
+_TABLE_BLOCK_RE = re.compile(r'(?is)<table\b.*?</table>')
+_TR_RE = re.compile(r'(?i)<tr\b')
+_TD_RE = re.compile(r'(?i)<t[dh]\b')
+
+
+def _paragraphs(text, base, sec_id):
+    """一节自己那一段 → 段落地址表。按空行切；太短的块并进下一段。"""
+    out, pos, cur_start, cur = [], 0, None, ''
+    for block in re.split(r'(\n\s*\n)', text):
+        if cur_start is None:
+            cur_start = pos
+        cur += block
+        pos += len(block)
+        if re.fullmatch(r'\n\s*\n', block):
+            continue
+        body = _IMG_RE.sub('', cur).strip()      # 图片标记不算字：一行 `![](images/…)` 不是一段
+        if len(body) < MIN_PARA:
+            continue                     # 太短：先攒着，跟下一块合并
+        out.append({'id': '%s.p%d' % (sec_id, len(out) + 1),
+                    'start': base + cur_start, 'end': base + pos,
+                    'chars': len(body), 'n_numbers': len(scan.scan_numbers(body)),
+                    'head': re.sub(r'\s+', ' ', body)[:48]})
+        cur_start, cur = None, ''
+    if cur.strip() and out:              # 结尾攒下的短块并进最后一段
+        out[-1]['end'] = base + pos
+    elif _IMG_RE.sub('', cur).strip():
+        body = _IMG_RE.sub('', cur).strip()
+        out.append({'id': '%s.p1' % sec_id, 'start': base + (cur_start or 0), 'end': base + pos,
+                    'chars': len(body), 'n_numbers': len(scan.scan_numbers(body)),
+                    'head': re.sub(r'\s+', ' ', body)[:48]})
+    return out
+
+
+def _owner(sections, pos):
+    """一个位置落在哪一节（只看节自己那段，不看子节）。"""
+    for sec in sections:
+        if sec['start'] <= pos < sec['end']:
+            return sec['id']
+    return ''
+
+
+def _tables(text, sections):
+    """全文里的每张表（MineRU 吐的 HTML）→ 可点的地址。表前最近一句当标题。"""
+    out = []
+    for m in _TABLE_BLOCK_RE.finditer(text):
+        cap, ref = scan._caption(text, m.start())
+        html = m.group(0)
+        n_rows = len(_TR_RE.findall(html))
+        first_row = re.search(r'(?is)<tr\b.*?</tr>', html)
+        n_cols = len(_TD_RE.findall(first_row.group(0))) if first_row else 0
+        out.append({'id': 't%d' % (len(out) + 1), 'ref': ref or '',
+                    'caption': cap, 'n_rows': n_rows, 'n_cols': n_cols,
+                    'section': _owner(sections, m.start()),
+                    'start': m.start(), 'end': m.end()})
+    return out
+
+
+def _figures(text, sections):
+    """图注（以 Figure N / Fig. N / Scheme N 开头的段落）→ 可点的地址。不含图片本身。"""
+    out, pos, seen = [], 0, set()
+    for block in re.split(r'(\n\s*\n)', text):
+        m = _FIGCAP_RE.match(block) if block.strip() else None
+        if m:
+            ref = re.sub(r'\s+', ' ', m.group(1)).strip().rstrip('.')
+            key = ref.lower().replace('fig.', 'figure').replace('fig ', 'figure ')
+            if key not in seen and len(block.strip()) > 20:
+                seen.add(key)
+                out.append({'id': 'f%d' % (len(out) + 1), 'ref': ref,
+                            'caption': re.sub(r'\s+', ' ', m.group(2)).strip()[:160],
+                            'section': _owner(sections, pos),
+                            'start': pos, 'end': pos + len(block)})
+        pos += len(block)
+    return out
+
+
 def build_outline(md, si_md=''):
     """全文 → 骨架。**纯派生**：随时可从 `full.md` 重建，删了不心疼。
 
@@ -210,37 +303,71 @@ def build_outline(md, si_md=''):
             'chars': len(head_body), 'n_numbers': len(scan.scan_numbers(head_body)),
             'n_tables': 0, 'n_figures': 0})
 
-    tables = scan.scan_tables(text)
+    # 长节再往里切到段：模型只要「讲拉伸强度的那两段」时，不必把 8000 字整节端上来
+    for s in sections:
+        if s['chars'] > LONG_SECTION and s['kind'] != NONBODY:
+            s['paras'] = _paragraphs(text[s['start']:s['end']], s['start'], s['id'])
+    tables = _tables(text, sections)
+    figures = _figures(text, sections)
     by_kind = {}
     for s in sections:
         by_kind[s['kind']] = by_kind.get(s['kind'], 0) + s['chars']
     out = {
         'sections': sections,
-        'tables': sorted({t.get('location', '') for t in tables if t.get('location')}),
-        'n_table_rows': len(tables),
+        'tables': tables,
+        'figures': figures,
+        'n_table_rows': len(scan.scan_tables(text)),
         'stats': {'chars': total, 'n_sections': len(sections),
+                  'n_tables': len(tables), 'n_figures': len(figures),
                   'chars_by_kind': by_kind,
                   'unknown_ratio': round(
                       by_kind.get(UNKNOWN, 0) / total, 3) if total else 0.0},
     }
     if si_md:
         si = build_outline(si_md)
-        out['si'] = {'sections': si['sections'], 'stats': si['stats']}
+        out['si'] = {'sections': si['sections'], 'tables': si['tables'],
+                     'figures': si['figures'], 'stats': si['stats']}
     return out
 
 
-def section_text(md, outline, sec_id, with_subsections=True):
-    """按地址取原文。地址就是 `outline` 里的 `id`。取不到返回空串。
+def section_text(md, outline, addr, with_subsections=True):
+    """按地址取原文。地址 = `s5`（一节）/ `s5.p3`（一段）/ `t1`（一张表）/ `f2`（一条图注）。
+    取不到返回空串。
 
-    默认**连同子节**：点「3. 结果」要的显然是整章，不是那行标题。
+    节默认**连同子节**：点「3. 结果」要的显然是整章，不是那行标题。
     只要本节自己那一段时传 `with_subsections=False`。
     """
     text = scan.clean_body(md or '')
+    addr = (addr or '').strip().lower()
+    if addr.startswith(('t', 'f')) and addr[1:].isdigit():
+        pool = outline.get('tables' if addr[0] == 't' else 'figures') or []
+        for x in pool:
+            if x['id'] == addr:
+                return text[x['start']:x['end']]
+        return ''
+    sec_id, _, para = addr.partition('.')
     for s in outline.get('sections') or []:
-        if s['id'] == sec_id:
-            end = s.get('end_tree', s['end']) if with_subsections else s['end']
-            return text[s['start']:end]
+        if s['id'] != sec_id:
+            continue
+        if para:
+            for pg in s.get('paras') or []:
+                if pg['id'] == addr:
+                    return text[pg['start']:pg['end']]
+            return ''
+        end = s.get('end_tree', s['end']) if with_subsections else s['end']
+        return text[s['start']:end]
     return ''
+
+
+def addresses(outline):
+    """这份骨架里所有可点的地址（报错时列给模型看）。"""
+    ids = []
+    for s in outline.get('sections') or []:
+        ids.append(s['id'])
+        ids += [p['id'] for p in s.get('paras') or []]
+    ids += [t['id'] for t in outline.get('tables') or []]
+    ids += [f['id'] for f in outline.get('figures') or []]
+    return ids
 
 
 def menu(outline, skip=(NONBODY,)):
@@ -265,4 +392,22 @@ def menu(outline, skip=(NONBODY,)):
         if s['n_figures']:
             bits.append('%d 图' % s['n_figures'])
         rows.append(' · '.join(bits))
+        for pg in s.get('paras') or []:
+            rows.append('    %s · %d 字%s · “%s…”' % (
+                pg['id'], pg['chars'],
+                ' · %d 个数' % pg['n_numbers'] if pg['n_numbers'] else '', pg['head']))
+    tables = outline.get('tables') or []
+    figures = outline.get('figures') or []
+    if tables:
+        rows.append('表（按 id 取整张）：')
+        for t in tables:
+            rows.append('    %s [%s] %d 行×%d 列 · %s%s' % (
+                t['id'], t['ref'] or '表', t['n_rows'], t['n_cols'], t['caption'][:70],
+                ' · 在 %s' % t['section'] if t['section'] else ''))
+    if figures:
+        rows.append('图注（按 id 取）：')
+        for f in figures:
+            rows.append('    %s [%s] %s%s' % (
+                f['id'], f['ref'], f['caption'][:80],
+                ' · 在 %s' % f['section'] if f['section'] else ''))
     return '\n'.join(rows)

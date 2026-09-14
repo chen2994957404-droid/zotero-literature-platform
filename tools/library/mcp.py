@@ -91,16 +91,17 @@ def register(server):
     server.register_tool(
         'library_outline',
         '这篇文献的骨架菜单：每节的地址(id)、类别(摘要/背景/合成/方法/结果/讨论/结论)、'
-        '字数、含多少数字与表图。**读全文之前先看它**，然后用 library_section 只取要看的那几节。',
+        '字数、含多少数字与表图；长节列到段（s5.p3），表（t1）和图注（f2）单独有地址。'
+        '**读全文之前先看它**，然后用 library_section 只取要看的那几节/段/表。',
         {'type': 'object', 'properties': dict(_KEY), 'required': ['itemKey']},
         lambda a: _outline(library.outline(a['itemKey'])))
 
     server.register_tool(
         'library_section',
-        '按地址取这篇文献的某一节原文（地址 id 来自 library_outline）。'
-        '要补充材料 SI 里的那一节就传 si=true。',
+        '按地址取这篇文献的原文：s5 一节 / s5.p3 一段 / t1 一张表（HTML 原样）/ f2 一条图注'
+        '（地址来自 library_outline）。要补充材料 SI 里的就传 si=true。',
         {'type': 'object', 'properties': dict(_KEY, **{
-            'sectionId': {'type': 'string', 'description': '节地址，如 s4（来自 library_outline）'},
+            'sectionId': {'type': 'string', 'description': '地址，如 s4 / s4.p2 / t1 / f2（来自 library_outline）'},
             'si': {'type': 'boolean', 'description': '取补充材料 SI 里的节，默认 false'},
             'maxChars': {'type': 'integer', 'minimum': 100, 'maximum': 100000,
                          'description': f'返回字符上限，默认 {library.MAX_CHARS}'}}),
