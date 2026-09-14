@@ -86,9 +86,19 @@ def _tables(md, outline, cap=CAP_TABLES, kinds=None):
     return '\n\n'.join(out)[:cap]
 
 
-def is_review_doc(title, outline):
-    """按综述的写法来写吗：标题像综述，或者全篇没有合成/方法节。"""
+# 只登综述的刊（刊名里没有 review 字样的那些）。标题看不出来时靠它。
+_REVIEW_JOURNALS = ('chem. rev', 'chemical review', 'chem. soc. rev', 'chemical society review',
+                    'prog. polym', 'progress in polymer', 'prog. mater', 'progress in materials',
+                    'acc. chem', 'accounts of chemical', 'nat. rev', 'nature reviews',
+                    'mater. sci. eng. r', 'materials science and engineering: r', 'adv. colloid interface',
+                    'polym. rev', 'polymer reviews', 'macromol. rapid', 'chem soc rev', 'chem rev')
+
+
+def is_review_doc(title, outline, journal=''):
+    """按综述的写法来写吗：标题像综述、刊物只登综述、或者全篇没有合成/方法节。"""
     if is_review({'title': title or ''}):
+        return True
+    if any(j in (journal or '').lower() for j in _REVIEW_JOURNALS):
         return True
     kinds = {s['kind'] for s in outline.get('sections') or []}
     return not (kinds & {_ol.SYNTHESIS, _ol.METHODS}) and outline.get('stats', {}).get('n_figures', 0) >= 8
@@ -237,9 +247,18 @@ def normalize(kind, text):
     return t.strip()
 
 
+_PAREN = re.compile(r'（[^（）]*）|\([^()]*\)')
+
+
+def _prose(p):
+    """去掉括号里的东西再判中英：「聚甲基丙烯酸甲酯（PMMA, poly(methyl methacrylate)）」
+    括号里的英文全称是范式允许的，不该被当成没翻译（2026-09-14 三篇实测里两处误报都是它）。"""
+    return _PAREN.sub('', _PAREN.sub('', p or ''))
+
+
 def _looks_english(p):
     """一段里汉字太少 = 模型用英文写了（本地小模型偶发），要重跑。"""
-    s = re.sub(r'[\s\d\W]', '', p or '')
+    s = re.sub(r'[\s\d\W]', '', _prose(p))
     return len(s) > 40 and len(_CJK.findall(s)) / len(s) < 0.5
 
 
@@ -251,7 +270,7 @@ _LATIN_RUN = re.compile(r"[A-Za-z][A-Za-z ,'’()\-/]{29,}[A-Za-z)]")
 def untranslated(p):
     """一段里没翻译的英文长串（去掉术语表里允许原样的缩写与编号之后）。"""
     out = []
-    for m in _LATIN_RUN.finditer(p or ''):
+    for m in _LATIN_RUN.finditer(_prose(p)):
         run = m.group(0)
         words = [w for w in re.split(r'[\s,/()\-]+', run) if w]
         # 全是大写缩写/带数字的编号（PDMS-IU-12, LiTFSI）不算；有 ≥3 个普通小写词才算英文句
@@ -511,7 +530,7 @@ def compose(md, si_md, figs, meta, chat, log=print, model=None, local=False, cac
     """
     _LOCAL['on'] = bool(local)
     outline = _ol.build_outline(md, si_md=si_md)
-    review = is_review_doc(meta.get('title', ''), outline)
+    review = is_review_doc(meta.get('title', ''), outline, meta.get('journal', ''))
     gloss = glossary(md)
     source = (md or '') + '\n' + (si_md or '')
     fp = '%s|%s|%s' % ('|'.join('%s=%s' % kv for kv in sorted(PROMPTS.items())),

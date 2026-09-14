@@ -191,3 +191,16 @@ def test_收尾缺哪栏单补哪栏():
     out = sectioned._wrap(chat, MD, _ol.build_outline(MD), META, ['▲图1，d'], False, '', MD, None, lambda *a: None)
     assert out['Q2'].startswith('Question：本论文中所制备的材料为何性能优异？☘️第一，补上的')
     assert sum(1 for u in calls if '只要你补写' in u) == 1      # 只补了缺的那一栏
+
+
+def test_括号里的英文全称不算没翻译():
+    p = '聚甲基丙烯酸甲酯（PMMA, poly(methyl methacrylate)）与 N-羟基琥珀酰亚胺（NHS, N-hydroxysuccinimide）'
+    assert sectioned.untranslated(p) == [] and not sectioned._looks_english(p)
+    assert sectioned.untranslated('图4，标题为"DFT calculations to show the feasibility of the radical"。') != []
+
+
+def test_综述判定也看刊名():
+    from shared.domain.schema import outline as _ol
+    ol = _ol.build_outline(MD)
+    assert sectioned.is_review_doc('Thermally conductive polymer composites', ol, 'Progress in Materials Science')
+    assert not sectioned.is_review_doc('Thermally conductive polymer composites', ol, 'Macromolecules')

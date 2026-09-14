@@ -193,24 +193,21 @@ def build_local(key, article, images=None, force=False, log=print):
 
 
 def _write_meta(key, article):
-    """meta.json —— 问答与向量化靠它知道这篇是什么。`source` 标明是谁写的。"""
+    """meta.json —— 问答与向量化靠它知道这篇是什么。
+
+    走 `catalog.register`（**只补不覆盖**）：推文标题记在 `wechat_title`，
+    `title` 只在没有的时候才用推文标题顶上 —— 2026-09-14 发现 21 篇的 `title`
+    被推文的「【Nature Communications】形状记忆…」盖掉了，精读的文献信息、
+    综述判定全跟着错。论文的英文题名是 Crossref / Zotero 给的，谁都不许盖。
+    """
     try:
-        meta = {'key': key, 'title': article.get('title', ''),
-                'DOI': article.get('doi', ''), 'date': article.get('pubdate', ''),
-                'model': PRODUCER, 'source': '公众号/高分子学人',
-                'wechat_file': article.get('file', ''),
-                'time': time.strftime('%Y-%m-%d %H:%M')}
-        old = {}
-        if os.path.exists(paths.meta(key)):
-            try:
-                old = json.load(io.open(paths.meta(key), encoding='utf-8'))
-            except Exception:
-                old = {}
-        for k, v in list(meta.items()):
-            if not v and old.get(k):
-                meta[k] = old[k]
-        json.dump(meta, io.open(paths.meta(key), 'w', encoding='utf-8'),
-                  ensure_ascii=False, indent=1)
+        from shared.kernel import catalog
+        catalog.register(key, wechat_title=article.get('title', ''),
+                         wechat_file=article.get('file', ''),
+                         wechat_date=article.get('pubdate', ''),
+                         doi=article.get('doi', ''), source='公众号/高分子学人')
+        if not catalog.read_meta(key).get('title'):
+            catalog.register(key, title=article.get('title', ''))
     except Exception as e:
         log.warning('meta.json 没写成: %s', e)
 
