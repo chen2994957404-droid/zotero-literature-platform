@@ -8,7 +8,7 @@ pythonw 静默退出，错误无处可见。本启动器捕获 import 期与 mai
 用法: pythonw host/panel/launcher.py（由 控制面板.bat 调用）
 """
 import os
-import sys, sys, io, time, traceback
+import sys, io, time, traceback
 
 # 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
