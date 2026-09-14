@@ -198,10 +198,20 @@ def compose(md, si_md, figs, meta, chat, log=print, model=None):
 
     lead, intro = _lead(chat, md, outline, meta, review, model, log)
     exp, q1 = _exp(chat, md, si_md, outline, review, model, log)
-    fig_paras, deeps = [], []
-    for n in range(1, n_figs + 1):
-        idx, deep = _one_fig(chat, md, outline, n, n_figs, model, log)
-        fig_paras.append((n, idx, deep))
+    # 裁图是按页面上的位置数的，不是按图号：目录图、一页两图的第二块都没有图注。
+    # 只给**认得出图号**的写两段；其余的不写字，`insert_figures` 会把它们当补充图挂在总结前
+    # （2026-09-14 试跑：9 块裁图里 2 块没图注，模型只能写「原文未给出」凑数 —— 别让它凑）。
+    fig_paras, deeps, seen = [], [], set()
+    numbered = []
+    for i, fg in enumerate(figs, 1):
+        m = re.match(r'\s*(?:Figure|Fig\.?|图|Scheme)\s*(\d+)', fg.get('caption') or '', re.I)
+        if m and int(m.group(1)) not in seen:
+            seen.add(int(m.group(1)))
+            numbered.append((i, int(m.group(1))))
+    log('  %d 块裁图里 %d 块认得出图号' % (n_figs, len(numbered)))
+    for i, num in numbered:
+        idx, deep = _one_fig(chat, md, outline, num, len(numbered), model, log)
+        fig_paras.append((i, idx, deep))
         if deep:
             deeps.append(deep)
     tail = _wrap(chat, md, outline, meta, deeps, review, model, log)
@@ -214,8 +224,8 @@ def compose(md, si_md, figs, meta, chat, log=print, model=None):
     if q1:
         parts.append(q1 if q1.startswith('Question') else 'Question：%s%s' % (_Q1, q1))
     parts.append('## 讨论')
-    for n, idx, deep in fig_paras:
-        parts += ['【图%d】' % n] + [p for p in (idx, deep) if p]
+    for i, idx, deep in fig_paras:
+        parts += ['【图%d】' % i] + [p for p in (idx, deep) if p]     # 标记号 = 裁图序号
     if tail.get('Q2'):
         parts.append(tail['Q2'])
     parts += ['## 总结', tail.get('总之', '')]
@@ -229,12 +239,12 @@ def compose(md, si_md, figs, meta, chat, log=print, model=None):
     content = '\n\n'.join(p for p in parts if p is not None and str(p).strip())
 
     bad = unverified_numbers(content, (md or '') + '\n' + (si_md or ''))
-    stats = {'review': review, 'n_figs': n_figs, 'chars': len(content),
+    stats = {'review': review, 'n_figs': n_figs, 'n_numbered': len(numbered), 'chars': len(content),
              'figs_two_para': sum(1 for _, i, d in fig_paras if i and d),
              'has_plain': bool(tail.get('通俗理解')), 'has_title': bool(tail.get('标题')),
              'n_unverified': len(bad), 'unverified': bad[:20]}
     log('  精读 %d 字，%d/%d 张图两段齐全，原文查不到的数 %d 个%s' % (
-        stats['chars'], stats['figs_two_para'], n_figs, len(bad),
+        stats['chars'], stats['figs_two_para'], len(numbered), len(bad),
         ('：' + '、'.join(bad[:8])) if bad else ''))
     return content, stats
 

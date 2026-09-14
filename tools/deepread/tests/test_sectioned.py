@@ -51,7 +51,8 @@ A PBS elastomer with 12.5 MPa strength was obtained.
 """
 
 FIGS = [{'b64': 'x', 'caption': 'Figure 1. Mechanical', 'num': 1},
-        {'b64': 'y', 'caption': 'Figure 2. Rheological', 'num': 2}]
+        {'b64': 'y', 'caption': 'Figure 2. Rheological', 'num': 2},
+        {'b64': 'z', 'caption': '', 'num': 3}]          # 目录图：没图注，不写字
 META = {'title': 'Shear-Stiffening Polyborosiloxane Elastomers', 'authors': 'A. Zhang, B. Li',
         'journal': 'Macromolecules', 'year': '2026', 'doi': '10.1021/acs.macromol.6c00001'}
 
@@ -88,6 +89,7 @@ def test_骨架齐全_图由脚本放_数字回查():
     # 顺序：图 1 的两段在【图1】之后、【图2】之前
     assert content.index('【图1】') < content.index('▲图1') < content.index('【图2】') < content.index('▲图2')
     assert st['figs_two_para'] == 2 and st['has_plain'] and not st['review']
+    assert '【图3】' not in content and st['n_numbered'] == 2      # 没图注的不写字，留给补充图
     # 编的 77.7 被抓出来；原文有的 12.5 / 4.1 / 15 不报
     assert '77.7' in st['unverified'] and '12.5' not in st['unverified'] and '4.1' not in st['unverified']
     # 调用次数 = 导读 + 实验 + 每图一次 + 收尾
