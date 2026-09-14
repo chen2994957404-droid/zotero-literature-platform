@@ -171,6 +171,7 @@ _IMG_RE = re.compile(r'!\[\]\([^)]*\)')
 
 _FIGCAP_RE = re.compile(r'^\s*(?:!\[\]\([^)]*\)\s*)?((?:fig(?:ure)?|scheme)\.?\s*S?\d+[a-z]?)\b[.:]?\s*(.*)',
                         re.I | re.S)
+_FIGCAP_LINE_RE = re.compile(r'(?im)^[ \t]*(?:!\[\]\([^)]*\)[ \t]*\n?[ \t]*)?((?:fig(?:ure)?|scheme)\.?\s*S?\d+[a-z]?)\b[.:]?[ \t]*(.*)')
 _TABLE_BLOCK_RE = re.compile(r'(?is)<table\b.*?</table>')
 _TR_RE = re.compile(r'(?i)<tr\b')
 _TD_RE = re.compile(r'(?i)<t[dh]\b')
@@ -255,16 +256,20 @@ def _figures(text, sections):
     """图注（以 Figure N / Fig. N / Scheme N 开头的段落）→ 可点的地址。不含图片本身。"""
     out, pos, seen = [], 0, set()
     for block in re.split(r'(\n\s*\n)', text):
-        m = _FIGCAP_RE.match(block) if block.strip() else None
+        # 图注不一定在块首：MineRU 常把「上一段 + 图片行 + 图注」挤在一个块里
+        # （图片行以两个空格换行结尾，没有空行）。2026-09-14 一篇 7 图的论文只认出 4 张，
+        # 后 3 张全是这种 —— 所以在块内按行找，图注从那一行起到块尾。
+        m = _FIGCAP_LINE_RE.search(block) if block.strip() else None
         if m:
             ref = re.sub(r'\s+', ' ', m.group(1)).strip().rstrip('.')
             key = ref.lower().replace('fig.', 'figure').replace('fig ', 'figure ')
-            if key not in seen and len(block.strip()) > 20:
+            cap = block[m.start(1):]                # 从「Figure N」起，图片行不算图注
+            if key not in seen and len(cap.strip()) > 20:
                 seen.add(key)
                 out.append({'id': 'f%d' % (len(out) + 1), 'ref': ref,
                             'caption': re.sub(r'\s+', ' ', m.group(2)).strip()[:160],
-                            'section': _owner(sections, pos),
-                            'start': pos, 'end': pos + len(block)})
+                            'section': _owner(sections, pos + m.start(1)),
+                            'start': pos + m.start(1), 'end': pos + len(block)})
         pos += len(block)
     return out
 

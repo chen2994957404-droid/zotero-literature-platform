@@ -279,6 +279,17 @@ def test_图注有地址_只取图注不含图():
     assert txt.strip().startswith('Figure 2') and '![](' not in txt
 
 
+def test_图注挤在上一段后面也认得出():
+    # MineRU 的真实形状：上一段 + 图片行（两空格换行，无空行）+ 图注，三者一个块
+    md = ('# T\n\n## 3. Results\n\nThe curves show 4.1 MPa.\n'
+          '![](images/a.jpg)  \nFigure 5. Mechanical properties. (A) Stress–strain curves.\n\n'
+          'Next paragraph.\n')
+    o = O.build_outline(md)
+    assert [f['ref'] for f in o['figures']] == ['Figure 5']
+    txt = O.section_text(md, o, 'f1')
+    assert txt.strip().startswith('Figure 5') and 'curves show' not in txt
+
+
 def test_菜单列出段表图_且仍然只报路不带货():
     o = O.build_outline(LONG_MD)
     m = O.menu(o)
