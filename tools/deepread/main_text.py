@@ -146,7 +146,7 @@ def render_html(content):
 
 def read_main(parsed_dir, out_html, provider='deepseek', model=None,
               key='', log=print, title=None, doi=None, mode=None, si_md=None,
-              paper_key=None):
+              paper_key=None, local=False):
     """跑完整的一篇正文精读，写出 out_html，返回它的路径。
 
     失败一律抛 `DeepreadFailed` —— **宁可不产出，也不产出「只有图没有字」的
@@ -186,7 +186,8 @@ def read_main(parsed_dir, out_html, provider='deepseek', model=None,
             m = _cat.read_meta(paper_key)
             journal, year = m.get('journal') or '', str(m.get('year') or '')
         meta = {'title': title_en, 'authors': authors, 'doi': doi, 'journal': journal, 'year': year}
-        content, st = sectioned.compose(md, si_md or '', figs, meta, _chat, log=log, model=model)
+        content, st = sectioned.compose(md, si_md or '', figs, meta, _chat, log=log, model=model,
+                                        local=local)
         log(f'LLM {round(time.time()-t0,1)}s 输出{len(content)}字（分段）')
         if len(content) < MIN_OK:
             raise DeepreadFailed(

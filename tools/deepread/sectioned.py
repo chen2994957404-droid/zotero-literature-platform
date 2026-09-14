@@ -102,8 +102,17 @@ def _sub(tpl, **kw):
 
 
 def _call(chat, sysp, user, max_tokens, model=None):
+    """走「精读」用途的路由（面板里配的通道）。`model` 显式给了就用它。"""
+    if _LOCAL['on']:
+        # 本地档：不走路由表，直接找本机 Ollama（免费、离线、答案可复现）。
+        # 这条是给「本地小模型能不能胜任精读」这个实验开的门，不是常规路径。
+        return chat(sysp, user, provider='ollama', model=model or None, temperature=0.0,
+                    max_tokens=max_tokens, thinking=False)
     return chat(sysp, user, purpose='DEEPREAD', model=model, temperature=0.3,
                 max_tokens=max_tokens, thinking=False)
+
+
+_LOCAL = {'on': False}
 
 
 def _lead(chat, md, outline, meta, review, model, log):
@@ -186,10 +195,12 @@ def _wrap(chat, md, outline, meta, deeps, review, model, log):
 
 # ── 拼装与检查 ───────────────────────────────────────────────────────
 
-def compose(md, si_md, figs, meta, chat, log=print, model=None):
+def compose(md, si_md, figs, meta, chat, log=print, model=None, local=False):
     """一篇 → (精读 markdown 内容, 统计)。`figs` 是裁图结果（只用它的张数与顺序），
     `meta` 是 title/authors/journal/year/doi，`chat` 是 llm_client.chat 或假替身。
+    `local=True` 全部调用走本机 Ollama（温度 0，答案可复现），不花一分钱。
     """
+    _LOCAL['on'] = bool(local)
     outline = _ol.build_outline(md, si_md=si_md)
     review = is_review_doc(meta.get('title', ''), outline)
     n_figs = len(figs)
