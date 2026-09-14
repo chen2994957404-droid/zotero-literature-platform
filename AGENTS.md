@@ -75,7 +75,7 @@ A 机默认不写 Zotero、不跑常驻服务、不跑花钱的批量作业 —�
 | `troubleshoot` | 报错 / 卡住 / 没反应 / 数字不对 / 明明改了却没变 |
 | `code-redlines` | **要动任何 .py 之前**（七条强制规范 + 四条硬规则 + 验证顺序）|
 | `research-first` | 要做新东西、选技术路线、或要断言外部世界现状 |
-| `deep-research` | 用户要**研究透一个方向 / 判断想法有没有人做过 / 出带出处的调研报告**：四级阶梯 + 每级用哪个工具 + 报告形状 |
+| `deep-research` | 用户要**研究透一个方向 / 判断想法有没有人做过 / 出带出处的调研报告**：通用章法（分面 + 同义词族 → 四种经典检索策略 → 滚雪球准则 → 质疑空集 → 饱和判据 → 报告形状），不绑定课题 |
 | `two-machines` | 写 Zotero / 部署 / 连 B / 起常驻服务（连机器的机械细节在**全局**技能 `remote-machine`，源在 `toolbox/remote-machine/`）|
 | 十个工具各一份 | 要用某个工具时（含**什么时候别用我**）|
 
@@ -90,7 +90,7 @@ A 机默认不写 Zotero、不跑常驻服务、不跑花钱的批量作业 —�
 | 「我库里关于 XX 有什么？」| `python -m tools.ask "问题"`（RAG，中文答 + 附来源。**只是找某篇在不在，用上面那条更便宜**）|
 | 「帮我找 XX 方向的文献」| `python -m tools.discover "关键词"`（拆检索式 + 雪球 + 按「跟他多相关」排序）|
 | 「我在找**新方向**」「别被我现有的库拖累」| `python -m tools.discover "关键词" --新方向`（只按贴题排，不按近库排）；或直接用 `lit_search` 对抗式检索（它本来就不看库）。**别用 `ask`** —— 那是问他自己的库 |
-| 「把这个方向研究透」「我想在 A 上引入 B，有人做过吗」| 读 `deep-research` skill 照四级走：`library_retrieve`（库内找原料，零成本）→ `lit_search`（标 可读/库里有）→ `library_outline`/`library_section`（点节、段、表）→ `library_refs`（库内顺引用）→ 报告带出处 |
+| 「把这个方向研究透」「我想在 A 上引入 B，有人做过吗」| 读 `deep-research` skill 照章法走：`library_retrieve`（库内找原料，零成本）→ `lit_search`（标 可读/库里有）→ `library_outline`/`library_section`（点节、段、表）→ `library_refs`（库内顺引用）→ 报告带出处 |
 | 「帮我横向比较 XX」「这方向有什么空白」| 读 `data/serving/structured/compare.md`；PBS 方向另有 `compare_PBS.md` |
 | 「精读某篇文献」| 让他在 Zotero 打「待处理」标签。**状态机自动判断**：只有正文→正文精读；有 SI→连 SI 一起→全文精读；已精读的只补缺的。服务已开机自启 |
 | 「把某批文献的数据抽出来」| `python -m tools.extract KEY1 KEY2 --parse` |
