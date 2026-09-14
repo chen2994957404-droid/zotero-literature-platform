@@ -25,8 +25,8 @@ launch/  ← 给人双击的入口（10 个）
 outputs/ （0 个脚本）
 scratch/ （0 个脚本）
 shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
-    kernel/  ← 基础设施：谁都依赖它，它不依赖任何人（13 块）
-        cli、config、proc_lock、prompts、subproc、budget.py、errors.py、heartbeat.py、jobs.py、log.py、mcp_prompt.py、paths.py、role.py
+    kernel/  ← 基础设施：谁都依赖它，它不依赖任何人（14 块）
+        cli、config、proc_lock、prompts、subproc、budget.py、catalog.py、errors.py、heartbeat.py、jobs.py、log.py、mcp_prompt.py、paths.py、role.py
     domain/  ← 纯逻辑：不联网、不知道文件放在哪（3 块）
         figure_crop、libmatch、schema
     adapters/  ← 外接口：唯一允许联网/用第三方库的一环（12 块）
@@ -84,7 +84,8 @@ A 机默认不写 Zotero、不跑常驻服务、不跑花钱的批量作业 —�
 
 | 用户说 | 你怎么做 |
 |--------|---------|
-| 「库里有没有 XX 这篇」「最近加了什么」「有哪些标签」| `python -m tools.library search XX`（只读、免费、秒回）|
+| 「库里有没有 XX 这篇」「手上有哪些文献」| `python -m tools.library 库 XX`（**先问证据库**，零网络、秒回；结果标出每篇有正文/SI/已解析/已精读没有）|
+| 「Zotero 里最近加了什么」「有哪些标签」| `python -m tools.library search XX`（那是 Zotero，他自己读的那部分）|
 | 「我库里关于 XX 有什么？」| `python -m tools.ask "问题"`（RAG，中文答 + 附来源。**只是找某篇在不在，用上面那条更便宜**）|
 | 「帮我找 XX 方向的文献」| `python -m tools.discover "关键词"`（拆检索式 + 雪球 + 按「跟他多相关」排序）|
 | 「我在找**新方向**」「别被我现有的库拖累」| `python -m tools.discover "关键词" --新方向`（只按贴题排，不按近库排）；或直接用 `lit_search` 对抗式检索（它本来就不看库）。**别用 `ask`** —— 那是问他自己的库 |
@@ -161,15 +162,22 @@ flash 的正式名已是 `deepseek-flash`（旧名 `deepseek-v4-flash` 靠转发
 **标着【启发式】的你可以推翻** —— 遇到反例有义务说出来并给证据，闷头照办才是违规。
 （旧版 288 行的哲学与推导原文在 `架构准则_v1_历史存档.md`，已不生效，查「为什么」时用。）
 
-## 核心归属（2026-09-07 用户拍板，架构准则第四节）
+## 核心归属（2026-09-07 立，2026-09-13 用户再降 Zotero 一级）
 
-**核心是「证据库」，Zotero 是它最重要的来源 + 精读成果的展示面，不是核心。**
+**证据库是全集，Zotero 是他自己挑出来读的子集。** 用户原话：
+> Zotero 的定位只是我自己读文献的一个工具，数据库是单独的核心；
+> 文献文件的核心也不再是库里，是我们下文献的那个地方。
 
 - 文献的身份证**与来源无关**：Zotero 编号 / OpenAlex id / 由 DOI 生成的 id 都合法，
-  唯一执行点是 `paths.check_key()`；「这篇在不在他自己库里」用 `paths.is_zotero_key()` 问；
-  **跨来源认同一篇靠 DOI**。
-- PDF 与全文的正本在 `data/raw/`；**推进 Zotero 的只是给人看的副本**。
+  唯一执行点是 `paths.check_key()`；**跨来源认同一篇靠 DOI**。
+- **「有没有这篇」先问证据库目录 `shared.kernel.catalog`**（零网络），Zotero 只是补充；
+  `zotero_client.library_index()` 已经是两者的并集，调用方不用自己并。
+- 正本在 `data/raw/<id>/`（`main.pdf` / `si.*` / `parsed/`），目录在 `curated/<id>/meta.json`。
+  **「收一篇」= `getpdf.land()`：落正本 + 登记，不写 Zotero**；
+  「推到 Zotero」是另一个动作（`--to-zotero` / `getpdf_stash_one`），由人决定。
+- 精读 / 解析找 PDF 与 SI **本地正本优先，Zotero 兜底**。
 - 数据库的写入口只有一条：B 机上的流水线。打标签 = 投稿，不是直接写库。
+- 老库回流：`python -m tools.getpdf --从Zotero落地`（一次性，只读 Zotero）。
 
 **装一次才能跑**（换电脑/重装后必做）：`pip install -e . --no-deps`
 

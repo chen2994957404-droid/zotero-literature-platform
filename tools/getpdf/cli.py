@@ -10,7 +10,12 @@
     python -m tools.getpdf --file dois.txt               # 从文件读，一行一个
     python -m tools.getpdf --file dois.txt --gap 30      # 每篇之间等 30 秒
     python -m tools.getpdf --file dois.txt --limit 10    # 这次最多取 10 篇
-    python -m tools.getpdf 10.1016/xxx --out D:/somewhere
+    python -m tools.getpdf 10.1016/xxx --out D:/somewhere   # 只下到某个目录，不收进证据库
+
+    python -m tools.getpdf --从Zotero落地                # 把 Zotero 里已有的文献复制成本地正本（一次性回流）
+    python -m tools.getpdf --从Zotero落地 --limit 20     # 先试 20 篇
+
+**取到的默认收进证据库**（raw/<id>/main.pdf + si.* + 目录登记），不写 Zotero。
 
   收进 Zotero（会写你的库）:
     python -m tools.getpdf --file dois.txt --to-zotero             # 默认「建库」用途
@@ -97,6 +102,9 @@ def main():
         print(F.summarize(rs))
         return 0 if all(r['ok'] for r in rs) else 1
 
+    if flag('--从Zotero落地'):
+        return _land_from_zotero()
+
     dois = list(positionals())
     src = opt('--file')
     if src:
@@ -171,9 +179,50 @@ def main():
 
     if with_si:
         _fetch_si_all(results, where, gap)
+    if not opt('--out'):
+        _land_all(results)              # 收进证据库：正本 + 目录。--out 时是「只下到那里」
     if to_zotero:
         _stash_all(results, purpose, with_si=with_si,
                    collection=opt('--collection'))
+    return 0
+
+
+def _land_all(results):
+    """把拿到的正文 / SI 收进证据库（复制成正本 + 登记目录）。不联网、不写 Zotero。"""
+    got = [r for r in results if r['ok'] and r['path']]
+    if not got:
+        return
+    print('\n收进证据库：')
+    counts = {}
+    for r in got:
+        si = (r.get('si') or {}).get('path') or None
+        l = getpdf.land(r['doi'], with_si=bool(si), allow_fetch=False,
+                        pdf_path=r['path'], si_path=si)
+        r['id'] = l.get('id')
+        counts[l['action']] = counts.get(l['action'], 0) + 1
+        word = {'landed': '落成正本', 'exists': '早就在', 'failed': '没成'}[l['action']]
+        print(f'  {"✓" if l["ok"] else "×"} {r["doi"]} → {l["id"]}  {word}'
+              + ('  +SI' if l.get('si') else '') + (f'  （{l["note"]}）' if l['note'] else ''))
+    print('  ' + '，'.join(f'{n} 篇{ {"landed": "新落地", "exists": "已有", "failed": "失败"}[a] }'
+                         for a, n in counts.items()))
+
+
+def _land_from_zotero():
+    """一次性回流：Zotero 里已有的文献 → 本地正本 + 目录。只读 Zotero。"""
+    from tools.getpdf import from_zotero
+    limit = int(opt('--limit') or 0) or None
+    print('把 Zotero 里的文献复制成本地正本（不动 Zotero 里的任何东西）…')
+    try:
+        c = from_zotero.land_all(limit=limit, log_fn=print)
+    except Exception as e:
+        print(f'连不上 Zotero（{type(e).__name__}）—— 这一步要在 Zotero 正在跑的那台机器上做。')
+        return 1
+    print(f'\n回流结果：新落地 {c["landed"]} 篇 · 早就在 {c["exists"]} 篇 · '
+          f'没附件 {c["nopdf"]} 篇 · 失败 {c["failed"]} 篇')
+    from shared.kernel import catalog
+    st = catalog.stats()
+    print(f'证据库现在：{st["papers"]} 篇，其中有正文 {st["pdf"]}、有 SI {st["si"]}、'
+          f'已解析 {st["fulltext"]}、已精读 {st["summary"]}')
     return 0
 
 
@@ -237,3 +286,4 @@ def _stash_all(results, purpose, with_si=False, collection=None):
     for a, n in sorted(counts.items(), key=lambda kv: -kv[1]):
         print(f'  {n} 篇 · {words.get(a, a)}')
     print('\n没有打精读标签，也没有触发精读 —— 要精读的话你在 Zotero 里打「待处理」。')
+    print('（正本已在证据库里；Zotero 里的只是给你看的副本。）')

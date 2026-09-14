@@ -17,15 +17,21 @@
   - probe()                       → 浏览器在不在 → dict
   - fetch_many(dois, ...)         → 逐篇取，返回每篇的结果 dict 列表
   - safe_name(doi)                → DOI → 能当文件名的样子
-  - doi_index()                   → 全库 DOI → 条目 key，查重用
-  - stash(doi, pdf, purpose)      → 收进 Zotero（查重 → 建条目 → 挂 PDF → 归合集）
+  - resolve_id(doi)               → 这篇在证据库里的 id（本地 → Zotero 编号 → 按 DOI 生成）
+  - land(doi, with_si)            → **收进证据库**：正文 + SI 落成本地正本，登记元数据。不碰 Zotero
+  - doi_index()                   → Zotero 全库 DOI → 条目 key（推到 Zotero 时查重用）
+  - stash(doi, pdf, purpose)      → 先 land，再**推到 Zotero**（查重 → 建条目 → 挂 PDF → 归合集）
+
+**核心归属（2026-09-13 用户拍板）**：证据库是全集，Zotero 是他自己挑出来读的子集。
+所以「收一篇」= `land`（落本地正本 + 登记目录），**不写 Zotero**；
+「推到 Zotero」是另一个动作（`stash` / `--to-zotero`），由人决定要不要。
 """
 import io
 import os
 import time
 
 from shared.adapters import pdf_fetch
-from shared.kernel import paths
+from shared.kernel import catalog, paths
 from shared.kernel.log import get_logger
 
 log = get_logger('getpdf')
@@ -115,7 +121,146 @@ def summarize(results):
     return counts
 
 
-# ── 收进 Zotero ────────────────────────────────────────────────────────────
+# ── 收进证据库（本地正本）────────────────────────────────────────────────
+# 这一段**不碰 Zotero**。正本在 raw/<id>/，目录在 curated/<id>/meta.json。
+
+def resolve_id(doi, zotero_index=None):
+    """DOI → 这篇在本平台的 id，以及它在不在用户的 Zotero 里。
+
+    顺序是刻意的：
+      ① 证据库里已经有 → 用那个 id（不管它长什么样），别另起一份
+      ② 用户 Zotero 里有 → 用 Zotero 编号：已有的精读 / 抽取产物都在那个目录下
+      ③ 都没有 → 按 DOI 生成（`paths.paper_id_from_doi`）
+    `zotero_index` 是 `doi_index()` 取回的 {doi: key}；不传就不问 Zotero（零网络）。
+    """
+    d = catalog.norm_doi(doi)
+    pid = catalog.find(d)
+    if pid:
+        return pid, paths.is_zotero_key(pid)
+    if zotero_index:
+        k = zotero_index.get(d)
+        if k:
+            return k, True
+    return paths.paper_id_from_doi(d), False
+
+
+def _copy(src, dst):
+    """把文件复制成正本（已经在就不动）。返回是否真复制了。"""
+    if os.path.exists(dst) and os.path.getsize(dst) > 0:
+        return False
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    with io.open(src, 'rb') as a, io.open(dst, 'wb') as b:
+        b.write(a.read())
+    return True
+
+
+def _register_meta(pid, doi, source):
+    """登记元数据：标题 / 年份 / 期刊 / 作者从 Crossref 取。**只补不覆盖**，取不到就只记 DOI。"""
+    have = catalog.read_meta(pid)
+    fields = {'doi': doi, 'source': source}
+    if not have.get('title'):
+        try:
+            from shared.adapters import crossref
+            it = crossref.to_zotero_item(crossref.work(doi))
+            names = [(c.get('lastName') or '') + ' ' + (c.get('firstName') or '')
+                     for c in (it.get('creators') or [])]
+            fields.update(title=it.get('title'), journal=it.get('publicationTitle'),
+                          year=(it.get('date') or '')[:4],
+                          authors=[n.strip() for n in names if n.strip()][:20])
+        except Exception as e:
+            log.info(f'{doi} 取元数据没成（不影响落地）：{type(e).__name__}: {e}')
+    return catalog.register(pid, **fields)
+
+
+def land(doi, with_si=True, allow_fetch=True, zotero_index=None,
+         pdf_path=None, si_path=None):
+    """把一篇**收进证据库** → dict(doi, id, ok, action, source, pdf, si, note, in_zotero)。
+
+    正文从哪来（按顺序，拿到就停）：本地正本已有 → 调用方给的文件 →
+    用户 Zotero 里的附件（复制一份过来）→ 借浏览器向出版商取。
+    SI 同理。最后登记 meta.json。**幂等**：跑两遍 = 跑一遍。
+
+    `action`：`landed` 这次真落了新东西 / `exists` 早就齐了 / `failed` 连正文都没有。
+    `allow_fetch=False` 时不向出版商发任何请求（「先看看手上有没有」）。
+    """
+    doi = catalog.norm_doi(doi)
+    out = {'doi': doi, 'id': '', 'ok': False, 'action': 'failed', 'source': '',
+           'pdf': '', 'si': '', 'note': '', 'in_zotero': False}
+    if not pdf_fetch.is_doi(doi):
+        out['note'] = '不像一个 DOI'
+        return out
+    try:
+        pid, in_zotero = resolve_id(doi, zotero_index)
+    except paths.BadKeyError as e:
+        out['note'] = str(e)
+        return out
+    out.update(id=pid, in_zotero=in_zotero)
+    changed = False
+
+    # ── 正文 ──
+    main = paths.local_pdf(pid)
+    if os.path.exists(main) and os.path.getsize(main) > 0:
+        out['source'] = catalog.SRC_LOCAL
+    elif pdf_path and os.path.exists(pdf_path):
+        changed |= _copy(pdf_path, main)
+        out['source'] = catalog.SRC_LOCAL
+    else:
+        att = None
+        if in_zotero:
+            try:
+                from shared.adapters.zotero_client import find_pdf
+                att = find_pdf(pid)
+            except Exception:
+                att = None
+        if att and os.path.exists(att):
+            changed |= _copy(att, main)
+            out['source'] = catalog.SRC_ZOTERO
+        elif allow_fetch:
+            r = fetch_one(doi)
+            if r['ok']:
+                changed |= _copy(r['path'], main)
+                out['source'] = catalog.SRC_FETCH
+            else:
+                out['note'] = '正文没取到 —— ' + pdf_fetch.REASONS.get(r['reason'], r['reason'])
+        else:
+            out['note'] = '手上没有正文，而且这次不允许去取'
+    if os.path.exists(main):
+        out['pdf'] = main
+
+    # ── SI ──
+    if with_si:
+        have = paths.find_local_si(pid)
+        if have:
+            out['si'] = have
+        else:
+            src = si_path if (si_path and os.path.exists(si_path)) else ''
+            if not src and in_zotero:
+                try:
+                    from shared.adapters.zotero_client import find_si
+                    src = find_si(pid)[0] or ''
+                except Exception:
+                    src = ''
+            if not src and allow_fetch and out['pdf']:
+                r = fetch_si_one(doi)
+                src = r['path'] if r['ok'] else ''
+            if src:
+                ext = os.path.splitext(src)[1].lstrip('.').lower()
+                dst = paths.local_si(pid, ext if ext in ('pdf', 'docx') else 'pdf')
+                changed |= _copy(src, dst)
+                out['si'] = dst
+
+    # ── 登记 ──
+    if out['pdf'] or out['si']:
+        _register_meta(pid, doi, out['source'] or catalog.SRC_LOCAL)
+        if in_zotero and paths.is_zotero_key(pid):
+            catalog.register(pid, zotero_key=pid)
+    out['ok'] = bool(out['pdf'])
+    out['action'] = ('landed' if changed else 'exists') if out['ok'] else 'failed'
+    log.info(f'{doi} → {pid} {out["action"]}（{out["source"]}）')
+    return out
+
+
+# ── 推到 Zotero ────────────────────────────────────────────────────────────
 # 这一段是「有副作用」的那一半：会往用户真实的库里写东西。
 # 每一步都做成**幂等**的 —— 同一批 DOI 跑两遍，结果必须跟跑一遍一样。
 # 不幂等的后果不是「白跑」，是库里多出一堆重复条目，而重复条目**只能人工合并**
@@ -245,6 +390,11 @@ def stash(doi, pdf_path, purpose='建库', col_key=None, index=None, force=False
     sub, _ = PURPOSES[purpose]
     out = {'doi': doi, 'ok': False, 'action': 'failed', 'item': '', 'note': '',
            'collection': ''}
+    # **先落成本地正本**（2026-09-13）：推到 Zotero 只是给人看的副本，
+    # 证据库那份不能因为用户没要 Zotero 就不存在。这里不去出版商取，只收手上有的。
+    landed = land(doi, with_si=False, allow_fetch=False, pdf_path=pdf_path)
+    if landed.get('pdf'):
+        pdf_path = landed['pdf']
     try:
         # `collection` 给了就归到那里，**取代**默认的「<顶层>/建库用」——
         # 用户说「收进某某文件夹」时要的就是这个。那棵默认树只是组织用的，
@@ -280,6 +430,8 @@ def stash(doi, pdf_path, purpose='建库', col_key=None, index=None, force=False
             _backfill(key, doi, purpose, force=force)
             out['action'] = 'exists'
         out['item'] = key
+        if landed.get('id'):
+            catalog.register(landed['id'], zotero_key=key)   # 两边靠 DOI 对账，顺手记上
 
         # 挂 PDF。**已经有就不重复挂** —— 附件重复比条目重复更难收拾：
         # 条目重复还能合并，附件重复只能一个个删，而且删错了文件就没了。

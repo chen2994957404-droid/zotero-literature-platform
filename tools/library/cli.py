@@ -2,7 +2,10 @@
 """查库的命令行入口（只解析参数，一行业务逻辑都没有）。
 
 用法:
-    python -m tools.library stats                       # 库统计 + Zotero 通不通
+    python -m tools.library 库                          # 证据库有多大（全集；Zotero 只是子集）
+    python -m tools.library 库 硼                        # 按标题/DOI/期刊搜证据库（不联网）
+    python -m tools.library 库 10.1021/acs.macromol.5b00210
+    python -m tools.library stats                       # Zotero 统计 + 通不通
     python -m tools.library search 聚硼硅氧烷 --limit 10  # 搜标题作者年份
     python -m tools.library search 硼 --all              # --all = 连全文一起搜
     python -m tools.library search --tag 待处理          # 按标签
@@ -32,6 +35,17 @@ def main():
         print(__doc__)
         return 0
     action = (pos(0) or 'stats').lower()
+
+    if action in ('库', 'db'):
+        q = pos(1)
+        if q:
+            print(library.render_db(library.db_search(q, limit=int(opt('--limit', 25)))))
+            return 0
+        s = library.db_stats()
+        print(f"证据库 {s['papers']} 篇（带 DOI {s['with_doi']}）· 有正文 {s['pdf']} · 有 SI {s['si']} · "
+              f"已解析 {s['fulltext']}（SI {s['si_fulltext']}）· 已精读 {s['summary']} · "
+              f"已结构化 {s['structured']} · 其中在 Zotero 的 {s['in_zotero']}")
+        return 0
 
     if action == 'stats':
         s = library.stats()

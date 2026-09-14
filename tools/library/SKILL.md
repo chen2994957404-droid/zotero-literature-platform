@@ -1,4 +1,9 @@
-# library —— 查用户的 Zotero 库
+# library —— 查证据库（全集）与 Zotero（子集）
+
+**问「有没有这篇」先用 `library_db_search` / `python -m tools.library 库 XX`**：
+那是平台自己的证据库（全集），零网络、秒回，还告诉你每篇手上有什么
+（正文 / SI / 已解析 / 已精读 / 已结构化）。Zotero 只是用户挑出来读的那部分，
+下面这些 Zotero 工具用来看合集、标签、他最近在读什么。
 
 ## 什么时候用我
 

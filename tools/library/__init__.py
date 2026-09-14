@@ -42,7 +42,7 @@ import sys
 from datetime import datetime, timezone
 
 from shared.adapters import zotero_client as zc
-from shared.kernel import paths
+from shared.kernel import catalog, paths
 
 MAX_CHARS = 20000          # 取全文的默认上限（再多模型也读不完，还占上下文）
 RECENT_SCAN = 100          # 「最近 N 天」先按修改时间倒序取这么多，再按天过滤
@@ -52,8 +52,45 @@ RECENT_SCAN = 100          # 「最近 N 天」先按修改时间倒序取这么
 # 查
 # ══════════════════════════════════════════════════════════════════════
 
+# ── 证据库（全集）──────────────────────────────────────────────────────
+# 2026-09-13 起：证据库（data/raw + curated）是全集，Zotero 是用户挑出来读的子集。
+# 「我有没有这篇」先问这里（零网络、秒回），Zotero 那一半在下面那组函数。
+
+def db_stats():
+    """证据库有多大、每种产物各几篇（正本 / SI / 解析 / 精读 / 结构化 / 在 Zotero）。"""
+    return catalog.stats()
+
+
+def db_search(text, limit=25):
+    """按标题 / DOI / 期刊 子串搜证据库 → 目录卡列表。不联网。"""
+    return catalog.search(text, limit=limit)
+
+
+def db_have(doi):
+    """这个 DOI 在证据库里吗 → id 或 ''。"""
+    return catalog.find(doi)
+
+
+def render_db(rows):
+    """目录卡 → 给人/模型看的文本：每篇一行，手上有什么用几个字标出来。"""
+    if not rows:
+        return '证据库里没有匹配的。'
+    out = []
+    for r in rows:
+        have = ''.join(('正' if r['pdf'] else '·', 'S' if r['si'] else '·',
+                        '析' if r['fulltext'] else '·', '精' if r['summary'] else '·',
+                        '构' if r['structured'] else '·'))
+        z = ' [Zotero]' if r['in_zotero'] else ''
+        out.append(f'{r["id"]:<38} [{have}] {r["year"] or "????"}  {r["title"][:70]}{z}'
+                   + (f'\n{"":<38} DOI:{r["doi"]}' if r['doi'] else ''))
+    out.append('（[正S析精构] = 有正文 / 有SI / 已解析 / 已精读 / 已结构化）')
+    return '\n'.join(out)
+
+
+# ── Zotero（用户的阅读桌）───────────────────────────────────────────────
+
 def stats():
-    """库统计 + Zotero 通不通。**不抛异常** —— Zotero 没开是常态，不是错误。"""
+    """Zotero 统计 + 通不通。**不抛异常** —— Zotero 没开是常态，不是错误。"""
     top, cols, tags_ = zc.counts()
     reachable = any(v is not None for v in (top, cols, tags_))
     return {'zotero_reachable': reachable, 'top_items': top,

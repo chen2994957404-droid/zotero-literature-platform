@@ -11,8 +11,11 @@
 
     1. 缓存      `raw/<id>/parsed/full.md` 已经在      → 秒回，零成本
     2. 本地正本  `raw/<id>/main.pdf` 已经在            → 只解析
-    3. Zotero    库里这篇有 PDF 附件                    → 只解析，不下载
+    3. Zotero    库里这篇有 PDF 附件                    → **复制成本地正本**，再解析
     4. 取        借浏览器向出版商要                      → 20 秒间隔，慢是故意的
+
+2～4 层都归 `getpdf.land()` 做（2026-09-13 起）：不管从哪来，**正本一律落进 raw/<id>/
+并登记进证据库目录**，本模块只负责解析。
 
 ## 职责边界（**别在这里读全文**）
 
@@ -41,7 +44,7 @@ try:
 except Exception:
     pass
 
-from shared.adapters import pdf_fetch, pdf_parse, zotero_client as zc
+from shared.adapters import pdf_fetch, pdf_parse
 from shared.kernel import jobs, paths
 from shared.kernel.log import get_logger
 
@@ -55,18 +58,9 @@ SRC_FETCH = 'fetch'        # 真去出版商取了
 
 
 def resolve_id(doi, zotero_index=None):
-    """DOI → 这篇在本平台的 id。
-
-    **优先用 Zotero 编号**：这篇要是已经在他自己库里，就该跟已有的精读、
-    抽取结果落在同一个目录下，而不是另起一份。库里没有的才按 DOI 生成 id
-    （2026-09-07 放宽身份证之后才可能，见 `paths.paper_id_from_doi`）。
-    """
-    doi = (doi or '').strip().lower()
-    if zotero_index:
-        k = zotero_index.get(doi)
-        if k:
-            return k, True
-    return paths.paper_id_from_doi(doi), False
+    """DOI → 这篇在本平台的 id。实现在 `getpdf.resolve_id`（证据库 → Zotero → 按 DOI 生成）。"""
+    from tools import getpdf
+    return getpdf.resolve_id(doi, zotero_index)
 
 
 def _parse(pid, pdf_path):
@@ -116,49 +110,28 @@ def one(doi, zotero_index=None, allow_fetch=True):
     if os.path.exists(paths.fulltext(pid)):
         return done(True, SRC_CACHE)
 
-    # ── 2. 本地正本 ────────────────────────────────────────────────
-    local = paths.local_pdf(pid)
-    if os.path.exists(local):
-        ok, _s, why = _parse(pid, local)
-        return done(ok, SRC_LOCAL, why)
-
-    # ── 3. Zotero 库里已有附件（不下载，直接解析）──────────────────
-    if in_zotero:
-        try:
-            att = zc.find_pdf(pid)
-        except Exception as e:
-            att = None
-            log.warn('%s 找 Zotero 附件失败：%s', pid, str(e)[:120])
-        if att and os.path.exists(att):
-            ok, _s, why = _parse(pid, att)
-            return done(ok, SRC_ZOTERO, why)
-
-    # ── 4. 真去取（这一层才有出版商风控的代价）─────────────────────
-    if not allow_fetch:
-        return done(False, '', '手上没有，而且这次不允许去取（allow_fetch=False）')
-    run = jobs.start(pid, 'fetch', producer='fulltext')
-    r = _fetch_one(doi)
-    if not r['ok']:
-        jobs.fail(run, r['reason'])
-        return done(False, SRC_FETCH,
-                    '没取到 —— %s' % pdf_fetch.REASONS.get(r['reason'], r['reason']))
-    jobs.finish(run)
-    # 取到的 PDF 收成这篇的本地正本，下次就走第 2 层
-    try:
-        os.makedirs(os.path.dirname(local), exist_ok=True)
-        with io.open(r['path'], 'rb') as src, io.open(local, 'wb') as dst:
-            dst.write(src.read())
-    except OSError as e:
-        log.warn('%s 收正本失败（不影响本次解析）：%s', pid, str(e)[:120])
-        local = r['path']
-    ok, _s, why = _parse(pid, local)
-    return done(ok, SRC_FETCH, why)
+    # ── 2～4. 落成本地正本（本地 → Zotero 复制 → 真去取）───────────
+    had_local = os.path.exists(paths.local_pdf(pid))
+    run = None if had_local else jobs.start(pid, 'fetch', producer='fulltext')
+    landed = _land(doi, allow_fetch, zotero_index)
+    if not landed['ok']:
+        if run:
+            jobs.fail(run, landed.get('note') or 'no_pdf')
+        return done(False, SRC_FETCH if allow_fetch else '',
+                    landed.get('note') or '没取到')
+    if run:
+        jobs.finish(run)
+    source = {'local': SRC_LOCAL, 'zotero': SRC_ZOTERO, 'fetch': SRC_FETCH}.get(
+        landed.get('source'), SRC_LOCAL)
+    ok, _s, why = _parse(pid, landed['pdf'])
+    return done(ok, source, why)
 
 
-def _fetch_one(doi):
-    """真正去取。**单独一个函数是为了能在测试里替换掉**（别真敲出版商）。"""
-    from tools import getpdf                  # 同一个工具包内，不违反工具隔离
-    return getpdf.fetch_one(doi)
+def _land(doi, allow_fetch, zotero_index):
+    """真正去落地。**单独一个函数是为了能在测试里替换掉**（别真敲出版商）。"""
+    from tools import getpdf
+    return getpdf.land(doi, with_si=True, allow_fetch=allow_fetch,
+                       zotero_index=zotero_index)
 
 
 def many(dois, allow_fetch=True, gap=None, progress=None, limit=3):
@@ -173,11 +146,10 @@ def many(dois, allow_fetch=True, gap=None, progress=None, limit=3):
     dois = [d.strip() for d in (dois or []) if d and d.strip()][:max(1, int(limit))]
     gap = getpdf.GAP if gap is None else gap
     index = {}
-    if allow_fetch or True:
-        try:
-            index = getpdf.doi_index()         # 库里已有的先认出来，能省一次下载
-        except Exception as e:
-            log.warn('取 Zotero 的 DOI 索引失败（不影响，只是可能重下）：%s', str(e)[:120])
+    try:
+        index = getpdf.doi_index()         # Zotero 里已有的先认出来，能省一次下载
+    except Exception as e:
+        log.warn('取 Zotero 的 DOI 索引失败（不影响，只是可能重下）：%s', str(e)[:120])
 
     out, t0 = [], time.time()
     for i, doi in enumerate(dois):

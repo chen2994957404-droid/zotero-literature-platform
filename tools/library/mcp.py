@@ -22,8 +22,26 @@ _KEY = {'itemKey': {'type': 'string', 'description': 'Zotero 条目 key（8 位�
 def register(server):
     """把本工具的 MCP 面挂到 server 上（聚合入口 host/mcp/server.py 会调这个）。"""
 
+    # ── 证据库（全集）：先问这里，零网络 ───────────────────────────
     server.register_tool(
-        'library_stats', '我的库有多大：条目/合集/标签数量，以及 Zotero 通不通。',
+        'library_db_search',
+        '搜**证据库**（平台自己的库，是全集；Zotero 只是用户挑出来读的子集）：'
+        '按标题 / DOI / 期刊 子串，返回每篇的 id 和手上有什么（正文/SI/已解析/已精读/已结构化）。'
+        '不联网、秒回。**问「有没有这篇」先用它**，再用 library_search 看 Zotero。',
+        {'type': 'object', 'properties': {
+            'query': {'type': 'string', 'description': '标题片段、DOI 或期刊名'},
+            'limit': {'type': 'integer', 'minimum': 1, 'maximum': 100}},
+         'required': ['query']},
+        lambda a: library.render_db(library.db_search(a.get('query'), limit=a.get('limit', 25))))
+
+    server.register_tool(
+        'library_db_stats', '证据库有多大：篇数，以及有正文/SI/已解析/已精读/已结构化各几篇。',
+        {'type': 'object', 'properties': {}},
+        lambda a: _db_stats())
+
+    # ── Zotero（用户的阅读桌）─────────────────────────────────────────
+    server.register_tool(
+        'library_stats', 'Zotero 有多大：条目/合集/标签数量，以及 Zotero 通不通。',
         {'type': 'object', 'properties': {}},
         lambda a: _stats())
 
@@ -174,3 +192,10 @@ def _section(r):
                 'structured': r}
     return {'text': r['text'] + ('\n…（已截断）' if r.get('truncated') else ''),
             'structured': {k: v for k, v in r.items() if k != 'text'}}
+
+
+def _db_stats():
+    s = library.db_stats()
+    return (f"证据库 {s['papers']} 篇（带 DOI {s['with_doi']}）· 有正文 {s['pdf']} · 有 SI {s['si']} · "
+            f"已解析 {s['fulltext']}（SI {s['si_fulltext']}）· 已精读 {s['summary']} · "
+            f"已结构化 {s['structured']} · 其中在 Zotero 的 {s['in_zotero']}")

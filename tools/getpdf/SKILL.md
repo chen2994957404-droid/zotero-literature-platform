@@ -1,6 +1,6 @@
 ---
 name: getpdf
-description: 一批 DOI → 正文 PDF 到手，可直接收进 Zotero（借真实浏览器，用机构订阅权限）。什么时候用：用户说「把这几篇下下来」「discover 找出来的这批我要正文」；某篇要精读但库里没有 PDF；你手上有 DOI，缺的是全文
+description: 一批 DOI → 正文 + SI 收进证据库（借真实浏览器，用机构订阅权限）；要的话再推到 Zotero。什么时候用：用户说「把这几篇下下来」「discover 找出来的这批我要正文」；某篇要精读但库里没有 PDF；你手上有 DOI，缺的是全文
 ---
 
 # getpdf · 把正文弄到手
@@ -30,7 +30,11 @@ python -m tools.getpdf 10.1016/j.cej.2025.164092  # 取一篇
 python -m tools.getpdf --file dois.txt            # 一批，一行一个
 python -m tools.getpdf --file dois.txt --gap 30 --limit 10
 
-# 顺手收进 Zotero（**会写用户的库**）
+# 取到的**默认收进证据库**（raw/<id>/main.pdf + si.* + 目录登记），不写 Zotero。
+# 一次性回流：把 Zotero 里已有的文献复制成本地正本（只读 Zotero，在有 Zotero 的机器上跑）
+python -m tools.getpdf --从Zotero落地
+
+# 再推到 Zotero 给主人看（**会写用户的库**，由人决定）
 python -m tools.getpdf --file dois.txt --to-zotero              # 默认「建库」用途
 python -m tools.getpdf 10.1016/xxx --to-zotero --purpose 精读    # 标成重点文章
 python -m tools.getpdf --file dois.txt --to-zotero --with-si    # 连补充材料一起

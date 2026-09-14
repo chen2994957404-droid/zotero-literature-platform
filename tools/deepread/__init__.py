@@ -124,11 +124,18 @@ def run(key, item=None, pdf_path=_ASK, si_exists=_ASK, provider='deepseek',
     key = paths.check_key(key)
     r = Result(key)
 
-    if pdf_path is _ASK or si_exists is _ASK:
-        from shared.adapters.zotero_client import find_pdf, has_si
-        if pdf_path is _ASK:
+    # **本地正本优先，Zotero 兜底**（2026-09-13 起证据库是全集、Zotero 是子集）：
+    # `getpdf` 落地的文献可能根本不在 Zotero 里，精读不能再只认那边的附件。
+    if pdf_path is _ASK:
+        local = paths.local_pdf(key)
+        pdf_path = local if os.path.exists(local) else None
+        if pdf_path is None:
+            from shared.adapters.zotero_client import find_pdf
             pdf_path = find_pdf(key)
-        if si_exists is _ASK:
+    if si_exists is _ASK:
+        si_exists = bool(paths.find_local_si(key))
+        if not si_exists:
+            from shared.adapters.zotero_client import has_si
             si_exists = has_si(key)
 
     main_done = (not force) and jobs.is_done(key, STEP_MAIN, require='summary',

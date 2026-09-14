@@ -34,15 +34,16 @@ def _one(a):
                 '而且里面过过一次人机验证的**浏览器 —— 机构订阅权限和人机验证的通行证'
                 '都在它身上。请主人先这样启动它：msedge --remote-debugging-port=9333')
 
-    r = getpdf.fetch_one(doi)
-    if r['reason'] == 'exists':
-        return f'{doi} 盘上已经有了：{r["path"]}（{r["bytes"] // 1024} KB），没有重下。'
-    if r['ok']:
-        return (f'拿到了：{r["path"]}（{r["bytes"] // 1024} KB）\n'
-                f'  标题：{r["title"][:80]}\n  来源：{r["landing"][:100]}\n'
-                f'（如果这次调用超时了，文件多半还是下下来了，重调一次会直接告诉你在哪。）')
-    return (f'{doi} 没拿到 —— {pdf_fetch.REASONS.get(r["reason"], r["reason"])}\n'
-            f'  落地页：{r["landing"][:100]}')
+    # 2026-09-13 起：取到的**收进证据库**（raw/<id>/ + 目录登记），连 SI 一起；不写 Zotero
+    l = getpdf.land(doi, with_si=True, allow_fetch=True)
+    if l['ok']:
+        src = {'local': '本来就在', 'zotero': '从你的 Zotero 复制来的', 'fetch': '刚去取的'}
+        return (f'{doi} → 证据库 id {l["id"]}（{src.get(l["source"], l["source"])}，'
+                f'{"这次新落地" if l["action"] == "landed" else "早就齐了"}）\n'
+                f'  正文：{l["pdf"]}\n  SI：{l["si"] or "没有"}\n'
+                f'  下一步：paper_fulltext 解析成可读全文；要推到 Zotero 给主人看用 getpdf_stash_one。\n'
+                f'（如果这次调用超时了，文件多半还是落下来了，重调一次会直接告诉你在哪。）')
+    return f'{doi} 没拿到 —— {l["note"]}'
 
 
 def _stash_one(a):
@@ -108,7 +109,8 @@ def register(server):
                   '点过之后重跑同一条命令，已拿到的不会重下。'))
 
     server.register_tool(
-        'getpdf_one', '取一篇文献的正文 PDF（给 DOI）。单次、不花钱、盘上有了会跳过。',
+        'getpdf_one', '把一篇文献**收进证据库**（给 DOI）：取正文 PDF + SI 落成本地正本并登记目录。'
+        '单次、不花钱、已有的会跳过。**不写 Zotero**（那是 getpdf_stash_one）。',
         {'type': 'object',
          'properties': {'doi': {'type': 'string',
                                 'description': 'DOI，形如 10.1016/j.cej.2025.164092'}},
@@ -118,8 +120,9 @@ def register(server):
 
     server.register_tool(
         'getpdf_stash_one',
-        '把**一篇**文献收进用户的 Zotero：取正文 PDF → 建条目（已有就补齐）→ '
-        '挂 PDF 附件 → 归入合集 → 打上平台标签。**会写用户的库**，每次调用都要他确认。'
+        '把**一篇**文献收进证据库**并推到用户的 Zotero**：取正文 PDF（落成本地正本）→ '
+        '建条目（已有就补齐）→ 挂 PDF 附件 → 归入合集 → 打上平台标签。'
+        '**会写用户的库**，每次调用都要他确认。只想收进证据库、不进 Zotero，用 getpdf_one。'
         '一次只收一篇；一整批要走 getpdf_batch 那条人点的路（量大会封整个机构的 IP）。'
         '重调是安全的：条目和附件都不会重复建。',
         {'type': 'object', 'properties': {

@@ -2,12 +2,12 @@
 #   costs_money / side_effects / requires_role 描述**这个工具最危险的那条路径**，
 #   哪怕那条路径只在命令行上有、没暴露给 MCP —— 写清楚才有意义。
 name          = "getpdf"
-one_line      = "一批 DOI → 正文 PDF 到手，可直接收进 Zotero（借真实浏览器，用机构订阅权限）"
+one_line      = "一批 DOI → 正文 + SI 收进证据库（借真实浏览器，用机构订阅权限）；要的话再推到 Zotero"
 expose        = "prompt"
 costs_money   = false           # 不调任何付费 API
 side_effects  = [
   "向出版商网站发真实请求 —— 量大会触发风控，被封的是整个机构的 IP",
-  "写 data/raw/_incoming/getpdf/*.pdf",
+  "写 data/raw/_incoming/getpdf/*.pdf，并复制成 data/raw/<id>/ 的本地正本 + 登记 curated/<id>/meta.json",
   "--to-zotero 时**写用户的 Zotero 库**：建条目、挂 PDF 附件、建合集（不可逆）",
   "fulltext 会花 MineRU 解析额度，并写 data/raw/<id>/（正本 PDF 与解析产物）",
 ]

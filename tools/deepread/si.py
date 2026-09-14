@@ -16,7 +16,7 @@ import zipfile
 
 from shared.adapters.llm_client import chat
 from shared.adapters.pdf_parse import parse_pdf, PDFParseError
-from shared.adapters.zotero_client import zget, USER_ID, STORAGE_DIR, SUPP_PAT
+from shared.adapters.zotero_client import find_si
 from shared.kernel import paths, prompts
 from shared.kernel.config import get_key
 from shared.domain.figure_crop import crop_figures
@@ -26,8 +26,6 @@ from tools.deepread.si_filter import filtered_text
 PROMPT_VER = 1
 PRODUCER = 'si_deepread'
 
-DOCX_CT = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-
 SYS = prompts.load('deepread', f'si@v{PROMPT_VER}')
 
 
@@ -36,32 +34,16 @@ class SIFailed(Exception):
 
 
 def find_si_file(item_key):
-    """定位 SI 附件文件。支持 PDF 和 .docx（Elsevier 的 SI 常是 docx）。
+    """定位 SI 文件 → (路径, 类型)。**本地正本优先**（raw/<id>/si.*），没有再问 Zotero。
 
-    返回 (路径, 类型)，类型 ∈ 'pdf'/'docx'；找不到返回 (None, None)。
+    2026-09-13：正本搬到证据库之后，精读不该再只认 Zotero 的附件 ——
+    `getpdf` 落地的文献（可能根本不在 Zotero 里）也要能精读。
+    Zotero 那一半的查找逻辑下沉到了 `zotero_client.find_si`。
     """
-    try:
-        children = zget(f'/users/{USER_ID}/items/{item_key}/children')
-    except Exception:
-        return None, None
-    for c in children:
-        d = c['data']
-        if d.get('itemType') != 'attachment':
-            continue
-        if d.get('contentType', '') not in ('application/pdf', DOCX_CT):
-            continue
-        title = (d.get('title') or '').strip()
-        fn = (d.get('filename') or '')
-        if not (SUPP_PAT.search(title) or SUPP_PAT.search(fn) or title.upper() == 'SI'):
-            continue
-        dd = os.path.join(STORAGE_DIR, c['key'])
-        if os.path.isdir(dd):
-            for f in os.listdir(dd):
-                if f.lower().endswith('.pdf'):
-                    return os.path.join(dd, f), 'pdf'
-                if f.lower().endswith('.docx'):
-                    return os.path.join(dd, f), 'docx'
-    return None, None
+    local = paths.find_local_si(item_key)
+    if local:
+        return local, os.path.splitext(local)[1].lstrip('.').lower()
+    return find_si(item_key)
 
 
 def read_docx_text(path):

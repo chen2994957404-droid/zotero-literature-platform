@@ -1,12 +1,12 @@
 ---
 name: getpdf
-description: 一批 DOI → 正文 PDF 到手，可直接收进 Zotero（借真实浏览器，用机构订阅权限）。什么时候用：用户说「把这几篇下下来」「这批的正文我要」；discover 找出了该读的清单，下一步是把正文弄到手；要精读某篇，但 library 说库里没有 PDF
+description: 一批 DOI → 正文 + SI 收进证据库（借真实浏览器，用机构订阅权限）；要的话再推到 Zotero。什么时候用：用户说「把这几篇下下来」「这批的正文我要」；discover 找出了该读的清单，下一步是把正文弄到手；要精读某篇，但 library 说库里没有 PDF
 ---
 
 <!-- 本文件由 host/codegen/skills.py 生成，**别手改**。改源：tools/getpdf/SKILL.md + tools/getpdf/tool.toml -->
 
 > **动手之前先看这三行**（取自 `tools/getpdf/tool.toml`）：
-> 不花钱 · **有副作用**：向出版商网站发真实请求 —— 量大会触发风控，被封的是整个机构的 IP、写 data/raw/_incoming/getpdf/*.pdf、--to-zotero 时**写用户的 Zotero 库**：建条目、挂 PDF 附件、建合集（不可逆）、fulltext 会花 MineRU 解析额度，并写 data/raw/<id>/（正本 PDF 与解析产物） · **只能在运行端（主力机）跑**
+> 不花钱 · **有副作用**：向出版商网站发真实请求 —— 量大会触发风控，被封的是整个机构的 IP、写 data/raw/_incoming/getpdf/*.pdf，并复制成 data/raw/<id>/ 的本地正本 + 登记 curated/<id>/meta.json、--to-zotero 时**写用户的 Zotero 库**：建条目、挂 PDF 附件、建合集（不可逆）、fulltext 会花 MineRU 解析额度，并写 data/raw/<id>/（正本 PDF 与解析产物） · **只能在运行端（主力机）跑**
 > MCP 暴露方式：`prompt`（**由人在客户端点，模型不能自己发起**）
 > 命令行：`python -m tools.getpdf`
 
@@ -37,7 +37,11 @@ python -m tools.getpdf 10.1016/j.cej.2025.164092  # 取一篇
 python -m tools.getpdf --file dois.txt            # 一批，一行一个
 python -m tools.getpdf --file dois.txt --gap 30 --limit 10
 
-# 顺手收进 Zotero（**会写用户的库**）
+# 取到的**默认收进证据库**（raw/<id>/main.pdf + si.* + 目录登记），不写 Zotero。
+# 一次性回流：把 Zotero 里已有的文献复制成本地正本（只读 Zotero，在有 Zotero 的机器上跑）
+python -m tools.getpdf --从Zotero落地
+
+# 再推到 Zotero 给主人看（**会写用户的库**，由人决定）
 python -m tools.getpdf --file dois.txt --to-zotero              # 默认「建库」用途
 python -m tools.getpdf 10.1016/xxx --to-zotero --purpose 精读    # 标成重点文章
 python -m tools.getpdf --file dois.txt --to-zotero --with-si    # 连补充材料一起

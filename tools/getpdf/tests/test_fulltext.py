@@ -37,7 +37,13 @@ def env(tmp_path, monkeypatch):
         io.open(os.path.join(out_dir, 'full.md'), 'w', encoding='utf-8').write(
             '# T\n\n## 3. Results\n\nTensile strength of 12 MPa.\n')
 
-    monkeypatch.setattr(F, '_fetch_one', fake_fetch)
+    from tools import getpdf
+    monkeypatch.setattr(getpdf, 'fetch_one', fake_fetch)
+    monkeypatch.setattr(getpdf, 'fetch_si_one', lambda d, where=None: {
+        'doi': d, 'ok': False, 'reason': 'no_si', 'path': '', 'bytes': 0})
+    # 登记元数据会问 Crossref —— 离线测试里让它「查不到」，落地不受影响
+    monkeypatch.setattr('shared.adapters.crossref.work',
+                        lambda d: (_ for _ in ()).throw(RuntimeError('offline')))
     monkeypatch.setattr('shared.adapters.pdf_parse.parse_pdf', fake_parse)
     return calls
 
@@ -72,9 +78,13 @@ def test_第三层_Zotero库里有就用它的编号也不下载(env, monkeypatc
     zpath = str(paths.RAW) + '/from_zotero.pdf'
     io.open(zpath, 'wb').write(b'%PDF-1.4 zotero copy')
     monkeypatch.setattr('shared.adapters.zotero_client.find_pdf', lambda k: zpath)
+    monkeypatch.setattr('shared.adapters.zotero_client.find_si', lambda k: (None, None))
     r = F.one(DOI, zotero_index={DOI.lower(): 'AAAA1111'})
     assert r['id'] == 'AAAA1111' and r['in_zotero'] is True
     assert r['source'] == F.SRC_ZOTERO and env['fetch'] == 0
+    assert os.path.exists(paths.local_pdf('AAAA1111')),         'Zotero 的附件要**复制成本地正本** —— 证据库是全集，Zotero 只是子集'
+    from shared.kernel import catalog
+    assert catalog.find(DOI) == 'AAAA1111', '落地后目录里就该查得到'
 
 
 def test_不许取时只走前三层(env):
@@ -84,7 +94,8 @@ def test_不许取时只走前三层(env):
 
 
 def test_取失败不抛异常_把原因说清楚(env, monkeypatch):
-    monkeypatch.setattr(F, '_fetch_one', lambda d: {
+    from tools import getpdf
+    monkeypatch.setattr(getpdf, 'fetch_one', lambda d, where=None: {
         'doi': d, 'ok': False, 'reason': 'paywall', 'path': '', 'bytes': 0})
     r = F.one(DOI)
     assert r['ok'] is False and r['why'] and env['parse'] == 0

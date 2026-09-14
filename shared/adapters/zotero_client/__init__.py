@@ -291,6 +291,37 @@ def has_si(item_key):
     return False
 
 
+def find_si(item_key):
+    """定位 SI 附件的本地文件 → (路径, 类型)，类型 ∈ 'pdf'/'docx'；找不到 (None, None)。
+
+    2026-09-13 从 tools/deepread/si.py 下沉到这里：`getpdf` 把 Zotero 里的文献
+    落地成本地正本时也要找它，两个使用者 → 按下沉规则归 shared。
+    判断依据与 has_si 共用 SUPP_PAT（同一个判断只许有一份）。
+    """
+    try:
+        children = zget(f'/users/{USER_ID}/items/{item_key}/children')
+    except Exception:
+        return None, None
+    for c in children:
+        d = c['data']
+        if d.get('itemType') != 'attachment':
+            continue
+        if d.get('contentType', '') not in ('application/pdf', DOCX_CT):
+            continue
+        title = (d.get('title') or '').strip()
+        fn = (d.get('filename') or '')
+        if not (SUPP_PAT.search(title) or SUPP_PAT.search(fn) or title.upper() == 'SI'):
+            continue
+        dd = os.path.join(STORAGE_DIR, c['key'])
+        if os.path.isdir(dd):
+            for f in os.listdir(dd):
+                if f.lower().endswith('.pdf'):
+                    return os.path.join(dd, f), 'pdf'
+                if f.lower().endswith('.docx'):
+                    return os.path.join(dd, f), 'docx'
+    return None, None
+
+
 def get_fulltext(att_key):
     """取 Zotero 自带全文索引文本（不解析 PDF）。用于粗层抽取/向量化。"""
     try:
@@ -315,7 +346,22 @@ def alive(timeout=6):
 
 
 def library_index():
-    """库里已有文献的 (归一标题集合, DOI 集合) —— 用来标记「这篇我有没有」。
+    """「这篇我有没有」的完整答案：(归一标题集合, DOI 集合) = **证据库 ∪ Zotero**。
+
+    2026-09-13 起证据库是全集、Zotero 是子集：`getpdf` 落地的文献可能根本不在
+    Zotero 里，只问 Zotero 会把已经有正本的文献标成「新」。所以先问本地目录
+    （`shared.kernel.catalog`，零网络），再并上 Zotero 那份（没开就是空集合）。
+    四个调用方（litsearch / discover ×2 / askworld）一行不用改。
+    只要 Zotero 那一半用 `zotero_index()`。
+    """
+    from shared.kernel import catalog
+    titles, dois = catalog.have_index()
+    zt, zd = zotero_index()
+    return titles | zt, dois | zd
+
+
+def zotero_index():
+    """Zotero 里已有文献的 (归一标题集合, DOI 集合)。
 
     Zotero 没开/没配就返回两个空集合（降级，不抛异常）：
     只损失「已在库」标记，检索本身不受影响。

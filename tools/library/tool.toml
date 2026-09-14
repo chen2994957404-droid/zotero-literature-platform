@@ -4,7 +4,7 @@
 #   expose 是它在 MCP 上的主暴露方式，判据：只读且便宜→tool；只读数据→resource；
 #   花钱或有副作用→prompt。花钱/有副作用的注册成 tool 会被 registry.check() 拦下。
 name          = "library"
-one_line      = "查我的 Zotero 库：搜条目、看合集标签、拿正文 PDF 与全文"
+one_line      = "查证据库（全集）与 Zotero（子集）：有没有这篇、手上有什么、看合集标签、拿正文与全文"
 expose        = "tool"
 costs_money   = false
 side_effects  = []
