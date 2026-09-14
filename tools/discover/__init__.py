@@ -35,9 +35,11 @@
     shared.adapters.query_expand（拆检索式） + shared.adapters.sciverse / openalex（检索）
   + shared.adapters.snowball（沿引用网络扩展） + 本工具的 match（与我的库对照）
 """
+import io
 import re
 
 from shared.adapters import openalex, sciverse
+from shared.kernel import paths
 from shared.adapters.zotero_client import library_index
 
 from tools.discover.match import match_many, pick_seeds, rank
@@ -116,8 +118,12 @@ def _seeds_from_hits(items, n):
     取前 3n 个命中（搜索引擎按相关度给的顺序）里被引最多的 n 篇。
     「被引多」在这里只是「引用网络够密、雪球滚得动」的代理，不是质量判断。
     """
+    from shared.domain.libmatch import diversify
     pool = [it for it in items[:max(n * 3, 10)] if (it.get('doi') or '').strip()]
     pool.sort(key=lambda it: it.get('citations') or 0, reverse=True)
+    # 起始集要多样（Wohlin 2014）：不同第一作者、不同刊同年；被引只决定候选顺序
+    pool = diversify(pool, n, first_author=lambda it: (
+        it.get('first_author') or (it.get('authors') or [''])[0] or '').strip().lower())
     return [{'doi': it['doi'].lower().strip(), 'title': (it.get('title') or '')[:70],
              'sim': None, 'citations': it.get('citations') or 0} for it in pool[:n]]
 
@@ -256,7 +262,41 @@ def run_discovery(query, limit=25, n_queries=5, mode='survey', year_from=None,
     if explore:
         say('新方向模式：不按「跟你的库像不像」排，只按「跟本次主题贴不贴」排；'
             '「离你的库」一栏是摆给你看的事实 —— 找新方向时，远是好消息')
-    return {'queries': queries, 'contrib': contrib, 'seeds': seeds,
-            'snow_added': snow_added, 'filtered': filtered,
-            'total_pool': total_pool, 'source': source, 'explore': explore,
-            'rows': rank(items, ms, explore=explore)}
+    out = {'queries': queries, 'contrib': contrib, 'seeds': seeds,
+           'snow_added': snow_added, 'filtered': filtered,
+           'total_pool': total_pool, 'source': source, 'explore': explore,
+           'rows': rank(items, ms, explore=explore)}
+    out['record'] = _save_record(query, mode, year_from, prefer, topic_floor, out)
+    return out
+
+
+def _save_record(query, mode, year_from, prefer, topic_floor, r):
+    """检索留档（PRISMA-S 的子集）→ 文件路径；写不下就返回空串，不影响检索本身。
+
+    留什么：原始问题、模式、检索式原文、来源、日期、过滤条件（年份 / 贴题门槛 / 排序）、
+    各检索式取回与新增数、种子、雪球新增、过滤掉的数、最终每篇的 DOI / 状态 / 分数。
+    有了它，报告里「搜过哪些说法、各自多少」不是凭记忆写的，而且能回放、能重跑对比。
+    """
+    import json
+    import time
+    stamp = time.strftime('%Y%m%d-%H%M%S')
+    rec = {
+        'stamp': stamp, 'date': time.strftime('%Y-%m-%d %H:%M'),
+        'question': query, 'mode': mode, 'explore': bool(r.get('explore')),
+        'queries': r.get('queries'), 'source': r.get('source'),
+        'filters': {'year_from': year_from, 'topic_floor': topic_floor, 'prefer': prefer},
+        'contrib': [{'query': q, 'got': got, 'new': new} for q, got, new, _ in (r.get('contrib') or [])],
+        'seeds': r.get('seeds'), 'snow_added': r.get('snow_added'),
+        'filtered_off_topic': r.get('filtered'), 'pool': r.get('total_pool'),
+        'results': [{'doi': p.get('doi') or '', 'title': (p.get('title') or '')[:120],
+                     'year': p.get('year'), 'status': m.get('status'),
+                     'score': round(score, 3) if isinstance(score, (int, float)) else None,
+                     'from': p.get('from') or 'search'}
+                    for p, m, score in (r.get('rows') or [])],
+    }
+    try:
+        path = paths.search_record(stamp, create_dir=True)
+        io.open(path, 'w', encoding='utf-8').write(json.dumps(rec, ensure_ascii=False, indent=1))
+        return path
+    except OSError:
+        return ''

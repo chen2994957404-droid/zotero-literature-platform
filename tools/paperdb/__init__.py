@@ -750,3 +750,99 @@ def journals(tier=None, limit=200):
     sql += ' GROUP BY journal_tier, journal, publisher, issn ORDER BY n DESC, journal LIMIT ?'
     args.append(int(limit))
     return query(sql, args)
+
+
+# ── 概念矩阵（Webster & Watson 2002）：概念为行、性能为列，格子里是谁做了 ───────────
+# 对比表是「文献为行」（author-centric），找空白得一行行扫；概念矩阵是「概念为行」
+# （concept-centric），空格一眼就是空白。两张表同一份数据，只是转置 + 归类。
+
+# 动态键的家族：按关键词把五花八门的写法归到十来类。认不出的归「其它」，不猜。
+BOND_FAMILIES = (
+    ('氢键', r'hydrogen[\s-]*bond|h[\s-]*bond|urea|urethane|amide'),
+    ('B–O 硼氧', r'boroxine|b[\s–-]*o[\s–-]*b|borate|boron[\s-]*oxygen|b–o|b-o\b|siloxane[\s-]*boron|borosiloxane|dative'),
+    ('硼酸酯', r'boronic|boronate|dioxaborolane|boron ester'),
+    ('金属配位', r'metal|coordinat|zn|fe\b|cu\b|ni\b|zr|ligand|catechol'),
+    ('二硫键', r'disulfide|disulphide|s[\s–-]*s bond'),
+    ('亚胺/席夫碱', r'imine|schiff'),
+    ('Diels–Alder', r'diels|furan|maleimide'),
+    ('离子/静电', r'ionic|electrostatic|ion[\s-]*dipole|zwitterion'),
+    ('π–π/主客体', r'π|pi[\s-]*pi|host[\s-]*guest|cyclodextrin|stacking'),
+    ('酯/氨酯交换', r'transesterif|vitrimer|carbamate exchange|urethane exchange'),
+    ('相分离/结晶', r'phase[\s-]*separat|crystall|nanodomain|hard segment'),
+)
+
+# 性能的家族：列名太多（几百种写法），只挑最常问的几类；其余不上矩阵
+PROPERTY_FAMILIES = (
+    ('拉伸强度', r'tensile|strength'),
+    ('断裂伸长', r'elongation|strain at break|stretch'),
+    ('韧性', r'toughness|fracture energy'),
+    ('模量', r'modulus'),
+    ('自愈效率', r'heal'),
+    ('回复/回弹', r'recover|resilien|hysteresis'),
+    ('Tg/热性能', r'\btg\b|glass transition|thermal'),
+    ('冲击/剪切增稠', r'impact|shear[\s-]*stiffen|shear[\s-]*thicken|energy dissipat'),
+)
+
+
+def _family(text, families):
+    import re
+    t = (text or '').lower()
+    hits = [name for name, pat in families if re.search(pat, t)]
+    return hits or ['其它']
+
+
+def concept_matrix():
+    """→ {'rows': [家族名], 'cols': [性能名], 'cells': {(行, 列): set(key)}, 'papers': {key: title}}。
+
+    一篇的动态键家族取自 `papers.dynamic_bond_type` 与它所有样品的 `dynamic_bond`（并集）；
+    一篇的性能列取自它所有测量的 `name`。一篇可以落在多个格子里（复合网络就是这样）。
+    """
+    rows_p = query('SELECT key, title, dynamic_bond_type FROM papers')
+    samp = query('SELECT key, dynamic_bond FROM samples WHERE dynamic_bond IS NOT NULL AND dynamic_bond != ""')
+    meas = query('SELECT DISTINCT key, name FROM measurements WHERE name IS NOT NULL AND name != ""')
+    bonds, papers = {}, {}
+    for r in rows_p:
+        papers[r['key']] = r['title'] or r['key']
+        bonds.setdefault(r['key'], set()).update(_family(r['dynamic_bond_type'], BOND_FAMILIES))
+    for s in samp:
+        bonds.setdefault(s['key'], set()).update(_family(s['dynamic_bond'], BOND_FAMILIES))
+    props = {}
+    for m in meas:
+        props.setdefault(m['key'], set()).update(
+            f for f in _family(m['name'], PROPERTY_FAMILIES) if f != '其它')
+    cells = {}
+    for key, fams in bonds.items():
+        fams = {f for f in fams if f != '其它'} or {'其它'}
+        for b in fams:
+            for p in props.get(key, ()):
+                cells.setdefault((b, p), set()).add(key)
+    rows = [n for n, _ in BOND_FAMILIES if any(k[0] == n for k in cells)] + \
+           (['其它'] if any(k[0] == '其它' for k in cells) else [])
+    cols = [n for n, _ in PROPERTY_FAMILIES if any(k[1] == n for k in cells)]
+    return {'rows': rows, 'cols': cols, 'cells': cells, 'papers': papers}
+
+
+def write_concept_matrix(path=None):
+    """概念矩阵 → `structured/concept_matrix.md`（W&W 的形状：行=动态键家族，列=性能）。返回路径。
+
+    格子里写篇数 + 最多 3 个 id；**空格本身就是发现**（该家族没人测过这项性能，或还没抽到）。
+    """
+    m = concept_matrix()
+    lines = ['# 概念矩阵：动态键家族 × 性能（谁做了、几篇）',
+             '',
+             '概念为行、性能为列（Webster & Watson 2002 的概念矩阵）。格子 = 有该性能数值的篇数 + 例子 id。',
+             '**空格是发现**：这个家族没人报过这项性能 —— 或者是我们还没抽到（去 `paperdb --field` 核对）。',
+             '数据来自 `paperdb`（精层 + 粗层），重建：`python -m tools.paperdb --概念矩阵`。',
+             '', '| 动态键 ╲ 性能 | ' + ' | '.join(m['cols']) + ' |',
+             '|---|' + '---|' * len(m['cols'])]
+    for r in m['rows']:
+        cells = []
+        for c in m['cols']:
+            ks = sorted(m['cells'].get((r, c), ()))
+            cells.append(f'**{len(ks)}** ' + ' '.join(ks[:3]) + ('…' if len(ks) > 3 else '') if ks else '·')
+        lines.append(f'| {r} | ' + ' | '.join(cells) + ' |')
+    lines += ['', f'共 {len(m["papers"])} 篇进入统计；「其它」= 动态键写法没归进任何家族的（可在 BOND_FAMILIES 加关键词）。']
+    path = path or paths.compare('concept_matrix')
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    io.open(path, 'w', encoding='utf-8').write('\n'.join(lines) + '\n')
+    return path

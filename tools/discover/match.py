@@ -169,17 +169,28 @@ def pick_seeds(topic, n=4):
     except Exception:
         return []
 
-    seen, seeds = set(), []
+    seen, cands = set(), []
     for _h in hits:
         meta = _h['meta']
         doi = (meta.get('doi') or '').lower().strip()
         if not doi or doi in seen:
             continue
         seen.add(doi)
-        seeds.append({'doi': doi, 'title': (meta.get('title') or '')[:70],
-                      'sim': _h['sim']})      # 适配层已算好「越大越像」
-        if len(seeds) >= n:
-            break
+        cands.append({'doi': doi, 'title': (meta.get('title') or '')[:70],
+                      'sim': _h['sim'], 'key': meta.get('key') or ''})   # 适配层已算好「越大越像」
+    # 起始集要多样（Wohlin 2014）：同一第一作者 / 同刊同年的只留一篇。
+    # 作者、期刊、年份从证据库目录取（落地时登记的），没登记的就当不同源。
+    from shared.kernel import catalog
+    from shared.domain.libmatch import diversify
+
+    def _meta(c):
+        return catalog.read_meta(c['key']) if c.get('key') else {}
+    seeds = diversify(cands, n,
+                      first_author=lambda c: ((_meta(c).get('authors') or [''])[0] or '').strip().lower(),
+                      venue=lambda c: (_meta(c).get('journal') or '').strip().lower(),
+                      year=lambda c: str(catalog.year_of(_meta(c)) or ''))
+    for sd in seeds:
+        sd.pop('key', None)
     return seeds
 
 

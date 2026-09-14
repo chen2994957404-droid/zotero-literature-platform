@@ -17,7 +17,7 @@
 
 ```
 docs/  ← 跨工具的档案（另有 3 份日志直接躺在下面）
-    explain/（7）、howto/（3）、reference/（6）、incidents/（2）  ← 为什么 / 怎么做 / 事实 / 坑
+    explain/（7）、howto/（3）、reference/（7）、incidents/（2）  ← 为什么 / 怎么做 / 事实 / 坑
 host/  ← 平台自身：让平台活着的东西（没人 import 它）（9 块）
     autosync、codegen、deploy、doctor、ingest、mcp、panel、watcher、wechat_import
 launch/  ← 给人双击的入口（10 个）
@@ -38,7 +38,7 @@ toolbox/ （0 个脚本）
 tools/  ← 工具包：一个工具 = 一个自包含的包（12 块）
     ask、askworld、curate、deepread、digitize、direction、discover、extract、getpdf、library、litsearch、paperdb
 
-根目录文件：AGENTS.md、CLAUDE.md、LICENSE、README.md、REBUILD.md、pyproject.toml、requirements.txt、各部分的关系.md
+根目录文件：AGENTS.md、BA_TRIS_DMAEMA_三元共聚20g小试实验指南.md、CLAUDE.md、LICENSE、README.md、REBUILD.md、pyproject.toml、requirements.txt、各部分的关系.md
 
 （data/ 是数据目录（五层），3000+ 文件，**不要去 glob 它**）
 ```
@@ -104,6 +104,7 @@ A 机默认不写 Zotero、不跑常驻服务、不跑花钱的批量作业 —�
 
 - `data/serving/structured/compare.md` — 横向对比表（2026-08-28 实测 175 条：39 精层 + 136 粗层）
 - `data/serving/structured/compare_reviews.md` · `compare_PBS.md` — 综述单列 · PBS 精层子表（10 篇）
+- `data/serving/structured/concept_matrix.md` — **概念矩阵**（动态键家族 × 性能，谁做了几篇；空格即空白。`python -m tools.paperdb --概念矩阵` 重建）
 - `data/raw/<KEY>/parsed/full.md` — 解析出的全文 ｜ `data/curated/<KEY>/summary.html` — 中文精读
 - `data/serving/vector_db/` — 向量库（2026-09-07 在 B 机实测 13906 块：粗层 10418 + **精层 2873** + SI 615，供 `tools/ask` 检索）
   ✅ **精层已补齐**：42 篇有 `parsed/full.md` 的全部在库；有 SI 原件的也全进了；同一篇两档并存 0 篇（精层入库时粗层自动退场）。（2026-09-06 前这里只有 276 块 —— 判重问错了问题，见踩坑 #126；代码当天修好并已在主力机跑过。）

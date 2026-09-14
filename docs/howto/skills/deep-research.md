@@ -79,9 +79,14 @@ Bates 的检索战术里有一条硬规矩：**always question null sets** —�
 
 1. **版图**：面 × 面的矩阵，每格谁做了（id / DOI）
 2. **已有路线各自的优缺点**，每条带出处（id + 节地址，如 `<id> s4.p1` / `t4`）
-3. **空白**：搜过哪些说法、total 各多少、哪些空；雪球滚了几轮
+3. **空白**：搜过哪些说法、total 各多少、哪些空；雪球滚了几轮。**空白要标类型**
+   （Miles 2017 七类研究空白），材料领域最常见的三类：
+   - **知识空白**：没人做过（第 3 步做完才能写）
+   - **证据冲突**：两篇结论相反、或同一体系数据对不上 —— 用 `paperdb` 比数值就能看见
+   - **方法空白**：大家都用同一种测法 / 同一种表征，换个方法可能得出不同结论
+   （其余四类：实践-知识冲突、经验、理论、人群，用到再标）
 4. **判断与建议**：这一部分是模型的判断，**明确标出来是判断**
-5. **停止判据**：用了哪一种、为什么
+5. **停止判据**：用了哪一种、为什么；附检索留档路径（`data/state/searches/<时间>.json`）
 6. 附：读过的全文清单（id），用户勾选哪些推到 Zotero
 
 ## 别做的
@@ -97,4 +102,6 @@ Bates 的检索战术里有一条硬规矩：**always question null sets** —�
   （综述 Harter 1986 积木式、Meadow & Cochrane 1981 逐步收窄、Markey & Cochrane 1981 滚珠式、
   Hawkins & Wagers 1982 交互扫描、Bates 的检索战术）—— https://ils.unc.edu/~march/isee_book/Chapter_5.pdf
 - Wohlin, *Guidelines for snowballing in systematic literature studies*, EASE 2014 —— https://www.wohlin.eu/ease14.pdf
+- Miles, *A Taxonomy of Research Gaps*, 2017（七类研究空白）
+- PRISMA-S（检索报告清单，16 项）—— `discover` 每次跑完落的留档就是它的子集，报告附上路径
 - 三种停止判据见软件工程系统综述文献的通行写法（2026-09-14 查证于多篇 SLR）

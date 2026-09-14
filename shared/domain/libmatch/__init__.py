@@ -83,3 +83,32 @@ def mark_have(papers, have_titles, have_dois):
         if hit:
             n += 1
     return n
+
+
+def diversify(cands, n, first_author=None, venue=None, year=None):
+    """从候选里挑 n 个**彼此不同源**的：不同第一作者、不同（期刊, 年份）。
+
+    Wohlin 2014 滚雪球指南的起始集要求：覆盖不同出版商 / 年份 / 作者，彼此不互引 ——
+    否则只会滚到一个小圈子里。互引查不起（每篇都要拉引用），这里用「同一第一作者」
+    和「同刊同年」当代理。贪心：按候选原有顺序（调用方已按相关度或被引排好）挑，
+    撞了就跳过；不够 n 个再用跳过的补齐（多样性是偏好，不是硬要求）。
+
+    三个取值函数缺省时从字典键 `first_author` / `venue` / `year` 取。纯逻辑，可离线测。
+    """
+    fa = first_author or (lambda c: (c.get('first_author') or '').strip().lower())
+    ve = venue or (lambda c: (c.get('venue') or '').strip().lower())
+    yr = year or (lambda c: str(c.get('year') or ''))
+    picked, skipped, authors, venue_years = [], [], set(), set()
+    for c in cands:
+        a, vy = fa(c), (ve(c), yr(c))
+        if (a and a in authors) or (vy[0] and vy in venue_years):
+            skipped.append(c)
+            continue
+        picked.append(c)
+        if a:
+            authors.add(a)
+        if vy[0]:
+            venue_years.add(vy)
+        if len(picked) >= n:
+            return picked
+    return (picked + skipped)[:n]

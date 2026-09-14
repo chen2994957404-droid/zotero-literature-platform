@@ -115,3 +115,36 @@ def test_新方向模式的雪球种子来自本次命中而非库():
     seeds = _seeds_from_hits(hits, 2)
     assert [s['doi'] for s in seeds] == ['10.1/b', '10.1/c'], '取本次命中里被引最多且有 DOI 的'
     assert all(s['sim'] is None for s in seeds), '不是按近库度挑的，就别给一个近库度'
+
+
+def test_雪球起始集要多样_同作者同刊同年只留一篇():
+    """Wohlin 2014：起始集覆盖不同出版商 / 年份 / 作者，否则只滚到一个小圈子。"""
+    from shared.domain.libmatch import diversify
+    c = [{'doi': '1', 'first_author': 'Zhang', 'venue': 'AM', 'year': 2020},
+         {'doi': '2', 'first_author': 'Zhang', 'venue': 'JACS', 'year': 2021},   # 同作者
+         {'doi': '3', 'first_author': 'Li', 'venue': 'AM', 'year': 2020},        # 同刊同年
+         {'doi': '4', 'first_author': 'Wang', 'venue': 'Nat', 'year': 2019},
+         {'doi': '5', 'first_author': 'Zhao', 'venue': 'AM', 'year': 2022}]
+    assert [x['doi'] for x in diversify(c, 3)] == ['1', '4', '5']
+    assert [x['doi'] for x in diversify(c, 5)] == ['1', '4', '5', '2', '3'], '不够时用跳过的补齐'
+    assert [x['doi'] for x in diversify([{'doi': 'a'}, {'doi': 'b'}], 2)] == ['a', 'b'], '没信息就当不同源'
+
+
+def test_每次检索都留档_能回放(tmp_path, monkeypatch):
+    """PRISMA-S 的精神：检索式 / 来源 / 日期 / 各步数量要报出来，报告才可回放（2026-09-14）。"""
+    import json, io, os
+    from shared.kernel import paths
+    from tools import discover
+    monkeypatch.setattr(paths, 'STATE', str(tmp_path))
+    r = {'queries': ['q1', 'q2'], 'contrib': [('q1', 8, 8, ''), ('q2', 8, 3, '')],
+         'seeds': [{'doi': '10.1/s'}], 'snow_added': 5, 'filtered': 1, 'total_pool': 12,
+         'source': 'OpenAlex', 'explore': True,
+         'rows': [({'doi': '10.1/a', 'title': 'A', 'year': 2024, 'from': 'forward'},
+                   {'status': 'new'}, 0.71)]}
+    path = discover._save_record('原始问题', 'problem', 2024, 'relevance', 0.45, r)
+    assert path and os.path.exists(path)
+    d = json.load(io.open(path, encoding='utf-8'))
+    assert d['question'] == '原始问题' and d['queries'] == ['q1', 'q2'] and d['explore'] is True
+    assert d['filters']['year_from'] == 2024 and d['contrib'][1] == {'query': 'q2', 'got': 8, 'new': 3}
+    assert d['results'][0] == {'doi': '10.1/a', 'title': 'A', 'year': 2024, 'status': 'new',
+                               'score': 0.71, 'from': 'forward'}

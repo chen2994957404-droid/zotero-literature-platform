@@ -475,6 +475,19 @@ def runtime(name):
     return os.path.join(LOGS, name)
 
 
+def search_record(stamp, create_dir=False):
+    """state/searches/<stamp>.json —— 一次找文献的**检索留档**（2026-09-14）。
+
+    PRISMA-S 的子集：检索式原文、来源、日期、过滤条件、各步数量、种子、结果 id。
+    有了它报告才能回放（「这个结论是搜了什么得出来的」），也才能隔一段时间重跑对比。
+    可重建层（state）：删了只丢历史。
+    """
+    d = os.path.join(STATE, 'searches')
+    if create_dir:
+        os.makedirs(d, exist_ok=True)
+    return os.path.join(d, str(stamp) + '.json')
+
+
 def state_db():
     """state/state.db —— 任务状态库（谁做到哪一步，见 shared/kernel/jobs.py）。
 

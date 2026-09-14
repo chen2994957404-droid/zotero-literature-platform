@@ -51,3 +51,32 @@ def test_对账靠DOI(db):
     _write(db, paths.paper_id_from_doi(same), doi=same)
     n = paperdb.query('SELECT COUNT(*) c FROM papers WHERE doi = ?', (same,))[0]['c']
     assert n == 2
+
+
+def test_概念矩阵_概念为行性能为列_空格即空白(tmp_path, monkeypatch):
+    """Webster & Watson 2002：概念为行的矩阵，空格一眼就是空白（2026-09-14）。全离线。"""
+    import io, os
+    from shared.kernel import paths
+    from tools import paperdb
+    monkeypatch.setattr(paths, 'STRUCTURED', str(tmp_path / 'structured'))
+    monkeypatch.setattr(paths, 'STATE', str(tmp_path / 'state'))
+    os.makedirs(paths.STRUCTURED)
+    from shared.domain import schema
+    recs = [schema.make_record('AAAA0001', 'P1', '10.1/a',
+                               {'dynamic_bond_type': 'boroxine B-O-B dative bonds',
+                                'key_properties': 'tensile strength: 12 MPa'},
+                               schema_ver=1, source=schema.SOURCE_COARSE),
+            schema.make_record('BBBB0002', 'P2', '10.1/b',
+                               {'dynamic_bond_type': 'metal coordination Zn2+',
+                                'key_properties': 'healing efficiency: 92%'},
+                               schema_ver=1, source=schema.SOURCE_COARSE)]
+    paperdb.close()
+    paperdb.rebuild(records=recs, log=lambda *a: None)
+    m = paperdb.concept_matrix()
+    assert 'B–O 硼氧' in m['rows'] and '金属配位' in m['rows']
+    assert m['cells'].get(('B–O 硼氧', '拉伸强度')) == {'AAAA0001'}
+    assert ('B–O 硼氧', '自愈效率') not in m['cells'], '空格 = 没人报过'
+    path = paperdb.write_concept_matrix()
+    txt = io.open(path, encoding='utf-8').read()
+    assert '| B–O 硼氧 |' in txt and 'AAAA0001' in txt
+    paperdb.close()

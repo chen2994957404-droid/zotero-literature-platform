@@ -113,6 +113,8 @@ def main():
             for s in r['seeds']:
                 print(f'  相似{s["sim"]}  {s["title"][:62]}')
     print(f'\n来源 {r["source"]} + 引用网络，合并去重后 {r["total_pool"]} 篇')
+    if r.get('record'):
+        print(f'检索留档：{r["record"]}（检索式 / 来源 / 日期 / 各步数量，报告可回放）')
     if len(r['queries']) > 1:
         _print_contrib(r['contrib'], r['total_pool'])
 

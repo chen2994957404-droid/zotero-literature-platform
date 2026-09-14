@@ -16,6 +16,7 @@
   python -m tools.paperdb --journals        # 库里的文献都发在什么档次的刊上
   python -m tools.paperdb --find X --journal 顶刊   # 只看顶刊那些
   python -m tools.paperdb --prov            # 数字有多少能追溯到原文（体温计）
+  python -m tools.paperdb --概念矩阵        # 动态键家族 × 性能，谁做了几篇；空格就是空白（W&W 概念矩阵）
   python -m tools.paperdb --sql "SELECT tier, COUNT(*) n FROM papers GROUP BY tier"
 
 **库是索引不是真相**：真相是 `structured/<key>.json`。库随时可删可重建，
@@ -51,6 +52,11 @@ def main():
         return 0
     if flag('--rebuild'):
         paperdb.rebuild()
+        return
+
+    if flag('--概念矩阵'):
+        p = paperdb.write_concept_matrix()
+        print(f'概念矩阵已写到 {p}')
         return
 
     if flag('--stats'):
