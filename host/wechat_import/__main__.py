@@ -10,6 +10,7 @@
     python -m host.wechat_import --file <某篇.md>       # 只导指定的一篇
     python -m host.wechat_import --金标 --limit 50        # 配精读金标：推文当范文存起来，原件进证据库
     python -m host.wechat_import --金标 --只用手上有的      # 同上但不向出版商取，先看手上能配多少
+    python -m host.wechat_import --重写范文                # 解析规则变了，只重写已配对的 reference.md
 
 目录默认取配置里的「公众号推送下载目录」，也可以用 `--dir` 指定。
 
@@ -69,6 +70,11 @@ def main():
             n_txt = sum(len(b.get('text', '')) for b in a['blocks'])
             print('  %-9s %d字 %d图  %s' % (a['doi'] or '(没DOI)', n_txt, n_img,
                                             a['title'][:40]))
+        return 0
+
+    if flag('--重写范文'):
+        from host.wechat_import import golden
+        golden.rewrite_references(files)
         return 0
 
     if flag('--金标') or flag('--golden'):

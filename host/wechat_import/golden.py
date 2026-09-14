@@ -146,6 +146,24 @@ def build(files, allow_fetch=True, log=print):
     return res
 
 
+def rewrite_references(files, log=print):
+    """只重写已配对文献的 reference.md（解析规则变了之后用），不取件、不动索引 → 重写篇数。
+
+    2026-09-14 第一次用：段界规则修好之前，范文里「Question → 总之 → 通俗理解」被拼成一段。
+    """
+    from host.wechat_import import parse_md
+    n = 0
+    for p in files:
+        a = parse_md(p)
+        pid = catalog.find(a.get('doi') or '')
+        if not pid or not os.path.exists(paths.reference(pid)):
+            continue
+        io.open(paths.reference(pid), 'w', encoding='utf-8').write(render_reference(a))
+        n += 1
+    log('重写了 %d 篇范文' % n)
+    return n
+
+
 def summarize(res):
     """给人看的一段汇总。"""
     n = lambda a: sum(1 for r in res if r['action'] == a)

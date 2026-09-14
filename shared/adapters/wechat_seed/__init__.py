@@ -173,6 +173,7 @@ def parse_article(text):
     """一篇推送的 md → dict(title, doi, pubdate, blocks)。
 
     `blocks` 是按原顺序的正文流：`{'kind':'p','text':...}` 或 `{'kind':'img','url':...}`。
+    **一个 p 就是原推送的一个自然段**（段界 = 空行 / 只剩加粗记号的残行 / 图）。
 
     **头尾的平台噪音与品牌图会被剥掉**：正文从第一个实质段落开始，到写着 DOI
     的那一行为止。这个边界是实测出来的 —— 公众号的头图、名片图、二维码都落在
@@ -193,32 +194,38 @@ def parse_article(text):
         for i, ln in enumerate(lines):
             if doi in normalize_doi_line(ln):
                 end = i
-    raw, started = [], False
+    # 下载工具输出的形状（2026-09-14 拿真实推送核对过）：一段被硬折成若干行、
+    # 行间**没有**空行；段与段之间才有空行（或只剩 `**` 的加粗残行）。
+    # 所以空行 / 残行是**段界**，不是可以丢掉的噪音 —— 以前把它们连同平台按钮
+    # 一起吃掉，结果「Question → 总之 → 通俗理解」三段被拼成一段，
+    # 拿它当范文量段落数就全错了。
+    raw, started, buf = [], False, []
+
+    def flush():
+        if buf:
+            raw.append(('p', _join(buf)))
+            del buf[:]
+
     for ln in lines[:end]:
         s = ln.strip()
-        if s.startswith('#') or _is_junk(s):
+        if s.startswith('#'):
+            continue
+        if _is_junk(s):
+            flush()                          # 段界
             continue
         m = _IMG.match(s)
         if m:
+            flush()
             if started:                      # 正文没开始 = 还在头图区，丢掉
                 raw.append(('img', m.group(1)))
             continue
         # 实质段落：去掉 md 的加粗记号后仍有内容
         started = True
-        raw.append(('p', s.replace('**', '').strip()))
+        buf.append(s.replace('**', '').strip())
+    flush()
 
-    # 把连续的 p 行合并成段（空行已在 _JUNK_LINES 里被吃掉，所以按 img 切段）
-    blocks, buf = [], []
-    for kind, val in raw:
-        if kind == 'p':
-            buf.append(val)
-        else:
-            if buf:
-                blocks.append({'kind': 'p', 'text': _join(buf)})
-                buf = []
-            blocks.append({'kind': 'img', 'url': val})
-    if buf:
-        blocks.append({'kind': 'p', 'text': _join(buf)})
+    blocks = [{'kind': 'p', 'text': v} if k == 'p' else {'kind': 'img', 'url': v}
+              for k, v in raw]
     blocks = [b for b in blocks if b['kind'] == 'img' or len(b.get('text', '')) > 1]
     return {'title': title, 'doi': doi, 'pubdate': pubdate, 'blocks': blocks}
 

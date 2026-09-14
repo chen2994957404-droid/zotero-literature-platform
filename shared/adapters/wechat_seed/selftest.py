@@ -107,7 +107,14 @@ Wang 等开发出一条温和路线，解决了强度与拉伸
 
 ![](https://mmbiz.qpic.cn/fig1/640?wx_fmt=png)
 
-总之，本论文的创新点在于某某。
+** Question: 材料为何性能优异？
+☘️第一，氢键；☘️第二，
+缠结。
+**
+** 总之，本论文的创新点在于某某。
+**
+**
+通俗理解：像一张双面贴。
 
 ![](https://mmbiz.qpic.cn/card/640?wx_fmt=png)
 
@@ -131,7 +138,9 @@ ps = [b['text'] for b in a['blocks'] if b['kind'] == 'p']
 check('署名/日期/平台按钮都不算正文', all('去阅读' not in t and '原创' not in t for t in ps))
 check('英文折行用空格接回', 'Xiaobo Wei, Dong Wang' in ps[0], ps[0][:40])
 check('中文折行不加空格', '强度与拉伸无法兼顾' in ps[0], ps[0][-30:])
-check('段落按图切开', len(ps) == 2, str(len(ps)))
+check('段落按空行/残行/图切开（Question、总之、通俗理解各一段）', len(ps) == 4, str(len(ps)))
+check('段首的加粗残记号去掉了', ps[2].startswith('总之'), ps[2][:10])
+check('段内折行仍拼回一段', '☘️第二，缠结' in ps[1], ps[1])
 
 
 print('')
