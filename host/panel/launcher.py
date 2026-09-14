@@ -7,7 +7,8 @@ pythonw 静默退出，错误无处可见。本启动器捕获 import 期与 mai
 
 用法: pythonw host/panel/launcher.py（由 控制面板.bat 调用）
 """
-import os, sys, io, time, traceback
+import os
+import sys, sys, io, time, traceback
 
 # 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
@@ -28,6 +29,11 @@ def _log(text):
 
 if __name__ == '__main__':
     _log('面板启动中…')
+    # 开浏览器是 open_panel.py 的事（它会等到端口真的通了再开）；这里再开一次
+    # 就是用户看到的「每次弹两个一样的页面」（2026-09-14 反馈）。登录自启的计划任务
+    # 也走这里，那时更不该弹浏览器。
+    if '--no-browser' not in sys.argv:
+        sys.argv.append('--no-browser')
     try:
         from host.panel import app
         app.main()
