@@ -191,10 +191,32 @@ def summarize(results):
     ok = [r for r in results if r['ok']]
     tail = ''
     if ok:
-        tail = ('\n\n下一步：用 library_outline 看菜单（几百 token），'
-                '再用 library_section 只取要看的那几节 —— 别一口气读全文。\n'
-                'id：' + '、'.join(r['id'] for r in ok))
+        # 2026-09-14：做完直接把菜单带回来，模型少一次调用。骨架是纯脚本、几十毫秒；
+        # 不 import tools.library（工具隔离），直接用 shared.domain.schema.outline。
+        menus = [_menu_of(r['id']) for r in ok]
+        tail = ('\n\n菜单（按地址用 library_section 取节 / 段 / 表，别一口气读全文）：\n'
+                + '\n\n'.join(menus))
     return '\n'.join(lines) + tail
+
+
+def _menu_of(pid):
+    """这篇的骨架菜单文本。有缓存用缓存（落地流水线 / library 都会写），没有就现算。"""
+    import json
+    from shared.domain.schema import outline as _outline
+    try:
+        cache = paths.outline(pid)
+        if os.path.exists(cache) and os.path.getmtime(cache) >= os.path.getmtime(paths.fulltext(pid)):
+            o = json.load(io.open(cache, encoding='utf-8'))
+        else:
+            si_p = paths.si_fulltext(pid)
+            o = _outline.build_outline(io.open(paths.fulltext(pid), encoding='utf-8').read(),
+                                       si_md=io.open(si_p, encoding='utf-8').read() if os.path.exists(si_p) else '')
+        body = _outline.menu(o)
+        if o.get('si'):
+            body += '\n--- 补充材料 SI ---\n' + _outline.menu(o['si'])
+        return '%s · 全文 %d 字符\n%s' % (pid, (o.get('stats') or {}).get('chars', 0), body)
+    except Exception as e:
+        return '%s：菜单暂时取不到（%s），用 library_outline 再看一次' % (pid, type(e).__name__)
 
 
 def _cn(source):

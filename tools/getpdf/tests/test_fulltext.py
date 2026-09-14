@@ -127,7 +127,8 @@ class Test批量:
 def test_摘要里说清楚每篇是怎么来的(env):
     rs = F.many([DOI], gap=0)
     txt = F.summarize(rs)
-    assert '刚去取的' in txt and 'library_outline' in txt, '要告诉模型下一步怎么读'
+    assert '刚去取的' in txt and 'library_section' in txt, '要告诉模型下一步怎么读'
+    assert '菜单' in txt and '全文 48 字符' in txt, '做完直接把菜单带回来，模型少一次调用（2026-09-14）'
 
 
 def test_命令行的参数顺序(monkeypatch):

@@ -35,6 +35,27 @@ def register(server):
         lambda a: library.render_db(library.db_search(a.get('query'), limit=a.get('limit', 25))))
 
     server.register_tool(
+        'library_retrieve',
+        '在证据库里**找哪里讲了 X**：向量检索，返回最相近的几段原文 + 文献 id + 骨架地址'
+        '（s5.p3 这种）。零成本、不过大模型、不替你判断 —— 这是「搜库 → 点节 → 读」的第一步；'
+        '要中文综合回答才用 ask_library（花钱）。',
+        {'type': 'object', 'properties': {
+            'query': {'type': 'string', 'description': '要找的内容，英文或中文都行'},
+            'n': {'type': 'integer', 'minimum': 1, 'maximum': 30, 'description': '取几段，默认 8'},
+            'where': {'type': 'string', 'enum': ['all', 'main', 'si'],
+                      'description': 'all=正文+SI（默认）/ main=只正文 / si=只补充材料（配比、条件在这）'}},
+         'required': ['query']},
+        lambda a: library.render_retrieve(
+            library.retrieve(a['query'], n=a.get('n', 8), where=a.get('where', 'all')), a['query']))
+
+    server.register_tool(
+        'library_refs',
+        '这篇的参考文献列表，标出哪些已经在证据库里（可直接读）。模型读到 "[12]" 时用它'
+        '知道 12 是谁；也是在证据库内部顺引用走的入口。纯脚本，零成本。',
+        {'type': 'object', 'properties': dict(_KEY), 'required': ['itemKey']},
+        lambda a: library.render_refs(library.refs(a['itemKey']), a['itemKey']))
+
+    server.register_tool(
         'library_db_stats', '证据库有多大：篇数，以及有正文/SI/已解析/已精读/已结构化各几篇。',
         {'type': 'object', 'properties': {}},
         lambda a: _db_stats())

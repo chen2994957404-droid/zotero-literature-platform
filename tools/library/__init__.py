@@ -71,6 +71,145 @@ def db_have(doi):
     return catalog.find(doi)
 
 
+# ── 库内检索：给模型原料，不替它判断 ──────────────────────────────────
+# 2026-09-14 加。此前模型想在证据库里「找哪里讲了 X」只有 `ask`（花钱调大模型写中文回答）。
+# 模型要的其实是原料：哪几篇、哪一节、那段原文。这个函数零成本（本地向量化 + 本地库）。
+
+def retrieve(query, n=8, where='all'):
+    """向量检索证据库 → [{id, title, doi, source, sim, address, text}]。不过大模型、不花钱。
+
+    `where`：'all' / 'main'（只正文）/ 'si'（只补充材料）。
+    `address` 是这段在骨架里的地址（`s5.p3` 这种），拿去 `section()` 就能读上下文；
+    定位不到时为空串（老的粗层块、或解析文本经过清洗对不上）。
+    """
+    from shared.adapters import vectordb
+    from shared.adapters.embed import embed as embed_batch
+    flt = {'source': 'si'} if where == 'si' else ({'source': 'main'} if where == 'main' else None)
+    try:
+        coll = vectordb.open_store()
+        hits = coll.query(embed_batch([query])[0], n=max(1, int(n)), where=flt)
+    finally:
+        vectordb.close_all()          # 常驻的 MCP 进程别抱着连接（踩坑 #157）
+    out = []
+    for h in hits:
+        m = h.get('meta') or {}
+        key = m.get('key') or ''
+        is_si = m.get('source') == 'si'
+        out.append({'id': key, 'title': m.get('title') or '', 'doi': m.get('doi') or '',
+                    'source': 'si' if is_si else 'main', 'sim': round(h.get('sim') or 0, 3),
+                    'address': _locate(key, h.get('doc') or '', is_si) if key else '',
+                    'text': h.get('doc') or ''})
+    return out
+
+
+def _locate(key, doc, si=False):
+    """一段向量库文本 → 它在骨架里的地址（节 / 段）。找不到返回 ''。"""
+    from shared.domain.schema import outline as _outline, scan
+    try:
+        o = outline(key)
+    except Exception:
+        return ''
+    if not o.get('available'):
+        return ''
+    src = (o.get('si') or {}) if si else o
+    path = paths.si_fulltext(key) if si else paths.fulltext(key)
+    if not os.path.exists(path):
+        return ''
+    text = scan.clean_body(io.open(path, encoding='utf-8').read())
+    needle = next((ln.strip() for ln in doc.splitlines() if len(ln.strip()) >= 40), '')
+    pos = text.find(needle[:60]) if needle else -1
+    if pos < 0:
+        return ''
+    for s in src.get('sections') or []:
+        if s['start'] <= pos < s['end']:
+            for p in s.get('paras') or []:
+                if p['start'] <= pos < p['end']:
+                    return p['id']
+            return s['id']
+    return ''
+
+
+def render_retrieve(rows, query=''):
+    """检索结果 → 给模型看的文本：每条带地址，读上下文用 library_section。"""
+    if not rows:
+        return '证据库里没有跟「%s」相近的段落。' % query
+    out = ['跟「%s」最相近的 %d 段（按相似度）：' % (query, len(rows))]
+    for i, r in enumerate(rows, 1):
+        where = 'SI' if r['source'] == 'si' else '正文'
+        addr = r['address'] or '?'
+        out.append('%d. [%.3f] %s · %s %s · 《%s》' % (
+            i, r['sim'], r['id'], where, addr, r['title'][:60]))
+        out.append('   ' + r['text'][:400].replace('\n', ' ') + ('…' if len(r['text']) > 400 else ''))
+    out.append('（要看上下文：library_section itemKey=<id> sectionId=<地址>，SI 的加 si=true）')
+    return '\n'.join(out)
+
+
+# ── 参考文献：让模型在证据库内部顺着引用走 ───────────────────────────
+
+def refs(key):
+    """这篇的参考文献条目 → [{n, text, doi, in_db, id}]。纯脚本，从解析出的全文里抽。
+
+    `in_db` = 那篇已经在证据库里（按 DOI 对账；没 DOI 的按标题子串对）；`id` 是它的 id，
+    直接拿去 `outline()` 就能读。模型读到 "[12]" 时用它知道 12 是谁、能不能立刻读。
+    没有参考文献节返回空列表。
+    """
+    import re
+    from shared.domain.schema import outline as _outline, scan
+    o = outline(key)
+    if not o.get('available'):
+        return []
+    md = io.open(paths.fulltext(key), encoding='utf-8').read()
+    text = scan.clean_body(md)
+    # 参考文献节不一定叫 References：Nature 式论文把它挂在「Received … accepted」下面。
+    # 判据改成**内容**：哪一节里「(12) / [12] / 12. 」开头的条目最多，就是它（至少 5 条）。
+    entry_re = re.compile(r'(?m)^\s*(?:\(\d{1,3}\)|\[\d{1,3}\]|\d{1,3}\.)\s+\S')
+    best, best_n = None, 0
+    for s in (o.get('sections') or []):
+        n_ent = len(entry_re.findall(text[s['start']:s['end']]))
+        if n_ent > best_n:
+            best, best_n = s, n_ent
+    if best is None or best_n < 5:
+        return []
+    sec = best
+    body = text[sec['start']:sec['end']]
+    body = '\n'.join(body.splitlines()[1:])           # 去掉标题行
+    # 条目切分：`(12) ` / `[12] ` / `12. ` 开头；都没有就按空行
+    parts = re.split(r'(?m)^\s*(?=\(\d{1,3}\)\s|\[\d{1,3}\]\s|\d{1,3}\.\s)', body)
+    parts = [p.strip() for p in parts if p.strip()]
+    if len(parts) < 3:
+        parts = [p.strip() for p in re.split(r'\n\s*\n', body) if p.strip()]
+    by_doi = catalog.by_doi()
+    titles = {catalog.norm_title(r['title']): r['id'] for r in catalog.scan() if len(r['title']) > 20}
+    out = []
+    for p in parts:
+        m = re.match(r'^\s*(?:\((\d{1,3})\)|\[(\d{1,3})\]|(\d{1,3})\.)\s', p)
+        n = int(next(g for g in (m.groups() if m else ()) if g)) if m else len(out) + 1
+        doi = ''
+        dm = re.search(r'10\.\d{4,9}/[^\s"<>\)\]]+', p)
+        if dm:
+            doi = catalog.norm_doi(dm.group(0).rstrip('.;,'))
+        pid = by_doi.get(doi, '') if doi else ''
+        if not pid:
+            norm = catalog.norm_title(p)
+            pid = next((v for t, v in titles.items() if t in norm), '')
+        body_txt = p[m.end():] if m else p                 # 去掉条目自己的编号，别跟 [n] 重复显示
+        out.append({'n': n, 'text': re.sub(r'\s+', ' ', body_txt).strip()[:300], 'doi': doi,
+                    'in_db': bool(pid), 'id': pid})
+    return out
+
+
+def render_refs(rows, key=''):
+    if not rows:
+        return '%s：没有找到参考文献节（可能还没解析，或这篇没有参考文献）。' % key
+    have = sum(1 for r in rows if r['in_db'])
+    out = ['%s 的参考文献 %d 条，其中 %d 条已在证据库里（标 ★，可直接 library_outline 读）：'
+           % (key, len(rows), have)]
+    for r in rows:
+        out.append('%s[%d] %s%s' % ('★' if r['in_db'] else ' ', r['n'], r['text'][:150],
+                                   ('  → ' + r['id']) if r['id'] else ''))
+    return '\n'.join(out)
+
+
 def render_db(rows):
     """目录卡 → 给人/模型看的文本：每篇一行，手上有什么用几个字标出来。"""
     if not rows:

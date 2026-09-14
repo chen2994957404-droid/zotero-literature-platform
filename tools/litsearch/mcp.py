@@ -32,7 +32,9 @@ def _line(it):
 
     出版商和付费状态是**事实**，摆出来让模型按用户的路线挑；不在这里过滤。
     """
-    mark = '【库里有】' if it.get('in_library') else '         '
+    # 三档：可读（已解析，library_outline 立刻能点）> 库里有（有条目，先 paper_fulltext）> 新
+    mark = ('【可读:%s】' % it.get('db_id') if it.get('readable') else
+            '【库里有】' if it.get('in_library') else '         ')
     pub = (it.get('publisher') or '').replace(
         'Multidisciplinary Digital Publishing Institute', 'MDPI')
     oa = _OA_WORDS.get(it.get('oa_status') or '', '')

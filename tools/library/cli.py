@@ -5,6 +5,9 @@
     python -m tools.library 库                          # 证据库有多大（全集；Zotero 只是子集）
     python -m tools.library 库 硼                        # 按标题/DOI/期刊搜证据库（不联网）
     python -m tools.library 库 10.1021/acs.macromol.5b00210
+    python -m tools.library 找 "boronic ester hydrogen bond competition"   # 库内向量检索（零成本）
+    python -m tools.library 找 "配比" --si                # 只搜补充材料
+    python -m tools.library 引文 ABCD1234                 # 参考文献，标出库里已有的
     python -m tools.library stats                       # Zotero 统计 + 通不通
     python -m tools.library search 聚硼硅氧烷 --limit 10  # 搜标题作者年份
     python -m tools.library search 硼 --all              # --all = 连全文一起搜
@@ -35,6 +38,23 @@ def main():
         print(__doc__)
         return 0
     action = (pos(0) or 'stats').lower()
+
+    if action in ('找', 'retrieve'):
+        q = pos(1)
+        if not q:
+            print('用法：python -m tools.library 找 "要找的内容" [--n 8] [--si | --main]')
+            return 2
+        where = 'si' if flag('--si') else ('main' if flag('--main') else 'all')
+        print(library.render_retrieve(library.retrieve(q, n=int(opt('--n', 8)), where=where), q))
+        return 0
+
+    if action in ('引文', 'refs'):
+        key = pos(1)
+        if not key:
+            print('用法：python -m tools.library 引文 <文献id>')
+            return 2
+        print(library.render_refs(library.refs(key), key))
+        return 0
 
     if action in ('库', 'db'):
         q = pos(1)

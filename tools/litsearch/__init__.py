@@ -57,6 +57,7 @@ except Exception:
 import time
 
 from shared.adapters import openalex, snowball
+from shared.kernel import paths
 from shared.adapters.zotero_client import library_index
 from shared.domain.libmatch import mark_have
 
@@ -88,10 +89,26 @@ def _index(force=False):
 
 
 def _finish(items, limit):
-    """统一收尾：截断 → 标「我有没有」→ 返回。"""
+    """统一收尾：截断 → 标「我有没有」→ 标「能不能立刻读」→ 返回。"""
     items = list(items or [])[:max(1, min(int(limit), MAX_LIMIT))]
     titles, dois = _index()
     mark_have(items, titles, dois)
+    mark_readable(items)
+    return items
+
+
+def mark_readable(items):
+    """给每条加 `readable`：证据库里已经解析出全文（`library_outline` 立刻能点）。
+
+    2026-09-14 加：「库里有」不等于「能读」—— 有条目没正本、有正本没解析都读不了。
+    模型据此先读手上现成的，再去取没有的。
+    """
+    from shared.kernel import catalog
+    by_doi = catalog.by_doi()
+    for it in items:
+        pid = by_doi.get(catalog.norm_doi(it.get('doi') or ''), '')
+        it['db_id'] = pid
+        it['readable'] = bool(pid) and os.path.exists(paths.fulltext(pid))
     return items
 
 
