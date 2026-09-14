@@ -146,7 +146,8 @@ def read_one(key, force=False, model=None, log=print):
     # 每次执行都记进 shared.kernel.jobs（哪个模型、哪版提示词、失败原因）。
     with jobs.track(key, STEP_MAIN, producer=main_text.PRODUCER,
                     model=model or _model(), prompt_ver=main_text.PROMPT_VER):
-        main_text.read_main(parsed, out_html, provider=PROVIDER, model=model, log=log)
+        main_text.read_main(parsed, out_html, provider=PROVIDER, model=model, log=log,
+                            paper_key=key)
     log(f'  [完成] summary.html {round(os.path.getsize(out_html) / 1024)} KB')
     return True
 
@@ -243,7 +244,8 @@ def rerun_with_pro(key, title='', force=False, log=print):
     with jobs.track(key, STEP_MAIN, producer=main_text.PRODUCER,
                     model=PRO_MODEL, prompt_ver=main_text.PROMPT_VER):
         main_text.read_main(paths.parsed_dir(key), out_html, provider=PROVIDER,
-                            model=PRO_MODEL, key=get_key('DEEPSEEK_KEY'), log=log)
+                            model=PRO_MODEL, key=get_key('DEEPSEEK_KEY'), log=log,
+                            paper_key=key)
     log(f'\n完成，结果已更新：{out_html}')
     log('（想看旧版：同目录下的 summary.html.bak）')
     return out_html

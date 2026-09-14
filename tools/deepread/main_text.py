@@ -21,8 +21,9 @@ from shared.kernel import prompts
 
 # 提示词版本：改范式 = 新建 prompts/main_v<N+1>.txt，再把这里 +1（提示词只增不改）。
 # 状态库据此回答「哪些精读该重跑」（jobs.stale('main_summary', prompt_ver=3)）。
-PROMPT_VER = 2
+PROMPT_VER = 3      # v3 = 分段生成（sectioned.py，四段提示词 lead/exp/fig/wrap@v1）；v2 = 一次调用 main@v2
 PRODUCER = 'deepread_v4'
+MODE = 'sectioned'  # 'sectioned' 分段生成（默认）/ 'single' 老路一次调用（A/B 对比用）
 
 MIN_OK = 3000   # 精读正文低于这个字数就是废品，不许静默写盘
 
@@ -35,7 +36,7 @@ def sys_prompt():
     """精读的系统提示词。**版本跟着 PROMPT_VER 走** —— 二者不许各走各的，
     否则状态库里记的 prompt_ver 和实际用的那一版对不上，「哪些该重跑」就成了假的。
     """
-    return prompts.load('deepread', f'main@v{PROMPT_VER}')
+    return prompts.load('deepread', 'main@v2')       # 一次调用那条老路只有 v2
 
 
 def _pick(mo_dir, suffix, what):
@@ -112,6 +113,7 @@ CSS = ('body{max-width:820px;margin:0 auto;padding:24px;font-family:-apple-syste
        'h2.section{background:linear-gradient(90deg,#7b9cf0,#a78bde);color:#fff;'
        'padding:8px 20px;border-radius:20px;display:inline-block;font-size:19px;'
        'margin:34px 0 16px}h3{color:#5a6ec0;font-size:16px;margin-top:22px}'
+       'h1{font-size:22px;line-height:1.5;color:#1d2a5a;margin:8px 0 18px}'
        'p{margin:12px 0;text-align:justify}img{max-width:100%;display:block;'
        'margin:18px auto;border:1px solid #eee;border-radius:6px;'
        'box-shadow:0 2px 8px rgba(0,0,0,.06)}strong{color:#c0392b}')
@@ -124,6 +126,9 @@ def render_html(content):
         s = ln.strip()
         if s.startswith('<img'):
             out.append(s)
+            continue
+        if s.startswith('# ') and not s.startswith('## '):
+            out.append(f'<h1>{s[2:].strip()}</h1>')
             continue
         if s.startswith('## '):
             out.append(f'<h2 class="section">{s[3:].strip()}</h2>')
@@ -140,11 +145,16 @@ def render_html(content):
 
 
 def read_main(parsed_dir, out_html, provider='deepseek', model=None,
-              key='', log=print, title=None, doi=None):
+              key='', log=print, title=None, doi=None, mode=None, si_md=None,
+              paper_key=None):
     """跑完整的一篇正文精读，写出 out_html，返回它的路径。
 
     失败一律抛 `DeepreadFailed` —— **宁可不产出，也不产出「只有图没有字」的
     废品精读**（否则它会被标成已精读、以后不再重跑）。
+
+    `mode` 不传用 `MODE`：分段生成（默认）或一次调用。`si_md` 是 SI 的解析文本，
+    分段生成的「实验」栏优先用它（投料量、配比在 SI 里比正文全）；不传就按 `paper_key`
+    自己找。⚠ `key` 是老接口里的 API 密钥位（现已不用），**不是文献编号** —— 文献编号走 `paper_key`。
     """
     mdf = _pick(parsed_dir, '.md', 'Markdown 正文')
     layf = os.path.join(parsed_dir, 'layout.json')
@@ -162,11 +172,35 @@ def read_main(parsed_dir, out_html, provider='deepseek', model=None,
     log(f'元数据 title={title_en[:35]} doi={doi}')
     log(f'裁出 {len(figs)} 张完整图')
 
-    llm_input = build_llm_input(title_en, authors, doi, figs, md)
-    SYS = sys_prompt()
-
     t0 = time.time()
     content = ''
+    if (mode or MODE) == 'sectioned':
+        from tools.deepread import sectioned
+        if si_md is None and paper_key:
+            from shared.kernel import paths as _paths
+            sp = _paths.si_fulltext(paper_key)
+            si_md = open(sp, encoding='utf-8').read() if os.path.exists(sp) else ''
+        journal, year = '', ''
+        if paper_key:
+            from shared.kernel import catalog as _cat
+            m = _cat.read_meta(paper_key)
+            journal, year = m.get('journal') or '', str(m.get('year') or '')
+        meta = {'title': title_en, 'authors': authors, 'doi': doi, 'journal': journal, 'year': year}
+        content, st = sectioned.compose(md, si_md or '', figs, meta, _chat, log=log, model=model)
+        log(f'LLM {round(time.time()-t0,1)}s 输出{len(content)}字（分段）')
+        if len(content) < MIN_OK:
+            raise DeepreadFailed(
+                f'分段精读拼出来只有 {len(content)} 字，判定失败，不写盘。请检查模型/额度。')
+        html = render_html(insert_figures(content, figs))
+        d = os.path.dirname(out_html)
+        if d:
+            os.makedirs(d, exist_ok=True)
+        open(out_html, 'w', encoding='utf-8').write(html)
+        log(f'WROTE {out_html} {round(len(html)/1024)} KB 插图 {html.count("<img")}')
+        return out_html
+
+    llm_input = build_llm_input(title_en, authors, doi, figs, md)
+    SYS = sys_prompt()
     # 两次尝试：先关思考 + 3.2 万额度（快且省）；不够则开思考 + 6.4 万额度（更强）
     for attempt, (mt, think) in enumerate([(32000, False), (64000, True)], 1):
         try:

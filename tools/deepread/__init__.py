@@ -168,7 +168,8 @@ def run(key, item=None, pdf_path=_ASK, si_exists=_ASK, provider='deepseek',
                     d = (item or {}).get('data', {}) if item else {}
                     main_text.read_main(parsed, paths.summary(key), provider=provider,
                                         model=model, key=llm_key, log=log,
-                                        title=d.get('title'), doi=d.get('DOI'))
+                                        title=d.get('title'), doi=d.get('DOI'),
+                                        paper_key=key)
                 main_done = True
                 r._mark(STEP_MAIN, 'ok')
                 log('  [正文精读完成]')
