@@ -18,8 +18,8 @@
 ```
 docs/  ← 跨工具的档案（另有 3 份日志直接躺在下面）
     explain/（7）、howto/（3）、reference/（6）、incidents/（2）  ← 为什么 / 怎么做 / 事实 / 坑
-host/  ← 平台自身：让平台活着的东西（没人 import 它）（8 块）
-    autosync、codegen、deploy、doctor、mcp、panel、watcher、wechat_import
+host/  ← 平台自身：让平台活着的东西（没人 import 它）（9 块）
+    autosync、codegen、deploy、doctor、ingest、mcp、panel、watcher、wechat_import
 launch/  ← 给人双击的入口（10 个）
     取全文用的浏览器.bat、导入公众号精读.bat、控制面板.bat、更新平台.bat、比一比两个模型.bat、精读监听.bat、诊断报告.bat、连上文献平台（Antigravity用）.bat、重抽缺SI的文献.bat、重跑精读PRO.bat
 outputs/ （0 个脚本）
@@ -178,6 +178,9 @@ flash 的正式名已是 `deepseek-flash`（旧名 `deepseek-v4-flash` 靠转发
 - 精读 / 解析找 PDF 与 SI **本地正本优先，Zotero 兜底**。
 - 数据库的写入口只有一条：B 机上的流水线。打标签 = 投稿，不是直接写库。
 - 老库回流：`python -m tools.getpdf --从Zotero落地`（一次性，只读 Zotero）。
+- **落地即自动**（`host/ingest`）：正本一到，MineRU 解析 → 骨架 → 向量化自动做完，
+  一分钱大模型的钱不花；之后模型就能 `library_outline` → `library_section` 自己读它。
+  精读仍只由「待处理」标签触发。
 
 **装一次才能跑**（换电脑/重装后必做）：`pip install -e . --no-deps`
 

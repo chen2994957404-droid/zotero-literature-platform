@@ -18,7 +18,8 @@
 | `panel/` | 控制面板（本地网页）—— 用户与整个系统的交互入口 | 双击 `launch/控制面板.bat` |
 | `doctor/` | 一键体检 + 诊断报告 + 产物缺口 | 双击 `launch/诊断报告.bat` |
 | `deploy/` | 拉新代码 + 装包 + 重启服务；数据搬家 | 双击 `launch/更新平台.bat` |
-| `watcher/` | **常驻服务**：盯 Zotero 标签 → 精读 → 抽取 → 回写 → 改标签 | 打个标签，剩下不用管 |
+| `watcher/` | **常驻服务**：盯 Zotero 标签 → 精读 → 抽取 → 回写 → 改标签；每轮顺手跑 `ingest` | 打个标签，剩下不用管 |
+| `ingest/` | **落地流水线**：证据库里有正本没解析的 → MineRU 解析 → 骨架 → 向量化（全部不花大模型钱） | 文献一落地就自动做；`python -m host.ingest` 手动清积压 |
 | `mcp/` | MCP 协议层：读各 `tools/*/tool.toml` 聚合暴露面 | 在 Claude 里直接用工具 |
 | `codegen/` | 所有生成器：`HANDOVER.md` · `.claude/` · `docs/incidents/` | 不直接碰 |
 | `wechat_import/` | 公众号推送 → Zotero 条目 + **推文本身当正文精读**（串 `getpdf` 与 `deepread`） | 双击 `launch/导入公众号精读.bat` |

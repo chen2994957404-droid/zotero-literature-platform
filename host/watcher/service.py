@@ -228,6 +228,7 @@ def main():
     print(f'回写: {"已配置Web API" if WEB_API_KEY else "未配key(仅生成本地精读)"}')
     log_key_status()
     seen = {}          # key -> (上次处理时的条目 version, 上次处理时刻)
+    cycle = [0]        # 轮数（落地流水线用它决定「每小时扫一次向量化积压」）
     fail_streak = [0]      # 连续失败轮数，用于「持续异常」提醒与「已恢复」提示
     # 后台线程固定节奏报活：精读一篇要几分钟到几十分钟，期间主线程根本回不到
     # 循环顶部。原来把心跳写在循环开头，于是**正在干活的 watcher 会被看门狗当成
@@ -271,6 +272,18 @@ def main():
             if fail_streak[0]:
                 print(f'[已恢复] 之前连续失败 {fail_streak[0]} 轮，现已恢复正常')
                 fail_streak[0] = 0
+        # ── 落地流水线（2026-09-13）：证据库里有正本没解析的，每轮顺手做几篇 ──
+        # 跟 Zotero 无关（Zotero 没开也照做），所以单独一个 try，别让它跟上面互相拖累。
+        # 每轮最多 2 篇：解析一篇一两分钟，做太多会让「打了标签要精读」等太久。
+        cycle[0] += 1
+        try:
+            from host import ingest
+            if ingest.backlog() or cycle[0] % 60 == 1:      # 每小时也扫一次向量化的积压
+                c = ingest.run_backlog(limit=2, say=print)
+                if any(c.values()):
+                    heartbeat.progress('watcher')
+        except Exception as e:
+            print(f'[落地流水线失败] {type(e).__name__}: {e}')
         time.sleep(60)  # 每60秒检查一次，避免API限流
 
 if __name__ == '__main__':
