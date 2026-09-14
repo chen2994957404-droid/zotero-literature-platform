@@ -186,8 +186,10 @@ def read_main(parsed_dir, out_html, provider='deepseek', model=None,
             m = _cat.read_meta(paper_key)
             journal, year = m.get('journal') or '', str(m.get('year') or '')
         meta = {'title': title_en, 'authors': authors, 'doi': doi, 'journal': journal, 'year': year}
+        from shared.kernel import paths as _paths
         content, st = sectioned.compose(md, si_md or '', figs, meta, _chat, log=log, model=model,
-                                        local=local)
+                                        local=local,
+                                        cache=_paths.deepread_parts(paper_key) if paper_key else None)
         log(f'LLM {round(time.time()-t0,1)}s 输出{len(content)}字（分段）')
         if len(content) < MIN_OK:
             raise DeepreadFailed(

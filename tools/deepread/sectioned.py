@@ -8,15 +8,30 @@
 
 范式的每个数字来自 `docs/reference/精读范式_实测.md`（94 篇真实推送量出来的）。
 
+脚本替模型兜住的事（每条都是真跑里看到的问题）：
+    术语表     先从原文抽「全称（缩写）」和样品编号，塞给每一次调用 —— 十几次调用各叫各的名
+    表格       合成配比、样品编号几乎全在表里，实验栏要看表，不只看文字
+    图的段落   认「Figures 3 and 4」「Fig. 3a–c」这类写法，不只认单个「Fig. N」
+    格式硬修   🌿🍁☘️ 用错栏、「图 1」多空格、漏 Question 前缀、混进列表 —— 正则一行的事不劳模型
+    数字回查   查出原文没有的数，带着「这几个数原文没有」把那一栏重生成一次
+    分栏缓存   每栏产出落盘；断了从断处接，改一栏提示词只重跑那一栏
+    篇幅       深解段长度由图数算：图多每段自动压短，全篇稳在范文的量级
+
 流程（顺序即数据流）：
-    骨架(outline) → 按类别切材料 → 导读+引言 → 实验+Q1 → 逐图两段 → Q2+总之+通俗理解+标题
-    → 脚本拼装（【图N】由脚本放，模型不用管）→ 数字回查
+    骨架(outline) → 术语表 → 导读+引言 → 实验+Q1 → 逐图两段 → Q2+总之+通俗理解+标题
+    → 脚本拼装（【图N】由脚本放）→ 统计
 
 对外接口：
-    compose(md, si_md, figs, meta, chat, log)  → (content_markdown, stats)
+    compose(md, si_md, figs, meta, chat, log, model, local, cache)  → (content, stats)
+    number_crops(figs, outline)                → [(裁图序号, 图号)]
     is_review_doc(title, outline)              → 这篇按综述写不写
     unverified_numbers(content, source)        → 精读里在原文找不到的数
+    glossary(md)                               → 术语表文本
+    normalize(kind, text)                      → 格式硬修后的文本
 """
+import io
+import json
+import os
 import re
 
 from shared.domain.schema import is_review
@@ -27,12 +42,15 @@ PROMPTS = {'lead': 'lead@v1', 'exp': 'exp@v1', 'fig': 'fig@v1', 'wrap': 'wrap@v1
 
 # 每栏喂给模型的材料上限（字符）。够用就好：导读只要摘要 + 引言 + 结论，
 # 讲一张图只要它的图注 + 提到它的段落。上限是防 MineRU 吐出的巨型垃圾。
-CAP_INTRO, CAP_CONCL, CAP_EXP, CAP_SI, CAP_FIG, CAP_BODY = 12000, 4000, 10000, 16000, 7000, 12000
-MANY_FIGS = 15            # 图超过这个数，每段深解压到 300 字上下（综述 16–31 张图也只写 9000 字）
+CAP_INTRO, CAP_CONCL, CAP_EXP, CAP_SI, CAP_FIG, CAP_BODY, CAP_TABLES = 12000, 4000, 10000, 16000, 7000, 12000, 6000
+# 深解段总预算（字）：范文全篇中位 7000，讨论占一半以上；按图数均分，单段夹在 250–550 之间
+DEEP_BUDGET, DEEP_MIN, DEEP_MAX = 3600, 250, 550
 
 _Q1 = '各组分的作用是？'
+_Q1_REVIEW = '各类材料体系/结构单元分别起什么作用？'
 _Q2 = '本论文中所制备的材料为何性能优异？'
 _TAG = re.compile(r'【(导读|引言|实验|Q1|Q2|总之|通俗理解|标题)】')
+_CJK = re.compile(r'[一-鿿]')
 
 
 # ── 材料切片 ─────────────────────────────────────────────────────────
@@ -51,6 +69,23 @@ def _by_kind(md, outline, kinds, cap):
     return '\n\n'.join(out)[:cap]
 
 
+def _tables(md, outline, cap=CAP_TABLES, kinds=None):
+    """正文里的表（MineRU 的 HTML 原样）。`kinds` 限定所在节的类别，不限就全要。"""
+    out, used = [], 0
+    for t in outline.get('tables') or []:
+        if kinds and t.get('section') not in kinds:
+            continue
+        html = _ol.section_text(md, outline, t['id'])
+        if not html.strip():
+            continue
+        block = ('【%s】%s\n%s' % (t.get('ref') or t['id'], t.get('caption') or '', html)).strip()
+        out.append(block[:3000])
+        used += len(out[-1])
+        if used >= cap:
+            break
+    return '\n\n'.join(out)[:cap]
+
+
 def is_review_doc(title, outline):
     """按综述的写法来写吗：标题像综述，或者全篇没有合成/方法节。"""
     if is_review({'title': title or ''}):
@@ -59,28 +94,169 @@ def is_review_doc(title, outline):
     return not (kinds & {_ol.SYNTHESIS, _ol.METHODS}) and outline.get('stats', {}).get('n_figures', 0) >= 8
 
 
+_ABBR = re.compile(r'((?:[A-Za-z][A-Za-z0-9\-,\'’]*\s+){1,8})\(([A-Z][A-Za-z0-9\-]{1,14})\)')
+_CODE = re.compile(r'\b[A-Z]{2,}[A-Za-z0-9]*(?:-[A-Za-z0-9]+){1,3}\b')
+
+
+def _long_form(before, ab):
+    """缩写前面那串词里，哪一段是它的全称（Schwartz–Hearst 的倒推法）。
+
+    从缩写最后一个字母往前配：每个字母都要在前文里出现，第一个字母必须落在词首。
+    `polyborosiloxane (PBS)` → 只取 1 个词；`lithium bis(...)imide (LiTFSI)` → 取整串。
+    配不上返回空串。
+    """
+    s = before.rstrip()
+    i, j = len(s) - 1, len(ab) - 1
+    while j >= 0:
+        c = ab[j].lower()
+        if not c.isalnum():
+            j -= 1
+            continue
+        while i >= 0 and (s[i].lower() != c or (j == 0 and i > 0 and s[i - 1].isalnum())):
+            i -= 1
+        if i < 0:
+            return ''
+        i -= 1
+        j -= 1
+    return s[i + 1:].strip(' ,')
+
+
+def glossary(md, limit=30):
+    """从原文抽术语表：「全称（缩写）」对 + 出现 ≥3 次的样品编号（PDMS-IU-12 这种）。
+
+    塞给每一次调用，十几次调用才会用同一套名字。**只抽不译**：译名让模型统一给，
+    这里保证的是英文缩写与样品编号不走样。
+    """
+    text = _ol.scan.clean_body(md or '')
+    pairs, seen = [], set()
+    for m in _ABBR.finditer(text):
+        ab = m.group(2)
+        full = _long_form(m.group(1), ab)
+        if ab in seen or len(ab) < 2 or len(full) < 4 or full.lower().startswith(('fig', 'table', 'eq')):
+            continue
+        seen.add(ab)
+        pairs.append('%s = %s' % (ab, full))
+        if len(pairs) >= limit:
+            break
+    counts = {}
+    for m in _CODE.finditer(text):
+        c = m.group(0)
+        if c not in seen and not c.startswith(('DOI', 'ISSN', 'HTTP')):
+            counts[c] = counts.get(c, 0) + 1
+    codes = [c for c, n in sorted(counts.items(), key=lambda x: -x[1]) if n >= 3][:20]
+    lines = []
+    if pairs:
+        lines.append('缩写：' + '；'.join(pairs))
+    if codes:
+        lines.append('样品/体系编号（原样使用，不许改写）：' + '、'.join(codes))
+    return '\n'.join(lines)
+
+
+def _mentions(block, num):
+    """这段文字提到第 num 张图吗。认「Fig. 3」「Figures 3 and 4」「Figs. 3–5」「Fig. 3a–c」。"""
+    for m in re.finditer(r'\b(?:Fig(?:ure)?s?\.?|Scheme)\s*((?:S?\d+[a-z]?(?:\s*[–\-‒]\s*S?\d*[a-z]?)?\s*(?:,|and|&)?\s*)+)',
+                         block, re.I):
+        for tok in re.split(r'\s*(?:,|and|&)\s*', m.group(1)):
+            tok = tok.strip()
+            if not tok or tok.upper().startswith('S'):
+                continue
+            r = re.match(r'(\d+)[a-z]?(?:\s*[–\-‒]\s*(\d+)?[a-z]?)?', tok)
+            if not r:
+                continue
+            a = int(r.group(1))
+            b = int(r.group(2)) if r.group(2) else a
+            if a <= num <= b:
+                return True
+    return False
+
+
 def _fig_context(md, outline, num, cap=CAP_FIG):
-    """讨论第 num 张图的材料：完整图注 + 正文里提到它的段落（非正文节除外）。"""
+    """讨论第 num 张图的材料：完整图注 + 正文里提到它的段落（非正文节除外）+ 那些段落里引到的表。"""
     text = _ol.scan.clean_body(md or '')
     cap_txt = ''
     for f in outline.get('figures') or []:
         if re.search(r'\b%d\b' % num, f['ref']):
             cap_txt = _ol.section_text(md, outline, f['id'])
             break
-    pat = re.compile(r'\b(?:Fig(?:ure)?s?\.?|Scheme)\s*%d(?![0-9])' % num, re.I)
     nonbody = [(s['start'], s['end']) for s in outline.get('sections') or []
                if s['kind'] == _ol.NONBODY]
-    paras, pos = [], 0
+    paras, pos, tabs = [], 0, set()
     for block in re.split(r'(\n\s*\n)', text):
-        if block.strip() and pat.search(block) and not _ol._FIGCAP_RE.match(block):
+        if block.strip() and _mentions(block, num) and not _ol._FIGCAP_RE.match(block):
             if not any(a <= pos < b for a, b in nonbody):
                 paras.append(block.strip())
+                tabs.update(int(x) for x in re.findall(r'\bTable\s*(\d+)', block, re.I))
         pos += len(block)
-    body = '\n\n'.join(paras)
-    return cap_txt.strip(), body[:cap]
+    body = '\n\n'.join(paras)[:cap]
+    tab_txt = ''
+    if tabs:
+        want = [t['id'] for t in outline.get('tables') or []
+                if any(re.search(r'\b%d\b' % n, t.get('ref') or '') for n in tabs)]
+        tab_txt = '\n\n'.join(_ol.section_text(md, outline, tid)[:2500] for tid in want[:2])
+    return cap_txt.strip(), body, tab_txt
 
 
-# ── 调模型与解析 ─────────────────────────────────────────────────────
+# ── 格式硬修 ─────────────────────────────────────────────────────────
+
+def _strip_md(p):
+    p = re.sub(r'^\s*(?:[-*•]\s+|#+\s*|\d+[.、]\s+)', '', p)
+    return p.replace('**', '').strip()
+
+
+def normalize(kind, text):
+    """把模型常犯的格式错顺手修掉；修不了的原样返回，由调用方判是否重跑。
+
+    kind: lead / intro / exp / q1 / fig_idx / fig_deep / q2 / summary / plain / title
+    """
+    t = _strip_md(text or '')
+    t = re.sub(r'图\s+(\d)', r'图\1', t)
+    t = re.sub(r'▲\s*图', '▲图', t)
+    if kind == 'q1':
+        t = t.replace('🌿', '🍁').replace('☘️', '🍁').replace('☘', '🍁')
+        if not t.startswith('Question'):
+            t = 'Question：' + t.lstrip('：: ')
+        t = re.sub(r'^Question\s*[:：]\s*', 'Question：', t)
+    elif kind == 'q2':
+        t = t.replace('🌿', '☘️').replace('🍁', '☘️')
+        if not t.startswith('Question'):
+            t = 'Question：' + t.lstrip('：: ')
+        t = re.sub(r'^Question\s*[:：]\s*', 'Question：', t)
+    elif kind == 'exp':
+        t = re.sub(r'^[（(]\s*(\d)\s*[）)]', r'（\1）', t)
+        if t.startswith('（2）'):
+            t = t.replace('🍁', '🌿').replace('☘️', '🌿').replace('☘', '🌿')
+    elif kind == 'summary':
+        t = re.sub(r'^(总之|总而言之|综上所述)[，,：:]?\s*', '', t)
+        t = '总之，' + t
+    elif kind == 'plain':
+        t = re.sub(r'^通俗(理解|地说|来说)?\s*[:：]?\s*', '', t)
+        t = '通俗理解：' + t
+    elif kind == 'title':
+        t = t.splitlines()[0] if t else ''
+        t = t.strip('「」“”" ')
+    return t.strip()
+
+
+def _looks_english(p):
+    """一段里汉字太少 = 模型用英文写了（本地小模型偶发），要重跑。"""
+    s = re.sub(r'[\s\d\W]', '', p or '')
+    return len(s) > 40 and len(_CJK.findall(s)) / len(s) < 0.5
+
+
+# ── 调模型 ───────────────────────────────────────────────────────────
+
+_LOCAL = {'on': False}
+
+
+def _call(chat, sysp, user, max_tokens, model=None):
+    """走「精读」用途的路由（面板里配的通道）。`model` 显式给了就用它。"""
+    if _LOCAL['on']:
+        # 本地档：不走路由表，直接找本机 Ollama（免费、离线、答案可复现）。
+        return chat(sysp, user, provider='ollama', model=model or None, temperature=0.0,
+                    max_tokens=max_tokens, thinking=False)
+    return chat(sysp, user, purpose='DEEPREAD', model=model, temperature=0.3,
+                max_tokens=max_tokens, thinking=False)
+
 
 def _parse_tagged(text):
     """`【导读】…【引言】…` → {'导读': '…', '引言': '…'}。标记缺了就缺，调用方判。"""
@@ -101,37 +277,51 @@ def _sub(tpl, **kw):
     return tpl
 
 
-def _call(chat, sysp, user, max_tokens, model=None):
-    """走「精读」用途的路由（面板里配的通道）。`model` 显式给了就用它。"""
-    if _LOCAL['on']:
-        # 本地档：不走路由表，直接找本机 Ollama（免费、离线、答案可复现）。
-        # 这条是给「本地小模型能不能胜任精读」这个实验开的门，不是常规路径。
-        return chat(sysp, user, provider='ollama', model=model or None, temperature=0.0,
-                    max_tokens=max_tokens, thinking=False)
-    return chat(sysp, user, purpose='DEEPREAD', model=model, temperature=0.3,
-                max_tokens=max_tokens, thinking=False)
+def _with_fix(chat, sysp, user, max_tokens, model, parse, ok, source, log, what):
+    """调一栏：合形检查 → 中文检查 → 数字回查 → 不合格带着原因重来（最多三次）。
+
+    `parse(raw) -> dict`，`ok(d) -> bool`。数字回查对 dict 里所有字符串值做。
+    三次都不干净就把最后一稿交出去 —— 拼装那头还有统计，不在这里死磕。
+    """
+    note, best, d = '', None, {}
+    for attempt in (1, 2, 3):
+        d = parse(_call(chat, sysp, user + note, max_tokens, model) or '')
+        if not ok(d):
+            log('  %s第 %d 次输出不合形，重试' % (what, attempt))
+            note = '\n\n⚠ 上一稿格式不对（缺栏目或不是要求的段落形状），严格按输出格式重写。'
+            continue
+        texts = [v for k, v in d.items() if isinstance(v, str) and not k.startswith('_')]
+        if any(_looks_english(p) for p in texts):
+            log('  %s第 %d 次有英文段，重试' % (what, attempt))
+            note, best = '\n\n⚠ 上一稿有整段英文，全部用中文重写。', d
+            continue
+        bad = unverified_numbers('\n'.join(texts), source)
+        if bad and attempt < 3:
+            log('  %s第 %d 次有原文没有的数 %s，重写' % (what, attempt, '、'.join(bad[:6])))
+            note = ('\n\n⚠ 上一稿里这些数在原文里找不到：%s。删掉它们或改成原文的说法，'
+                    '其余内容保持不变，按同样格式重写。' % '、'.join(bad[:10]))
+            best = d
+            continue
+        return d
+    return d if ok(d) else (best or d)
 
 
-_LOCAL = {'on': False}
+# ── 各栏 ─────────────────────────────────────────────────────────────
 
-
-def _lead(chat, md, outline, meta, review, model, log):
+def _lead(chat, md, outline, meta, review, gloss, source, model, log):
     sysp = _sub(prompts.load('deepread', PROMPTS['lead']),
                 DOC_VERB='综述用"系统总结了 / 系统梳理了"' if review else '研究论文用"报道了 / 开发了 / 提出了"')
-    user = ('标题: %s\n作者: %s\n期刊: %s (%s)\nDOI: %s\n\n【摘要与引言】\n%s\n\n【结论】\n%s' % (
+    user = ('标题: %s\n作者: %s\n期刊: %s (%s)\nDOI: %s\n%s\n\n【摘要与引言】\n%s\n\n【结论】\n%s' % (
         meta.get('title', ''), meta.get('authors', ''), meta.get('journal', ''),
-        meta.get('year', ''), meta.get('doi', ''),
+        meta.get('year', ''), meta.get('doi', ''), gloss,
         _by_kind(md, outline, (_ol.ABSTRACT, _ol.BACKGROUND), CAP_INTRO),
         _by_kind(md, outline, (_ol.CONCLUSION,), CAP_CONCL)))
-    for attempt in (1, 2):
-        d = _parse_tagged(_call(chat, sysp, user, 3500, model))
-        if d.get('导读') and d.get('引言'):
-            return d['导读'], _paras(d['引言'])
-        log('  导读/引言第 %d 次输出缺栏目，重试' % attempt)
-    return d.get('导读', ''), _paras(d.get('引言', ''))
+    d = _with_fix(chat, sysp, user, 3500, model, _parse_tagged,
+                  lambda d: bool(d.get('导读') and d.get('引言')), source, log, '导读/引言')
+    return normalize('lead', d.get('导读', '')), [normalize('intro', p) for p in _paras(d.get('引言', ''))]
 
 
-def _exp(chat, md, si_md, outline, review, model, log):
+def _exp(chat, md, si_md, outline, review, gloss, source, model, log):
     if review:
         p1, p2, p3 = '本文涉及的主要材料体系包括：', '代表性制备/加工路线是：', '评价与表征方法包括：'
         mat = _by_kind(md, outline, (_ol.BODY, _ol.RESULTS, _ol.DISCUSSION, _ol.SYNTHESIS, _ol.METHODS), CAP_BODY)
@@ -140,57 +330,77 @@ def _exp(chat, md, si_md, outline, review, model, log):
         mat = _by_kind(md, outline, (_ol.SYNTHESIS, _ol.METHODS), CAP_EXP)
         if len(mat) < 800:        # 方法节没认出来（Nature 式全描述性标题）：退到主体
             mat = _by_kind(md, outline, (_ol.SYNTHESIS, _ol.METHODS, _ol.BODY, _ol.RESULTS), CAP_EXP)
-    sysp = _sub(prompts.load('deepread', PROMPTS['exp']), P1=p1, P2=p2, P3=p3,
-                Q1='各类材料体系/结构单元分别起什么作用？' if review else _Q1)
+    tabs = _tables(md, outline, kinds=(_ol.SYNTHESIS, _ol.METHODS)) or _tables(md, outline, cap=3000)
+    q1 = _Q1_REVIEW if review else _Q1
+    sysp = _sub(prompts.load('deepread', PROMPTS['exp']), P1=p1, P2=p2, P3=p3, Q1=q1)
     si_part = ''
     if si_md:
         si_ol = outline.get('si') or _ol.build_outline(si_md)
         si_txt = _by_kind(si_md, si_ol, (_ol.SYNTHESIS, _ol.METHODS), CAP_SI)
         if len(si_txt) < 800:
             si_txt = _ol.scan.clean_body(si_md)[:CAP_SI]
-        si_part = '\n\n【补充材料 SI 的实验细节】\n' + si_txt
-    user = '【正文的实验/方法部分】\n' + mat + si_part
-    for attempt in (1, 2):
-        d = _parse_tagged(_call(chat, sysp, user, 4500, model))
-        exp = d.get('实验', '')
-        if '（1）' in exp and '（2）' in exp and '（3）' in exp and d.get('Q1'):
-            return _paras(exp), d['Q1']
-        log('  实验/Q1 第 %d 次输出不合形，重试' % attempt)
+        si_tabs = _tables(si_md, si_ol, cap=3000)
+        si_part = '\n\n【补充材料 SI 的实验细节】\n' + si_txt + ('\n\n【SI 里的表】\n' + si_tabs if si_tabs else '')
+    user = gloss + '\n\n【正文的实验/方法部分】\n' + mat + ('\n\n【正文里的表】\n' + tabs if tabs else '') + si_part
+
+    def parse(raw):
+        d = _parse_tagged(raw)
+        d['实验'] = '\n'.join(normalize('exp', p) for p in _paras(d.get('实验', '')))
+        if d.get('Q1'):
+            d['Q1'] = re.sub(r'^Question：[^🍁]*?[？?]', 'Question：' + q1,
+                             normalize('q1', d['Q1']), count=1)         # 问句钉死成范式的原话
+        return d
+
+    def ok(d):
+        return all(x in d['实验'] for x in ('（1）', '（2）', '（3）')) and bool(d.get('Q1'))
+    d = _with_fix(chat, sysp, user, 4500, model, parse, ok, source, log, '实验/Q1')
     return _paras(d.get('实验', '')), d.get('Q1', '')
 
 
-def _one_fig(chat, md, outline, num, n_figs, model, log):
-    cap_txt, body = _fig_context(md, outline, num)
-    sysp = _sub(prompts.load('deepread', PROMPTS['fig']),
-                DEEP_LEN='300 字上下' if n_figs > MANY_FIGS else '300–600 字')
-    user = ('这是图 %d（全文共 %d 张图）。\n\n【原文图注】\n%s\n\n【正文里讨论它的段落】\n%s'
-            % (num, n_figs, cap_txt or '（未找到图注）', body or '（正文没有单独讨论这张图的段落，按图注写）'))
-    for attempt in (1, 2):
-        raw = re.sub(r'<think>[\s\S]*?</think>', '', _call(chat, sysp, user, 1800, model) or '')
-        ps = _paras(raw)
-        idx = next((p for p in ps if re.match(r'^图\s*%d\b' % num, p) and not p.startswith('▲')), '')
-        deep = next((p for p in ps if p.startswith('▲')), '')
-        if idx and deep:
-            return idx, deep
-        log('  图 %d 第 %d 次输出不是两段，重试' % (num, attempt))
-    # 两次都不合形：能拿到什么用什么，别让一张图拖死整篇
-    return (idx or (ps[0] if ps else '')), (deep or (ps[1] if len(ps) > 1 else ''))
+def _one_fig(chat, md, outline, num, n_figs, gloss, source, model, log):
+    cap_txt, body, tabs = _fig_context(md, outline, num)
+    per = max(DEEP_MIN, min(DEEP_MAX, DEEP_BUDGET // max(1, n_figs)))
+    sysp = _sub(prompts.load('deepread', PROMPTS['fig']), DEEP_LEN='约 %d 字' % per)
+    user = ('这是图 %d（全文共 %d 张图）。\n%s\n\n【原文图注】\n%s\n\n【正文里讨论它的段落】\n%s%s'
+            % (num, n_figs, gloss, cap_txt or '（未找到图注）',
+               body or '（正文没有单独讨论这张图的段落，按图注写）',
+               ('\n\n【这些段落引到的表】\n' + tabs) if tabs else ''))
+
+    def parse(raw):
+        ps = [normalize('fig_idx', p) for p in _paras(re.sub(r'<think>[\s\S]*?</think>', '', raw or ''))]
+        idx = next((p for p in ps if re.match(r'^图%d\b' % num, p)), '')
+        deep = next((p for p in ps if p.startswith('▲图')), '')
+        return {'idx': idx, 'deep': deep, '_ps': ps}
+
+    d = _with_fix(chat, sysp, user, 1800, model, parse,
+                  lambda d: bool(d['idx'] and d['deep']), source, log, '图 %d ' % num)
+    ps = d.get('_ps') or []
+    # 三次都不合形：能拿到什么用什么，别让一张图拖死整篇
+    return d['idx'] or (ps[0] if ps else ''), d['deep'] or (ps[1] if len(ps) > 1 else '')
 
 
-def _wrap(chat, md, outline, meta, deeps, review, model, log):
+def _wrap(chat, md, outline, meta, deeps, review, gloss, source, model, log):
     sysp = _sub(prompts.load('deepread', PROMPTS['wrap']),
                 Q2='<按这篇综述的中心问题拟一个问句，例如"为什么…性能差异如此巨大？">' if review else _Q2)
-    user = ('标题: %s\n期刊: %s\n\n【摘要】\n%s\n\n【结论】\n%s\n\n【前面已写好的逐图深解】\n%s' % (
-        meta.get('title', ''), meta.get('journal', ''),
+    user = ('标题: %s\n期刊: %s\n%s\n\n【摘要】\n%s\n\n【结论】\n%s\n\n【前面已写好的逐图深解】\n%s' % (
+        meta.get('title', ''), meta.get('journal', ''), gloss,
         _by_kind(md, outline, (_ol.ABSTRACT,), 3000),
         _by_kind(md, outline, (_ol.CONCLUSION,), CAP_CONCL),
         '\n\n'.join(deeps)[:20000]))
-    for attempt in (1, 2):
-        d = _parse_tagged(_call(chat, sysp, user, 3500, model))
-        if d.get('Q2') and d.get('总之'):
-            return d
-        log('  收尾第 %d 次输出缺栏目，重试' % attempt)
-    return d
+    d = _with_fix(chat, sysp, user, 3500, model, _parse_tagged,
+                  lambda d: bool(d.get('Q2') and d.get('总之')), source, log, '收尾')
+    out = {}
+    if d.get('Q2'):
+        out['Q2'] = normalize('q2', d['Q2'])
+        if not review:
+            out['Q2'] = re.sub(r'^Question：[^☘]*?[？?]', 'Question：' + _Q2, out['Q2'], count=1)
+    if d.get('总之'):
+        out['总之'] = normalize('summary', d['总之'])
+    if d.get('通俗理解'):
+        out['通俗理解'] = normalize('plain', d['通俗理解'])
+    if d.get('标题'):
+        out['标题'] = normalize('title', d['标题'])
+    return out
 
 
 # ── 拼装与检查 ───────────────────────────────────────────────────────
@@ -230,40 +440,89 @@ def number_crops(figs, outline):
     return sorted(out.items())
 
 
-def compose(md, si_md, figs, meta, chat, log=print, model=None, local=False):
+class _Cache:
+    """分栏缓存：{栏名: 产出}。指纹（提示词版本 + 模型 + 本地档）变了整个作废。"""
+
+    def __init__(self, path, fingerprint):
+        self.path, self.fp, self.d = path, fingerprint, {}
+        if path and os.path.exists(path):
+            try:
+                raw = json.load(io.open(path, encoding='utf-8'))
+                if raw.get('fingerprint') == fingerprint:
+                    self.d = raw.get('parts') or {}
+            except (OSError, ValueError):
+                pass
+
+    def get(self, k):
+        return self.d.get(k)
+
+    def put(self, k, v):
+        self.d[k] = v
+        if not self.path:
+            return
+        try:
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+            io.open(self.path, 'w', encoding='utf-8').write(
+                json.dumps({'fingerprint': self.fp, 'parts': self.d}, ensure_ascii=False, indent=1))
+        except OSError:
+            pass
+
+
+def compose(md, si_md, figs, meta, chat, log=print, model=None, local=False, cache=None):
     """一篇 → (精读 markdown 内容, 统计)。`figs` 是裁图结果（只用它的张数与顺序），
     `meta` 是 title/authors/journal/year/doi，`chat` 是 llm_client.chat 或假替身。
     `local=True` 全部调用走本机 Ollama（温度 0，答案可复现），不花一分钱。
+    `cache` 是分栏缓存文件路径：断了从断处接；改了哪栏的提示词只重跑哪栏。
     """
     _LOCAL['on'] = bool(local)
     outline = _ol.build_outline(md, si_md=si_md)
     review = is_review_doc(meta.get('title', ''), outline)
+    gloss = glossary(md)
+    source = (md or '') + '\n' + (si_md or '')
+    fp = '%s|%s|%s' % ('|'.join('%s=%s' % kv for kv in sorted(PROMPTS.items())),
+                       model or '', 'local' if local else 'route')
+    C = _Cache(cache, fp)
     n_figs = len(figs)
-    log('  按%s写；%d 张图；骨架 %d 节' % ('综述' if review else '研究论文', n_figs,
-                                          len(outline.get('sections') or [])))
+    log('  按%s写；%d 张图；骨架 %d 节；术语 %d 条%s' % (
+        '综述' if review else '研究论文', n_figs, len(outline.get('sections') or []),
+        gloss.count(' = ') + gloss.count('、'), '；有缓存 %d 栏' % len(C.d) if C.d else ''))
 
-    lead, intro = _lead(chat, md, outline, meta, review, model, log)
-    exp, q1 = _exp(chat, md, si_md, outline, review, model, log)
-    # 裁图是按页面上的位置数的，不是按图号：目录图、一页两图的第二块都没有图注。
-    # 只给**认得出图号**的写两段；其余的不写字，`insert_figures` 会把它们当补充图挂在总结前
-    # （2026-09-14 试跑：9 块裁图里 2 块没图注，模型只能写「原文未给出」凑数 —— 别让它凑）。
+    part = C.get('lead')
+    if not part:
+        part = list(_lead(chat, md, outline, meta, review, gloss, source, model, log))
+        C.put('lead', part)
+    lead, intro = part[0], part[1]
+
+    part = C.get('exp')
+    if not part:
+        part = list(_exp(chat, md, si_md, outline, review, gloss, source, model, log))
+        C.put('exp', part)
+    exp, q1 = part[0], part[1]
+
     numbered = number_crops(figs, outline)
-    log('  %d 块裁图里 %d 块认得出图号' % (n_figs, len(numbered)))
+    log('  %d 块裁图里 %d 块定下了图号' % (n_figs, len(numbered)))
     fig_paras, deeps = [], []
     for i, num in numbered:
-        idx, deep = _one_fig(chat, md, outline, num, len(numbered), model, log)
-        fig_paras.append((i, idx, deep))
-        if deep:
-            deeps.append(deep)
-    tail = _wrap(chat, md, outline, meta, deeps, review, model, log)
+        part = C.get('fig:%d' % num)
+        if not part:
+            part = list(_one_fig(chat, md, outline, num, len(numbered), gloss, source, model, log))
+            C.put('fig:%d' % num, part)
+        fig_paras.append((i, part[0], part[1]))
+        if part[1]:
+            deeps.append(part[1])
+
+    tail = C.get('wrap')
+    if not tail:
+        tail = _wrap(chat, md, outline, meta, deeps, review, gloss, source, model, log)
+        C.put('wrap', tail)
 
     parts = []
     if tail.get('标题'):
-        parts.append('# ' + tail['标题'].strip().splitlines()[0])
+        parts.append('# ' + tail['标题'])
     parts += ['## 导读', lead, '## 引言'] + intro
     parts += ['## 实验'] + exp
     if q1:
-        parts.append(q1 if q1.startswith('Question') else 'Question：%s%s' % (_Q1, q1))
+        parts.append(q1)
     parts.append('## 讨论')
     for i, idx, deep in fig_paras:
         parts += ['【图%d】' % i] + [p for p in (idx, deep) if p]     # 标记号 = 裁图序号
@@ -272,6 +531,7 @@ def compose(md, si_md, figs, meta, chat, log=print, model=None, local=False):
     parts += ['## 总结', tail.get('总之', '')]
     if tail.get('通俗理解'):
         parts += ['## 通俗理解', tail['通俗理解']]
+    body_end = len(parts)                      # 文献信息里的 DOI 不参与数字回查
     parts += ['## 文献信息',
               '英文标题：%s' % meta.get('title', ''),
               '作者：%s' % meta.get('authors', ''),
@@ -279,7 +539,7 @@ def compose(md, si_md, figs, meta, chat, log=print, model=None, local=False):
               'DOI：https://doi.org/%s' % meta.get('doi', '') if meta.get('doi') else 'DOI：原文未给出']
     content = '\n\n'.join(p for p in parts if p is not None and str(p).strip())
 
-    bad = unverified_numbers(content, (md or '') + '\n' + (si_md or ''))
+    bad = unverified_numbers('\n'.join(str(p) for p in parts[:body_end] if p), source)
     stats = {'review': review, 'n_figs': n_figs, 'n_numbered': len(numbered), 'chars': len(content),
              'figs_two_para': sum(1 for _, i, d in fig_paras if i and d),
              'has_plain': bool(tail.get('通俗理解')), 'has_title': bool(tail.get('标题')),

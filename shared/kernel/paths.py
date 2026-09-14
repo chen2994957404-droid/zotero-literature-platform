@@ -355,6 +355,11 @@ def meta(key):
     return os.path.join(paper_dir(key), 'meta.json')
 
 
+def deepread_parts(key):
+    """curated/<key>/deepread_parts.json —— 分段精读的分栏缓存（断点续跑 / 只重跑一栏）。可重建。"""
+    return os.path.join(paper_dir(key), 'deepread_parts.json')
+
+
 def reference(key):
     """curated/<key>/reference.md —— **人写的**精读范文（高分子学人推送原文，纯文本 + 图链接）。
 
