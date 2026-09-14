@@ -21,6 +21,10 @@ def env(tmp_path, monkeypatch):
         d.mkdir()
         monkeypatch.setattr(paths, name, str(d))
     monkeypatch.setattr(paths, 'STRUCTURED', str(tmp_path / 'serving' / 'structured'))
+    # 单实例锁也指到临时目录：主力机上 watcher 正抱着真实的 ingest 锁，
+    # 测试会「让开」而一篇不做（2026-09-14 部署时体检就这么红过一次）
+    from shared.kernel import proc_lock
+    monkeypatch.setattr(proc_lock, 'LOCK_DIR', str(tmp_path / 'locks'))
     calls = {'parse': 0}
 
     def fake_parse(pdf_path, out_dir, reuse=True):
