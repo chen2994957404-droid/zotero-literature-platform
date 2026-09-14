@@ -489,6 +489,18 @@ def _pick_si_on(page, st, timeout, settle):
     if not pick:
         st = _scroll_for_si(page)
         pick = pick_si(st.get('si'))
+    # 「链接一出现就走」对正文是对的，对 SI 不够：Wiley 的 Supporting Information 那一段
+    # 比正文直链晚渲染好几秒（2026-09-14 提速后头 26 篇里 16 篇报 no_si，老流程同批只有几篇）。
+    # 所以 SI 这边保留一次「等到 settle 秒」的机会：每 0.5 s 看一眼，出现就走，再滚一遍兜底。
+    waited = 0.0
+    while not pick and waited < settle:
+        page.wait_for_timeout(500)
+        waited += 0.5
+        st = page.evaluate(_JS_STATE)
+        pick = pick_si(st.get('si'))
+    if not pick:
+        st = _scroll_for_si(page)
+        pick = pick_si(st.get('si'))
     if not pick and st.get('suppPage'):
         try:
             page.goto(st['suppPage'], wait_until='domcontentloaded', timeout=timeout * 1000)
