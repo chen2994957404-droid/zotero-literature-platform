@@ -223,3 +223,9 @@ def test_地址错了列出全部可点的():
     assert O.section_text(LONG_MD, o, 's99') == '' and O.section_text(LONG_MD, o, 't9') == ''
     ids = O.addresses(o)
     assert 't1' in ids and 'f1' in ids and any('.p' in i for i in ids)
+
+
+def test_整块是表的不再当一段():
+    o = O.build_outline(LONG_MD)
+    res = next(s for s in o['sections'] if s['title'] == '2. Results')
+    assert not any(p['head'].startswith('<table') for p in res['paras']), '表有自己的地址 t1'

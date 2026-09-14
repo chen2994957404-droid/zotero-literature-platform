@@ -180,6 +180,9 @@ def _paragraphs(text, base, sec_id):
         if re.fullmatch(r'\n\s*\n', block):
             continue
         body = _IMG_RE.sub('', cur).strip()      # 图片标记不算字：一行 `![](images/…)` 不是一段
+        if body.startswith('<table'):
+            cur_start, cur = None, ''    # 整块是表：它有自己的地址 t1，不再当一段
+            continue
         if len(body) < MIN_PARA:
             continue                     # 太短：先攒着，跟下一块合并
         out.append({'id': '%s.p%d' % (sec_id, len(out) + 1),
