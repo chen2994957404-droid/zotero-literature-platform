@@ -210,6 +210,23 @@ def open_store(path=None, name=COLLECTION, rebuild=False):
     return Store(path=path, name=name, rebuild=rebuild)
 
 
+def close_all():
+    """把本进程缓存的向量库连接全部放掉。**常驻进程每写完一批必须调**。
+
+    2026-09-14 实测出的坑：chromadb 的 PersistentClient 在进程内是缓存的。
+    精读监听（常驻）09 点开过一次向量库做写入，之后另一个进程（手动清积压）
+    写了三小时；常驻进程那份内存里的索引早就过期，它再写一次就把新数据盖坏 ——
+    随后任何进程一查都是 `Error finding id`，进程退出时还会访问违例（0xC0000005）。
+    chromadb 明说多进程各开一个 PersistentClient 不受支持；我们能做的是
+    **不让任何进程长期抱着一个客户端**：写完就放，下次用再从盘上开。
+    """
+    try:
+        import chromadb
+        chromadb.api.client.SharedSystemClient.clear_system_cache()
+    except Exception:
+        pass
+
+
 def exists(path=None):
     """向量库目录在不在（体检用，不触发 chromadb 导入）。"""
     return os.path.isdir(path or paths.VECTOR_DB)

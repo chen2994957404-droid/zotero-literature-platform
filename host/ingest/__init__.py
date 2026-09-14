@@ -210,6 +210,8 @@ def run_backlog(limit=None, say=print, with_vectors=True):
         return _run_backlog(limit, say, with_vectors, counts)
     finally:
         release(LOCK)
+        from shared.adapters import vectordb
+        vectordb.close_all()       # 常驻进程别抱着向量库连接过夜（见 vectordb.close_all）
 
 
 def _run_backlog(limit, say, with_vectors, counts):
