@@ -186,9 +186,15 @@ _JS_STATE = """() => {
   };
 }"""
 
+# 页面里的 fetch **必须带超时**（2026-09-14 实测）：Springer 一个 PDF 流卡住不动，
+# `await r.blob()` 就永远不回来，而 page.evaluate 没有默认超时 —— 整个取件批次在那儿挂了半小时。
+# AbortController 到点掐断，外层按「没拿到」处理，换下一个候选。
+GRAB_TIMEOUT_MS = 120000
+
 _JS_GRAB = """async (u) => {
+  const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), %d);
   try {
-    const r = await fetch(u, {credentials: 'include'});
+    const r = await fetch(u, {credentials: 'include', signal: ctl.signal});
     if (!r.ok) return {ok: false, status: r.status};
     const b = await r.blob();
     if (b.size > %d) return {ok: false, tooBig: b.size};
@@ -199,13 +205,14 @@ _JS_GRAB = """async (u) => {
       s += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
     }
     return {ok: true, type: b.type, size: b.size, b64: btoa(s)};
-  } catch (e) { return {ok: false, err: String(e)}; }
-}""" % MAX_PDF_BYTES
+  } catch (e) { return {ok: false, err: String(e)}; } finally { clearTimeout(tm); }
+}""" % (GRAB_TIMEOUT_MS, MAX_PDF_BYTES)
 
 
 _JS_GRAB_HERE = """async () => {
+  const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), %d);
   try {
-    const r = await fetch(location.href, {credentials: 'include'});
+    const r = await fetch(location.href, {credentials: 'include', signal: ctl.signal});
     if (!r.ok) return {ok: false, status: r.status};
     const b = await r.blob();
     if (b.size > %d) return {ok: false, tooBig: b.size};
@@ -216,8 +223,8 @@ _JS_GRAB_HERE = """async () => {
       s += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
     }
     return {ok: true, type: b.type, size: b.size, b64: btoa(s)};
-  } catch (e) { return {ok: false, err: String(e)}; }
-}""" % MAX_PDF_BYTES
+  } catch (e) { return {ok: false, err: String(e)}; } finally { clearTimeout(tm); }
+}""" % (GRAB_TIMEOUT_MS, MAX_PDF_BYTES)
 
 
 def pdf_url_of(page):
