@@ -202,7 +202,7 @@ def _paragraphs(text, base, sec_id):
         out[-1]['end'] = base + pos
     elif tail:
         body = tail
-        out.append({'id': '%s.p1' % sec_id, 'start': base + (cur_start or 0), 'end': base + pos,
+        out.append({'id': '%s.p%d' % (sec_id, len(out) + 1), 'start': base + (cur_start or 0), 'end': base + pos,
                     'chars': len(body), 'n_numbers': len(scan.scan_numbers(body)),
                     'head': re.sub(r'\s+', ' ', body)[:48]})
     return out

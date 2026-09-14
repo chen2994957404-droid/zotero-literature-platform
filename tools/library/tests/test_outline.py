@@ -299,3 +299,12 @@ def test_整块是表的不再当一段():
     o = O.build_outline(LONG_MD)
     res = next(s for s in o['sections'] if s['title'] == '2. Results')
     assert not any(p['head'].startswith('<table') for p in res['paras']), '表有自己的地址 t1'
+
+
+def test_段地址不重复():
+    """结尾攒下的一块曾经固定叫 p1，和第一段撞号（2026-09-14 真实骨架里看到两个 s12.p1）。"""
+    md = '## 1. Results\n\n' + '\n\n'.join('Para %d %s.' % (i, 'z' * 1300) for i in range(1, 5)) + '\n\nShort tail paragraph that stands alone at the end with enough characters to count as a block.\n'
+    o = O.build_outline(md)
+    ids = [p['id'] for p in o['sections'][0]['paras']]
+    assert len(ids) == len(set(ids)), ids
+    assert ids == ['s1.p%d' % i for i in range(1, len(ids) + 1)]
