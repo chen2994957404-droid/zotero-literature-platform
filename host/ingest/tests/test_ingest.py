@@ -85,7 +85,7 @@ def test_解析失败不抛异常_也不吞掉(env, monkeypatch):
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError('quota')))
     r = ingest.ingest_one(pid, say=lambda s: None)
     assert r['main'].startswith('fail') and r['outline'] == 'skip'
-    assert ingest.backlog() == [pid], '没做成的下次还得做'
+    assert [f[0] for f in ingest.failures()] == [pid], '没做成的要能被人看见，隔天再试'
 
 
 def test_刚失败过的先不重试_隔一天再试(env, monkeypatch):
