@@ -5,7 +5,7 @@ R2 窗（2026-08-30）把 `数据抽取/` 下三个各自为政的脚本并进�
 
     extract_structured.py   精层批量（命令行入口，逻辑早已在 tools/extract）
     extract_batch.py        「缺 full.md 就先 MineRU 解析一次」的那条线
-    extract_library.py      粗层全库（吃 Zotero 自带全文索引 + 本地 Ollama）
+    extract_library.py      粗层全库（吃我们解析的 full.md + 本地 Ollama）
 
 为什么并：三个脚本各自实现了一遍「读什么料 → 调哪个模型 → 写哪个盘 → 出哪张表」，
 而它们只是同一件事的**料不同、模型不同**两个档次。合成一处之后，
@@ -17,7 +17,7 @@ R2 窗（2026-08-30）把 `数据抽取/` 下三个各自为政的脚本并进�
 |---|---|---|
 | `extract_many(keys, force)` | 精层批量抽取 + 出表 + 重建查询库 | 是（云端档） |
 | `ensure_fullmd(key)`        | 没有 full.md 就补一次 MineRU 解析 | 否（免费额度） |
-| `coarse_all(rebuild)`       | 粗层全库：Zotero 全文索引 + 本地模型 | 否 |
+| `coarse_all(rebuild)`       | 粗层全库：解析出的全文 + 本地模型 | 否 |
 | `backup(keys)`              | 覆盖前整批备份旧结果（踩坑 #16） | 否 |
 
 **要改抽什么字段，去改 `shared/domain/schema/__init__.py`，并把 `SCHEMA_VER` +1。**
@@ -42,7 +42,7 @@ from shared.kernel.config import drop_stale_env
 from shared.domain import schema
 from tools import extract
 
-MIN_FULLTEXT = 500      # Zotero 全文索引短于这个字数就当没有（多半是扫描件没 OCR）
+MIN_FULLTEXT = 500      # 全文短于这个字数就当没有（多半是扫描件没 OCR）
 
 
 # ───────────────────────── 精层：MineRU 全文 + 云端模型 ─────────────────────────
@@ -143,37 +143,34 @@ def _already_done():
 
 
 def coarse_all(rebuild=False, log=print):
-    """粗层全库抽取：吃 Zotero 自带的全文索引，用**本地模型**抽。
+    """粗层全库抽取：吃**我们自己解析的全文**（`raw/<id>/parsed/full.md`），用**本地模型**抽。
 
-    与精层的关系（对称于向量化的两档）：
-      精层 `extract_many`：吃 MineRU 高质量 full.md + SI，云端 DeepSeek，最准，供重点文献
-      粗层 `coarse_all`（本函数）：吃 Zotero 全文索引，本地 qwen，够筛，供全库
+    与精层的关系：
+      精层 `extract_many`：full.md + SI，云端模型，最准，供重点文献
+      粗层 `coarse_all`（本函数）：同一份 full.md，本地 qwen，够筛，供全库
     **已被精层抽过的 key 自动跳过**，绝不用低档结果覆盖高档结果。
 
+    2026-09-13 改：此前吃 Zotero 自带的全文索引（没版面、公式常乱），而落地流水线
+    已经把每篇都解析成了更好的全文 —— 两条线并行是冗余，只留这一条。
+    不再问 Zotero：证据库目录（`shared.kernel.catalog`）说有全文的就抽。
     零 API 成本、不限量，专供「广撒网找方向」。返回 (新抽, 跳过, 无全文, 失败)。
     """
+    from shared.kernel import catalog
     os.environ['EXTRACT_PROVIDER'] = 'ollama'      # 粗层一律走本地模型
     done, protected = _already_done()
-    arts = _library_articles()
-    log(f'Zotero 顶层文献 {len(arts)} 篇，开始本地粗层结构化抽取'
-        f'（模型 {extract._model()}）...\n')
+    rows = catalog.scan()
+    log(f'证据库 {len(rows)} 篇，开始本地粗层结构化抽取（模型 {extract._model()}）...\n')
 
     processed = skipped = nofull = failed = 0
-    for x in arts:
-        key, title = x['key'], x['data'].get('title', x['key'])
+    for r in rows:
+        key, title = r['id'], r['title'] or r['id']
         if key in protected or (key in done and not rebuild):
             skipped += 1
             continue
-        try:
-            children = zotero.zget(f'/users/{zotero.USER_ID}/items/{key}/children')
-        except Exception:
-            continue          # 条目刚被删之类：跳过该篇，不中断全库流程
-        att = next((c['key'] for c in children
-                    if c['data'].get('contentType') == 'application/pdf'), None)
-        if not att:
+        if not r['fulltext']:
             nofull += 1
             continue
-        txt = zotero.get_fulltext(att)
+        txt = io.open(paths.fulltext(key), encoding='utf-8').read()
         if len(txt) < MIN_FULLTEXT:
             nofull += 1
             continue
@@ -184,7 +181,7 @@ def coarse_all(rebuild=False, log=print):
             log(f'[抽取失败] {title[:40]}: {e}')
             failed += 1
             continue          # 单篇失败继续下一篇
-        record = schema.make_record(key, title, x['data'].get('DOI', ''), data,
+        record = schema.make_record(key, title, r['doi'], data,
                                     schema_ver=1, source=schema.SOURCE_COARSE)
         os.makedirs(paths.STRUCTURED, exist_ok=True)
         json.dump(record, io.open(paths.structured(key), 'w', encoding='utf-8'),

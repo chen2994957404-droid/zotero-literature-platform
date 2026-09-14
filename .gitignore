@@ -88,3 +88,13 @@ workflow_data/_last_search.json
 # 大模型路由表（每台机器各一份，含中转站地址与密钥名，不含密钥值）
 llm_routing.json
 llm_routing.json.tmp
+
+# --- 根目录只许住登记过的文件（2026-09-13）---
+# 外部 agent（Antigravity）把实验指南之类的产物直接丢在项目根，`git add -A` 一把就带进仓库
+# 并推上了公网。根目录的 .md 默认全部忽略，只把正本放回来；要加新的根文件先来这里登记。
+/*.md
+!/AGENTS.md
+!/CLAUDE.md
+!/README.md
+!/REBUILD.md
+!/各部分的关系.md

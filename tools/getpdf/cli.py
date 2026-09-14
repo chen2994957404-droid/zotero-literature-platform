@@ -213,7 +213,7 @@ def _land_from_zotero():
     limit = int(opt('--limit') or 0) or None
     print('把 Zotero 里的文献复制成本地正本（不动 Zotero 里的任何东西）…')
     try:
-        c = from_zotero.land_all(limit=limit, log_fn=print)
+        c = from_zotero.land_all(limit=limit, log_fn=print, quiet=flag('--安静'))
     except Exception as e:
         print(f'连不上 Zotero（{type(e).__name__}）—— 这一步要在 Zotero 正在跑的那台机器上做。')
         return 1

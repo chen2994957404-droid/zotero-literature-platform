@@ -68,7 +68,11 @@ def test_docx的SI直接读字不走MineRU(env, monkeypatch):
     pid = paths.paper_id_from_doi(DOI)
     _land(pid)
     io.open(paths.local_si(pid, 'docx'), 'wb').write(b'PK fake docx')
-    monkeypatch.setattr('tools.deepread.si.read_docx_text', lambda p: 'Synthesis: 1.0 g boric acid')
+    def fake_docx(path, out_dir, reuse=True):
+        os.makedirs(out_dir, exist_ok=True)
+        io.open(os.path.join(out_dir, 'full.md'), 'w', encoding='utf-8').write('Synthesis: 1.0 g boric acid')
+        return out_dir
+    monkeypatch.setattr('shared.adapters.pdf_parse.parse_docx', fake_docx)
     r = ingest.ingest_one(pid, say=lambda s: None)
     assert r['si'] == 'done' and env['parse'] == 1, 'docx 不该占一次 MineRU'
     assert 'boric acid' in io.open(paths.si_fulltext(pid), encoding='utf-8').read()

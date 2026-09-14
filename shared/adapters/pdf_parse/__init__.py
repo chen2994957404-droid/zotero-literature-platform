@@ -10,6 +10,9 @@
 对外接口：
   - parse_pdf(pdf_path, out_dir) → out_dir（含 full.md/layout.json/images/*_origin.pdf）
                                     已解析过（out_dir 有 layout.json）则直接复用，省 MineRU。
+  - parse_docx(path, out_dir)    → out_dir（只有 full.md：文字 + 表格，python-docx 读，不花额度）
+  - parse_document(path, out_dir) → 按扩展名分派到上面两个。**精读 / 取全文 / 落地流水线
+                                    三处都只调这一个**（2026-09-13 收拢，此前三处各写一遍）。
 
 配置（环境变量）：
   - MINERU_TOKEN : MineRU API token（必须；无默认，密钥不硬编码）
@@ -100,6 +103,48 @@ def parse_pdf(pdf_path, out_dir, reuse=True):
     zip_bytes = urllib.request.urlopen(zip_url, timeout=120).read()
     zipfile.ZipFile(io.BytesIO(zip_bytes)).extractall(out_dir)
     return out_dir
+
+
+def parse_docx(path, out_dir, reuse=True):
+    """.docx → out_dir/full.md（文字 + 表格，表格行拼成 `a | b | c`）。不联网、不花额度。
+
+    从 tools/deepread/si.py 下沉（2026-09-13）：落地流水线也要读 docx 的 SI，
+    两个使用者 + 用了第三方库 python-docx → 按规矩住 adapters。
+    表格务必取：SI 的投料量、配比常常只在表里。
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    md = os.path.join(out_dir, 'full.md')
+    if reuse and os.path.exists(md):
+        return out_dir
+    try:
+        import docx
+    except ImportError:
+        raise PDFParseError('需要 python-docx：pip install python-docx')
+    doc = docx.Document(path)
+    parts = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+    for tb in doc.tables:
+        for row in tb.rows:
+            cells = [c.text.strip() for c in row.cells]
+            if any(cells):
+                parts.append(' | '.join(cells))
+    with io.open(md, 'w', encoding='utf-8') as fh:
+        fh.write('\n\n'.join(parts))
+    return out_dir
+
+
+def is_text_parsed(out_dir):
+    """out_dir 里有没有 full.md（docx 解析没有 layout.json，只能看这个）。"""
+    return os.path.exists(os.path.join(out_dir, 'full.md'))
+
+
+def parse_document(path, out_dir, reuse=True):
+    """PDF 或 docx → out_dir/full.md。按扩展名分派；不认识的扩展名抛 PDFParseError。"""
+    ext = os.path.splitext(path or '')[1].lower()
+    if ext == '.pdf':
+        return parse_pdf(path, out_dir, reuse=reuse)
+    if ext == '.docx':
+        return parse_docx(path, out_dir, reuse=reuse)
+    raise PDFParseError(f'不会解析这种文件：{ext or "(无扩展名)"}（只认 .pdf / .docx）')
 
 
 def check_token(timeout=20):

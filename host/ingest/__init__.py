@@ -82,13 +82,9 @@ def _parse_si(pid, say):
     out_dir = paths.si_parsed_dir(pid, create=True)
     t0 = time.time()
     try:
-        if src.lower().endswith('.docx'):
-            from tools.deepread.si import read_docx_text      # host 可以 import 工具
-            io.open(paths.si_fulltext(pid), 'w', encoding='utf-8').write(read_docx_text(src))
-        else:
-            from shared.adapters.pdf_parse import parse_pdf
-            with jobs.track(pid, 'parse_si', producer=PRODUCER):
-                parse_pdf(src, out_dir, reuse=True)
+        from shared.adapters.pdf_parse import parse_document
+        with jobs.track(pid, 'parse_si', producer=PRODUCER):
+            parse_document(src, out_dir, reuse=True)      # pdf 走 MineRU，docx 直接读字
     except Exception as e:
         say(f'  × SI 解析失败：{type(e).__name__}: {str(e)[:120]}')
         return f'fail:{type(e).__name__}'

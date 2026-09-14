@@ -5,10 +5,13 @@
 导致用户在 Zotero 加了文献后，问答（查向量库）和对比表（查 structured）都看不到新文献。
 
 做两件事，都是**增量**（已处理的跳过，没新文献时几秒结束）：
-  1. 增量向量化   → `tools.ask.vectorize --light`（走 Zotero 全文API，本地 bge-m3，零成本）
-  2. 增量粗层抽取 → `tools.extract --coarse`（本地 qwen，零成本；精层记录受保护不覆盖）
+  1. Zotero 新条目 → 回流成本地正本（`tools.getpdf --从Zotero落地`，只读 Zotero）。
+     之后解析 / 骨架 / 向量化由落地流水线（`host.ingest`）自动接手 —— 所以这里
+     **不再**跑「Zotero 全文索引 → 粗层向量化」那条线（2026-09-13 拆掉：
+     两条线并行是冗余，自己解析的全文比 Zotero 索引好一档）。
+  2. 增量粗层抽取 → `tools.extract --coarse`（吃解析出的全文，本地 qwen，零成本；精层记录受保护不覆盖）
 
-前提：Zotero 开着（取全文）+ Ollama 在跑（向量化/本地抽取）。两者都有保活任务。
+前提：Zotero 开着（回流要读附件）+ Ollama 在跑（本地抽取）。两者都有保活任务。
 用法: python -m host.autosync      （由任务计划 LiteratureAutoSync 每小时调用）
 """
 import os
@@ -104,8 +107,8 @@ def main():
     log('=== 自动同步开始 ===')
     if not check_deps():
         return
-    # 1. 增量向量化（新文献进向量库 → 问答能查到）
-    run_module('tools.ask.vectorize', '增量向量化', ['--light'])
+    # 1. Zotero 里新加的文献 → 回流成本地正本（落地流水线随后自动解析 / 骨架 / 向量化）
+    run_module('tools.getpdf', 'Zotero 新条目回流', ['--从Zotero落地', '--安静'])
     # 2. 增量粗层结构化抽取（新文献进对比表 → 横向比较能看到）
     run_module('tools.extract', '增量粗层抽取', ['--coarse'])
     log('=== 自动同步结束 ===')

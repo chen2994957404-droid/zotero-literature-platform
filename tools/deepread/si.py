@@ -15,7 +15,7 @@ import re
 import zipfile
 
 from shared.adapters.llm_client import chat
-from shared.adapters.pdf_parse import parse_pdf, PDFParseError
+from shared.adapters.pdf_parse import parse_document, PDFParseError
 from shared.adapters.zotero_client import find_si
 from shared.kernel import paths, prompts
 from shared.kernel.config import get_key
@@ -44,22 +44,6 @@ def find_si_file(item_key):
     if local:
         return local, os.path.splitext(local)[1].lstrip('.').lower()
     return find_si(item_key)
-
-
-def read_docx_text(path):
-    """读 .docx 的文字（含表格）。表格常含关键参数，务必取。"""
-    try:
-        import docx
-    except ImportError:
-        raise SIFailed('需要 python-docx：pip install python-docx')
-    doc = docx.Document(path)
-    parts = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
-    for tb in doc.tables:
-        for row in tb.rows:
-            cells = [c.text.strip() for c in row.cells]
-            if any(cells):
-                parts.append(' | '.join(cells))
-    return '\n\n'.join(parts)
 
 
 def extract_docx_images(path, min_kb=15, log=print):
@@ -181,21 +165,18 @@ def read_si(key, out_html=None, model=None, log=print):
     log(f'[SI] {os.path.basename(si_file)} ({kind})')
 
     parsed = paths.si_parsed_dir(key)
-    figs = []
+    # 解析（pdf 走 MineRU、docx 直接读字）只有适配层一份实现；落地流水线多半已经做过，这里直接复用
+    try:
+        parse_document(si_file, parsed)
+    except PDFParseError as e:
+        raise SIFailed(f'SI 解析失败：{e}')
+    md = paths.si_fulltext(key)
+    if not os.path.exists(md):
+        raise SIFailed('SI 解析未生成 full.md')
+    raw = io.open(md, encoding='utf-8').read()
     if kind == 'pdf':
-        try:
-            parse_pdf(si_file, parsed)      # 已解析则复用
-        except PDFParseError as e:
-            raise SIFailed(f'SI 解析失败：{e}')
-        md = os.path.join(parsed, 'full.md')
-        if not os.path.exists(md):
-            raise SIFailed('SI 解析未生成 full.md')
-        raw = io.open(md, encoding='utf-8').read()
         figs = crop_figures(parsed)
-    else:                                   # docx：读文字（含表格）+ 取内嵌图片
-        raw = read_docx_text(si_file)
-        os.makedirs(parsed, exist_ok=True)
-        io.open(os.path.join(parsed, 'full.md'), 'w', encoding='utf-8').write(raw)
+    else:                                   # docx：图不在版面里，从 zip 里取内嵌图片
         figs = extract_docx_images(si_file, log=log)
         log(f'  docx 读出 {len(raw)} 字符（含表格），取出内嵌图 {len(figs)} 张')
 

@@ -3,10 +3,10 @@
 用法: python shared/adapters/pdf_parse/selftest.py
 """
 import sys, os, tempfile
-from shared.adapters.pdf_parse import parse_pdf, is_parsed, PDFParseError
+from shared.adapters.pdf_parse import parse_pdf, parse_document, is_parsed, PDFParseError
 
 def main():
-    ok = 0; total = 3
+    ok = 0; total = 4
 
     # 1. is_parsed 对空目录应为 False，有 layout.json 应为 True
     with tempfile.TemporaryDirectory() as d:
@@ -36,6 +36,17 @@ def main():
             print('  [PASS] 无 token 时报错并给出指引'); ok += 1
         else:
             print('  [FAIL] 报错缺少修复指引')
+
+    # 3. parse_document 按扩展名分派：不认识的扩展名要报错，不能静默跑到 MineRU 去
+    with tempfile.TemporaryDirectory() as d:
+        try:
+            parse_document(os.path.join(d, 'x.txt'), d)
+            print('  [FAIL] .txt 应当报错')
+        except PDFParseError as e:
+            if '.pdf' in str(e) and '.docx' in str(e):
+                print('  [PASS] parse_document 拒绝未知扩展名并说明只认 pdf/docx'); ok += 1
+            else:
+                print('  [FAIL] 报错没说清只认什么')
 
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)

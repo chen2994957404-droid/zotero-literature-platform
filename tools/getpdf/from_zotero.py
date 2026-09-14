@@ -66,8 +66,11 @@ def land_one(item):
     return out
 
 
-def land_all(limit=None, log_fn=print):
-    """全库回流 → 计数 dict。只读 Zotero；Zotero 没开会直接抛错（这是前提，不是意外）。"""
+def land_all(limit=None, log_fn=print, quiet=False):
+    """全库回流 → 计数 dict。只读 Zotero；Zotero 没开会直接抛错（这是前提，不是意外）。
+
+    `quiet=True`（每小时的增量同步用）只打印真落了新东西的，早就在的不刷屏。
+    """
     counts = {'landed': 0, 'exists': 0, 'nopdf': 0, 'failed': 0}
     start, seen = 0, 0
     while True:
@@ -82,9 +85,10 @@ def land_all(limit=None, log_fn=print):
             try:
                 r = land_one(it)
                 counts[r['action']] += 1
-                mark = {'landed': '✓', 'exists': '=', 'nopdf': '·'}[r['action']]
-                log_fn(f'  {mark} {r["key"]}  {r["title"][:60]}'
-                       + ('  +SI' if r['si'] else ''))
+                if r['action'] == 'landed' or not quiet:
+                    mark = {'landed': '✓', 'exists': '=', 'nopdf': '·'}[r['action']]
+                    log_fn(f'  {mark} {r["key"]}  {r["title"][:60]}'
+                           + ('  +SI' if r['si'] else ''))
             except Exception as e:
                 counts['failed'] += 1
                 log_fn(f'  × {d.get("key")}  {type(e).__name__}: {str(e)[:80]}')

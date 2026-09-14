@@ -220,6 +220,9 @@ def light_one(x, coll, existing):
     return 'processed', len(chunks)
 
 
+# ⚠ 2026-09-13 起粗层（Zotero 全文索引）**不再由每小时任务调度**：落地流水线
+#   （host/ingest）把每篇都解析成更好的全文并入精层，粗层只剩「没有 PDF 的条目」这一点用处。
+#   函数留着给人手动跑（`--light`），不删是因为向量库里还有老的粗层块要能被识别退场。
 def light_all(log=print):
     """粗层增量向量化全库（走 Zotero 全文 API）。返回 (处理篇数, 块数)。"""
     coll = get_collection()

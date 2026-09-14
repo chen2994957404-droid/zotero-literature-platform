@@ -1114,3 +1114,22 @@ def test_只给人的那几类不许出现在任何白名单里():
         + _NL.join(offenders) + _NL
         + '要放开的话，先改 HUMAN_ONLY 并说明为什么它不再属于那一类 —— '
         + '别绕过这段话。')
+
+
+# ── 根目录准入：只许登记过的文件（2026-09-13）──────────────────────────
+# 外部 agent 把「实验指南.md」丢在项目根，一次 git add -A 就把它推上了公网。
+# .gitignore 已经拦根目录的 .md；这条守卫管**已经被跟踪**的 —— 谁绕过 .gitignore 强加进来，红。
+ROOT_FILES_APPROVED = {
+    '.env.example', '.gitattributes', '.gitignore', 'AGENTS.md', 'CLAUDE.md',
+    'LICENSE', 'README.md', 'REBUILD.md', 'pyproject.toml', 'requirements.txt', '各部分的关系.md',
+}
+
+
+def test_根目录只许住登记过的文件():
+    import subprocess
+    out = subprocess.run(['git', 'ls-files'], cwd=ROOT, capture_output=True,
+                         text=True, encoding='utf-8').stdout
+    tracked = {f for f in out.splitlines() if f and '/' not in f}
+    stray = sorted(tracked - ROOT_FILES_APPROVED)
+    assert not stray, ('根目录多了没登记的文件（多半是外部 agent 的产物被 git add -A 带进来了）：'
+                       + ', '.join(stray) + ' —— 要么 git rm --cached，要么在 ROOT_FILES_APPROVED 登记')

@@ -94,6 +94,7 @@ def register(pid, overwrite=False, **fields):
     """
     pid = paths.check_key(pid)
     meta = read_meta(pid)
+    before = dict(meta)
     if 'doi' in fields:
         fields['doi'] = norm_doi(fields['doi'])
     fields.setdefault('landed_at', time.strftime('%Y-%m-%d %H:%M'))
@@ -105,6 +106,8 @@ def register(pid, overwrite=False, **fields):
     if meta.get('doi') and not meta.get('DOI'):
         meta['DOI'] = meta['doi']
     meta.setdefault('key', pid)
+    if meta == before:
+        return meta                        # 没变化就不写盘：每小时回流会对全库登记一遍
     os.makedirs(paths.paper_dir(pid), exist_ok=True)
     io.open(paths.meta(pid), 'w', encoding='utf-8').write(
         json.dumps(meta, ensure_ascii=False, indent=1))
