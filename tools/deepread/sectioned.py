@@ -243,6 +243,23 @@ def _looks_english(p):
     return len(s) > 40 and len(_CJK.findall(s)) / len(s) < 0.5
 
 
+# 连续拉丁字母（含空格、连字符、括号）≥ 这么长 = 一整句英文没翻。
+# 缩写（LiTFSI）、化学式、样品编号都远短于此；「Fourier-transform infrared spectroscopy」这种才会中。
+_LATIN_RUN = re.compile(r"[A-Za-z][A-Za-z ,'’()\-/]{29,}[A-Za-z)]")
+
+
+def untranslated(p):
+    """一段里没翻译的英文长串（去掉术语表里允许原样的缩写与编号之后）。"""
+    out = []
+    for m in _LATIN_RUN.finditer(p or ''):
+        run = m.group(0)
+        words = [w for w in re.split(r'[\s,/()\-]+', run) if w]
+        # 全是大写缩写/带数字的编号（PDMS-IU-12, LiTFSI）不算；有 ≥3 个普通小写词才算英文句
+        if sum(1 for w in words if re.fullmatch(r'[a-z]{3,}', w)) >= 3:
+            out.append(run.strip())
+    return out
+
+
 # ── 调模型 ───────────────────────────────────────────────────────────
 
 _LOCAL = {'on': False}
@@ -294,6 +311,13 @@ def _with_fix(chat, sysp, user, max_tokens, model, parse, ok, source, log, what)
         if any(_looks_english(p) for p in texts):
             log('  %s第 %d 次有英文段，重试' % (what, attempt))
             note, best = '\n\n⚠ 上一稿有整段英文，全部用中文重写。', d
+            continue
+        runs = [r for p in texts for r in untranslated(p)]
+        if runs and attempt < 3:
+            log('  %s第 %d 次有没翻的英文「%s…」，重写' % (what, attempt, runs[0][:30]))
+            note = ('\n\n⚠ 上一稿里这些英文没有翻译：%s。把英文全称译成中文，括号里保留缩写；'
+                    '其余内容保持不变，按同样格式重写。' % '；'.join(r[:60] for r in runs[:5]))
+            best = d
             continue
         bad = unverified_numbers('\n'.join(texts), source)
         if bad and attempt < 3:
@@ -389,6 +413,17 @@ def _wrap(chat, md, outline, meta, deeps, review, gloss, source, model, log):
         '\n\n'.join(deeps)[:20000]))
     d = _with_fix(chat, sysp, user, 3500, model, _parse_tagged,
                   lambda d: bool(d.get('Q2') and d.get('总之')), source, log, '收尾')
+    # 缺哪栏单补哪栏：小模型一次写四栏常漏一栏（4b 实测三次都没吐 Q2）。
+    # 整段重来它照样漏；只要那一栏，成功率高得多，也便宜。
+    for tag in ('Q2', '总之', '通俗理解', '标题'):
+        if d.get(tag):
+            continue
+        ask = ('上面四栏里现在只要你补写【%s】这一栏，其它栏不要写。'
+               '严格以「【%s】」开头，后面接内容。' % (tag, tag))
+        one = _parse_tagged(_call(chat, sysp, user + '\n\n' + ask, 1500, model) or '')
+        if one.get(tag):
+            d[tag] = one[tag]
+            log('  收尾补写了缺的【%s】' % tag)
     out = {}
     if d.get('Q2'):
         out['Q2'] = normalize('q2', d['Q2'])

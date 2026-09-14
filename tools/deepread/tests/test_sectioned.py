@@ -169,3 +169,25 @@ def test_图的段落认范围写法():
 def test_术语表():
     g = sectioned.glossary(MD + '\n\nSamples PBS-B12 and PBS-B12 and PBS-B12 were compared.')
     assert 'PBS = polyborosiloxane' in g and 'PBS-B12' in g
+
+
+def test_没翻的英文长串():
+    assert sectioned.untranslated('采用 Fourier-transform infrared spectroscopy 检测') == ['Fourier-transform infrared spectroscopy']
+    assert sectioned.untranslated('样品 PDMS-IU-12 与 LiTFSI 的 SAXS 谱') == []          # 缩写与编号不算
+    assert sectioned.untranslated('傅里叶变换红外光谱（FTIR）') == []
+
+
+def test_收尾缺哪栏单补哪栏():
+    calls = []
+
+    def chat(system, user, purpose=None, model=None, temperature=0.3, max_tokens=None,
+             thinking=None, provider=None):
+        calls.append(user)
+        if '只要你补写【Q2】' in user:
+            return '【Q2】\nQuestion：本论文中所制备的材料为何性能优异？☘️第一，补上的。'
+        # 正常调用永远漏掉 Q2
+        return '【总之】\n总之，x。\n【通俗理解】\n通俗理解：y。\n【标题】\n【J】t'
+    from shared.domain.schema import outline as _ol
+    out = sectioned._wrap(chat, MD, _ol.build_outline(MD), META, ['▲图1，d'], False, '', MD, None, lambda *a: None)
+    assert out['Q2'].startswith('Question：本论文中所制备的材料为何性能优异？☘️第一，补上的')
+    assert sum(1 for u in calls if '只要你补写' in u) == 1      # 只补了缺的那一栏
