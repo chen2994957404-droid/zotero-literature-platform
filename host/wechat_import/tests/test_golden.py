@@ -80,3 +80,12 @@ def test_残件与无DOI都跳过_不取件(env, tmp_path):
 def test_只用手上有的_不向出版商取(env, tmp_path):
     golden.pair(_md(tmp_path, FULL), allow_fetch=False)
     assert env == [(DOI, False)]
+
+
+def test_两路并发_按出版商错开_结果齐全(env, tmp_path):
+    files = [_md(tmp_path, FULL.replace(DOI, '10.1021/a%d' % i), 'acs%d.md' % i) for i in range(3)]
+    files += [_md(tmp_path, FULL.replace(DOI, '10.1002/w%d' % i), 'wiley%d.md' % i) for i in range(3)]
+    order = golden._interleave(files)
+    assert [os.path.basename(p)[:3] for p in order] == ['acs', 'wil'] * 3
+    res = golden.build(files, allow_fetch=False, log=lambda *a: None, workers=2)
+    assert sum(1 for r in res if r['action'] == 'paired') == 6 and len(golden.load_index()) == 6

@@ -41,6 +41,9 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(getpdf, 'fetch_one', fake_fetch)
     monkeypatch.setattr(getpdf, 'fetch_si_one', lambda d, where=None: {
         'doi': d, 'ok': False, 'reason': 'no_si', 'path': '', 'bytes': 0})
+    # land() 走「一次落地取正文 + SI」：离线测试里它就是上面两个假替身拼起来
+    monkeypatch.setattr(getpdf, 'fetch_pair',
+                        lambda d, where=None: (getpdf.fetch_one(d), getpdf.fetch_si_one(d)))
     # 登记元数据会问 Crossref —— 离线测试里让它「查不到」，落地不受影响
     monkeypatch.setattr('shared.adapters.crossref.work',
                         lambda d: (_ for _ in ()).throw(RuntimeError('offline')))

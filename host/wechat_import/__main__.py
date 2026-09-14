@@ -11,6 +11,7 @@
     python -m host.wechat_import --金标 --limit 50        # 配精读金标：推文当范文存起来，原件进证据库
     python -m host.wechat_import --金标 --只用手上有的      # 同上但不向出版商取，先看手上能配多少
     python -m host.wechat_import --重写范文                # 解析规则变了，只重写已配对的 reference.md
+    python -m host.wechat_import --金标 --limit 300 --两路  # 两路并发取件（按出版商错开；不许更多）
 
 目录默认取配置里的「公众号推送下载目录」，也可以用 `--dir` 指定。
 
@@ -81,7 +82,8 @@ def main():
         # 不写 Zotero、不装精读：推文只当**标尺**存成 reference.md（见 golden.py）。
         # 会向出版商取原件（除非 --只用手上有的），所以不需要 Zotero 那道守卫。
         from host.wechat_import import golden
-        res = golden.build(files, allow_fetch=not flag('--只用手上有的'))
+        res = golden.build(files, allow_fetch=not flag('--只用手上有的'),
+                           workers=2 if flag('--两路') else 1)
         print()
         print(golden.summarize(res))
         return 0

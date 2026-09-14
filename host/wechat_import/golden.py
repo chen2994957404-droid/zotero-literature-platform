@@ -60,6 +60,9 @@ def _chars(article):
                if b.get('kind') == 'p')
 
 
+_INDEX_LOCK = __import__('threading').Lock()
+
+
 def load_index():
     p = paths.golden_index()
     if not os.path.exists(p):
@@ -117,6 +120,15 @@ def pair(md_path, allow_fetch=True, log=print):
         io.open(ref, 'w', encoding='utf-8').write(render_reference(a))
     catalog.register(pid, reference='高分子学人', reference_file=out['file'])
 
+    with _INDEX_LOCK:                          # 两路并发时索引文件只许一路在写
+        _record(pid, a, out)
+    out['action'] = 'paired' if fresh else 'exists'
+    log('  [%s] %s ← %s（%d 字%s）' % (out['action'], pid, out['doi'], out['chars'],
+                                        '' if out['si'] else '，无 SI'))
+    return out
+
+
+def _record(pid, a, out):
     idx = load_index()
     idx[pid] = {'id': pid, 'doi': out['doi'], 'title': a.get('title') or '',
                 'file': out['file'], 'pubdate': a.get('pubdate') or '',
@@ -125,25 +137,51 @@ def pair(md_path, allow_fetch=True, log=print):
                 'pdf': out['pdf'], 'si': out['si'],
                 'paired_at': idx.get(pid, {}).get('paired_at') or time.strftime('%Y-%m-%d %H:%M')}
     _save_index(idx)
-    out['action'] = 'paired' if fresh else 'exists'
-    log('  [%s] %s ← %s（%d 字%s）' % (out['action'], pid, out['doi'], out['chars'],
-                                        '' if out['si'] else '，无 SI'))
+
+
+def _one(p, i, n, allow_fetch, log):
+    log('[%d/%d] %s' % (i, n, os.path.basename(p)[:50]))
+    try:
+        return pair(p, allow_fetch=allow_fetch, log=log)
+    except Exception as e:                       # 一篇炸了不该拖累整批
+        log('  [出错] %s' % e)
+        return {'file': os.path.basename(p), 'doi': '', 'id': '', 'action': 'failed',
+                'chars': 0, 'pdf': False, 'si': False, 'note': str(e)}
+
+
+def _interleave(files):
+    """按出版商（DOI 前缀）错开排队：两路并发时别让两个标签同时敲同一家。"""
+    from host.wechat_import import parse_md
+    buckets = {}
+    for p in files:
+        try:
+            doi = parse_md(p).get('doi') or ''
+        except Exception:
+            doi = ''
+        buckets.setdefault(doi.split('/')[0], []).append(p)
+    out, queues = [], [q for q in buckets.values()]
+    while queues:
+        for q in queues:
+            out.append(q.pop(0))
+        queues = [q for q in queues if q]
     return out
 
 
-def build(files, allow_fetch=True, log=print):
-    """一批推文配对。单篇出错记下来继续，最后返回全部记录。"""
-    res = []
-    for i, p in enumerate(files, 1):
-        log('[%d/%d] %s' % (i, len(files), os.path.basename(p)[:50]))
-        try:
-            res.append(pair(p, allow_fetch=allow_fetch, log=log))
-        except Exception as e:                       # 一篇炸了不该拖累整批
-            log('  [出错] %s' % e)
-            res.append({'file': os.path.basename(p), 'doi': '', 'id': '',
-                        'action': 'failed', 'chars': 0, 'pdf': False, 'si': False,
-                        'note': str(e)})
-    return res
+def build(files, allow_fetch=True, log=print, workers=1):
+    """一批推文配对。单篇出错记下来继续，最后返回全部记录。
+
+    `workers=2` 两路并发（默认 1）：浏览器多开一个标签，两路按出版商错开。
+    **不许超过 2** —— 封的是学校整个出口 IP，ScienceDirect 对突发请求尤其敏感。
+    """
+    files = list(files)
+    n = len(files)
+    if workers <= 1 or n < 2:
+        return [_one(p, i, n, allow_fetch, log) for i, p in enumerate(files, 1)]
+    from concurrent.futures import ThreadPoolExecutor
+    workers = min(2, workers)
+    order = _interleave(files)
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        return list(ex.map(lambda ip: _one(ip[1], ip[0], n, allow_fetch, log), enumerate(order, 1)))
 
 
 def rewrite_references(files, log=print):

@@ -31,6 +31,7 @@
 """
 import base64
 import re
+import threading
 
 from shared.kernel import config, errors
 from shared.kernel.log import get_logger
@@ -389,6 +390,197 @@ def _decode(got, want='pdf'):
             return raw
     return None
 
+# ── 浏览器连接复用 ─────────────────────────────────────────────────────
+# 每篇都 `sync_playwright().start()` + `connect_over_cdp()` 要 1–2 秒；一批几百篇白等几分钟。
+# 连接按线程各存一份（Playwright 的同步对象不能跨线程用），坏了就丢掉重连。
+_tl = threading.local()
+
+
+def _connect(url=None):
+    """→ (browser, ctx)。同一线程里复用上一次的连接；连不上抛 BrowserUnavailable。"""
+    target = url or cdp_url()
+    cached = getattr(_tl, 'conn', None)
+    if cached and cached[0] == target:
+        try:
+            if cached[2].is_connected():
+                return cached[2], cached[3]
+        except Exception:
+            pass
+        _drop_connection()
+    sync_playwright = _sync_api()
+    pw = sync_playwright().start()
+    try:
+        browser = pw.chromium.connect_over_cdp(target)
+    except Exception as e:
+        try:
+            pw.stop()
+        except Exception:
+            pass
+        raise BrowserUnavailable(
+            f'连不上浏览器（{target}）：{e}。'
+            '它需要带着调试口启动，而且里面有人过过一次人机验证 —— '
+            '订阅权限和已经通过的人机验证都在它身上。')
+    ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+    _tl.conn = (target, pw, browser, ctx)
+    return browser, ctx
+
+
+def _drop_connection():
+    cached = getattr(_tl, 'conn', None)
+    _tl.conn = None
+    if cached:
+        try:
+            cached[1].stop()
+        except Exception:
+            pass
+
+
+# ── 落地与找链接 ───────────────────────────────────────────────────────
+
+def _state_ready(page, settle):
+    """落地后**链接一长出来就走**，最多等 settle 秒。
+
+    原来固定等 6 秒：出版商页面是前端渲染，`domcontentloaded` 时链接还没有。
+    实测多数页面 1–2 秒就有了，固定等把每次落地都拖到最慢的那种情况。
+    轮询每 0.4 秒看一眼，看到候选 / SI 链接 / 验证码 / 付费墙任一即返回。
+    """
+    deadline = settle
+    waited = 0.0
+    st = {}
+    while True:
+        st = page.evaluate(_JS_STATE)
+        if st.get('candidates') or st.get('si') or st.get('captcha') or st.get('paywall'):
+            return st
+        if waited >= deadline:
+            return st
+        page.wait_for_timeout(400)
+        waited += 0.4
+
+
+def _land(page, doi, timeout, settle, kind='fulltext'):
+    """打开 doi.org/<doi> → 页面状态。正文找不到链接时再看第二眼（Wiley 慢渲染）。"""
+    page.goto(f'https://doi.org/{doi}', wait_until='domcontentloaded', timeout=timeout * 1000)
+    st = _state_ready(page, settle)
+    # 2026-09-14 实测：Wiley 一篇第一次报 no_pdf_link，几分钟后重取就拿到了 ——
+    # 页面里 `/doi/pdf/` 链接和 citation_pdf_url 都在，只是还没渲染出来。
+    if (kind != 'si' and not st.get('candidates') and not st.get('captcha')
+            and not st.get('paywall')):
+        page.wait_for_timeout(settle * 1000)
+        st = page.evaluate(_JS_STATE)
+    return st
+
+
+def _scroll_for_si(page):
+    """⚠ **先滚一遍页面**：ACS 的 SI 链接是懒加载的，不滚到底根本不出现在 DOM 里。
+    2026-09-06 头一回就栽在这 —— 在 127 万字符的源码里搜了半天，得出「ACS 取不到」
+    的结论，而真相只是那一段还没渲染出来。**说「页面上没有」之前，先确认「页面已经长全了」。**
+    滚 6 次每次 0.3 秒（原来 1 秒）：懒加载只认「滚到了」，不认「停了多久」。
+    """
+    for _ in range(6):
+        page.evaluate('() => window.scrollBy(0, document.body.scrollHeight / 5)')
+        page.wait_for_timeout(300)
+    page.wait_for_timeout(600)
+    return page.evaluate(_JS_STATE)
+
+
+def _pick_si_on(page, st, timeout, settle):
+    """当前落地页上挑 SI；页面没列、只给了 /doi/suppl/ 入口（ACS）就再进一层。→ pick 或 None"""
+    pick = pick_si(st.get('si'))
+    if not pick:
+        st = _scroll_for_si(page)
+        pick = pick_si(st.get('si'))
+    if not pick and st.get('suppPage'):
+        try:
+            page.goto(st['suppPage'], wait_until='domcontentloaded', timeout=timeout * 1000)
+            pick = pick_si(_state_ready(page, settle).get('si'))
+        except Exception:
+            pass
+    return pick
+
+
+def _grab(page, ctx, cands, kind, timeout, settle, out):
+    """按候选顺序把字节取回来，填进 out。拿到返回 True。
+
+    **一个候选走完全部趟数，再换下一个** —— 顺序不是形式。
+    早先写成「先把所有候选直取一遍，再把所有候选导航一遍」，
+    结果排在后面的差候选靠「这一趟更容易」抢在了好候选前面：
+    Wiley 那篇的正文 PDF 直取会被阅读器包一层（不是 PDF、跳过），
+    而补充材料是直链 PDF，直取就成 —— 于是**下回来的是 SI 不是正文**。
+    文件大小正常、格式也对，错得毫无迹象（2026-09-05 实测中过）。
+    ⚠ `_worth_trying` 是**给正文候选用的**，它专门排除 SuppMat 这类词。
+    拿它去滤 SI 候选，等于把 SI 自己滤没了（2026-09-06 实测）。
+    """
+    want = 'si' if kind == 'si' else 'pdf'
+    queue = [c for c in cands if (c.startswith('http') if kind == 'si' else _worth_trying(c))]
+    tried = set()
+    while queue and len(tried) < MAX_TRIES:
+        cand = queue.pop(0)
+        if cand in tried:
+            continue
+        tried.add(cand)
+
+        # 第一趟：直接取。RSC / Springer 这类 citation_pdf_url 多半指的就是真身，同源时一次就成。
+        got = page.evaluate(_JS_GRAB, cand)
+        raw = _decode(got, want)
+        if got.get('tooBig'):
+            out['reason'], out['pdf_url'] = 'too_big', cand
+            return False
+        if raw:
+            out.update(ok=True, reason='ok', pdf=raw, pdf_url=cand)
+            return True
+
+        # 第二趟：**导航过去再同源取**（2026-09-05 实测才发现要这么干）。
+        # Elsevier 的 /pdfft 不直接给 PDF，它先回一张 HTML 中转页，
+        # 再自己跳一次校验（`?crasolve=1`），最后才落到
+        # pdf.sciencedirectassets.com 上那个带签名的真身。
+        # 这条链**只有真导航能走完** —— 四种办法实测过：
+        #   - `fetch(pdfft)`                    → 中转页的 HTML
+        #   - `context.request.get()`           → 403（没有浏览器指纹）
+        #   - 普通 HTTP 取签名直链              → 403
+        #   - 导航过去 + `fetch(location.href)` → ✅ 真身
+        # 截响应也不行：Chrome 把 PDF 交给内置阅读器，`response.body()` 只能拿到 348 字节的壳。
+        # 导航还顺带解决跨域：`citation_pdf_url` 常在另一个子域上，直取会 CORS 失败。
+        try:
+            page.goto(cand, wait_until='domcontentloaded', timeout=timeout * 1000)
+        except Exception:
+            pass    # 导航到 PDF 常抛 ERR_ABORTED，不代表失败
+        page.wait_for_timeout(min(settle, 3) * 1000)
+        got = page.evaluate(_JS_GRAB_HERE)
+        raw = _decode(got, want)
+        if got.get('tooBig'):
+            out['reason'], out['pdf_url'] = 'too_big', cand
+            return False
+        if raw:
+            out.update(ok=True, reason='ok', pdf=raw, pdf_url=page.url or cand)
+            return True
+
+        # 第三趟（只在取 SI 时）：**跨域文件用浏览器上下文的 request 取**。
+        # Elsevier 的 SI 挂在另一个域（ars.els-cdn.com）上，从文章页 fetch 它会被 CORS 挡；
+        # 而导航过去只会触发下载、页面不变，所以前两趟都够不着。
+        if kind == 'si':
+            raw = _via_request(ctx, cand)
+            if raw:
+                out.update(ok=True, reason='ok', pdf=raw, pdf_url=cand)
+                return True
+
+        # 第四趟：**这一页要是个阅读器，真身多半嵌在它里面**。
+        # 2026-09-05 实测：Wiley 的 `/doi/pdf/<DOI>` 是它自家的阅读器页面（HTML），
+        # 里面一个 iframe 指向 `/doi/pdfdirect/<DOI>`，那个才是 application/pdf 的真身。
+        # 与其给 Wiley 写死一条 URL 规则，不如把「页面里嵌着的东西」一律当作新候选。
+        try:
+            for u in page.evaluate(_JS_EMBEDS):
+                if _worth_trying(u) and u not in tried:
+                    queue.append(u)
+        except Exception:
+            pass
+    out['reason'] = 'not_pdf'
+    return False
+
+
+def _blank(doi):
+    return {'ok': False, 'reason': 'navigate_failed', 'doi': doi,
+            'pdf': b'', 'landing': '', 'title': '', 'pdf_url': '', 'filename': ''}
+
 
 def fetch(doi, url=None, timeout=90, settle=6, kind='fulltext'):
     """一个 DOI → dict(ok, reason, pdf, landing, title, pdf_url, filename)。
@@ -396,173 +588,98 @@ def fetch(doi, url=None, timeout=90, settle=6, kind='fulltext'):
     `kind='fulltext'` 取正文；`kind='si'` 取补充材料里**实验那份**
     （挑法见 `pick_si`：按类型不按顺序，视频一律不要）。
 
-    `settle` 是落地后多等几秒：出版商页面普遍是前端渲染，
-    `domcontentloaded` 时链接还没长出来。宁可多等，重试更贵。
+    `settle` 是落地后最多等几秒：链接一长出来就走（见 `_state_ready`）。
+    正文和 SI 都要的话用 `fetch_both`：只落地一次。
     """
-    sync_playwright = _sync_api()
-    out = {'ok': False, 'reason': 'navigate_failed', 'doi': doi,
-           'pdf': b'', 'landing': '', 'title': '', 'pdf_url': '', 'filename': ''}
-    pw = None
+    out = _blank(doi)
+    _, ctx = _connect(url)
+    page = ctx.new_page()
     try:
-        pw = sync_playwright().start()
-        try:
-            browser = pw.chromium.connect_over_cdp(url or cdp_url())
-        except Exception as e:
-            raise BrowserUnavailable(
-                f'连不上浏览器（{url or cdp_url()}）：{e}。'
-                '它需要带着调试口启动，而且里面有人过过一次人机验证 —— '
-                '订阅权限和已经通过的人机验证都在它身上。')
-        ctx = browser.contexts[0] if browser.contexts else browser.new_context()
-        page = ctx.new_page()
-        try:
-            page.goto(f'https://doi.org/{doi}',
-                      wait_until='domcontentloaded', timeout=timeout * 1000)
-            page.wait_for_timeout(settle * 1000)
-
-            st = page.evaluate(_JS_STATE)
-            # 2026-09-14 实测：Wiley 一篇第一次报 no_pdf_link，几分钟后重取就拿到了 ——
-            # 页面里 `/doi/pdf/` 链接和 citation_pdf_url 都在，只是 6 秒时还没渲染出来。
-            # 空手而归之前再等一个 settle 看第二眼，比让整批停在「找不到直链」便宜得多。
-            if (kind != 'si' and not st.get('candidates') and not st.get('captcha')
-                    and not st.get('paywall')):
-                page.wait_for_timeout(settle * 1000)
-                st = page.evaluate(_JS_STATE)
-            out['landing'] = st.get('url', '')
-            out['title'] = (st.get('title') or '').strip()
-
-            if st.get('captcha'):
-                out['reason'] = 'captcha'
+        st = _land(page, doi, timeout, settle, kind)
+        out['landing'], out['title'] = st.get('url', ''), (st.get('title') or '').strip()
+        if st.get('captcha'):
+            out['reason'] = 'captcha'
+            return out
+        if kind == 'si':
+            pick = _pick_si_on(page, st, timeout, settle)
+            if not pick:
+                out['reason'] = 'no_si'
                 return out
-            if kind == 'si':
-                # ⚠ **先滚一遍页面**：ACS 的 SI 链接是懒加载的，不滚到底
-                # 根本不出现在 DOM 里。2026-09-06 头一回就栽在这 ——
-                # 在 127 万字符的源码里搜了半天，得出「ACS 取不到」的结论，
-                # 而真相只是那一段还没渲染出来。
-                # **说「页面上没有」之前，先确认「页面已经长全了」。**
-                for _ in range(6):
-                    page.evaluate('() => window.scrollBy(0, '
-                                  'document.body.scrollHeight / 5)')
-                    page.wait_for_timeout(1000)
-                page.wait_for_timeout(2000)
-                st = page.evaluate(_JS_STATE)
-                pick = pick_si(st.get('si'))          # 只认判得出格式的
-                if not pick and st.get('suppPage'):
-                    # ACS 不在文章页列文件，只给一个 /doi/suppl/<doi> 入口，
-                    # 要再进一层才看得到（2026-09-06 实测）。
-                    try:
-                        page.goto(st['suppPage'], wait_until='domcontentloaded',
-                                  timeout=timeout * 1000)
-                        page.wait_for_timeout(settle * 1000)
-                        pick = pick_si(page.evaluate(_JS_STATE).get('si'))
-                    except Exception:
-                        pass
-                if not pick:
-                    out['reason'] = 'no_si'
-                    return out
-                cands = [pick['url']]
-                out['filename'] = _si_name(pick)
-            else:
-                cands = st.get('candidates') or []
-                if not cands:
-                    out['reason'] = ('no_access' if st.get('paywall')
-                                     else 'no_pdf_link')
-                    return out
+            out['filename'] = _si_name(pick)
+            _grab(page, ctx, [pick['url']], 'si', timeout, settle, out)
+            return out
+        cands = st.get('candidates') or []
+        if not cands:
+            out['reason'] = 'no_access' if st.get('paywall') else 'no_pdf_link'
+            return out
+        _grab(page, ctx, cands, 'fulltext', timeout, settle, out)
+        return out
+    except BrowserUnavailable:
+        raise
+    except Exception as e:
+        _drop_connection()
+        out['reason'] = 'navigate_failed'
+        log.warn('%s 取件异常：%s', doi, str(e)[:160])
+        return out
+    finally:
+        try:
+            page.close()
+        except Exception:
+            pass
 
-            # **一个候选走完两趟，再换下一个** —— 顺序不是形式。
-            # 早先写成「先把所有候选直取一遍，再把所有候选导航一遍」，
-            # 结果排在后面的差候选靠「这一趟更容易」抢在了好候选前面：
-            # Wiley 那篇的正文 PDF 直取会被阅读器包一层（不是 PDF、跳过），
-            # 而补充材料是直链 PDF，直取就成 —— 于是**下回来的是 SI 不是正文**。
-            # 文件大小正常、格式也对，错得毫无迹象（2026-09-05 实测中过）。
-            # ⚠ `_worth_trying` 是**给正文候选用的**，它专门排除 SuppMat 这类词。
-            # 拿它去滤 SI 候选，等于把 SI 自己滤没了（2026-09-06 实测：
-            # Wiley 的 SI 直取明明成功了，却因为这一步被丢掉，报成 not_pdf）。
-            queue = [c for c in cands
-                     if (c.startswith('http') if kind == 'si' else _worth_trying(c))]
-            tried = set()
-            while queue and len(tried) < MAX_TRIES:
-                cand = queue.pop(0)
-                if cand in tried:
-                    continue
-                tried.add(cand)
 
-                # 第一趟：直接取。RSC / Springer 这类 citation_pdf_url
-                # 多半指的就是真身，同源时一次就成。
-                got = page.evaluate(_JS_GRAB, cand)
-                raw = _decode(got, 'si' if kind == 'si' else 'pdf')
-                if got.get('tooBig'):
-                    out['reason'], out['pdf_url'] = 'too_big', cand
-                    return out
-                if raw:
-                    out.update(ok=True, reason='ok', pdf=raw, pdf_url=cand)
-                    return out
+def fetch_both(doi, url=None, timeout=90, settle=6):
+    """一个 DOI → (正文结果, SI 结果)，**只落地一次**。
 
-                # 第二趟：**导航过去再同源取**（2026-09-05 实测才发现要这么干）。
-                # Elsevier 的 /pdfft 不直接给 PDF，它先回一张 HTML 中转页，
-                # 再自己跳一次校验（`?crasolve=1`），最后才落到
-                # pdf.sciencedirectassets.com 上那个带签名的真身。
-                # 这条链**只有真导航能走完** —— 四种办法实测过：
-                #   - `fetch(pdfft)`                    → 中转页的 HTML
-                #   - `context.request.get()`           → 403（没有浏览器指纹）
-                #   - 普通 HTTP 取签名直链              → 403
-                #   - 导航过去 + `fetch(location.href)` → ✅ 真身
-                # 截响应也不行：Chrome 把 PDF 交给内置阅读器，
-                # `response.body()` 只能拿到 348 字节的壳。
-                # 导航还顺带解决跨域：`citation_pdf_url` 常在另一个子域上，
-                # 直取会 CORS 失败，导航过去就没这问题。
+    原来正文和 SI 各落地一次：同一个页面打开两遍、等两遍。落地页的状态本来就一次把
+    正文候选和 SI 链接都收了 —— 先在落地页上把 SI 挑好，再取正文（会导航走），
+    最后取 SI（直取 / 导航 / 浏览器 request 三趟对当前在哪一页都不敏感）。
+    2026-09-14 实测每篇中位 55 s，其中正文落地到 SI 落地 24 s，这一刀砍掉的就是它。
+    """
+    main, si = _blank(doi), _blank(doi)
+    _, ctx = _connect(url)
+    page = ctx.new_page()
+    try:
+        st = _land(page, doi, timeout, settle)
+        main['landing'] = si['landing'] = st.get('url', '')
+        main['title'] = si['title'] = (st.get('title') or '').strip()
+        if st.get('captcha'):
+            main['reason'] = si['reason'] = 'captcha'
+            return main, si
+        cands = st.get('candidates') or []
+        # SI 先在落地页上挑（要滚页面 / 进 suppl 入口），此时页面还没被正文的导航带走
+        pick = pick_si(st.get('si'))
+        if not pick:
+            pick = _pick_si_on(page, st, timeout, settle)
+            if page.url != st.get('url'):        # 进过 suppl 入口，回落地页取正文候选
                 try:
-                    page.goto(cand, wait_until='domcontentloaded',
-                              timeout=timeout * 1000)
-                except Exception:
-                    pass    # 导航到 PDF 常抛 ERR_ABORTED，不代表失败
-                page.wait_for_timeout(settle * 1000)
-                got = page.evaluate(_JS_GRAB_HERE)
-                raw = _decode(got, 'si' if kind == 'si' else 'pdf')
-                if got.get('tooBig'):
-                    out['reason'], out['pdf_url'] = 'too_big', cand
-                    return out
-                if raw:
-                    out.update(ok=True, reason='ok', pdf=raw,
-                               pdf_url=page.url or cand)
-                    return out
-
-                # 第三趟（只在取 SI 时）：**跨域文件用浏览器上下文的 request 取**。
-                # Elsevier 的 SI 挂在另一个域（ars.els-cdn.com）上，
-                # 从文章页 fetch 它会被 CORS 挡（实测 ok=False 连状态码都没有）；
-                # 而导航过去只会触发下载、页面不变，所以前两趟都够不着。
-                if kind == 'si':
-                    raw = _via_request(ctx, cand)
-                    if raw:
-                        out.update(ok=True, reason='ok', pdf=raw, pdf_url=cand)
-                        return out
-
-                # 第四趟：**这一页要是个阅读器，真身多半嵌在它里面**。
-                # 2026-09-05 实测：Wiley 的 `/doi/pdf/<DOI>` 是它自家的阅读器
-                # 页面（HTML），里面一个 iframe 指向 `/doi/pdfdirect/<DOI>`，
-                # 那个才是 application/pdf 的真身。
-                # 与其给 Wiley 写死一条 URL 规则，不如把「页面里嵌着的东西」
-                # 一律当作新候选 —— 别家用阅读器包 PDF 的也一并解决了，
-                # 而且出版商改 URL 形式的时候这条不用跟着改。
-                try:
-                    for u in page.evaluate(_JS_EMBEDS):
-                        if _worth_trying(u) and u not in tried:
-                            queue.append(u)
+                    page.goto(st.get('url') or f'https://doi.org/{doi}',
+                              wait_until='domcontentloaded', timeout=timeout * 1000)
+                    st2 = _state_ready(page, settle)
+                    cands = cands or st2.get('candidates') or []
                 except Exception:
                     pass
-
-            out['reason'] = 'not_pdf'
-            return out
-        finally:
-            try:
-                page.close()
-            except Exception:
-                pass
+        if cands:
+            _grab(page, ctx, cands, 'fulltext', timeout, settle, main)
+        else:
+            main['reason'] = 'no_access' if st.get('paywall') else 'no_pdf_link'
+        if pick:
+            si['filename'] = _si_name(pick)
+            _grab(page, ctx, [pick['url']], 'si', timeout, settle, si)
+        else:
+            si['reason'] = 'no_si'
+        return main, si
+    except BrowserUnavailable:
+        raise
+    except Exception as e:
+        _drop_connection()
+        log.warn('%s 取件异常：%s', doi, str(e)[:160])
+        return main, si
     finally:
-        if pw is not None:
-            try:
-                pw.stop()
-            except Exception:
-                pass
+        try:
+            page.close()
+        except Exception:
+            pass
 
 
 DOI_RE = re.compile(r'^10\.\d{4,9}/\S+$')

@@ -90,6 +90,54 @@ def fetch_one(doi, where=None):
             'bytes': len(r['pdf'])}
 
 
+def fetch_pair(doi, where=None):
+    """正文 + SI **一次落地**取回来 → (正文结果, SI 结果)，形状同 fetch_one / fetch_si_one。
+
+    盘上已有的那半不再去取；两半都在就一次出版商都不敲。
+    """
+    where = where or out_dir(create=True)
+    main = fetch_one(doi, where) if os.path.exists(
+        os.path.join(where, safe_name(doi) + '.pdf')) else None
+    si = None
+    stem = safe_name(doi) + '_SI'
+    for ext in ('.pdf', '.docx', '.doc', '.txt'):
+        p = os.path.join(where, stem + ext)
+        if os.path.exists(p) and os.path.getsize(p) > 1024:
+            si = {'doi': doi, 'ok': True, 'reason': 'exists', 'path': p, 'bytes': os.path.getsize(p)}
+    if main and si:
+        return main, si
+    if main and not si:
+        return main, fetch_si_one(doi, where)
+    if si and not main:
+        return fetch_one(doi, where), si
+
+    rm, rs = pdf_fetch.fetch_both(doi)
+    main = {'doi': doi, 'ok': False, 'reason': rm['reason'], 'path': '',
+            'title': rm.get('title', ''), 'landing': rm.get('landing', ''), 'bytes': 0}
+    if rm['ok']:
+        path = os.path.join(where, safe_name(doi) + '.pdf')
+        os.makedirs(where, exist_ok=True)
+        with io.open(path, 'wb') as fh:
+            fh.write(rm['pdf'])
+        log.info(f'{doi} → {path}（{len(rm["pdf"])} 字节）')
+        main.update(ok=True, reason='ok', path=path, bytes=len(rm['pdf']))
+    else:
+        log.info(f'{doi} 没拿到：{rm["reason"]}')
+    si = {'doi': doi, 'ok': False, 'reason': rs['reason'], 'path': '', 'bytes': 0}
+    if rs['ok']:
+        ext = os.path.splitext(rs.get('filename') or '')[1].lower() or '.pdf'
+        if ext not in ('.pdf', '.docx', '.doc', '.txt'):
+            ext = '.pdf'
+        path = os.path.join(where, stem + ext)
+        with io.open(path, 'wb') as fh:
+            fh.write(rs['pdf'])
+        log.info(f'{doi} 的 SI → {path}（{len(rs["pdf"])} 字节）')
+        si.update(ok=True, reason='ok', path=path, bytes=len(rs['pdf']))
+    else:
+        log.info(f'{doi} 的 SI 没拿到：{rs["reason"]}')
+    return main, si
+
+
 def fetch_many(dois, where=None, gap=GAP, limit=LIMIT, on_each=None):
     """逐篇取。返回结果列表。
 
@@ -196,6 +244,7 @@ def land(doi, with_si=True, allow_fetch=True, zotero_index=None,
         return out
     out.update(id=pid, in_zotero=in_zotero)
     changed = False
+    fetched_si = None                 # fetch_pair 顺手取回的 SI（下面 SI 那段先认它）
 
     # ── 正文 ──
     main = paths.local_pdf(pid)
@@ -216,7 +265,12 @@ def land(doi, with_si=True, allow_fetch=True, zotero_index=None,
             changed |= _copy(att, main)
             out['source'] = catalog.SRC_ZOTERO
         elif allow_fetch:
-            r = fetch_one(doi)
+            # 正文和 SI 都要取的话一次落地一起取（`fetch_pair`）：同一个页面不开两遍
+            si_needed = with_si and not paths.find_local_si(pid) and not (si_path and os.path.exists(si_path))
+            if si_needed:
+                r, fetched_si = fetch_pair(doi)
+            else:
+                r = fetch_one(doi)
             if r['ok']:
                 changed |= _copy(r['path'], main)
                 out['source'] = catalog.SRC_FETCH
@@ -240,7 +294,9 @@ def land(doi, with_si=True, allow_fetch=True, zotero_index=None,
                     src = find_si(pid)[0] or ''
                 except Exception:
                     src = ''
-            if not src and allow_fetch and out['pdf']:
+            if not src and fetched_si is not None:
+                src = fetched_si['path'] if fetched_si['ok'] else ''
+            elif not src and allow_fetch and out['pdf']:
                 r = fetch_si_one(doi)
                 src = r['path'] if r['ok'] else ''
             if src:
