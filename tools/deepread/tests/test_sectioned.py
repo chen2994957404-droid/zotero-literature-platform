@@ -119,3 +119,14 @@ def test_数字回查的过滤():
     src = 'strength 12.5 MPa, 1 000 cycles, 2020 paper, Figure 3'
     bad = sectioned.unverified_numbers('图3 显示 12.5 MPa，1000 次循环，2020 年，第 5 组，3 种方法，缺 88.8 MPa', src)
     assert bad == ['88.8']
+
+
+def test_无注裁图按顺序补号_目录图不补():
+    from shared.domain.schema import outline as _ol
+    ol = _ol.build_outline(MD)                       # 正文有 Figure 1、Figure 2 两条图注
+    figs = [{'caption': ''}, {'caption': 'Figure 1. x'}, {'caption': ''}, {'caption': ''}]
+    # 目录图（第 1 块）不补；第 3 块补成图 2；第 4 块超出图注总数不补
+    assert sectioned.number_crops(figs, ol) == [(2, 1), (3, 2)]
+    figs = [{'caption': 'Figure 1. x'}, {'caption': ''}, {'caption': 'Figure 3. y'}]
+    ol3 = _ol.build_outline(MD + chr(10) * 2 + 'Figure 3. Third figure caption here.' + chr(10))
+    assert sectioned.number_crops(figs, ol3) == [(1, 1), (2, 2), (3, 3)]   # 夹缝补 2

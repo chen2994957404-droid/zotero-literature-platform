@@ -195,6 +195,41 @@ def _wrap(chat, md, outline, meta, deeps, review, model, log):
 
 # ── 拼装与检查 ───────────────────────────────────────────────────────
 
+def number_crops(figs, outline):
+    """裁图块 → [(裁图序号, 图号)]。只保留能定下图号的块。
+
+    裁图是按页面位置数的：一页的第一块拿到那页的图注，其余块和目录图没有图注。
+    两步定号：① 图注里写着 Figure N 的直接用；② 夹在已知号之间 / 跟在最后一个已知号
+    后面的无注块，按顺序补号 —— 但只补到正文图注总数为止，多出来的（目录图、示意图）不写字。
+    2026-09-14 试跑：9 块里只有 5 块自带图注，Figure 6、7 的图注被 MineRU 放到了下一页。
+    """
+    n_md = len(outline.get('figures') or [])
+    known = {}
+    seen = set()
+    for i, fg in enumerate(figs, 1):
+        m = re.match(r'\s*(?:Figure|Fig\.?|图|Scheme)\s*(\d+)', fg.get('caption') or '', re.I)
+        if m and int(m.group(1)) not in seen:
+            seen.add(int(m.group(1)))
+            known[i] = int(m.group(1))
+    if not known:
+        return []
+    out = dict(known)
+    idxs = sorted(known)
+    # 两个已知号之间的无注块：缺口正好装得下才补
+    for a, b in zip(idxs, idxs[1:]):
+        gap = list(range(a + 1, b))
+        nums = list(range(known[a] + 1, known[b]))
+        if gap and len(gap) == len(nums):
+            out.update(zip(gap, nums))
+    # 最后一个已知号之后的无注块：顺着往下补，不超过正文图注总数
+    last, nxt = idxs[-1], known[idxs[-1]] + 1
+    for i in range(last + 1, len(figs) + 1):
+        if nxt > max(n_md, known[last]):
+            break
+        out[i], nxt = nxt, nxt + 1
+    return sorted(out.items())
+
+
 def compose(md, si_md, figs, meta, chat, log=print, model=None, local=False):
     """一篇 → (精读 markdown 内容, 统计)。`figs` 是裁图结果（只用它的张数与顺序），
     `meta` 是 title/authors/journal/year/doi，`chat` 是 llm_client.chat 或假替身。
@@ -212,14 +247,9 @@ def compose(md, si_md, figs, meta, chat, log=print, model=None, local=False):
     # 裁图是按页面上的位置数的，不是按图号：目录图、一页两图的第二块都没有图注。
     # 只给**认得出图号**的写两段；其余的不写字，`insert_figures` 会把它们当补充图挂在总结前
     # （2026-09-14 试跑：9 块裁图里 2 块没图注，模型只能写「原文未给出」凑数 —— 别让它凑）。
-    fig_paras, deeps, seen = [], [], set()
-    numbered = []
-    for i, fg in enumerate(figs, 1):
-        m = re.match(r'\s*(?:Figure|Fig\.?|图|Scheme)\s*(\d+)', fg.get('caption') or '', re.I)
-        if m and int(m.group(1)) not in seen:
-            seen.add(int(m.group(1)))
-            numbered.append((i, int(m.group(1))))
+    numbered = number_crops(figs, outline)
     log('  %d 块裁图里 %d 块认得出图号' % (n_figs, len(numbered)))
+    fig_paras, deeps = [], []
     for i, num in numbered:
         idx, deep = _one_fig(chat, md, outline, num, len(numbered), model, log)
         fig_paras.append((i, idx, deep))
