@@ -179,7 +179,10 @@ def refs(key):
     if len(parts) < 3:
         parts = [p.strip() for p in re.split(r'\n\s*\n', body) if p.strip()]
     by_doi = catalog.by_doi()
-    titles = {catalog.norm_title(r['title']): r['id'] for r in catalog.scan() if len(r['title']) > 20}
+    # 标题子串对账只用**归一后**够长的标题：中文题名归一后是空串，'' in 任何字符串都成立，
+    # 2026-09-14 实测一篇的 32 条参考文献全被标成「已在库」就是这么来的
+    titles = {t: r['id'] for r in catalog.scan()
+              for t in [catalog.norm_title(r['title'])] if len(t) >= 24}
     out = []
     for p in parts:
         m = re.match(r'^\s*(?:\((\d{1,3})\)|\[(\d{1,3})\]|(\d{1,3})\.)\s', p)

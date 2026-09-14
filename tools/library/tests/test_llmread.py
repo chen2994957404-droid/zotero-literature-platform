@@ -46,6 +46,8 @@ def env(tmp_path, monkeypatch):
     # 证据库里另有两篇：一篇靠 DOI 对上 [1]，一篇靠标题对上 [3]
     catalog.register('BBBB0002', doi='10.1021/acs.macromol.5b00210', title='Dynamic boronic ester networks')
     catalog.register('CCCC0003', doi='10.1002/adma.x', title='Self-healing polyurethane via boroxine bonds')
+    # 中文题名归一后是空串 —— 不许因此把每条参考文献都标成「已在库」（2026-09-14 真踩过）
+    catalog.register('DDDD0004', doi='10.1002/x.y', title='基于含硼动态键的高性能自修复聚氨酯的制备与研究')
     return key
 
 
