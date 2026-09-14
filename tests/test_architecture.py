@@ -1127,7 +1127,8 @@ ROOT_FILES_APPROVED = {
 
 def test_根目录只许住登记过的文件():
     import subprocess
-    out = subprocess.run(['git', 'ls-files'], cwd=ROOT, capture_output=True,
+    # -c core.quotePath=false：不然中文文件名会被 git 转义成 "å…"（主力机上就这么红过）
+    out = subprocess.run(['git', '-c', 'core.quotePath=false', 'ls-files'], cwd=ROOT, capture_output=True,
                          text=True, encoding='utf-8').stdout
     tracked = {f for f in out.splitlines() if f and '/' not in f}
     stray = sorted(tracked - ROOT_FILES_APPROVED)
