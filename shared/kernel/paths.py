@@ -527,6 +527,15 @@ def evalset():
     return os.path.join(STATE, 'evalset.json')
 
 
+def golden_eval_dir(tag, create=False):
+    """state/golden_eval/<tag>/ —— 一轮金标评测的产物（每篇一份精读 HTML + scores.json + report.md）。
+    可重建（再跑一轮就有），所以住 state 层；`tag` 是这一轮的名字（如 v3_local_qwen3.5）。"""
+    d = os.path.join(STATE, 'golden_eval', re.sub(r'[^A-Za-z0-9._-]+', '-', str(tag)))
+    if create:
+        os.makedirs(d, exist_ok=True)
+    return d
+
+
 def golden_index():
     """state/golden_deepread.json —— 精读金标集的索引：哪些篇有人写的范文（`reference()`）
     配上了英文原件。可重建（扫一遍 curated/ 就能恢复），所以住 state 层。"""

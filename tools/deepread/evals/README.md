@@ -38,3 +38,18 @@
 python -m pytest tools/deepread -q
 python host/doctor/health_check.py --offline
 ```
+
+## 金标评测（2026-09-15 起）：对着人写的范文自动打分
+
+`scorers/golden.py`（纯函数）+ `golden.py`（跑法）。标尺是 774 对高分子学人范文
+（`paths.reference()`）。每轮一个 tag，产物在 `data/state/golden_eval/<tag>/`：
+每篇一份精读 HTML（**不碰 curated 的正式精读**）+ `scores.json` + `report.md`。
+
+```
+python -m tools.deepread --金标评测 --tag v3_local --篇数 10 --本地 --对照
+python -m tools.deepread --金标重算 v3_local        # 只改了评分口径
+```
+
+量的：骨架 10 项 / 图两段 / 篇幅比 / **数字覆盖**（范文里带单位的数我们写了几成）/
+术语覆盖 / 两问条数 / 通俗理解；综合分 0–100 只用来排序看趋势，**单项才指导改什么**。
+同一个 `--seed` 永远抽同一批，换模板或换模型就换 tag 再跑，两份 report 并排看。
