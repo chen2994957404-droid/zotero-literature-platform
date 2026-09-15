@@ -216,3 +216,9 @@ def test_一条图注都没认出来时按顺序对应():
 def test_深解段漂到下一张图就截断():
     assert sectioned.untranslated('剪切增 stiffening 离子凝胶') == ['stiffening']
     assert sectioned.untranslated('损耗因子 tan δ 与 vdW 作用') == []
+
+
+def test_渲染时转义尖括号():
+    from tools.deepread.main_text import render_html
+    h = render_html('## 讨论\n\n低压（<1×10^4 kPa^-1）下灵敏度 **高**\n\n图4，标题为"x"。')
+    assert '（&lt;1×10^4' in h and '<strong>高</strong>' in h and '<p>图4，' in h

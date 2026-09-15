@@ -10,6 +10,7 @@
 流程（顺序即数据流，别打乱）：
     元数据 → 裁完整 Figure → 拼 LLM 输入 → 调模型 → 确定性插图 → 渲染 HTML
 """
+import html as _html
 import json
 import os
 import re
@@ -133,14 +134,17 @@ def render_html(content):
             out.append(s)
             continue
         if s.startswith('# ') and not s.startswith('## '):
-            out.append(f'<h1>{s[2:].strip()}</h1>')
+            out.append(f'<h1>{_html.escape(s[2:].strip(), quote=False)}</h1>')
             continue
         if s.startswith('## '):
-            out.append(f'<h2 class="section">{s[3:].strip()}</h2>')
+            out.append(f'<h2 class="section">{_html.escape(s[3:].strip(), quote=False)}</h2>')
             continue
         if s.startswith('### '):
-            out.append(f'<h3>{s[4:].strip()}</h3>')
+            out.append(f'<h3>{_html.escape(s[4:].strip(), quote=False)}</h3>')
             continue
+        # 正文里的 `<`、`>`、`&` 必须转义：模型写「（<1×10⁴ kPa⁻¹）」，裸的 < 会让浏览器
+        # 把后面半段当标签吞掉（2026-09-15 评测里图 3 深解段后半截「消失」就是它）
+        s = _html.escape(s, quote=False)
         s = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', s)
         if s:
             out.append(f'<p>{s}</p>')

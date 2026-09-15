@@ -18,6 +18,7 @@
 `score()` 返回各项 + 一个 0–100 的综合分；综合分只用来排序和看趋势，
 **单项才是能指导改什么的**。指标口径变了就把 `GOLDEN_VER` +1，旧分不再可比。
 """
+import html as _html
 import re
 
 GOLDEN_VER = 1
@@ -38,6 +39,7 @@ def text_of_html(html):
     body = re.sub(r'<h2[^>]*>', '\n## ', body)
     body = re.sub(r'</(?:p|h1|h2|h3|div)>', '\n', body)
     body = re.sub(r'<[^>]+>', '', body)
+    body = _html.unescape(body)
     return re.sub(r'\n{2,}', '\n', body).strip()
 
 
