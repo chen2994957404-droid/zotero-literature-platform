@@ -21,7 +21,8 @@
     python -m tools.deepread --金标评测 --tag v3_cloud --篇数 10               走路由表（花钱）
     python -m tools.deepread --金标评测 --tag v3_local --篇数 10 --对照         同一批老精读（v2）也打分做对照
     python -m tools.deepread --金标重算 v3_local                                改了评分口径只重算
-    --seed 1 固定抽样（同 seed 同批，跨轮才可比）；--model qwen3.5:4b 指定模型；--篇数 0 = 全部
+    --同批 v3_local 用上一轮那一批（候选池在长，同 seed 抽出来会变；跨轮对比必须同批）
+    --seed 1 固定抽样；--model qwen3.5:4b 指定模型；--篇数 0 = 全部
 
 ⚠ 除 --rerun-pro 列清单外，每一条都**花钱**（付费大模型 + MineRU 额度），
    并且会把结果写回 Zotero。只允许在主力机上跑（role.require_prod 会拦）。
@@ -65,7 +66,10 @@ def main():
             role.require_prod('金标评测（调用付费大模型跑十几篇精读）', force=force)
         n = int(opt('--篇数') or 10)
         seed = int(opt('--seed') or 1)
-        keys = keys or (GE.candidates() if n == 0 else GE.sample(n, seed))
+        same = opt('--同批')
+        keys = keys or (GE.keys_of(same) if same else (GE.candidates() if n == 0 else GE.sample(n, seed)))
+        if same and not keys:
+            print('找不到上一轮', same, '的名单'); return 2
         tag = opt('--tag') or ('v3_local' if local else 'v3_cloud')
         if flag('--对照'):
             agg0, p0 = GE.baseline(keys)

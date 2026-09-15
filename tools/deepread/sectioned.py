@@ -539,8 +539,11 @@ def compose(md, si_md, figs, meta, chat, log=print, model=None, local=False, cac
     review = is_review_doc(meta.get('title', ''), outline, meta.get('journal', ''))
     gloss = glossary(md)
     source = (md or '') + '\n' + (si_md or '')
-    fp = '%s|%s|%s' % ('|'.join('%s=%s' % kv for kv in sorted(PROMPTS.items())),
-                       model or '', 'local' if local else 'route')
+    # 指纹里带上篇幅参数：2026-09-15 第二轮评测把深解预算收紧了，缓存却按旧参数原样复用，
+    # 10 篇里 8 篇分数一字不差 —— 改了参数看不到效果比没缓存更糟。
+    fp = '%s|%s|%s|deep=%d-%d-%d' % ('|'.join('%s=%s' % kv for kv in sorted(PROMPTS.items())),
+                                     model or '', 'local' if local else 'route',
+                                     DEEP_BUDGET, DEEP_MIN, DEEP_MAX)
     C = _Cache(cache, fp)
     n_figs = len(figs)
     log('  按%s写；%d 张图；骨架 %d 节；术语 %d 条%s' % (

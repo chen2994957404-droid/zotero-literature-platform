@@ -51,6 +51,15 @@ def sample(n=10, seed=1, need_si=False):
     return sorted(pool[:n])
 
 
+def keys_of(tag):
+    """上一轮评的是哪些篇（跨轮对比必须同一批：候选池天天在长，同 seed 抽出来的会变）。"""
+    try:
+        d = json.load(io.open(os.path.join(paths.golden_eval_dir(tag), 'scores.json'), encoding='utf-8'))
+        return list((d.get('meta') or {}).get('keys') or [r['id'] for r in d.get('rows') or []])
+    except (OSError, ValueError):
+        return []
+
+
 def _score_one(pid, html_path):
     ours = G.text_of_html(io.open(html_path, encoding='utf-8').read())
     ref = G.text_of_reference(io.open(paths.reference(pid), encoding='utf-8').read())
