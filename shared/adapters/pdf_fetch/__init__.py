@@ -422,7 +422,21 @@ def _connect(url=None):
             '订阅权限和已经通过的人机验证都在它身上。')
     ctx = browser.contexts[0] if browser.contexts else browser.new_context()
     _tl.conn = (target, pw, browser, ctx)
+    _sweep(ctx)
     return browser, ctx
+
+
+def _sweep(ctx, keep=3):
+    """连上时顺手关掉上次漏下的出版商标签（超过 keep 个才动手；edge:// 之类不碰）。"""
+    try:
+        pages = [pg for pg in ctx.pages if (pg.url or '').startswith('http')]
+        for pg in pages[:-keep] if len(pages) > keep else []:
+            try:
+                pg.close()
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 
 def _drop_connection():
@@ -448,7 +462,17 @@ def _state_ready(page, settle):
     waited = 0.0
     st = {}
     while True:
-        st = page.evaluate(_JS_STATE)
+        try:
+            st = page.evaluate(_JS_STATE)
+        except Exception as e:
+            # ScienceDirect 落地后自己再跳一次（`?via=ihub`），跳的那一瞬 evaluate 会报
+            # 「Execution context was destroyed」。这是过程不是失败，等一下再看。
+            # 2026-09-15 实测：老流程固定等 6 s 很少撞上；轮询一提速就篇篇撞，
+            # 然后整篇按异常处理、标签还没关 —— 一晚上漏了 46 个 ScienceDirect 标签，
+            # Edge 被拖到 CDP 都连不上。
+            if 'destroyed' not in str(e) and 'navigat' not in str(e).lower():
+                raise
+            st = {}
         if st.get('candidates') or st.get('si') or st.get('captcha') or st.get('paywall'):
             return st
         if waited >= deadline:
@@ -589,6 +613,21 @@ def _grab(page, ctx, cands, kind, timeout, settle, out):
     return False
 
 
+def _close(page, err=None):
+    """关掉这篇的标签；**先关标签再决定要不要丢连接**。
+
+    原来出异常先 `_drop_connection()` 再 `page.close()`：连接一丢，close 必然失败，
+    标签就留在浏览器里 —— 一晚上攒了 46 个。只有连接本身坏了（连不上 / 断开）才丢连接。
+    """
+    try:
+        page.close()
+    except Exception:
+        pass
+    if err is not None and any(w in str(err) for w in ('has been closed', 'Connection closed',
+                                                        'Target closed', 'disconnected')):
+        _drop_connection()
+
+
 def _blank(doi):
     return {'ok': False, 'reason': 'navigate_failed', 'doi': doi,
             'pdf': b'', 'landing': '', 'title': '', 'pdf_url': '', 'filename': ''}
@@ -629,15 +668,12 @@ def fetch(doi, url=None, timeout=90, settle=6, kind='fulltext'):
     except BrowserUnavailable:
         raise
     except Exception as e:
-        _drop_connection()
         out['reason'] = 'navigate_failed'
-        log.warn('%s 取件异常：%s', doi, str(e)[:160])
+        log.warn(f'{doi} 取件异常：{str(e)[:160]}')
+        _close(page, e)
         return out
     finally:
-        try:
-            page.close()
-        except Exception:
-            pass
+        _close(page)
 
 
 def fetch_both(doi, url=None, timeout=90, settle=6):
@@ -684,14 +720,11 @@ def fetch_both(doi, url=None, timeout=90, settle=6):
     except BrowserUnavailable:
         raise
     except Exception as e:
-        _drop_connection()
-        log.warn('%s 取件异常：%s', doi, str(e)[:160])
+        log.warn(f'{doi} 取件异常：{str(e)[:160]}')
+        _close(page, e)
         return main, si
     finally:
-        try:
-            page.close()
-        except Exception:
-            pass
+        _close(page)
 
 
 DOI_RE = re.compile(r'^10\.\d{4,9}/\S+$')
