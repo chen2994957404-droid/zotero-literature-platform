@@ -456,7 +456,10 @@ def _sweep(ctx, keep=3):
     """连上时顺手关掉上次漏下的出版商标签（超过 keep 个才动手；edge:// 之类不碰）。"""
     try:
         pages = [pg for pg in ctx.pages if (pg.url or '').startswith('http')]
-        for pg in pages[:-keep] if len(pages) > keep else []:
+        # ⚠ 第一个标签（启动时的 sciencedirect 首页）永远不动：它是浏览器的「压舱石」——
+        # Edge 关掉最后一个标签就整个退出，取件的调试口跟着没了（2026-09-15 实测：
+        # 清扫把首页关了，后面我们自己的标签一关，浏览器直接退出，整批 160 篇全报连不上）。
+        for pg in pages[1:-keep] if len(pages) > keep + 1 else []:
             try:
                 pg.close()
             except Exception:
@@ -646,7 +649,10 @@ def _close(page, err=None):
     标签就留在浏览器里 —— 一晚上攒了 46 个。只有连接本身坏了（连不上 / 断开）才丢连接。
     """
     try:
-        page.close()
+        if len(page.context.pages) <= 1:
+            page.goto('about:blank', timeout=5000)     # 最后一个标签不能关：关了浏览器就退出
+        else:
+            page.close()
     except Exception:
         pass
     if err is not None and any(w in str(err) for w in ('has been closed', 'Connection closed',
