@@ -228,9 +228,35 @@ _JS_GRAB_HERE = """async () => {
 }""" % (GRAB_TIMEOUT_MS, MAX_PDF_BYTES)
 
 
+
+# ── 页面里跑 JS，**必须带超时** ─────────────────────────────────────────
+# Playwright 的 page.evaluate 没有超时：页面主线程一旦被出版商的脚本卡住（2026-09-15
+# Wiley 阅读器页卡了 40 分钟，整批停在最后一篇），它就永远不回来。
+# 走 CDP 的 Runtime.evaluate 带 `timeout`：到点由浏览器**终止**那段执行，不管页面忙不忙。
+EVAL_TIMEOUT_MS = 150000       # 要盖过页面内 fetch 的 120 s
+
+
+def _eval(page, js, arg=None, timeout_ms=EVAL_TIMEOUT_MS):
+    """在页面里跑一段 `() => …` / `async (u) => …` 形状的 JS，带硬超时 → 返回值（超时抛 TimeoutError）。"""
+    import json as _json
+    expr = '(%s)(%s)' % (js, _json.dumps(arg) if arg is not None else '')
+    cdp = page.context.new_cdp_session(page)
+    try:
+        r = cdp.send('Runtime.evaluate', {'expression': expr, 'awaitPromise': True,
+                                          'returnByValue': True, 'timeout': timeout_ms})
+    finally:
+        try:
+            cdp.detach()
+        except Exception:
+            pass
+    if r.get('exceptionDetails'):
+        raise RuntimeError(str(r['exceptionDetails'].get('text') or r['exceptionDetails'])[:200])
+    return (r.get('result') or {}).get('value')
+
+
 def pdf_url_of(page):
     """当前页面上的 PDF 直链候选（按可信度排序）。排查时单独用得上。"""
-    return page.evaluate(_JS_STATE).get('candidates') or []
+    return _eval(page, _JS_STATE, timeout_ms=20000).get('candidates') or []
 
 
 def _looks_like_pdf(head, mime):
@@ -463,7 +489,7 @@ def _state_ready(page, settle):
     st = {}
     while True:
         try:
-            st = page.evaluate(_JS_STATE)
+            st = _eval(page, _JS_STATE, timeout_ms=20000)
         except Exception as e:
             # ScienceDirect 落地后自己再跳一次（`?via=ihub`），跳的那一瞬 evaluate 会报
             # 「Execution context was destroyed」。这是过程不是失败，等一下再看。
@@ -490,7 +516,7 @@ def _land(page, doi, timeout, settle, kind='fulltext'):
     if (kind != 'si' and not st.get('candidates') and not st.get('captcha')
             and not st.get('paywall')):
         page.wait_for_timeout(settle * 1000)
-        st = page.evaluate(_JS_STATE)
+        st = _eval(page, _JS_STATE, timeout_ms=20000)
     return st
 
 
@@ -501,10 +527,10 @@ def _scroll_for_si(page):
     滚 6 次每次 0.3 秒（原来 1 秒）：懒加载只认「滚到了」，不认「停了多久」。
     """
     for _ in range(6):
-        page.evaluate('() => window.scrollBy(0, document.body.scrollHeight / 5)')
+        _eval(page, '() => window.scrollBy(0, document.body.scrollHeight / 5)', timeout_ms=10000)
         page.wait_for_timeout(300)
     page.wait_for_timeout(600)
-    return page.evaluate(_JS_STATE)
+    return _eval(page, _JS_STATE, timeout_ms=20000)
 
 
 def _pick_si_on(page, st, timeout, settle):
@@ -520,7 +546,7 @@ def _pick_si_on(page, st, timeout, settle):
     while not pick and waited < settle:
         page.wait_for_timeout(500)
         waited += 0.5
-        st = page.evaluate(_JS_STATE)
+        st = _eval(page, _JS_STATE, timeout_ms=20000)
         pick = pick_si(st.get('si'))
     if not pick:
         st = _scroll_for_si(page)
@@ -556,7 +582,7 @@ def _grab(page, ctx, cands, kind, timeout, settle, out):
         tried.add(cand)
 
         # 第一趟：直接取。RSC / Springer 这类 citation_pdf_url 多半指的就是真身，同源时一次就成。
-        got = page.evaluate(_JS_GRAB, cand)
+        got = _eval(page, _JS_GRAB, cand)
         raw = _decode(got, want)
         if got.get('tooBig'):
             out['reason'], out['pdf_url'] = 'too_big', cand
@@ -581,7 +607,7 @@ def _grab(page, ctx, cands, kind, timeout, settle, out):
         except Exception:
             pass    # 导航到 PDF 常抛 ERR_ABORTED，不代表失败
         page.wait_for_timeout(min(settle, 3) * 1000)
-        got = page.evaluate(_JS_GRAB_HERE)
+        got = _eval(page, _JS_GRAB_HERE)
         raw = _decode(got, want)
         if got.get('tooBig'):
             out['reason'], out['pdf_url'] = 'too_big', cand
@@ -604,7 +630,7 @@ def _grab(page, ctx, cands, kind, timeout, settle, out):
         # 里面一个 iframe 指向 `/doi/pdfdirect/<DOI>`，那个才是 application/pdf 的真身。
         # 与其给 Wiley 写死一条 URL 规则，不如把「页面里嵌着的东西」一律当作新候选。
         try:
-            for u in page.evaluate(_JS_EMBEDS):
+            for u in _eval(page, _JS_EMBEDS, timeout_ms=20000):
                 if _worth_trying(u) and u not in tried:
                     queue.append(u)
         except Exception:
