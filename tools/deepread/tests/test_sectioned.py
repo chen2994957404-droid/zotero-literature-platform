@@ -211,3 +211,8 @@ def test_一条图注都没认出来时按顺序对应():
     ol = _ol.build_outline(MD)                       # 正文 2 条图注
     assert sectioned.number_crops([{'caption': ''}, {'caption': ''}], ol) == [(1, 1), (2, 2)]
     assert sectioned.number_crops([{'caption': ''}] * 3, ol) == [(2, 1), (3, 2)]   # 多一块 = 目录图
+
+
+def test_深解段漂到下一张图就截断():
+    assert sectioned.untranslated('剪切增 stiffening 离子凝胶') == ['stiffening']
+    assert sectioned.untranslated('损耗因子 tan δ 与 vdW 作用') == []

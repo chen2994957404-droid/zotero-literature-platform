@@ -21,7 +21,7 @@ from shared.kernel import prompts
 
 # 提示词版本：改范式 = 新建 prompts/main_v<N+1>.txt，再把这里 +1（提示词只增不改）。
 # 状态库据此回答「哪些精读该重跑」（jobs.stale('main_summary', prompt_ver=3)）。
-PROMPT_VER = 4      # v4 = 分段生成 + 四段提示词 @v2（篇幅收紧）；v3 = 分段 @v1；v2 = 一次调用 main@v2
+PROMPT_VER = 5      # v5 = fig/exp @v3（数值一个不落、步骤写到成品）；v4 = 四段 @v2；v3 = 分段 @v1；v2 = 一次调用
 PRODUCER = 'deepread_v4'
 MODE = 'sectioned'  # 'sectioned' 分段生成（默认）/ 'single' 老路一次调用（A/B 对比用）
 
@@ -74,6 +74,11 @@ def read_metadata(md, title=None, doi=None):
     mt = re.search(r'#\s+.+\n+(.+)', md)
     if mt and 'images/' not in mt.group(1):
         authors = re.sub(r'\$\^?\{?\*?\}?\$|\*', '', mt.group(1)).strip()
+    # MineRU 的作者行常带 `$^{1}$` 上标与 `|` 分隔，标题会被硬折行 —— 文献信息栏原样露出来很难看
+    authors = re.sub(r'\$[^$]*\$', '', authors)
+    authors = re.sub(r'\s*\|\s*', ', ', authors)
+    authors = re.sub(r'\s+', ' ', authors).strip(' ,')
+    title_en = re.sub(r'\s+', ' ', title_en or '').strip()
     return title_en, authors, doi
 
 

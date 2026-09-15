@@ -40,7 +40,9 @@ from shared.kernel import prompts
 
 # v2（2026-09-15）：金标三轮实测我们的汉字数中位 5900、范文（774 篇）中位 3872，篇幅比 1.75 ——
 # 各栏一起收：导读 300–400、引言 2 段、实验各段封顶、索引段 80–120、Q2 300–450、总之 250–330。
-PROMPTS = {'lead': 'lead@v2', 'exp': 'exp@v2', 'fig': 'fig@v2', 'wrap': 'wrap@v2'}
+# v3（2026-09-15 读了高分/低分各一篇之后）：讲图数值一个不落（40 篇里数字覆盖是最弱项，漏的全是图上的数）；
+# 实验步骤必须写到目标材料制成（高分那篇也在中间体合成处就停了）。
+PROMPTS = {'lead': 'lead@v2', 'exp': 'exp@v3', 'fig': 'fig@v3', 'wrap': 'wrap@v2'}
 
 # 每栏喂给模型的材料上限（字符）。够用就好：导读只要摘要 + 引言 + 结论，
 # 讲一张图只要它的图注 + 提到它的段落。上限是防 MineRU 吐出的巨型垃圾。
@@ -279,6 +281,10 @@ def untranslated(p):
         # 全是大写缩写/带数字的编号（PDMS-IU-12, LiTFSI）不算；有 ≥3 个普通小写词才算英文句
         if sum(1 for w in words if re.fullmatch(r'[a-z]{3,}', w)) >= 3:
             out.append(run.strip())
+    # 汉字紧挨着一个长的小写英文词（「剪切增 stiffening」）：半句没翻。
+    # 缩写（大写）、化学式、tan δ 这类短词不算；括号里的已在 _prose 里剥掉。
+    for m in re.finditer(r'[一-鿿]\s?([a-z]{7,})\b', _prose(p)):
+        out.append(m.group(1))
     return out
 
 
@@ -417,6 +423,10 @@ def _one_fig(chat, md, outline, num, n_figs, gloss, source, model, log):
         ps = [normalize('fig_idx', p) for p in _paras(re.sub(r'<think>[\s\S]*?</think>', '', raw or ''))]
         idx = next((p for p in ps if re.match(r'^图%d\b' % num, p)), '')
         deep = next((p for p in ps if p.startswith('▲图')), '')
+        # 小模型讲着讲着漂到下一张图（2026-09-15 实测：图 2 的深解段里接着写「图3，标题为…」）：
+        # 从下一张图的索引句处截断，截掉的那截不是这张图的。
+        deep = re.split(r'\s*图(?!%d\b)\d+，标题为' % num, deep)[0].strip()
+        idx = re.split(r'\s*▲图', idx)[0].strip()
         return {'idx': idx, 'deep': deep, '_ps': ps}
 
     d = _with_fix(chat, sysp, user, 1800, model, parse,
