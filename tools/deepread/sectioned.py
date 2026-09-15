@@ -405,7 +405,8 @@ def _exp(chat, md, si_md, outline, review, gloss, source, model, log):
 
 def _one_fig(chat, md, outline, num, n_figs, gloss, source, model, log):
     cap_txt, body, tabs = _fig_context(md, outline, num)
-    per = max(DEEP_MIN, min(DEEP_MAX, DEEP_BUDGET // max(1, n_figs)))
+    # 综述 20 多张图时按 DEEP_MIN 也要 4000+ 字（第四轮实测篇幅比 2.27）：图超过 12 张下限再降一档
+    per = max(DEEP_MIN if n_figs <= 12 else 150, min(DEEP_MAX, DEEP_BUDGET // max(1, n_figs)))
     sysp = _sub(prompts.load('deepread', PROMPTS['fig']), DEEP_LEN='约 %d 字' % per)
     user = ('这是图 %d（全文共 %d 张图）。\n%s\n\n【原文图注】\n%s\n\n【正文里讨论它的段落】\n%s%s'
             % (num, n_figs, gloss, cap_txt or '（未找到图注）',
