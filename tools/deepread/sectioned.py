@@ -38,14 +38,16 @@ from shared.domain.schema import is_review
 from shared.domain.schema import outline as _ol
 from shared.kernel import prompts
 
-PROMPTS = {'lead': 'lead@v1', 'exp': 'exp@v1', 'fig': 'fig@v1', 'wrap': 'wrap@v1'}
+# v2（2026-09-15）：金标三轮实测我们的汉字数中位 5900、范文（774 篇）中位 3872，篇幅比 1.75 ——
+# 各栏一起收：导读 300–400、引言 2 段、实验各段封顶、索引段 80–120、Q2 300–450、总之 250–330。
+PROMPTS = {'lead': 'lead@v2', 'exp': 'exp@v2', 'fig': 'fig@v2', 'wrap': 'wrap@v2'}
 
 # 每栏喂给模型的材料上限（字符）。够用就好：导读只要摘要 + 引言 + 结论，
 # 讲一张图只要它的图注 + 提到它的段落。上限是防 MineRU 吐出的巨型垃圾。
 CAP_INTRO, CAP_CONCL, CAP_EXP, CAP_SI, CAP_FIG, CAP_BODY, CAP_TABLES = 12000, 4000, 10000, 16000, 7000, 12000, 6000
 # 深解段总预算（字）：范文全篇中位 7000，讨论占一半以上；按图数均分，单段夹在 250–450 之间。
 # 2026-09-15 金标第一轮（10 篇本地）篇幅比中位 1.74，超了 1.5 的上限 → 总预算 3600 收到 3000、单段上限 550 收到 450。
-DEEP_BUDGET, DEEP_MIN, DEEP_MAX = 3000, 250, 450
+DEEP_BUDGET, DEEP_MIN, DEEP_MAX = 2400, 200, 380
 
 _Q1 = '各组分的作用是？'
 _Q1_REVIEW = '各类材料体系/结构单元分别起什么作用？'

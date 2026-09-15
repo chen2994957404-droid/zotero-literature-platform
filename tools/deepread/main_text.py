@@ -21,7 +21,7 @@ from shared.kernel import prompts
 
 # 提示词版本：改范式 = 新建 prompts/main_v<N+1>.txt，再把这里 +1（提示词只增不改）。
 # 状态库据此回答「哪些精读该重跑」（jobs.stale('main_summary', prompt_ver=3)）。
-PROMPT_VER = 3      # v3 = 分段生成（sectioned.py，四段提示词 lead/exp/fig/wrap@v1）；v2 = 一次调用 main@v2
+PROMPT_VER = 4      # v4 = 分段生成 + 四段提示词 @v2（篇幅收紧）；v3 = 分段 @v1；v2 = 一次调用 main@v2
 PRODUCER = 'deepread_v4'
 MODE = 'sectioned'  # 'sectioned' 分段生成（默认）/ 'single' 老路一次调用（A/B 对比用）
 
