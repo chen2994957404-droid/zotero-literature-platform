@@ -43,8 +43,9 @@ PROMPTS = {'lead': 'lead@v1', 'exp': 'exp@v1', 'fig': 'fig@v1', 'wrap': 'wrap@v1
 # 每栏喂给模型的材料上限（字符）。够用就好：导读只要摘要 + 引言 + 结论，
 # 讲一张图只要它的图注 + 提到它的段落。上限是防 MineRU 吐出的巨型垃圾。
 CAP_INTRO, CAP_CONCL, CAP_EXP, CAP_SI, CAP_FIG, CAP_BODY, CAP_TABLES = 12000, 4000, 10000, 16000, 7000, 12000, 6000
-# 深解段总预算（字）：范文全篇中位 7000，讨论占一半以上；按图数均分，单段夹在 250–550 之间
-DEEP_BUDGET, DEEP_MIN, DEEP_MAX = 3600, 250, 550
+# 深解段总预算（字）：范文全篇中位 7000，讨论占一半以上；按图数均分，单段夹在 250–450 之间。
+# 2026-09-15 金标第一轮（10 篇本地）篇幅比中位 1.74，超了 1.5 的上限 → 总预算 3600 收到 3000、单段上限 550 收到 450。
+DEEP_BUDGET, DEEP_MIN, DEEP_MAX = 3000, 250, 450
 
 _Q1 = '各组分的作用是？'
 _Q1_REVIEW = '各类材料体系/结构单元分别起什么作用？'
@@ -476,7 +477,12 @@ def number_crops(figs, outline):
             seen.add(int(m.group(1)))
             known[i] = int(m.group(1))
     if not known:
-        return []
+        # 一条图注都没认出来（Wiley 的 FIGURE 大写曾让裁图全空）：按顺序一一对应。
+        # 裁图比正文图注多一块时，多出来的那块当目录图，从第二块起对应。
+        if n_md == 0:
+            return []
+        off = 1 if len(figs) == n_md + 1 else 0
+        return [(i, i - off) for i in range(1 + off, min(len(figs), n_md + off) + 1)]
     out = dict(known)
     idxs = sorted(known)
     # 两个已知号之间的无注块：缺口正好装得下才补

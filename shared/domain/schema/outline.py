@@ -262,7 +262,8 @@ def _figures(text, sections):
         m = _FIGCAP_LINE_RE.search(block) if block.strip() else None
         if m:
             ref = re.sub(r'\s+', ' ', m.group(1)).strip().rstrip('.')
-            key = ref.lower().replace('fig.', 'figure').replace('fig ', 'figure ')
+            # 同一张图只登记一次：`Figure 6a` 这种子图行不另算一条（按数字判重，2026-09-15）
+            key = re.sub(r'[a-z]$', '', ref.lower().replace('fig.', 'figure').replace('fig ', 'figure '))
             cap = block[m.start(1):]                # 从「Figure N」起，图片行不算图注
             if key not in seen and len(cap.strip()) > 20:
                 seen.add(key)

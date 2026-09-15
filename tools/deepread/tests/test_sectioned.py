@@ -204,3 +204,10 @@ def test_综述判定也看刊名():
     ol = _ol.build_outline(MD)
     assert sectioned.is_review_doc('Thermally conductive polymer composites', ol, 'Progress in Materials Science')
     assert not sectioned.is_review_doc('Thermally conductive polymer composites', ol, 'Macromolecules')
+
+
+def test_一条图注都没认出来时按顺序对应():
+    from shared.domain.schema import outline as _ol
+    ol = _ol.build_outline(MD)                       # 正文 2 条图注
+    assert sectioned.number_crops([{'caption': ''}, {'caption': ''}], ol) == [(1, 1), (2, 2)]
+    assert sectioned.number_crops([{'caption': ''}] * 3, ol) == [(2, 1), (3, 2)]   # 多一块 = 目录图

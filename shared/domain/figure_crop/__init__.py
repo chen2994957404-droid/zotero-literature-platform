@@ -37,13 +37,13 @@ def _block_text(blk):
 def _find_caption(pg):
     for blk in pg.get('para_blocks', []):
         txt = _block_text(blk)
-        if re.match(r'\s*(?:Figure|Fig\.?|图)\s*(\d+)', txt):
+        if re.match(r'\s*(?:Figure|Fig\.?|图)\s*(\d+)', txt, re.I):     # Wiley 版式是全大写 FIGURE 1
             return txt[:150]
         for sub in (blk.get('blocks') or []):
             if sub.get('type') == 'image_caption':
                 ct = ''.join(sp.get('content', '') for ln in sub.get('lines', [])
                              for sp in ln.get('spans', []))
-                if re.match(r'\s*(?:Figure|Fig\.?|图)\s*\d', ct):
+                if re.match(r'\s*(?:Figure|Fig\.?|图)\s*\d', ct, re.I):
                     return ct[:150]
     return ''
 
