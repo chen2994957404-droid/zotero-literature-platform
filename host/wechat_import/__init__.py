@@ -39,6 +39,7 @@ import base64
 import io
 import json
 import os
+import re
 import shutil
 import time
 
@@ -77,6 +78,35 @@ def parse_md(path):
     a = wechat_seed.parse_article(text)
     a['file'] = os.path.basename(path)
     return a
+
+
+def article_from_reference(path):
+    """`reference.md`（金标范文）→ article dict，形状同 `parse_md`。
+
+    范文是 `golden.render_reference` 写的：头四行（标题 / 来源 / DOI / ---），
+    之后一段一行、图是 `![](url)`。反着读回来就是。
+    """
+    lines = io.open(path, encoding='utf-8', errors='replace').read().split('\n')
+    title = lines[0].lstrip('#').strip() if lines else ''
+    doi, pubdate, blocks = '', '', []
+    body = lines[lines.index('---') + 1:] if '---' in lines else lines[1:]
+    for ln in lines[:4]:
+        if ln.startswith('DOI:'):
+            doi = ln[4:].strip()
+        m = re.search(r'· (\d{4}-\d{2}-\d{2}) ·', ln)
+        if m:
+            pubdate = m.group(1)
+    for ln in body:
+        s = ln.strip()
+        if not s:
+            continue
+        m = re.match(r'^!\[[^\]]*\]\(([^)\s]+)\)', s)
+        if m:
+            blocks.append({'kind': 'img', 'url': m.group(1)})
+        else:
+            blocks.append({'kind': 'p', 'text': s})
+    return {'title': title, 'doi': doi, 'pubdate': pubdate, 'blocks': blocks,
+            'file': os.path.basename(path)}
 
 
 def list_dir(directory):

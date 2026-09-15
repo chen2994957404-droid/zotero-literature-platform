@@ -54,22 +54,71 @@ os.makedirs(LIBRARY, exist_ok=True)
 DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')      # 只用于启动时的密钥自检
 PROVIDER = 'deepseek'
 MODEL = None                                 # None = 让路由表定
+def paper_id_for(item):
+    """Zotero 条目 → 它在证据库里的文献 id。**跨来源认同一篇靠 DOI。**
+
+    同一篇论文可能早就以 `doi_…` 的编号落在证据库里（公众号那 774 篇就是），
+    用户这时在 Zotero 打标签，拿到的是 Zotero 编号 —— 2026-09-15 之前这里直接拿它当目录名，
+    于是同一篇会开第二个目录：再取一次原件、再解析一次、范文也看不见。
+    现在先按 DOI 问证据库：有就用那个目录，并把 Zotero 编号登记成它的一个属性。
+    """
+    from shared.kernel import catalog
+    key = item['key']
+    doi = (item.get('data') or {}).get('DOI') or ''
+    if not doi:
+        return key
+    existing = catalog.find(doi)
+    if existing and existing != key:
+        catalog.register(existing, zotero_key=key)
+        return existing
+    catalog.register(key, doi=doi, zotero_key=key)
+    return key
+
+
+def adopt_reference(pid, log=print):
+    """这篇有人写的范文（公众号推文）而且还没有正文精读 → 推文当正文精读（2026-09-06 用户定的策略 A）。
+
+    精读那边看到状态库里 `main_summary` 已完成（producer=wechat），就只补 SI。
+    返回 True 表示这次装上了。
+    """
+    from host import wechat_import
+    ref = paths.reference(pid)
+    if not os.path.exists(ref) or os.path.exists(paths.summary(pid)):
+        return False
+    try:
+        article = wechat_import.article_from_reference(ref)
+        r = wechat_import.build_local(pid, article, log=log)
+        return not r.get('skipped')
+    except Exception as e:
+        log(f'  [范文没装上] {str(e)[:120]} —— 照常跑我们自己的精读')
+        return False
+
+
 def process_item(item):
     """状态机：检测有哪些附件、哪些还没精读 → 补做缺的 → 置对应状态标签。
 
     正文有/SI有 → 全文精读 ；只正文 → 正文精读 ；只SI → SI精读 ；都没有 → 无附件
     已有正文精读 + 有SI → 只补SI，标签升级为 全文精读（不重跑正文，省钱）
+
+    `key` 是 Zotero 编号（打标签、传附件用它）；`pid` 是证据库里的目录（数据全在那）。
+    两者多数时候相同，公众号那批不同 —— 分开拿，别混。
     """
     key = item['key']
     title = item['data'].get('title', key)[:50]
     print(f'[发现] {title}')
-    pdf_path = _find_pdf(key)
-    si_exists = has_si(key)
+    pid = paper_id_for(item)
+    if pid != key:
+        print(f'  [按 DOI 认出] 证据库里已有这篇：{pid}（不重取不重解析）')
+    if adopt_reference(pid, log=print):
+        print('  [范文当正文精读] 公众号那篇人写的装上了，只补 SI')
+    local = paths.local_pdf(pid)
+    pdf_path = local if os.path.exists(local) else _find_pdf(key)
+    si_exists = bool(paths.find_local_si(pid)) or has_si(key)
 
     # ── 精读流水线（原来是三段 subprocess，现在是一次函数调用）──
     # 「哪些步骤该跳过、哪个失败了不该拖累别的」全在 tools/deepread 里，
     # 并且每一步都记进 shared.kernel.jobs（谁产的、哪个模型、哪版提示词、失败原因）。
-    r = deepread.run(key, item=item, pdf_path=pdf_path, si_exists=si_exists,
+    r = deepread.run(pid, item=item, pdf_path=pdf_path, si_exists=si_exists,
                      provider=PROVIDER, model=MODEL, llm_key=DEEPSEEK_KEY, log=print)
 
     if r.state == 'nopdf':
@@ -88,7 +137,7 @@ def process_item(item):
     # tools/deepread/**（硬规则 2：tools 不许 import tools；硬规则 4：host 可以
     # import 一切）。R7 窗的判定与理由写在 host/watcher/__init__.py。
     from tools import extract
-    extract.run(key, log=print)
+    extract.run(pid, log=print)
     # 3. 回写 Zotero：**复用已有 summary 附件、只更新文件内容**（不删条目）
     #    踩坑：原先"先删旧附件再传新的"，删除动作进入同步链 → Zotero 每篇都弹"冲突解决"框。
     #    改为复用同一附件条目，只覆盖本地 storage 文件，避免产生删除记录。

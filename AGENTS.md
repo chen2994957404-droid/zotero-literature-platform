@@ -180,6 +180,8 @@ flash 的正式名已是 `deepseek-flash`（旧名 `deepseek-v4-flash` 靠转发
   「推到 Zotero」是另一个动作（`--to-zotero` / `getpdf_stash_one`），由人决定。
 - 精读 / 解析找 PDF 与 SI **本地正本优先，Zotero 兜底**。
 - 数据库的写入口只有一条：B 机上的流水线。打标签 = 投稿，不是直接写库。
+  **打了标签先按 DOI 对账**（`host/watcher/service.paper_id_for`）：证据库里已有的用原目录，
+  Zotero 编号只登记成属性；有范文（公众号推文 `reference.md`）的，推文当正文精读、我们只补 SI（2026-09-15 用户定）。
 - 老库回流：`python -m tools.getpdf --从Zotero落地`（一次性，只读 Zotero）。
 - **落地即自动**（`host/ingest`）：正本一到，MineRU 解析 → 骨架 → 向量化自动做完，
   一分钱大模型的钱不花；之后模型就能 `library_outline` → `library_section` 自己读它。
