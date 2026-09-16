@@ -123,13 +123,14 @@ def annotate(items, seen, today=None):
     """给每篇标：`in_library`（证据库 id 或 ''）、`is_new`（这次首见）。**会改 seen**（记首见日）。"""
     today = (today or _dt.date.today()).isoformat()
     dois = seen.setdefault('dois', {})
+    lib = catalog.by_doi()                # 扫一次；`catalog.find` 每调一次都重扫全库，几百篇一起问会卡死（踩坑 #161）
     out, have = [], set()
     for w in items:
         d = catalog.norm_doi(w['doi'])
         if not d or d in have:
             continue                      # 同一篇在两个 ISSN 下各出现一次
         have.add(d)
-        w['in_library'] = catalog.find(d)
+        w['in_library'] = lib.get(d, '')
         w['is_new'] = d not in dois
         dois.setdefault(d, today)
         out.append(w)
@@ -181,6 +182,7 @@ def backfill(years=3, journals=None, log=None, until=None, progress=None):
     except Exception:
         done = set()
     con = store.connect()
+    lib = catalog.by_doi()                # 同上：扫一次，别每篇重扫
     total_new, chunks, failed = 0, 0, []
     try:
         for j in journals:
@@ -197,7 +199,7 @@ def backfill(years=3, journals=None, log=None, until=None, progress=None):
                     while cursor:
                         items, cursor, total = crossref.journal_works(j['issn'], flt, cursor=cursor)
                         for w in items:
-                            w['in_library'] = catalog.find(w['doi'])
+                            w['in_library'] = lib.get(catalog.norm_doi(w['doi']), '')
                             w['venue'] = j['name'] or w['venue']      # Crossref 的刊名偶尔带换行 / 副标题
                         n_new += store.upsert(con, items)
                         got += len(items)

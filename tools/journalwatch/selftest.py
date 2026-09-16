@@ -42,12 +42,12 @@ def main():
         print('  [FAIL] 二次标注不对：%s %s' % (rows, seen))
 
     total += 1
-    real = jw.catalog.find
-    jw.catalog.find = lambda d: 'doi_x' if d == '10.1/c' else ''
+    real = jw.catalog.by_doi
+    jw.catalog.by_doi = lambda: {'10.1/c': 'doi_x'}
     try:
         rows = jw.annotate([_w('10.1/C'), _w('10.1/D')], {'dois': {}}, today=today)
     finally:
-        jw.catalog.find = real
+        jw.catalog.by_doi = real
     if [r['in_library'] for r in rows] == ['doi_x', '']:
         print('  [PASS] 证据库里有的标出 id'); ok += 1
     else:
