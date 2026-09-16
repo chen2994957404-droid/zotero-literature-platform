@@ -502,7 +502,10 @@ def _state_ready(page, settle):
             if 'destroyed' not in str(e) and 'navigat' not in str(e).lower():
                 raise
             st = {}
-        if st.get('candidates') or st.get('si') or st.get('captcha') or st.get('paywall'):
+        # ⚠ 别把 paywall 当「可以停了」的信号（踩坑 #162）：ScienceDirect 每篇正文都带
+        # 「Get rights and content」，而「View PDF」链接是 JS 稍后才画出来的 ——
+        # 一看到那句就返回，等于永远在链接出现之前判它「没权限」。付费墙只在到期后才作数。
+        if st.get('candidates') or st.get('si') or st.get('captcha'):
             return st
         if waited >= deadline:
             return st
