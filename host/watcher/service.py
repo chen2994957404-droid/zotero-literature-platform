@@ -254,6 +254,9 @@ def log_key_status():
         print(f'[密钥] Zotero: {msg}')
         if ok is False:
             bad.append('Zotero')
+        from shared.adapters import openalex
+        k = openalex.api_key()
+        print('[密钥] OpenAlex: ' + (f'有 key（…{k[-4:]}），每天 $1 额度' if k else '没 key，走每天 $0.10 的公共额度（补摘要会慢）'))
         if bad:
             print(f'[⚠ 密钥失效] {"、".join(bad)} —— 精读会失败。'
                   f'请在控制面板重填，然后重启本服务')
