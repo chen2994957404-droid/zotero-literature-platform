@@ -54,7 +54,7 @@ os.makedirs(LIBRARY, exist_ok=True)
 DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')      # 只用于启动时的密钥自检
 PROVIDER = 'deepseek'
 MODEL = None                                 # None = 让路由表定
-HARVEST_PER_DAY = 5                          # 盯新刊过线后每天自动升 1 级的上限（2026-09-16）：量小于出版商风控线，也小于硬盘增长线
+HARVEST_PER_DAY = 10                         # 盯新刊过线后每天自动升 1 级的上限（2026-09-16）：MineRU 每天 1000 页优先额度 ≈ 25 篇，留一半给打标签的精读
 def paper_id_for(item):
     """Zotero 条目 → 它在证据库里的文献 id。**跨来源认同一篇靠 DOI。**
 
@@ -361,6 +361,9 @@ def main():
                 # 过线 → 升 1 级：每天最多 HARVEST_PER_DAY 篇，引库内最多的先取。
                 # 取的是正本 + SI 落地（不精读、不花模型钱）；落地流水线随后自动解析 / 骨架 / 向量化。
                 # 取不到的隔天再试（刚登记的全文常常几天后才挂出来），最多试四天。
+                ft, nt = journalwatch.fill_topics(days=60, max_calls=100, log=lambda *a: None)
+                if nt:
+                    print(f'[补分类] OpenAlex 问了 {nt} 篇，拿到 {ft} 篇')
                 q_new = journalwatch.enqueue_passing(r['items']) + journalwatch.enqueue_recent(days=60)
                 todo = journalwatch.next_to_harvest(HARVEST_PER_DAY)
                 if todo:

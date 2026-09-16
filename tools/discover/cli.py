@@ -4,9 +4,9 @@
 用法:
   python -m tools.discover "polyborosiloxane dynamic bond"
   python -m tools.discover "我的材料回弹太差怎么解决" --解决问题
-  python -m tools.discover "离子液体自修复弹性体" --新方向
-        └ 找新方向用：**不按「跟你的库像不像」排**，只按跟本次主题贴不贴排。
-          默认排序会把离你库远的压下去 —— 深耕现有方向时对，找新方向时反。
+  python -m tools.discover "离子液体自修复弹性体" --跟我相关
+        └ **默认只按跟本次主题贴不贴排，不看你的库**（2026-09-16 用户定：库默认和一切断开）。
+          只有加 --跟我相关 才按「跟你的库像不像」排 —— 深耕现有方向时用。
   python -m tools.discover "shear stiffening gel" 30 --since 2020
   python -m tools.discover "..." --扩展 8      拆更多检索式（更全，更慢更费）
   python -m tools.discover "..." --单查询      只用原话搜（快，但会漏）
@@ -95,7 +95,7 @@ def main():
                           year_from=opt('--since'), prefer=prefer,
                           snowball_seeds=n_seeds, topic_floor=floor,
                           use_openalex=flag('--openalex'), log=print,
-                          explore=flag('--新方向'))
+                          explore=not flag('--跟我相关'))
     except Exception as e:
         print(f'检索失败：{e}')
         return

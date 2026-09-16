@@ -32,7 +32,7 @@ def connect(path=None):
     con.execute('PRAGMA journal_mode=WAL')
     con.executescript(SCHEMA)
     have = {r[1] for r in con.execute('PRAGMA table_info(works)')}
-    for col, typ in (('tier', 'TEXT'), ('lib_cites', 'INTEGER')):
+    for col, typ in (('tier', 'TEXT'), ('lib_cites', 'INTEGER'), ('topics', 'TEXT'), ('subfields', 'TEXT')):
         if col not in have:
             con.execute('ALTER TABLE works ADD COLUMN %s %s' % (col, typ))       # 2026-09-16 加：档位与引库内几篇
     return con

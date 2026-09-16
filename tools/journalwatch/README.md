@@ -21,13 +21,15 @@ python -m tools.discover.collect 1,3,5-7
 `data/serving/journal_watch.json`：每条 `name` + `issn` + `tier`。第一次跑会用种子清单（59 本，按证据库里 987 篇的
 真实出处拟的，ISSN 都在 Crossref 上逐个验过）把文件建出来，之后你自己改。不想盯的加 `"off": true`，不用删。
 
-| 档 | 回答什么 | 谁 | 过线门槛（引了库内几篇） |
+| 档 | 回答什么 | 谁 | 自动升 1 级 |
 |---|---|---|---|
-| A 方向层 | 行业往哪走、新概念第一次出现 | Nature/Science 系、JACS、Angew、AM、AFM、Chem Rev… | ≥2 |
-| B 领域层 | 这个体系怎么做、参数在哪 | Macromolecules、Polym Chem、Chem Mater、Polymer、Soft Matter… | ≥1（实验细节密度高，放宽） |
-| C 宽口层 | 两头都有、噪音最大 | CEJ、AMI、Small、Adv Sci、JMCA、Green Chem… | ≥3 |
+| A 方向层 | 行业往哪走、新概念第一次出现 | Nature/Science 系、JACS、Angew、AM、AFM、Chem Rev… | OpenAlex 分类是软物质/高分子/材料力学的 |
+| B 领域层 | 这个体系怎么做、参数在哪 | Macromolecules、Polym Chem、Chem Mater、Polymer、Soft Matter… | 同上（几乎都过） |
+| C 宽口层 | 两头都有、噪音最大 | CEJ、AMI、Small、Adv Sci、JMCA、Green Chem… | 不自动，你点名才取 |
 
-档位是每篇的属性，不是收不收的闸门；闸门是相关度。门槛在 `TIER_GATE`，看几周清单再调。
+**门槛不看你的库**（2026-09-16 用户定：默认状态下他的库和一切断开）。用的是 OpenAlex 的学科分类 —— 普适信号；
+它比 Crossref 晚几天到两周收录，所以刚登记的文章先在雷达里等分类到了再过闸。
+「引了证据库里几篇」仍然记录，只在 `--跟我相关` 时用来排序。
 
 ## 雷达库（0 级）
 
@@ -46,7 +48,8 @@ python -m tools.discover.collect 1,3,5-7
 
 1. 巡逻：59 本刊最近 3 天新登记的 → 进雷达
 2. 补摘要：OpenAlex 补 Crossref 没给的（每天最多 200 批）
-3. **过线 → 升 1 级**：引了库内 A≥2 / B≥1 / C≥3 篇的入队，每天最多取 5 篇（引库内最多的先），
+3. **补分类**：OpenAlex 的 topics（普适门槛的原料）
+4. **过线 → 升 1 级**：A/B 档且分类是软物质/高分子的入队，每天最多取 10 篇（A 档先、新的先），
    正本 + SI 落地，落地流水线随后自动解析。取不到的隔天再试，最多四天。
    队列在 `journal_watch_seen.json` 的 `queue` / `harvested`。
 

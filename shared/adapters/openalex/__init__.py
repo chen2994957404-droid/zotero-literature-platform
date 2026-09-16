@@ -66,7 +66,7 @@ def _auth(url):
     return url + ('&' if '?' in url else '?') + 'api_key=' + urllib.parse.quote(k)
 # 只取用得上的字段：响应小一个数量级，也更快
 FIELDS = ('id,doi,title,publication_year,cited_by_count,primary_location,'
-          'abstract_inverted_index,open_access,authorships')
+          'abstract_inverted_index,open_access,authorships,primary_topic,topics')
 
 _RETRIABLE = (429, 500, 502, 503, 504)
 
@@ -174,6 +174,10 @@ def normalize(w):
         'oa_url': (loc.get('landing_page_url') or '') if isinstance(loc, dict) else '',
         'openalex_id': (w.get('id') or '').split('/')[-1],
         'first_author': first_author,
+        # OpenAlex 的学科分类（2026-09-16 加）：一篇最多 3 个 topic，各带 subfield / field。
+        # 这是**普适的**领域信号 —— 盯新刊按它判「是不是软物质 / 高分子」，不看用户自己的库。
+        'topics': [t.get('display_name') or '' for t in (w.get('topics') or [])][:3],
+        'subfields': sorted({((t.get('subfield') or {}).get('display_name') or '') for t in (w.get('topics') or [])} - {''}),
     }
 
 

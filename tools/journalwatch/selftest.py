@@ -45,15 +45,16 @@ def main():
     real = jw.catalog.by_doi
     jw.catalog.by_doi = lambda: {'10.1/c': 'doi_x', '10.1/l1': 'p1', '10.1/l2': 'p2'}
     try:
-        a = dict(_w('10.1/C'), tier='A', refs=['10.1/l1', '10.1/l2', '10.1/zz'])   # A 档引 2 篇 → 过线
-        b = dict(_w('10.1/D'), tier='C', refs=['10.1/l1', '10.1/l2'])              # C 档引 2 篇 → 不过（要 3）
-        c = dict(_w('10.1/E'), tier='B', refs=['10.1/l1'])                         # B 档引 1 篇 → 过
-        rows = jw.annotate([a, b, c], {'dois': {}}, today=today)
+        a = dict(_w('10.1/C'), tier='A', refs=['10.1/l1', '10.1/l2', '10.1/zz'], topics=['Force Microscopy', 'Polymer crystallization'], subfields=['Atomic Physics'])
+        b = dict(_w('10.1/D'), tier='C', refs=['10.1/l1', '10.1/l2'], topics=['Polymer composites'], subfields=['Polymers and Plastics'])   # C 档不自动
+        c = dict(_w('10.1/E'), tier='A', refs=['10.1/l1'], topics=['Quantum dots'], subfields=['Optics'])                                    # A 档但不是软物质
+        e = dict(_w('10.1/F'), tier='B', refs=[], topics=None, subfields=None)                                                                # 分类还没到 → 等
+        rows = jw.annotate([a, b, c, e], {'dois': {}}, today=today)
     finally:
         jw.catalog.by_doi = real
     got = {r['doi']: (r['in_library'], r['lib_cites'], r['passes']) for r in rows}
-    if got == {'10.1/C': ('doi_x', 2, True), '10.1/D': ('', 2, False), '10.1/E': ('', 1, True)}:
-        print('  [PASS] 证据库里有的标出 id；引了库内几篇 + 按档位过线（A≥2 / B≥1 / C≥3）'); ok += 1
+    if got == {'10.1/C': ('doi_x', 2, True), '10.1/D': ('', 2, False), '10.1/E': ('', 1, False), '10.1/F': ('', 0, False)}:
+        print('  [PASS] 证据库里有的标出 id；引库内几篇只记录不当门槛；门槛 = 档位 + OpenAlex 分类（C 档不自动、非软物质不过、分类没到先等）'); ok += 1
     else:
         print('  [FAIL] 库内标注 / 门槛不对：%s' % got)
 
@@ -136,8 +137,8 @@ def main():
     real_seen = jw.paths.journal_watch_seen
     jw.paths.journal_watch_seen = lambda: os.path.join(tmpd, 'seen.json')
     try:
-        items = [dict(_w('10.1/q1'), passes=True, tier='B', lib_cites=1, in_library=''),
-                 dict(_w('10.1/q2'), passes=True, tier='A', lib_cites=4, in_library=''),
+        items = [dict(_w('10.1/q1'), passes=True, tier='B', lib_cites=1, in_library='', published='2026-09-10'),
+                 dict(_w('10.1/q2'), passes=True, tier='A', lib_cites=4, in_library='', published='2026-09-01'),
                  dict(_w('10.1/q3'), passes=False, tier='A', lib_cites=1, in_library=''),
                  dict(_w('10.1/q4'), passes=True, tier='A', lib_cites=9, in_library='doi_x')]
         n_in = jw.enqueue_passing(items)
@@ -150,7 +151,7 @@ def main():
     finally:
         jw.paths.journal_watch_seen = real_seen
     if n_in == 2 and order == ['10.1/q2', '10.1/q1'] and left == [] and again == 0:
-        print('  [PASS] 过线入队（不过线 / 库里有的不进）、引库内多的先取、取成出队、试满四次不再取、不重复入队'); ok += 1
+        print('  [PASS] 过线入队（不过线 / 库里有的不进）、A 档先于 B 档、取成出队、试满四次不再取、不重复入队'); ok += 1
     else:
         print('  [FAIL] 队列不对：%s %s %s %s' % (n_in, order, left, again))
 
