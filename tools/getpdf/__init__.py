@@ -93,6 +93,10 @@ def fetch_one(doi, where=None):
             'bytes': len(r['pdf'])}
 
 
+# `reason='oa'` 是本层加的（pdf_fetch.REASONS 只登记浏览器那条路的原因，它的自测会核对）
+REASON_OA = '拿到了（合法的开放获取版本，没敲出版商）'
+
+
 def _try_open_access(doi, path):
     """先问 Unpaywall 有没有合法的开放版本（2026-09-16）：有就直接下，**不碰出版商**。
 
