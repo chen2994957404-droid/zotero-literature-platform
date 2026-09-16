@@ -43,8 +43,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 #            而且得先有 PDF。**最贵的一层，也是唯一必须备份的一层。**
 #   curated  我们自己的流水线从 raw 造出来的：中文精读 HTML、元数据。
 #            重建 = 再花一次大模型的钱。
-#   serving  随时可重建：对比表、向量库、方向地图。删了跑一条命令就有。
-#   state    索引与进度，**不是真相**：state.db / papers.db / 上次检索结果。
+#   serving  随时可重建：对比表、向量库、方向地图、**雷达库 radar.db**（0 级：盯着的刊
+#            每篇的题目/摘要/参考文献，从 Crossref 重拉即可）。删了跑一条命令就有。
+#            例外：journal_watch.json（盯哪些刊、分几档）是人定的，重建不了 —— 但它是配置不是数据。
+#   state    索引与进度，**不是真相**：state.db / papers.db / 上次检索结果 /
+#            journal_watch_seen.json（盯新刊见过哪些、回填到哪块）。
 #            例外是 evalset.json（用户一条条打的人工评价，重建不了）。
 #   logs     运行日志与心跳。
 #   backup   快照（Zotero 标签、覆盖前的 structured）。

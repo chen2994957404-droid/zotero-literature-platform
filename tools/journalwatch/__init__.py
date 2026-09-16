@@ -280,8 +280,10 @@ def refresh(log=None):
     log = log or _log.info
     con = store.connect()
     try:
-        n = store.refresh_lib_cites(con, list(catalog.by_doi()), {j['name']: j['tier'] for j in load_journals()})
+        lib = catalog.by_doi()
+        n = store.refresh_lib_cites(con, list(lib), {j['name']: j['tier'] for j in load_journals()})
+        m = store.refresh_library_flags(con, lambda d: lib.get(catalog.norm_doi(d), ''))
     finally:
         con.close()
-    log('雷达里引了库内文献的：%d 篇' % n)
+    log('雷达里引了库内文献的：%d 篇；新标成「库里有」的：%d 篇' % (n, m))
     return n

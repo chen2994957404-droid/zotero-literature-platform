@@ -99,3 +99,28 @@ def test_搜标题或DOI(env):
     assert [r['id'] for r in catalog.search('vitrimer')] == ['DDDD4444']
     assert [r['id'] for r in catalog.search('5b00210')] == ['DDDD4444']
     assert catalog.search('') == []
+
+
+def test_by_doi缓存_落新文献后自动失效(tmp_path, monkeypatch):
+    """进程内缓存以目录 mtime 为印章：register 新的一篇后再问必须看得到（2026-09-16）。"""
+    import os, time
+    from shared.kernel import catalog, paths
+    for name in ('RAW', 'CURATED'):
+        d = tmp_path / name.lower(); d.mkdir(); monkeypatch.setattr(paths, name, str(d))
+    catalog._cache_clear()
+    assert catalog.by_doi() == {}
+    catalog.register('AAAA1111', doi='10.1/x')
+    assert catalog.find('10.1/x') == 'AAAA1111'
+    # 别的进程落了一篇（只建目录写文件，不经 register）→ 目录 mtime 变 → 缓存失效
+    time.sleep(0.02)
+    os.makedirs(str(tmp_path / 'curated' / 'BBBB2222'))
+    open(str(tmp_path / 'curated' / 'BBBB2222' / 'meta.json'), 'w').write('{"doi": "10.1/y"}')
+    assert catalog.find('10.1/y') == 'BBBB2222'
+
+
+def test_level_of():
+    from shared.kernel import catalog
+    assert catalog.level_of({}) == 0
+    assert catalog.level_of({'fulltext': True}) == 1
+    assert catalog.level_of({'fulltext': True, 'pdf': True}) == 2
+    assert catalog.level_of({'pdf': True, 'summary': True}) == 3

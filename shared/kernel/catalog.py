@@ -12,6 +12,10 @@
     · `raw/<id>/` 里实际躺着的文件 —— main.pdf、si.*、parsed/full.md …
 本模块**不另建索引文件**：几百到几千个小 JSON 现扫是毫秒级的，
 一个「可能跟文件不同步」的索引带来的 bug 比它省的时间贵得多（同 paperdb 的判据）。
+但**进程内**可以缓存（2026-09-16 加，踩坑 #161）：`by_doi()` 一次扫 1000 个文件约半秒，
+盯新刊 / 回填一天要问它几千次。缓存以两层目录的 mtime 为印章 —— 别的进程落了新文献
+（新建目录）印章就变；本进程 `register()` 直接清缓存。meta.json 被别的进程改 DOI 这种事
+不在印章里，但 DOI 落地后不会再变。
 
 **只依赖 paths**（kernel 不依赖任何人）：不联网、不问 Zotero。
 Zotero 那一半在 `shared.adapters.zotero_client`，两边靠 DOI 对账，由调用方合并。
@@ -111,6 +115,7 @@ def register(pid, overwrite=False, **fields):
     os.makedirs(paths.paper_dir(pid), exist_ok=True)
     io.open(paths.meta(pid), 'w', encoding='utf-8').write(
         json.dumps(meta, ensure_ascii=False, indent=1))
+    _cache_clear()
     return meta
 
 
@@ -153,13 +158,54 @@ def record(pid):
     }
 
 
+def level_of(rec):
+    """这篇在四级里到哪一级（2026-09-16 用户定的分级）：
+    0 只有登记 / 1 有正文文本（解析过） / 2 有原件 PDF / 3 有精读。
+    级别是**从手上有什么推出来的**，不另存字段 —— 文件在就是在，不会跟索引对不上。
+    雷达库里那些（只有题目摘要）不在证据库，是 0 级；证据库里只登记没正本的也算 0。
+    """
+    if rec.get('summary'):
+        return 3
+    if rec.get('pdf'):
+        return 2
+    if rec.get('fulltext'):
+        return 1
+    return 0
+
+
 def scan():
     """全库目录卡列表。几百篇是毫秒级；每次现扫，不缓存（理由见模块说明）。"""
     return [record(p) for p in ids()]
 
 
+_CACHE = {'stamp': None, 'by_doi': None}
+
+
+def _stamp():
+    """两层目录的印章：有目录增删就变。取不到（目录还没建）返回 None = 不缓存。"""
+    try:
+        return tuple(os.stat(d).st_mtime_ns for d in (paths.CURATED, paths.RAW))
+    except OSError:
+        return None
+
+
+def _cache_clear():
+    _CACHE['stamp'] = None
+    _CACHE['by_doi'] = None
+
+
 def by_doi():
-    """DOI → id。同一个 DOI 出现在两个目录下时**优先 Zotero 编号**（老数据在那边）。"""
+    """DOI → id。同一个 DOI 出现在两个目录下时**优先 Zotero 编号**（老数据在那边）。进程内缓存，见模块说明。"""
+    st = _stamp()
+    if st is not None and _CACHE['stamp'] == st and _CACHE['by_doi'] is not None:
+        return dict(_CACHE['by_doi'])
+    out = _scan_by_doi()
+    if st is not None:
+        _CACHE['stamp'], _CACHE['by_doi'] = st, dict(out)
+    return out
+
+
+def _scan_by_doi():
     out = {}
     for pid in ids():
         d = doi_of(read_meta(pid))
