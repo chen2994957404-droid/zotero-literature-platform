@@ -29,7 +29,9 @@
 | `llm_client` | 各家大模型（云端 / 本地 Ollama）|
 | `embed` | 本地 bge-m3 向量化 |
 | `pdf_parse` | MineRU 云端 PDF 解析 |
-| `openalex` | OpenAlex 学术检索（免费无密钥）|
+| `openalex` | OpenAlex 学术检索（按量计费，免费 key 每天 $1）|
+| `crossref` | DOI 登记处：元数据、按刊列新文章、参考文献列表（免费）|
+| `unpaywall` | 一个 DOI 有没有合法的开放获取全文（免费，只要留邮箱）|
 | `sciverse` | Sciverse 学术检索（4.55 亿条，需密钥）|
 | `snowball` | 引文网络雪球扩展（建在 openalex 之上）|
 | `vectordb` | 向量库（当前实现 Chroma）|

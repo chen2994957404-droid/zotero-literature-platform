@@ -74,6 +74,9 @@ def fetch_one(doi, where=None):
         return {'doi': doi, 'ok': True, 'reason': 'exists', 'path': path,
                 'title': '', 'landing': '', 'bytes': os.path.getsize(path)}
 
+    oa = _try_open_access(doi, path)
+    if oa:
+        return oa
     r = pdf_fetch.fetch(doi)
     if not r['ok']:
         log.info(f'{doi} 没拿到：{r["reason"]}')
@@ -88,6 +91,28 @@ def fetch_one(doi, where=None):
     return {'doi': doi, 'ok': True, 'reason': 'ok', 'path': path,
             'title': r.get('title', ''), 'landing': r.get('landing', ''),
             'bytes': len(r['pdf'])}
+
+
+def _try_open_access(doi, path):
+    """先问 Unpaywall 有没有合法的开放版本（2026-09-16）：有就直接下，**不碰出版商**。
+
+    返回 fetch_one 形状的结果，或 None（没配邮箱 / 没有 / 下不到 → 走浏览器）。
+    只收出版社正式版和接收稿；投稿稿（submittedVersion）内容可能和发表版不同，不要。
+    """
+    try:
+        from shared.adapters import unpaywall
+        data, info = unpaywall.fetch_pdf(doi)
+    except Exception as e:
+        log.info(f'{doi} 问 Unpaywall 没成：{str(e)[:60]}（改走浏览器）')
+        return None
+    if not data or (info or {}).get('version') == 'submittedVersion':
+        return None
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with io.open(path, 'wb') as fh:
+        fh.write(data)
+    log.info(f'{doi} → {path}（开放获取 {info.get("version")}@{info.get("host")}，{len(data)} 字节，没敲出版商）')
+    return {'doi': doi, 'ok': True, 'reason': 'oa', 'path': path, 'title': '',
+            'landing': info.get('pdf_url', ''), 'bytes': len(data), 'oa_version': info.get('version')}
 
 
 def fetch_pair(doi, where=None):
@@ -110,6 +135,9 @@ def fetch_pair(doi, where=None):
         return main, fetch_si_one(doi, where)
     if si and not main:
         return fetch_one(doi, where), si
+    oa = _try_open_access(doi, os.path.join(where, safe_name(doi) + '.pdf'))
+    if oa:
+        return oa, fetch_si_one(doi, where)          # 正文不敲出版商了，SI 还得去（OA 版本一般不带 SI）
 
     rm, rs = pdf_fetch.fetch_both(doi)
     main = {'doi': doi, 'ok': False, 'reason': rm['reason'], 'path': '',
