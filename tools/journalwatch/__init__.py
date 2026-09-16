@@ -421,6 +421,10 @@ def fill_from_s2(max_papers=2000, log=None):
             got = semanticscholar.papers(todo)
         except Exception as e:
             log('  S2 补摘要中断：%s' % str(e)[:80])
+            if 'No valid paper ids' in str(e):          # 整批都不是它认的 DOI（刊物封面 / 版权页那类）：记下不再问
+                asked.update(todo)
+                seen['no_abstract_s2'] = sorted(asked)
+                save_seen(seen)
             return 0, 0
         filled = 0
         for d in todo:
