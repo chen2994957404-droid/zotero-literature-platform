@@ -138,8 +138,9 @@ def overview(now=None):
     out = []
     for n in sorted(names):
         a, p, dn = age(n, ALIVE), age(n, PROGRESS), age(n, DONE)
-        if min(x for x in (a, p, dn) if x is not None) > FORGOTTEN:
-            continue                                        # 一周前的旧文件：不是卡住，是早就不跑了
+        ages = [x for x in (a, p, dn) if x is not None]
+        if not ages or min(ages) > FORGOTTEN:
+            continue                                        # 读不出 / 一周前的旧文件：不是卡住，是早就不跑了
         if a is not None:                                   # 常驻服务
             if a > 300:
                 st, note = 'dead', f'已 {int(a // 60)} 分钟没报活'
