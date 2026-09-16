@@ -376,3 +376,20 @@ def mark_harvest(doi, ok, note=''):
         info['note'] = note[:80]
         q[d] = info
     save_seen(seen)
+
+
+def enqueue_recent(days=60):
+    """把雷达里**最近发表**、过线、还不在证据库、没取过的也排进队（补上巡逻当天没排上的，和回填进来的近期文章）。
+
+    只看最近 `days` 天：三年前过线的老文章另说 —— 那是几千篇，要不要收是用户的决定，不该悄悄排进每天 5 篇的队。
+    """
+    since = (_dt.date.today() - _dt.timedelta(days=days)).isoformat()
+    con = store.connect()
+    try:
+        rows = con.execute("""SELECT doi, title, venue, tier, lib_cites FROM works
+                              WHERE published >= ? AND in_library = '' AND lib_cites >= 1""", (since,)).fetchall()
+    finally:
+        con.close()
+    items = [{'doi': d, 'title': t, 'venue': v, 'tier': tr or 'C', 'lib_cites': lc or 0, 'in_library': '',
+              'passes': (lc or 0) >= TIER_GATE.get(tr or 'C', 3)} for d, t, v, tr, lc in rows]
+    return enqueue_passing(items)

@@ -358,7 +358,7 @@ def main():
                 # 过线 → 升 1 级：每天最多 HARVEST_PER_DAY 篇，引库内最多的先取。
                 # 取的是正本 + SI 落地（不精读、不花模型钱）；落地流水线随后自动解析 / 骨架 / 向量化。
                 # 取不到的隔天再试（刚登记的全文常常几天后才挂出来），最多试四天。
-                q_new = journalwatch.enqueue_passing(r['items'])
+                q_new = journalwatch.enqueue_passing(r['items']) + journalwatch.enqueue_recent(days=60)
                 todo = journalwatch.next_to_harvest(HARVEST_PER_DAY)
                 if todo:
                     from tools import getpdf
