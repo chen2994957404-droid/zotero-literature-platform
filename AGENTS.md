@@ -17,7 +17,7 @@
 
 ```
 docs/  ← 跨工具的档案（另有 3 份日志直接躺在下面）
-    explain/（7）、howto/（3）、reference/（8）、incidents/（2）  ← 为什么 / 怎么做 / 事实 / 坑
+    explain/（7）、howto/（3）、reference/（9）、incidents/（2）  ← 为什么 / 怎么做 / 事实 / 坑
 host/  ← 平台自身：让平台活着的东西（没人 import 它）（9 块）
     autosync、codegen、deploy、doctor、ingest、mcp、panel、watcher、wechat_import
 launch/  ← 给人双击的入口（10 个）
@@ -38,7 +38,7 @@ toolbox/ （0 个脚本）
 tools/  ← 工具包：一个工具 = 一个自包含的包（13 块）
     ask、askworld、curate、deepread、digitize、direction、discover、extract、getpdf、journalwatch、library、litsearch、paperdb
 
-根目录文件：AGENTS.md、BA_TRIS_DMAEMA_三元共聚20g小试实验指南.md、CLAUDE.md、LICENSE、README.md、REBUILD.md、pyproject.toml、requirements.txt、各部分的关系.md
+根目录文件：AGENTS.md、BA_TRIS_DMAEMA_三元共聚20g小试实验指南.md、CLAUDE.md、LICENSE、README.md、REBUILD.md、conftest.py、pyproject.toml、requirements.txt、各部分的关系.md
 
 （data/ 是数据目录（五层），3000+ 文件，**不要去 glob 它**）
 ```
@@ -50,6 +50,9 @@ tools/  ← 工具包：一个工具 = 一个自包含的包（13 块）
 <!-- AUTO:结构 结束 -->
 
 ## 📌 新对话第一件事：读 `HANDOVER.md`（**别先 glob 根目录**）
+
+**出了问题、或要动一块之前**：读 `docs/reference/系统认识_各块机制与弱点.md`（生成物）——
+每块靠什么外部东西、踩过哪些坑、最近改过什么，按块聚合。知道它怎么做的，才猜得到它会坏在哪。
 
 上面那棵树就是全部结构，不必再扫 —— `data/` 有 3000+ 个数据文件，
 glob 根目录会直接淹掉上下文（实测：前 100 个结果全是精读图片）。
@@ -240,7 +243,7 @@ host  →  tools  →  shared.domain / shared.adapters  →  shared.kernel
 ```bash
 python host/codegen/skills.py       # tools/*/SKILL.md + docs/howto/{skills,rules}/ → .claude/
 python host/codegen/incidents.py    # tools/*/INCIDENTS.md → docs/incidents/README.md
-python host/codegen/handover.py     # → HANDOVER.md + 本文件的结构树
+python host/codegen/handover.py     # → HANDOVER.md + 本文件的结构树 + docs/reference/系统认识_各块机制与弱点.md
 ```
 
 ## 验证自主性
