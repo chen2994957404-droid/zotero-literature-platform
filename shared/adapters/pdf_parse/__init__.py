@@ -10,6 +10,7 @@
 对外接口：
   - parse_pdf(pdf_path, out_dir) → out_dir（含 full.md/layout.json/images/*_origin.pdf）
   - link_origin(out_dir, pdf_path) → 把 *_origin.pdf 换成指向正本的硬链接（省一份空间）
+  - same_geometry(a, b)          → 两个 PDF 页面几何是否一致
                                     已解析过（out_dir 有 layout.json）则直接复用，省 MineRU。
   - parse_docx(path, out_dir)    → out_dir（只有 full.md：文字 + 表格，python-docx 读，不花额度）
   - parse_document(path, out_dir) → 按扩展名分派到上面两个。**精读 / 取全文 / 落地流水线
@@ -107,12 +108,27 @@ def parse_pdf(pdf_path, out_dir, reuse=True):
     return out_dir
 
 
+def same_geometry(a, b):
+    """两个 PDF 页数、每页宽高与旋转是否全部一致（裁图坐标能否通用的判据）。没装 PyMuPDF 返回 False。"""
+    try:
+        import fitz
+        da, db = fitz.open(a), fitz.open(b)
+        if len(da) != len(db):
+            return False
+        return all((pa.rect.width, pa.rect.height, pa.rotation) == (pb.rect.width, pb.rect.height, pb.rotation)
+                   for pa, pb in zip(da, db))
+    except Exception:
+        return False
+
+
 def link_origin(out_dir, pdf_path):
     """MineRU 的 `*_origin.pdf` 就是输入 PDF 的原样副本 —— 换成指向正本的硬链接，不再占第二份空间。
 
-    2026-09-15 量过主力机：1424 个 origin.pdf 共 9.2 GB，全是 main.pdf / si.pdf 的重复。
+    2026-09-15 量过主力机：1424 个 origin.pdf 共 9.2 GB。MineRU 会把 PDF 重新保存一遍，
+    字节不完全一样，但**页数与每页尺寸全部一致**（968/968），裁图坐标对着正本裁出来的图
+    与对着 origin 裁的**像素级相同**（25 篇实测最大平均差 0.00/255）—— 所以换成硬链接是安全的。
     硬链接在 NTFS 上不要管理员权限、同一份数据两个名字，裁图（figure_crop）照旧按名字找得到。
-    只在大小一致时换；换不成（跨盘、权限）就保留副本，不影响功能。返回换了几个。
+    只在页面几何一致时换；换不成（跨盘、权限、没装 PyMuPDF）就保留副本。返回换了几个。
     """
     if not (pdf_path and os.path.isfile(pdf_path)):
         return 0
@@ -122,7 +138,7 @@ def link_origin(out_dir, pdf_path):
             continue
         dup = os.path.join(out_dir, f)
         try:
-            if os.path.getsize(dup) != os.path.getsize(pdf_path) or os.path.samefile(dup, pdf_path):
+            if os.path.samefile(dup, pdf_path) or not same_geometry(dup, pdf_path):
                 continue
             tmp = dup + '.lnk'
             os.link(pdf_path, tmp)

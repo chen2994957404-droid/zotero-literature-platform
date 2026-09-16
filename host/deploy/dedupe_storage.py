@@ -2,9 +2,9 @@
 """把证据库里重复存的文件去掉（一次性运维，2026-09-15）。**不删任何只有一份的东西。**
 
 量过主力机 `data/raw` 39.6 GB，其中两块是纯重复：
-    parsed/*_origin.pdf、si_parsed/*_origin.pdf   9.2 GB   MineRU 把输入 PDF 原样抄了一份回来
+    parsed/*_origin.pdf、si_parsed/*_origin.pdf   9.2 GB   MineRU 把输入 PDF 重存了一份回来（页面几何一致，裁图结果像素相同）
     _incoming/getpdf/<doi>.pdf                     12 GB    取件区的副本，落地后从没清过
-两块都只在「和正本一模一样」时才动：origin.pdf 换成指向正本的硬链接（裁图照旧能找到）；
+前者只在页面几何一致时动，后者只在大小一致时动：origin.pdf 换成指向正本的硬链接（裁图照旧能找到）；
 取件区的副本删掉。大小对不上的一律不碰、报出来。
 
 用法：
@@ -26,8 +26,9 @@ G = 1e9
 
 
 def _same(a, b):
+    """origin.pdf 是 MineRU 重存过的，字节不同；判据是页面几何一致（详见 pdf_parse.link_origin）。"""
     try:
-        return os.path.getsize(a) == os.path.getsize(b) and not os.path.samefile(a, b)
+        return not os.path.samefile(a, b) and pdf_parse.same_geometry(a, b)
     except OSError:
         return False
 
