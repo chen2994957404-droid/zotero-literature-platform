@@ -114,7 +114,7 @@ DEFAULT_JOURNALS = [
 # OpenAlex 收录比 Crossref 晚几天到两周，所以刚登记的文章先在雷达里等分类，等到了再过闸 —— 0 级是即时的，1 级晚一两周没关系。
 # 「引了库内几篇」（lib_cites）仍然算、仍然存，但**只在用户明说「跟我相关的」时用**。
 SOFT_SUBFIELDS = {'Polymers and Plastics'}
-SOFT_TOPIC_RE = re.compile(r'polymer|hydrogel|elastomer|\bgel|organogel|ionogel|rubber|supramolecular|self-heal|silicone|siloxane|'
+SOFT_TOPIC_RE = re.compile(r'polymer|hydrogel|elastomer|\bgel|organogel|ionogel|rubber|self-heal|silicone|siloxane|'
                            r'soft matter|adhesi|viscoelast|rheolog|vitrimer|dynamic covalent|macromolec', re.I)
 AUTO_TIERS = ('A', 'B')
 # 正刊：量极小，放宽 —— 三个 topic 里任一个沾边就过（Nature 2026 力化学弹道那篇首要 topic 是 Force Microscopy，
@@ -378,7 +378,7 @@ def enqueue_passing(items):
         if not d or not w.get('passes') or w.get('in_library') or d in q or d in (seen.get('harvested') or {}):
             continue
         q[d] = {'tier': w.get('tier'), 'lib_cites': w.get('lib_cites', 0), 'title': (w.get('title') or '')[:120],
-                'venue': w.get('venue', ''), 'attempts': 0, 'year': int((w.get('published') or w.get('year') or '0')[:4] or 0)}
+                'venue': w.get('venue', ''), 'attempts': 0, 'published': (w.get('published') or w.get('created') or '')[:10]}
         n += 1
     save_seen(seen)
     return n
@@ -388,7 +388,13 @@ def next_to_harvest(limit=5):
     """队列里最该取的几篇：引库内越多越先，同分 A 先于 B 先于 C。返回 [(doi, info)]。"""
     q = load_seen().get('queue') or {}
     rows = [(d, i) for d, i in q.items() if i.get('attempts', 0) < MAX_ATTEMPTS]
-    rows.sort(key=lambda x: (x[1].get('tier') or 'C', -(x[1].get('year') or 0), x[1].get('title', '')))
+    # A 先于 B；同档新的先（没记日期的排最后）—— 不按题目排，否则永远是 "A ..." 开头的先取
+    def _day(info):
+        try:
+            return int((info.get('published') or '').replace('-', '')[:8] or 0)
+        except ValueError:
+            return 0
+    rows.sort(key=lambda x: (x[1].get('tier') or 'C', -_day(x[1])))
     return rows[:limit]
 
 
