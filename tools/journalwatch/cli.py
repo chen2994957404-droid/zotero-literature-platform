@@ -7,7 +7,9 @@
   python -m tools.journalwatch --只看新的      只列这次首见的（定时跑用这个）
   python -m tools.journalwatch --刊 Macro      只看名字里带 Macro 的刊
   python -m tools.journalwatch --含摘要        每篇带一行摘要
-  python -m tools.journalwatch --不记          只看看，不把这些记成「见过」
+  python -m tools.journalwatch --不记          只看看，不把这些记成「见过」、不入雷达库
+  python -m tools.journalwatch --回填 3        把过去 3 年的都拉进雷达库（跑一晚上；断了再跑接着来）
+  python -m tools.journalwatch --雷达          雷达库现在有多少：篇数 / 带摘要 / 库里有 / 引用边
 
 盯哪些刊：改 data/serving/journal_watch.json（name + ISSN；不想盯的加 "off": true）。
 看完想收哪几篇：python -m tools.discover.collect 1,3,5-7（编号就是本次列表的编号）。
@@ -45,10 +47,38 @@ def _stash(rows):
         pass
 
 
+def _radar_stats():
+    con = journalwatch.store.connect()
+    try:
+        st = journalwatch.store.stats(con)
+    finally:
+        con.close()
+    print('雷达库：%d 篇，带摘要 %d，证据库里已有 %d，引用边 %d 条，出版日 %s ~ %s' % (
+        st['works'], st['with_abstract'], st['in_library'], st['refs'], st['span'][0], st['span'][1]))
+    for v, n in st['by_venue'][:40]:
+        print('  %6d  %s' % (n, v))
+    return 0
+
+
+def _backfill(years, pick):
+    journals = journalwatch.load_journals()
+    if pick:
+        journals = [j for j in journals if pick in j['name'].lower()]
+    print('回填 %d 本刊、最近 %d 年 ……（每块做完即入库，中断了再跑会接着）' % (len(journals), years))
+    r = journalwatch.backfill(years=years, journals=journals, log=print)
+    print('\n新增 %d 篇，做了 %d 块%s' % (r['works'], r['chunks'],
+                                      ('；没拉完的刊：' + '、'.join(r['failed'])) if r['failed'] else ''))
+    return 0
+
+
 def main():
     if wants_help():
         print(__doc__)
         return 0
+    if flag('--雷达'):
+        return _radar_stats()
+    if opt('--回填'):
+        return _backfill(int(opt('--回填') or 3), (opt('--刊') or '').strip().lower())
     days = int(opt('--天', 7) or 7)
     only_new = flag('--只看新的')
     pick = (opt('--刊') or '').strip().lower()

@@ -12,6 +12,8 @@
 
 ```
 python -m tools.journalwatch [--天 7] [--只看新的] [--刊 Macro] [--含摘要]
+python -m tools.journalwatch --雷达           # 雷达库有多少
+python -m tools.journalwatch --回填 3         # 三年回填（一晚上，人点）
 ```
 
 盯哪些刊在 `data/serving/journal_watch.json`（name + ISSN，用户自己改；不想盯的加 `"off": true`）。

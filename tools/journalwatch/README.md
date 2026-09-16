@@ -22,6 +22,13 @@ python -m tools.discover.collect 1,3,5-7
 （28 本材料/化学/综合类刊，ISSN 都在 Crossref 上验过）把文件建出来，之后你自己改。
 不想盯的加 `"off": true`，不用删。
 
+## 雷达库（0 级）
+
+每篇的题目 / 摘要 / 作者 / 参考文献 DOI 都存进 `data/serving/radar.db`（一篇 4 KB）。
+监听服务每天自动巡逻一次；`python -m tools.journalwatch --回填 3` 把过去三年也拉进来（一晚上，断了再跑接着来）；
+`--雷达` 看现在有多少。它是**雷达**不是证据库：知道外面出了什么、引了我库里哪几篇，供相关度筛选用。
+摘要看出版社：Wiley / ACS 基本都有，Elsevier 一律没有（他们不给登记处）。
+
 ## 它怎么知道「新」
 
 直接问 Crossref 的 DOI 登记处：出版社注册 DOI 的那一刻就有了，比期刊邮件、比 OpenAlex 都早。

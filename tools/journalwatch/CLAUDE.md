@@ -5,11 +5,13 @@
 ## 这是什么
 
 一个工作流：读刊物清单 → 逐刊问 Crossref「这天之后新登记了什么」→ 标出证据库里有没有 →
-记住见过的 → 列出来。**只列不取、不筛相关度**（2026-09-15 用户定：先把路打通，后面再定）。
+记住见过的 → **存进雷达库**（0 级：题目/摘要/参考文献）→ 列出来。**只列不取、不筛相关度**
+`host/watcher` 每天跑一次 `patrol`；`--回填 3` 一次性把三年拉进雷达。（2026-09-15 用户定：先把路打通，后面再定）。
 
 ## 文件
 
-- `__init__.py`：`load_journals` / `fetch` / `annotate` / `patrol`
+- `__init__.py`：`load_journals` / `fetch` / `annotate` / `patrol` / `backfill`
+- `store.py`：雷达库（SQLite，`paths.radar_db()`）：works + refs；`upsert` / `stats` / `cited_in_library`
 - `cli.py`：`python -m tools.journalwatch`；结果暂存成 `paths.last_search()` 格式，
   `tools.discover.collect` 能按编号收（两个工具**不互相 import**，只共用那个文件）
 - `mcp.py`：`journalwatch_recent`（只读 tool，`confirm=True`）

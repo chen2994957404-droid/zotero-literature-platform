@@ -556,6 +556,15 @@ def journal_watch():
     return os.path.join(SERVING, 'journal_watch.json')
 
 
+def radar_db():
+    """serving/radar.db —— 「0 级」文献雷达：盯着的刊里每篇的题目 / 摘要 / 作者 / 参考文献 DOI。
+
+    不是证据库（那要有正本），是**雷达**：知道外面出了什么、跟我的库像不像、引了我库里哪几篇。
+    全部来自 Crossref，删了能重新拉（所以住 serving）。一条 4 KB，三年 28 本刊约 25 万条 ≈ 1 GB。
+    """
+    return os.path.join(SERVING, 'radar.db')
+
+
 def journal_watch_seen():
     """state/journal_watch_seen.json —— 盯新刊时已经见过的 DOI（首见日期）+ 每本刊上次查到哪天。
 

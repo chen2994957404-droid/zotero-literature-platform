@@ -92,6 +92,40 @@ def main():
     else:
         print('  [FAIL] 容错不对：%s %s' % (items, failed))
 
+    total += 1
+    # 回填：按年切块、翻页、断点续跑（假的 crossref + 临时库 + 临时进度文件）
+    import shutil
+    tmpd = tempfile.mkdtemp()
+    real_db, real_seen = jw.paths.radar_db, jw.paths.journal_watch_seen
+    jw.paths.radar_db = lambda: os.path.join(tmpd, 'r.db')
+    jw.paths.journal_watch_seen = lambda: os.path.join(tmpd, 'seen.json')
+    pages = {'*': ([_w('10.1/p1'), _w('10.1/p2')], 'c2'), 'c2': ([_w('10.1/p3')], '')}
+    calls = []
+
+    def fake_jw(issn, flt, rows=1000, cursor='*'):
+        calls.append((flt, cursor))
+        it, nxt = pages[cursor]
+        return it, nxt, 3
+    real_jw = jw.crossref.journal_works
+    jw.crossref.journal_works = fake_jw
+    try:
+        r1 = jw.backfill(years=2, journals=[{'name': 'J', 'issn': 'x'}], log=lambda *a: None,
+                         until=datetime.date(2026, 9, 15))
+        r2 = jw.backfill(years=2, journals=[{'name': 'J', 'issn': 'x'}], log=lambda *a: None,
+                         until=datetime.date(2026, 9, 15))
+        con = jw.store.connect()
+        n = jw.store.stats(con)['works']
+        con.close()
+    finally:
+        jw.crossref.journal_works = real_jw
+        jw.paths.radar_db, jw.paths.journal_watch_seen = real_db, real_seen
+        shutil.rmtree(tmpd, ignore_errors=True)
+    if (r1['chunks'] == 2 and r2['chunks'] == 0 and n == 3 and len(calls) == 4
+            and calls[0][0].startswith('from-pub-date:2024-09-15,until-pub-date:2025-09-15')):
+        print('  [PASS] 回填按年切块、翻页到底、入库去重、第二次跑跳过做过的块'); ok += 1
+    else:
+        print('  [FAIL] 回填不对：%s %s n=%d calls=%s' % (r1, r2, n, calls))
+
     print('\n%d/%d 通过' % (ok, total))
     sys.exit(0 if ok == total else 1)
 

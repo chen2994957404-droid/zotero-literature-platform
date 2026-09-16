@@ -5,8 +5,9 @@
 期刊官网的邮件提醒是给人看的，程序读邮件既绕又脆；更干净的路是直接问 DOI 登记处 ——
 出版社注册 DOI 的那一刻 Crossref 就有了，按「这本刊 + 这天之后」列，不要账号不要钱。
 
-**这一版只做第一步：列出来、标出库里有没有。** 相关度筛选与自动取件是后面的事，
-要等用户看过几周清单、把「要 / 不要」的线画准了再开（取件是最脆弱的一环，宁少勿滥）。
+**做的是「0 级」：列出来、标出库里有没有、存进雷达库**（`store.py`，题目 / 摘要 / 参考文献 DOI，
+一篇 4 KB）。相关度筛选与自动取件是后面的事，要等用户看过几周清单、把「要 / 不要」的线画准了再开
+（取件是最脆弱的一环，宁少勿滥）。`backfill(years=3)` 把过去几年的也拉进雷达（同一套代码，窗口拉长）。
 
 用法：
     from tools import journalwatch
@@ -27,6 +28,7 @@ import os
 from shared.adapters import crossref
 from shared.kernel import catalog, paths
 from shared.kernel.log import get_logger
+from tools.journalwatch import store
 
 _log = get_logger('journalwatch')
 
@@ -151,7 +153,64 @@ def patrol(days=7, journals=None, log=None, only_new=False, today=None, remember
             if j['name'] not in failed:
                 seen.setdefault('checked', {})[j['issn']] = (today or _dt.date.today()).isoformat()
         save_seen(seen)
+        con = store.connect()
+        try:
+            store.upsert(con, rows, today=today)
+        finally:
+            con.close()
     if only_new:
         rows = [w for w in rows if w['is_new']]
     return {'items': rows, 'failed': failed, 'since': _since(days, today),
             'n_journals': len(journals)}
+
+
+def backfill(years=3, journals=None, log=None, until=None, progress=None):
+    """把过去几年的正式论文拉进雷达库（0 级：题目 / 摘要 / 作者 / 参考文献 DOI）。
+
+    每本刊按出版日按年切块翻页（一块最多几千条，cursor 翻页），做完一块就写库、记进度
+    （`progress` 文件），中断了下次从没做完的块接着 —— 25 万条要跑一晚上，不能一断全重来。
+    返回 {'works': 新增篇数, 'chunks': 做了几块, 'failed': [刊名]}。
+    """
+    log = log or _log.info
+    journals = journals if journals is not None else load_journals()
+    until = until or _dt.date.today()
+    since = until.replace(year=until.year - int(years))
+    progress = progress or (paths.journal_watch_seen() + '.backfill')
+    try:
+        done = set(json.loads(io.open(progress, encoding='utf-8').read()))
+    except Exception:
+        done = set()
+    con = store.connect()
+    total_new, chunks, failed = 0, 0, []
+    try:
+        for j in journals:
+            a = since
+            while a < until:
+                b = min(a.replace(year=a.year + 1), until)
+                key = '%s|%s|%s' % (j['issn'], a, b)
+                if key in done:
+                    a = b
+                    continue
+                flt = 'from-pub-date:%s,until-pub-date:%s,type:journal-article' % (a, b)
+                cursor, got, n_new = '*', 0, 0
+                try:
+                    while cursor:
+                        items, cursor, total = crossref.journal_works(j['issn'], flt, cursor=cursor)
+                        for w in items:
+                            w['in_library'] = catalog.find(w['doi'])
+                            w['venue'] = j['name'] or w['venue']      # Crossref 的刊名偶尔带换行 / 副标题
+                        n_new += store.upsert(con, items)
+                        got += len(items)
+                except crossref.CrossrefError as e:
+                    failed.append(j['name'])
+                    log('  %s %s~%s 没拉完（拿到 %d）：%s' % (j['name'], a, b, got, str(e)[:60]))
+                    break
+                done.add(key)
+                io.open(progress, 'w', encoding='utf-8').write(json.dumps(sorted(done)))
+                total_new += n_new
+                chunks += 1
+                log('  %-40s %s~%s  %5d 篇（新 %d）' % (j['name'], a, b, got, n_new))
+                a = b
+    finally:
+        con.close()
+    return {'works': total_new, 'chunks': chunks, 'failed': sorted(set(failed))}

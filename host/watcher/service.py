@@ -278,7 +278,8 @@ def main():
     log_key_status()
     seen = {}          # key -> (上次处理时的条目 version, 上次处理时刻)
     cycle = [0]        # 轮数（落地流水线用它决定「每小时扫一次向量化积压」）
-    fail_streak = [0]      # 连续失败轮数，用于「持续异常」提醒与「已恢复」提示
+    patrol_day = ['']      # 盯新刊：上次跑的日期（一天一次）
+    fail_streak = [0]      #连续失败轮数，用于「持续异常」提醒与「已恢复」提示
     # 后台线程固定节奏报活：精读一篇要几分钟到几十分钟，期间主线程根本回不到
     # 循环顶部。原来把心跳写在循环开头，于是**正在干活的 watcher 会被看门狗当成
     # 卡死杀掉**（主力机一个月被误杀约 20 次，每次都白花一份 MineRU + DeepSeek）。
@@ -336,6 +337,18 @@ def main():
                     heartbeat.progress('watcher')
         except Exception as e:
             print(f'[落地流水线失败] {type(e).__name__}: {e}')
+        # ── 盯新刊（2026-09-15）：每天一次问 Crossref 登记处，新文章的题目/摘要/参考文献进雷达库 ──
+        # 免费、几十次请求、不取件不花模型钱。日期变了才跑，跑挂了下一轮再试（不阻塞精读）。
+        try:
+            today = time.strftime('%Y-%m-%d')
+            if patrol_day[0] != today:
+                from tools import journalwatch
+                r = journalwatch.patrol(days=3, log=lambda *a: None, only_new=True)
+                patrol_day[0] = today
+                print(f'[盯新刊] {r["n_journals"]} 本刊，首见 {len(r["items"])} 篇'
+                      + (f'；没查成：{"、".join(r["failed"])}' if r['failed'] else ''))
+        except Exception as e:
+            print(f'[盯新刊失败] {type(e).__name__}: {e}')
         time.sleep(60)  # 每60秒检查一次，避免API限流
 
 if __name__ == '__main__':
