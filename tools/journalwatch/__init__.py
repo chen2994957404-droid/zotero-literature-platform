@@ -331,6 +331,7 @@ def fill_abstracts(max_calls=400, log=None, batch=50):
         save_seen(seen)
     finally:
         con.close()
+        heartbeat.done('journalwatch-abstracts')     # 不报做完，面板 20 分钟后会把它当卡住
     log('补摘要：问了 %d 篇，补上 %d 篇' % (len(todo), filled))
     return filled, len(todo)
 
