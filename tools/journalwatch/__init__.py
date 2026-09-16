@@ -25,7 +25,7 @@ import io
 import json
 import os
 
-from shared.adapters import crossref
+from shared.adapters import crossref, openalex
 from shared.kernel import catalog, heartbeat, paths
 from shared.kernel.log import get_logger
 from tools.journalwatch import store
@@ -287,3 +287,92 @@ def refresh(log=None):
         con.close()
     log('雷达里引了库内文献的：%d 篇；新标成「库里有」的：%d 篇' % (n, m))
     return n
+
+
+def fill_abstracts(max_calls=400, log=None, batch=50):
+    """给雷达里没摘要的补摘要（OpenAlex，按 DOI 批量）。
+
+    Crossref 的摘要看出版社脸色（Elsevier 一律没有、ACS 老文章 15%、Springer 56%）；OpenAlex 对
+    Wiley/ACS/Nature 覆盖 95%+，Elsevier 也没有。每次最多 `max_calls` 批（一批 50 篇）：
+    OpenAlex 按量计费，filter 查询 $0.10/千次，没 key 每天 $0.10 额度 —— 400 批 = $0.04，天天跑也在额度内。
+    补过但对面也没有的记进 seen（`no_abstract`），不再重复问。返回 (补上几篇, 问了几篇)。
+    """
+    log = log or _log.info
+    seen = load_seen()
+    asked = set(seen.get('no_abstract') or [])
+    con = store.connect()
+    try:
+        # Elsevier 两边都没有，不浪费额度
+        rows = con.execute("""SELECT doi FROM works WHERE length(coalesce(abstract,''))<200
+                              AND publisher NOT LIKE 'Elsevier%' ORDER BY published DESC""").fetchall()
+        todo = [d for (d,) in rows if d not in asked][:max_calls * batch]
+        if not todo:
+            return 0, 0
+        filled = 0
+        for i in range(0, len(todo), batch):
+            chunk = todo[i:i + batch]
+            try:
+                got = openalex.works_by_dois(chunk, allow_partial=True)
+            except Exception as e:
+                log('  OpenAlex 补摘要中断：%s' % str(e)[:80])
+                break
+            have = {}
+            for w in got.values():
+                d = (w.get('doi') or '').lower().replace('https://doi.org/', '')
+                ab = openalex.restore_abstract(w.get('abstract_inverted_index'), limit=0)
+                if d and ab:
+                    have[d] = ab[:3000]
+            con.executemany('UPDATE works SET abstract=? WHERE doi=?', [(a, d) for d, a in have.items()])
+            con.commit()
+            filled += len(have)
+            asked.update(d for d in chunk if d not in have)
+            heartbeat.progress('journalwatch-abstracts')
+        seen['no_abstract'] = sorted(asked)
+        save_seen(seen)
+    finally:
+        con.close()
+    log('补摘要：问了 %d 篇，补上 %d 篇' % (len(todo), filled))
+    return filled, len(todo)
+
+
+MAX_ATTEMPTS = 4      # 刚登记的全文往往过几天才挂出来：取不到隔天再试，最多试四天
+
+
+def enqueue_passing(items):
+    """过线的进「待取」队列（seen['queue']: doi → {tier, lib_cites, title, attempts}）。已在证据库的不进。返回新入队几篇。"""
+    seen = load_seen()
+    q = seen.setdefault('queue', {})
+    n = 0
+    for w in items:
+        d = catalog.norm_doi(w.get('doi'))
+        if not d or not w.get('passes') or w.get('in_library') or d in q or d in (seen.get('harvested') or {}):
+            continue
+        q[d] = {'tier': w.get('tier'), 'lib_cites': w.get('lib_cites', 0), 'title': (w.get('title') or '')[:120],
+                'venue': w.get('venue', ''), 'attempts': 0}
+        n += 1
+    save_seen(seen)
+    return n
+
+
+def next_to_harvest(limit=5):
+    """队列里最该取的几篇：引库内越多越先，同分 A 先于 B 先于 C。返回 [(doi, info)]。"""
+    q = load_seen().get('queue') or {}
+    rows = [(d, i) for d, i in q.items() if i.get('attempts', 0) < MAX_ATTEMPTS]
+    rows.sort(key=lambda x: (-x[1].get('lib_cites', 0), x[1].get('tier') or 'C'))
+    return rows[:limit]
+
+
+def mark_harvest(doi, ok, note=''):
+    """取件结果回写：成了 → 出队进 harvested；没成 → attempts+1（到上限就留在队里不再试）。"""
+    seen = load_seen()
+    q = seen.setdefault('queue', {})
+    d = catalog.norm_doi(doi)
+    info = q.get(d) or {}
+    if ok:
+        q.pop(d, None)
+        seen.setdefault('harvested', {})[d] = dict(info, when=_dt.date.today().isoformat())
+    else:
+        info['attempts'] = info.get('attempts', 0) + 1
+        info['note'] = note[:80]
+        q[d] = info
+    save_seen(seen)

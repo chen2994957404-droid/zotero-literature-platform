@@ -131,6 +131,29 @@ def main():
     else:
         print('  [FAIL] 回填不对：%s %s n=%d calls=%s' % (r1, r2, n, calls))
 
+    total += 1
+    tmpd = tempfile.mkdtemp()
+    real_seen = jw.paths.journal_watch_seen
+    jw.paths.journal_watch_seen = lambda: os.path.join(tmpd, 'seen.json')
+    try:
+        items = [dict(_w('10.1/q1'), passes=True, tier='B', lib_cites=1, in_library=''),
+                 dict(_w('10.1/q2'), passes=True, tier='A', lib_cites=4, in_library=''),
+                 dict(_w('10.1/q3'), passes=False, tier='A', lib_cites=1, in_library=''),
+                 dict(_w('10.1/q4'), passes=True, tier='A', lib_cites=9, in_library='doi_x')]
+        n_in = jw.enqueue_passing(items)
+        order = [d for d, _ in jw.next_to_harvest(5)]
+        jw.mark_harvest('10.1/q2', True)
+        for _ in range(jw.MAX_ATTEMPTS):
+            jw.mark_harvest('10.1/q1', False, 'no pdf')
+        left = [d for d, _ in jw.next_to_harvest(5)]
+        again = jw.enqueue_passing(items)
+    finally:
+        jw.paths.journal_watch_seen = real_seen
+    if n_in == 2 and order == ['10.1/q2', '10.1/q1'] and left == [] and again == 0:
+        print('  [PASS] 过线入队（不过线 / 库里有的不进）、引库内多的先取、取成出队、试满四次不再取、不重复入队'); ok += 1
+    else:
+        print('  [FAIL] 队列不对：%s %s %s %s' % (n_in, order, left, again))
+
     print('\n%d/%d 通过' % (ok, total))
     sys.exit(0 if ok == total else 1)
 

@@ -11,6 +11,7 @@
   python -m tools.journalwatch --不记          只看看，不把这些记成「见过」、不入雷达库
   python -m tools.journalwatch --回填 3        把过去 3 年的都拉进雷达库（跑一晚上；断了再跑接着来）
   python -m tools.journalwatch --雷达          雷达库现在有多少：篇数 / 带摘要 / 库里有 / 引用边
+  python -m tools.journalwatch --补摘要 400    用 OpenAlex 给没摘要的补（一批 50 篇，400 批约 $0.04）
 
 盯哪些刊：改 data/serving/journal_watch.json（name + ISSN；不想盯的加 "off": true）。
 看完想收哪几篇：python -m tools.discover.collect 1,3,5-7（编号就是本次列表的编号）。
@@ -78,6 +79,10 @@ def main():
         return 0
     if flag('--雷达'):
         return _radar_stats()
+    if opt('--补摘要'):
+        f, n = journalwatch.fill_abstracts(int(opt('--补摘要') or 400), log=print)
+        print('补上 %d / 问了 %d' % (f, n))
+        return 0
     if opt('--回填'):
         return _backfill(int(opt('--回填') or 3), (opt('--刊') or '').strip().lower())
     days = int(opt('--天', 7) or 7)

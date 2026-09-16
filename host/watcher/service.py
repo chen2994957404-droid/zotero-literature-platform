@@ -54,6 +54,7 @@ os.makedirs(LIBRARY, exist_ok=True)
 DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')      # 只用于启动时的密钥自检
 PROVIDER = 'deepseek'
 MODEL = None                                 # None = 让路由表定
+HARVEST_PER_DAY = 5                          # 盯新刊过线后每天自动升 1 级的上限（2026-09-16）：量小于出版商风控线，也小于硬盘增长线
 def paper_id_for(item):
     """Zotero 条目 → 它在证据库里的文献 id。**跨来源认同一篇靠 DOI。**
 
@@ -348,6 +349,30 @@ def main():
                 print(f'[盯新刊] {r["n_journals"]} 本刊，首见 {len(r["items"])} 篇，'
                       f'过线 {sum(1 for w in r["items"] if w.get("passes"))} 篇'
                       + (f'；没查成：{"、".join(r["failed"])}' if r['failed'] else ''))
+                f, n = journalwatch.fill_abstracts(max_calls=200, log=lambda *a: None)
+                if n:
+                    print(f'[补摘要] OpenAlex 问了 {n} 篇，补上 {f} 篇')
+                # 过线 → 升 1 级：每天最多 HARVEST_PER_DAY 篇，引库内最多的先取。
+                # 取的是正本 + SI 落地（不精读、不花模型钱）；落地流水线随后自动解析 / 骨架 / 向量化。
+                # 取不到的隔天再试（刚登记的全文常常几天后才挂出来），最多试四天。
+                q_new = journalwatch.enqueue_passing(r['items'])
+                todo = journalwatch.next_to_harvest(HARVEST_PER_DAY)
+                if todo:
+                    from tools import getpdf
+                    got = 0
+                    for doi, info in todo:
+                        try:
+                            res = getpdf.land(doi, with_si=True)
+                            ok = bool(res.get('ok'))
+                            journalwatch.mark_harvest(doi, ok, res.get('note', ''))
+                            got += ok
+                            print(f'  [升1级] {"✓" if ok else "×"} {info.get("venue","")[:20]} 引{info.get("lib_cites",0)}篇 '
+                                  f'{info.get("title","")[:60]}' + ('' if ok else f' —— {res.get("note","")[:60]}'))
+                        except Exception as e:
+                            journalwatch.mark_harvest(doi, False, str(e))
+                            print(f'  [升1级失败] {doi}: {type(e).__name__}: {str(e)[:80]}')
+                    heartbeat.progress('watcher')
+                    print(f'[升1级] 新入队 {q_new} 篇；今天取了 {got}/{len(todo)} 篇')
         except Exception as e:
             print(f'[盯新刊失败] {type(e).__name__}: {e}')
         time.sleep(60)  # 每60秒检查一次，避免API限流
