@@ -470,6 +470,17 @@ def c_routing():
     return OK, f'{n} 个用途都明确指定了通道和模型'
 
 
+def c_progress():
+    """常驻服务与批量作业有没有卡住（`heartbeat.overview`）。做完的、在跑的都算好。"""
+    from shared.kernel import heartbeat
+    rows = heartbeat.overview()
+    bad = [f"{o['name']}：{o['note']}" for o in rows if o['state'] in ('stuck', 'dead')]
+    if bad:
+        return FAIL, '卡住了：' + '；'.join(bad)
+    running = [o['name'] for o in rows if o['state'] == 'running']
+    return OK, (f'在跑：{"、".join(running)}' if running else '没有在跑的作业') + f'（共记录 {len(rows)} 项）'
+
+
 def c_services():
     """四个自启任务在不在。**只对运行端有意义** —— 编程端/测试端都不该注册它们。
 
@@ -607,6 +618,7 @@ if __name__ == '__main__':
         check('大模型花销', c_budget)
         check('大模型通道', c_routing)
         check('后台服务', c_services)
+        check('作业进展', c_progress)
 
     nf = sum(1 for s, _, _ in results if s == FAIL)
     nw = sum(1 for s, _, _ in results if s == WARN)

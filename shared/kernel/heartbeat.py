@@ -47,6 +47,10 @@ heartbeat.progress('watcher')       # 每完成一件实事时调一次
 # 看门狗那边
 heartbeat.age('watcher', 'alive')      # 距上次「我还活着」多少秒；没有文件返回 None
 heartbeat.age('watcher', 'progress')
+
+# 批量作业（不常驻）：每做完一件 progress，结束时 done；面板 / 体检用 overview() 看谁卡住了
+heartbeat.progress('journalwatch-backfill'); ...; heartbeat.done('journalwatch-backfill')
+heartbeat.overview()   # → [{name, state: running/stuck/dead/done, note}]
 ```
 
 设计上刻意做成**永不抛异常**：一个报活的机制自己把主程序搞崩，就本末倒置了。
@@ -63,6 +67,7 @@ DEFAULT_EVERY = 30
 
 ALIVE = 'alive'
 PROGRESS = 'progress'
+DONE = 'done'          # 批量作业（回填 / 取件 / 金标）跑完时写：面板据此把「没进展」和「做完了」分开
 
 _threads = {}          # 名字 → 线程，防止重复启动
 _lock = threading.Lock()
@@ -74,7 +79,7 @@ def path(name, kind=ALIVE):
     ⚠ `alive` 的文件名保持 `<名>_heartbeat.txt` 不变 ——
     看门狗一直在读这个名字，改名会让新旧版本在滚动升级时对不上。
     """
-    suffix = 'heartbeat' if kind == ALIVE else 'progress'
+    suffix = 'heartbeat' if kind == ALIVE else kind
     return paths.runtime(f'{name}_{suffix}.txt')
 
 
@@ -98,6 +103,60 @@ def beat(name):
 def progress(name):
     """记一次「有实质进展」。每完成一件实事时调用。"""
     return _write(name, PROGRESS)
+
+
+def done(name):
+    """批量作业正常结束时调一次。之后「进度没更新」就是正常的，不再算卡住。"""
+    return _write(name, DONE)
+
+
+# 「多久没进展算卡住」：常驻服务 45 分钟（一篇精读可能就要半小时）；批量作业 20 分钟
+# （取件 / 回填一块 / 解析一篇都远短于此，超过就是卡在某个不返回的调用上 —— 2026-09-15 取件
+# 卡半小时、Edge 死三小时没人知道，就是因为没有这个判断）。
+STUCK_SERVICE = 2700
+STUCK_JOB = 1200
+FORGOTTEN = 7 * 86400   # 信号文件超过一周没动 = 这台机器早就不跑它了（编程端的旧文件），不报
+
+
+def overview(now=None):
+    """所有写过信号的名字 → 状态一览（给面板和体检用）。
+
+    每项：{name, alive_age, progress_age, done_age, state, note}
+    state ∈ running（在跑且有进展）/ stuck（该有进展却没有）/ dead（常驻服务不报活）/ done（作业做完）/ idle
+    常驻服务 = 有 alive 文件的；批量作业 = 只有 progress 的。
+    """
+    now = now or time.time()
+    d = os.path.dirname(paths.runtime('x'))
+    names = set()
+    try:
+        for f in os.listdir(d):
+            for suf in ('_heartbeat.txt', '_progress.txt', '_done.txt'):
+                if f.endswith(suf):
+                    names.add(f[:-len(suf)])
+    except Exception:
+        return []
+    out = []
+    for n in sorted(names):
+        a, p, dn = age(n, ALIVE), age(n, PROGRESS), age(n, DONE)
+        if min(x for x in (a, p, dn) if x is not None) > FORGOTTEN:
+            continue                                        # 一周前的旧文件：不是卡住，是早就不跑了
+        if a is not None:                                   # 常驻服务
+            if a > 300:
+                st, note = 'dead', f'已 {int(a // 60)} 分钟没报活'
+            elif p is not None and p > STUCK_SERVICE:
+                st, note = 'stuck', f'活着，但 {int(p // 60)} 分钟没有任何进展'
+            else:
+                st, note = 'running', f'进展 {int((p or 0) // 60)} 分钟前'
+        elif p is None:
+            continue
+        elif dn is not None and dn <= p + 5:                # done 在 progress 之后（或同时）
+            st, note = 'done', f'{int(dn // 60)} 分钟前做完'
+        elif p > STUCK_JOB:
+            st, note = 'stuck', f'{int(p // 60)} 分钟没进展，也没报做完 —— 多半卡住了'
+        else:
+            st, note = 'running', f'进展 {int(p // 60)} 分钟前'
+        out.append({'name': n, 'alive_age': a, 'progress_age': p, 'done_age': dn, 'state': st, 'note': note})
+    return out
 
 
 def start(name, every=DEFAULT_EVERY):

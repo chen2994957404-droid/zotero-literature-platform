@@ -235,11 +235,15 @@ def _run_backlog(limit, say, with_vectors, counts):
     if limit:
         todo = todo[:int(limit)]
     say(f'积压 {len(todo)} 篇' if todo else '没有积压，证据库里每篇都能读了')
+    from shared.kernel import heartbeat
     for i, pid in enumerate(todo, 1):
         r = ingest_one(pid, vectors, say, prefix=f'[{i}/{len(todo)}] ')
+        heartbeat.progress('ingest')
         counts['parsed'] += r['main'] == 'done'
         counts['si_parsed'] += r['si'] == 'done'
         counts['outlined'] += r['outline'] == 'done'
         counts['vectorized'] += r['vector'] == 'done'
         counts['failed'] += any(str(v).startswith('fail') for v in r.values())
+    if todo:
+        heartbeat.done('ingest')
     return counts

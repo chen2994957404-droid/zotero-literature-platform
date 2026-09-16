@@ -147,9 +147,11 @@ def fetch_many(dois, where=None, gap=GAP, limit=LIMIT, on_each=None):
     todo = [d.strip() for d in dois if pdf_fetch.is_doi(d.strip())][:limit]
     where = where or out_dir(create=True)
     results = []
+    from shared.kernel import heartbeat
     for i, doi in enumerate(todo):
         r = fetch_one(doi, where)
         results.append(r)
+        heartbeat.progress('getpdf')       # 面板上看得见「取件多久没动了」
         if on_each:
             on_each(i + 1, len(todo), r)
         if r['reason'] == 'captcha':
@@ -158,6 +160,7 @@ def fetch_many(dois, where=None, gap=GAP, limit=LIMIT, on_each=None):
         # 最后一篇后面不用等；从盘上直接命中的也不用等（没敲出版商）
         if i + 1 < len(todo) and r['reason'] != 'exists':
             time.sleep(gap)
+    heartbeat.done('getpdf')
     return results
 
 

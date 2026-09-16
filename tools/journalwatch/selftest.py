@@ -96,9 +96,10 @@ def main():
     # 回填：按年切块、翻页、断点续跑（假的 crossref + 临时库 + 临时进度文件）
     import shutil
     tmpd = tempfile.mkdtemp()
-    real_db, real_seen = jw.paths.radar_db, jw.paths.journal_watch_seen
+    real_db, real_seen, real_rt = jw.paths.radar_db, jw.paths.journal_watch_seen, jw.paths.runtime
     jw.paths.radar_db = lambda: os.path.join(tmpd, 'r.db')
     jw.paths.journal_watch_seen = lambda: os.path.join(tmpd, 'seen.json')
+    jw.paths.runtime = lambda name, **kw: os.path.join(tmpd, name)     # 心跳信号也别落到真实目录
     pages = {'*': ([_w('10.1/p1'), _w('10.1/p2')], 'c2'), 'c2': ([_w('10.1/p3')], '')}
     calls = []
 
@@ -118,7 +119,7 @@ def main():
         con.close()
     finally:
         jw.crossref.journal_works = real_jw
-        jw.paths.radar_db, jw.paths.journal_watch_seen = real_db, real_seen
+        jw.paths.radar_db, jw.paths.journal_watch_seen, jw.paths.runtime = real_db, real_seen, real_rt
         shutil.rmtree(tmpd, ignore_errors=True)
     if (r1['chunks'] == 2 and r2['chunks'] == 0 and n == 3 and len(calls) == 4
             and calls[0][0].startswith('from-pub-date:2024-09-15,until-pub-date:2025-09-15')):

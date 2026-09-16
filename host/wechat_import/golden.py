@@ -141,6 +141,8 @@ def _record(pid, a, out):
 
 def _one(p, i, n, allow_fetch, log):
     log('[%d/%d] %s' % (i, n, os.path.basename(p)[:50]))
+    from shared.kernel import heartbeat
+    heartbeat.progress('golden')            # 每篇一记；面板上 20 分钟没动就标红（取件卡住过半小时没人知道）
     try:
         return pair(p, allow_fetch=allow_fetch, log=log)
     except Exception as e:                       # 一篇炸了不该拖累整批
@@ -175,13 +177,18 @@ def build(files, allow_fetch=True, log=print, workers=1):
     """
     files = list(files)
     n = len(files)
+    from shared.kernel import heartbeat
     if workers <= 1 or n < 2:
-        return [_one(p, i, n, allow_fetch, log) for i, p in enumerate(files, 1)]
+        out = [_one(p, i, n, allow_fetch, log) for i, p in enumerate(files, 1)]
+        heartbeat.done('golden')
+        return out
     from concurrent.futures import ThreadPoolExecutor
     workers = min(2, workers)
     order = _interleave(files)
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        return list(ex.map(lambda ip: _one(ip[1], ip[0], n, allow_fetch, log), enumerate(order, 1)))
+        out = list(ex.map(lambda ip: _one(ip[1], ip[0], n, allow_fetch, log), enumerate(order, 1)))
+    heartbeat.done('golden')
+    return out
 
 
 def rewrite_references(files, log=print):

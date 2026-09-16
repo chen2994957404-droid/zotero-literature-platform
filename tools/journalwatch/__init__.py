@@ -26,7 +26,7 @@ import json
 import os
 
 from shared.adapters import crossref
-from shared.kernel import catalog, paths
+from shared.kernel import catalog, heartbeat, paths
 from shared.kernel.log import get_logger
 from tools.journalwatch import store
 
@@ -209,10 +209,12 @@ def backfill(years=3, journals=None, log=None, until=None, progress=None):
                     break
                 done.add(key)
                 io.open(progress, 'w', encoding='utf-8').write(json.dumps(sorted(done)))
+                heartbeat.progress('journalwatch-backfill')
                 total_new += n_new
                 chunks += 1
                 log('  %-40s %s~%s  %5d 篇（新 %d）' % (j['name'], a, b, got, n_new))
                 a = b
     finally:
         con.close()
+    heartbeat.done('journalwatch-backfill')
     return {'works': total_new, 'chunks': chunks, 'failed': sorted(set(failed))}

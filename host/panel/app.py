@@ -143,6 +143,14 @@ def collect_alerts():
     # 最后一条失败**出现在**最后一条正常之后 = 现在仍然是坏的
     if i_fail > i_ok:
         alerts.append({'level': 'fail', 'text': tail[i_fail].strip()[-160:]})
+    # 常驻服务 / 批量作业卡住了（2026-09-16 加：取件卡半小时、Edge 死三小时都没人知道）
+    try:
+        from shared.kernel import heartbeat
+        for o in heartbeat.overview():
+            if o['state'] in ('stuck', 'dead'):
+                alerts.append({'level': 'fail', 'text': f"「{JOB_LABELS.get(o['name'], o['name'])}」{o['note']}"})
+    except Exception:
+        pass
     # Zotero 没开是最常见的根因，单独探一次给出直白结论
     try:
         import urllib.request
@@ -155,6 +163,19 @@ def collect_alerts():
         alerts.append({'level': 'fail',
                        'text': 'Zotero 桌面程序没开 —— 精读功能现在无法工作。点下面「Zotero 主程序」的重启按钮即可。'})
     return alerts
+
+
+JOB_LABELS = {'watcher': '精读监听', 'ingest': '落地流水线', 'getpdf': '取全文', 'golden': '金标取件',
+              'journalwatch-backfill': '雷达回填'}
+
+
+def collect_progress():
+    """每个常驻服务 / 批量作业最近一次进展 —— 「卡住了要有人知道」（逻辑在 heartbeat.overview）。"""
+    try:
+        from shared.kernel import heartbeat
+        return [dict(o, label=JOB_LABELS.get(o['name'], o['name'])) for o in heartbeat.overview()]
+    except Exception:
+        return []
 
 
 def collect_heartbeat():
@@ -768,6 +789,7 @@ class Handler(BaseHTTPRequestHandler):
                 'status': collect_status(),
                 'processes': collect_processes(),
                 'heartbeat': collect_heartbeat(),
+                'progress': collect_progress(),
                 'alerts': collect_alerts(),
                 'version': collect_version(),
                 'config': collect_config(),
@@ -1027,8 +1049,12 @@ async function load(force){
   let hbTxt = hb===null ? '<span class="bad">无心跳文件</span>'
       : hb>300 ? `<span class="bad">${hb} 秒未更新（疑似卡死）</span>`
       : `${hb} 秒前（正常）`;
+  const stateTxt = {running:'在跑', stuck:'<b>卡住</b>', dead:'<b>没报活</b>', done:'做完', idle:'空闲'};
+  const progRows = (d.progress||[]).map(o=>
+    `<div class="row"><span class="dot ${o.state==='running'||o.state==='done'?'ok':'fail'}"></span>
+     <span class="nm">${esc(o.label)}</span><span class="msg ${o.state==='stuck'||o.state==='dead'?'bad':''}">${stateTxt[o.state]||o.state} · ${esc(o.note)}</span></div>`).join('');
   $('#procs').innerHTML =
-    `<div class="row"><span class="nm">精读监听心跳</span><span class="msg">${hbTxt}</span></div>`
+    `<div class="row"><span class="nm">精读监听心跳</span><span class="msg">${hbTxt}</span></div>` + progRows
     + (d.processes.length
         ? `<table><tr><th>PID</th><th>脚本</th></tr>` +
           d.processes.map(p=>`<tr><td>${p.pid}</td><td class="${p.dup?'bad':''}">${esc(p.script)}${p.dup?' ⚠重复实例':''}</td></tr>`).join('')

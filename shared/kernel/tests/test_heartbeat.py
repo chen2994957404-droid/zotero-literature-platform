@@ -131,3 +131,31 @@ class TestBackgroundThread:
     def test_线程是daemon不会吊住进程(self):
         t = heartbeat.start('w', every=60)
         assert t.daemon is True
+
+
+class TestOverview:
+    """面板 / 体检用的一览：常驻服务与批量作业分开判，做完的不算卡。"""
+
+    def _stamp(self, name, kind, seconds_ago):
+        import os, time
+        p = heartbeat.path(name, kind)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        open(p, 'w').write(str(int(time.time() - seconds_ago)))
+
+    def test_批量作业_在跑_卡住_做完三态(self):
+        self._stamp('fill', 'progress', 60)
+        self._stamp('slow', 'progress', 3000)
+        self._stamp('fin', 'progress', 3000); self._stamp('fin', 'done', 2990)
+        st = {o['name']: o['state'] for o in heartbeat.overview()}
+        assert st == {'fill': 'running', 'slow': 'stuck', 'fin': 'done'}
+
+    def test_常驻服务_没报活是dead_报活但没进展是stuck(self):
+        self._stamp('svc1', 'alive', 900); self._stamp('svc1', 'progress', 10)
+        self._stamp('svc2', 'alive', 10); self._stamp('svc2', 'progress', 4000)
+        self._stamp('svc3', 'alive', 10); self._stamp('svc3', 'progress', 1500)   # 精读中，正常
+        st = {o['name']: o['state'] for o in heartbeat.overview()}
+        assert st == {'svc1': 'dead', 'svc2': 'stuck', 'svc3': 'running'}
+
+    def test_done写的是独立文件(self):
+        assert heartbeat.done('j')
+        assert heartbeat.age('j', 'done') is not None and heartbeat.age('j', 'progress') is None
