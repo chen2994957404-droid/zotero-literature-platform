@@ -175,6 +175,8 @@ def start(name, every=DEFAULT_EVERY):
         def _loop():
             while True:
                 time.sleep(every)
+                if _threads.get(name) is not threading.current_thread():
+                    return                      # 被 stop() / 测试夹具注销了：别再往（已经换掉的）目录里写
                 _write(name, ALIVE)
 
         t = threading.Thread(target=_loop, name=f'heartbeat:{name}', daemon=True)
