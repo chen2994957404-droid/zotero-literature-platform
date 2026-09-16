@@ -345,7 +345,8 @@ def main():
                 from tools import journalwatch
                 r = journalwatch.patrol(days=3, log=lambda *a: None, only_new=True)
                 patrol_day[0] = today
-                print(f'[盯新刊] {r["n_journals"]} 本刊，首见 {len(r["items"])} 篇'
+                print(f'[盯新刊] {r["n_journals"]} 本刊，首见 {len(r["items"])} 篇，'
+                      f'过线 {sum(1 for w in r["items"] if w.get("passes"))} 篇'
                       + (f'；没查成：{"、".join(r["failed"])}' if r['failed'] else ''))
         except Exception as e:
             print(f'[盯新刊失败] {type(e).__name__}: {e}')

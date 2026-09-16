@@ -43,15 +43,19 @@ def main():
 
     total += 1
     real = jw.catalog.by_doi
-    jw.catalog.by_doi = lambda: {'10.1/c': 'doi_x'}
+    jw.catalog.by_doi = lambda: {'10.1/c': 'doi_x', '10.1/l1': 'p1', '10.1/l2': 'p2'}
     try:
-        rows = jw.annotate([_w('10.1/C'), _w('10.1/D')], {'dois': {}}, today=today)
+        a = dict(_w('10.1/C'), tier='A', refs=['10.1/l1', '10.1/l2', '10.1/zz'])   # A 档引 2 篇 → 过线
+        b = dict(_w('10.1/D'), tier='C', refs=['10.1/l1', '10.1/l2'])              # C 档引 2 篇 → 不过（要 3）
+        c = dict(_w('10.1/E'), tier='B', refs=['10.1/l1'])                         # B 档引 1 篇 → 过
+        rows = jw.annotate([a, b, c], {'dois': {}}, today=today)
     finally:
         jw.catalog.by_doi = real
-    if [r['in_library'] for r in rows] == ['doi_x', '']:
-        print('  [PASS] 证据库里有的标出 id'); ok += 1
+    got = {r['doi']: (r['in_library'], r['lib_cites'], r['passes']) for r in rows}
+    if got == {'10.1/C': ('doi_x', 2, True), '10.1/D': ('', 2, False), '10.1/E': ('', 1, True)}:
+        print('  [PASS] 证据库里有的标出 id；引了库内几篇 + 按档位过线（A≥2 / B≥1 / C≥3）'); ok += 1
     else:
-        print('  [FAIL] 库内标注不对：%s' % rows)
+        print('  [FAIL] 库内标注 / 门槛不对：%s' % got)
 
     total += 1
     p = os.path.join(tempfile.mkdtemp(), 'jw.json')

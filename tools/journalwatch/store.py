@@ -31,6 +31,10 @@ def connect(path=None):
     con = sqlite3.connect(path, timeout=30)
     con.execute('PRAGMA journal_mode=WAL')
     con.executescript(SCHEMA)
+    have = {r[1] for r in con.execute('PRAGMA table_info(works)')}
+    for col, typ in (('tier', 'TEXT'), ('lib_cites', 'INTEGER')):
+        if col not in have:
+            con.execute('ALTER TABLE works ADD COLUMN %s %s' % (col, typ))       # 2026-09-16 加：档位与引库内几篇
     return con
 
 
@@ -46,17 +50,19 @@ def upsert(con, items, source='crossref', today=None):
         if row is None:
             new += 1
         con.execute('''INSERT INTO works (doi,title,venue,issn,publisher,year,published,created,abstract,
-                       first_author,authors,citations,in_library,first_seen,source)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                       first_author,authors,citations,in_library,first_seen,source,tier,lib_cites)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                        ON CONFLICT(doi) DO UPDATE SET title=excluded.title, venue=excluded.venue,
                        publisher=excluded.publisher, year=excluded.year, published=excluded.published,
                        abstract=CASE WHEN length(excluded.abstract)>length(coalesce(works.abstract,'')) THEN excluded.abstract ELSE works.abstract END,
                        authors=excluded.authors, citations=excluded.citations,
-                       in_library=CASE WHEN excluded.in_library<>'' THEN excluded.in_library ELSE works.in_library END''',
+                       in_library=CASE WHEN excluded.in_library<>'' THEN excluded.in_library ELSE works.in_library END,
+                       tier=coalesce(excluded.tier, works.tier), lib_cites=coalesce(excluded.lib_cites, works.lib_cites)''',
                     (doi, w.get('title', ''), w.get('venue', ''), w.get('issn', ''), w.get('publisher', ''),
                      w.get('year'), w.get('published', ''), w.get('created', ''), w.get('abstract', ''),
                      w.get('first_author', ''), json.dumps(w.get('authors') or [], ensure_ascii=False),
-                     int(w.get('citations') or 0), w.get('in_library', '') or '', today, source))
+                     int(w.get('citations') or 0), w.get('in_library', '') or '', today, source,
+                     w.get('tier'), w.get('lib_cites')))
         refs = w.get('refs') or []
         if refs:
             con.executemany('INSERT OR IGNORE INTO refs (doi, ref_doi) VALUES (?,?)', [(doi, r) for r in refs])
@@ -94,3 +100,15 @@ def refresh_library_flags(con, find):
             con.execute('UPDATE works SET in_library=? WHERE doi=?', (pid, doi)); n += 1
     con.commit()
     return n
+
+
+def refresh_lib_cites(con, library_dois, tiers=None):
+    """重算每篇「引了库内几篇」（证据库长了、或回填时还没算）；顺便按刊名补档位。返回引了库内的篇数。"""
+    rows = cited_in_library(con, library_dois)
+    con.execute('UPDATE works SET lib_cites=0 WHERE lib_cites IS NULL')
+    con.executemany('UPDATE works SET lib_cites=? WHERE doi=?', [(n, d) for d, n in rows])
+    if tiers:
+        con.executemany('UPDATE works SET tier=? WHERE venue=? AND (tier IS NULL OR tier<>?)',
+                        [(t, v, t) for v, t in tiers.items()])
+    con.commit()
+    return len(rows)

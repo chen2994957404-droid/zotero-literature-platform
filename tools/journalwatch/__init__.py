@@ -32,38 +32,82 @@ from tools.journalwatch import store
 
 _log = get_logger('journalwatch')
 
-# 种子清单：ISSN 全部 2026-09-15 在 Crossref `/journals` 端点查证过（不是凭记忆写的）。
-# 用户改 `journal_watch.json` 就行，这里只在文件不存在时用一次。
+# 种子清单（2026-09-16 按证据库里 987 篇的真实出处 + 用户定的三档框架重拟；ISSN 全部在 Crossref
+# `/journals/<ISSN>` 上逐个验过，不是凭记忆写的）。用户改 `journal_watch.json` 就行，这里只在文件不存在时用一次。
+#
+# 三档回答的问题不一样（docs/变更记录 2026-09-16）：
+#   A 方向层：行业往哪走、新概念第一次出现在哪 —— 综合刊 + 化学/材料顶刊
+#   B 领域层：这个体系具体怎么做、参数在哪 —— 高分子 / 软物质专刊，实验细节密度最高
+#   C 宽口层：口宽、量大、噪音最大 —— 只取被相关度筛出来的
+# 档位是每篇的属性，不是收不收的闸门；闸门是相关度（引了库内几篇 + 相似度），门槛按档位不同（TIER_GATE）。
 DEFAULT_JOURNALS = [
-    {'name': 'Nature', 'issn': '0028-0836'},
-    {'name': 'Science', 'issn': '0036-8075'},
-    {'name': 'Nature Materials', 'issn': '1476-1122'},
-    {'name': 'Nature Chemistry', 'issn': '1755-4330'},
-    {'name': 'Nature Communications', 'issn': '2041-1723'},
-    {'name': 'Science Advances', 'issn': '2375-2548'},
-    {'name': 'Matter', 'issn': '2590-2385'},
-    {'name': 'Chem', 'issn': '2451-9294'},
-    {'name': 'Journal of the American Chemical Society', 'issn': '0002-7863'},
-    {'name': 'Angewandte Chemie International Edition', 'issn': '1433-7851'},
-    {'name': 'Advanced Materials', 'issn': '0935-9648'},
-    {'name': 'Advanced Functional Materials', 'issn': '1616-301X'},
-    {'name': 'Advanced Science', 'issn': '2198-3844'},
-    {'name': 'Small', 'issn': '1613-6810'},
-    {'name': 'Macromolecules', 'issn': '0024-9297'},
-    {'name': 'ACS Macro Letters', 'issn': '2161-1653'},
-    {'name': 'Chemistry of Materials', 'issn': '0897-4756'},
-    {'name': 'ACS Nano', 'issn': '1936-0851'},
-    {'name': 'Nano Letters', 'issn': '1530-6984'},
-    {'name': 'ACS Central Science', 'issn': '2374-7943'},
-    {'name': 'ACS Applied Materials & Interfaces', 'issn': '1944-8244'},
-    {'name': 'Polymer Chemistry', 'issn': '1759-9954'},
-    {'name': 'Materials Horizons', 'issn': '2051-6347'},
-    {'name': 'Journal of Materials Chemistry A', 'issn': '2050-7488'},
-    {'name': 'Chemical Society Reviews', 'issn': '0306-0012'},
-    {'name': 'Progress in Polymer Science', 'issn': '0079-6700'},
-    {'name': 'Chemical Engineering Journal', 'issn': '1385-8947'},
-    {'name': 'Nature Reviews Materials', 'issn': '2058-8437'},
+    # ── A 方向层 ──
+    {'name': 'Nature', 'issn': '0028-0836', 'tier': 'A'},
+    {'name': 'Science', 'issn': '0036-8075', 'tier': 'A'},
+    {'name': 'Nature Materials', 'issn': '1476-1122', 'tier': 'A'},
+    {'name': 'Nature Chemistry', 'issn': '1755-4330', 'tier': 'A'},
+    {'name': 'Nature Nanotechnology', 'issn': '1748-3387', 'tier': 'A'},
+    {'name': 'Nature Sustainability', 'issn': '2398-9629', 'tier': 'A'},
+    {'name': 'Nature Reviews Materials', 'issn': '2058-8437', 'tier': 'A'},
+    {'name': 'Nature Communications', 'issn': '2041-1723', 'tier': 'A'},
+    {'name': 'Science Advances', 'issn': '2375-2548', 'tier': 'A'},
+    {'name': 'Proceedings of the National Academy of Sciences', 'issn': '0027-8424', 'tier': 'A'},
+    {'name': 'National Science Review', 'issn': '2095-5138', 'tier': 'A'},
+    {'name': 'Matter', 'issn': '2590-2385', 'tier': 'A'},
+    {'name': 'Chem', 'issn': '2451-9294', 'tier': 'A'},
+    {'name': 'Journal of the American Chemical Society', 'issn': '0002-7863', 'tier': 'A'},
+    {'name': 'Angewandte Chemie International Edition', 'issn': '1433-7851', 'tier': 'A'},
+    {'name': 'Advanced Materials', 'issn': '0935-9648', 'tier': 'A'},
+    {'name': 'Advanced Functional Materials', 'issn': '1616-301X', 'tier': 'A'},
+    {'name': 'ACS Nano', 'issn': '1936-0851', 'tier': 'A'},
+    {'name': 'ACS Central Science', 'issn': '2374-7943', 'tier': 'A'},
+    {'name': 'Chemical Reviews', 'issn': '0009-2665', 'tier': 'A'},
+    {'name': 'Chemical Society Reviews', 'issn': '0306-0012', 'tier': 'A'},
+    {'name': 'Accounts of Chemical Research', 'issn': '0001-4842', 'tier': 'A'},
+    {'name': 'Materials Today', 'issn': '1369-7021', 'tier': 'A'},
+    {'name': 'Materials Science and Engineering: R: Reports', 'issn': '0927-796X', 'tier': 'A'},
+    # ── B 领域层 ──
+    {'name': 'Macromolecules', 'issn': '0024-9297', 'tier': 'B'},
+    {'name': 'ACS Macro Letters', 'issn': '2161-1653', 'tier': 'B'},
+    {'name': 'Polymer Chemistry', 'issn': '1759-9954', 'tier': 'B'},
+    {'name': 'Progress in Polymer Science', 'issn': '0079-6700', 'tier': 'B'},
+    {'name': 'Chemistry of Materials', 'issn': '0897-4756', 'tier': 'B'},
+    {'name': 'Materials Horizons', 'issn': '2051-6347', 'tier': 'B'},
+    {'name': 'Polymer', 'issn': '0032-3861', 'tier': 'B'},
+    {'name': 'ACS Applied Polymer Materials', 'issn': '2637-6105', 'tier': 'B'},
+    {'name': 'Biomacromolecules', 'issn': '1525-7797', 'tier': 'B'},
+    {'name': 'Soft Matter', 'issn': '1744-683X', 'tier': 'B'},
+    {'name': 'Journal of Polymer Science', 'issn': '2642-4169', 'tier': 'B'},
+    {'name': 'European Polymer Journal', 'issn': '0014-3057', 'tier': 'B'},
+    {'name': 'Macromolecular Rapid Communications', 'issn': '1022-1336', 'tier': 'B'},
+    {'name': 'Macromolecular Materials and Engineering', 'issn': '1438-7492', 'tier': 'B'},
+    {'name': 'Macromolecular Chemistry and Physics', 'issn': '1022-1352', 'tier': 'B'},
+    {'name': 'Chinese Journal of Polymer Science', 'issn': '0256-7679', 'tier': 'B'},
+    {'name': 'Polymer Degradation and Stability', 'issn': '0141-3910', 'tier': 'B'},
+    {'name': 'Composites Science and Technology', 'issn': '0266-3538', 'tier': 'B'},
+    {'name': 'Composites Part B: Engineering', 'issn': '1359-8368', 'tier': 'B'},
+    {'name': 'ACS Materials Letters', 'issn': '2639-4979', 'tier': 'B'},
+    {'name': 'Accounts of Materials Research', 'issn': '2643-6728', 'tier': 'B'},
+    {'name': 'Advanced Fiber Materials', 'issn': '2524-7921', 'tier': 'B'},
+    {'name': 'Nano-Micro Letters', 'issn': '2311-6706', 'tier': 'B'},
+    # ── C 宽口层 ──
+    {'name': 'Chemical Engineering Journal', 'issn': '1385-8947', 'tier': 'C'},
+    {'name': 'ACS Applied Materials & Interfaces', 'issn': '1944-8244', 'tier': 'C'},
+    {'name': 'Small', 'issn': '1613-6810', 'tier': 'C'},
+    {'name': 'Advanced Science', 'issn': '2198-3844', 'tier': 'C'},
+    {'name': 'Journal of Materials Chemistry A', 'issn': '2050-7488', 'tier': 'C'},
+    {'name': 'Nano Letters', 'issn': '1530-6984', 'tier': 'C'},
+    {'name': 'Nano Energy', 'issn': '2211-2855', 'tier': 'C'},
+    {'name': 'Green Chemistry', 'issn': '1463-9262', 'tier': 'C'},
+    {'name': 'ACS Sustainable Chemistry & Engineering', 'issn': '2168-0485', 'tier': 'C'},
+    {'name': 'Industrial & Engineering Chemistry Research', 'issn': '0888-5885', 'tier': 'C'},
+    {'name': 'Chemical Communications', 'issn': '1359-7345', 'tier': 'C'},
+    {'name': 'Science China Materials', 'issn': '2095-8226', 'tier': 'C'},
 ]
+
+# 升 1 级（取正文 + 解析）的门槛：这篇引了证据库里几篇。B 松、A 中、C 紧。
+# 数字是起点，看几周清单再调；相似度那一路（向量）接上后再并进来。
+TIER_GATE = {'A': 2, 'B': 1, 'C': 3}
 
 MAX_DAYS = 60          # 窗口再大 Crossref 一页也装不下，且「新刊」本来就只看最近
 
@@ -78,7 +122,8 @@ def load_journals(path=None):
                      '暂时不想盯的加 "off": true。',
              'journals': DEFAULT_JOURNALS}, ensure_ascii=False, indent=1))
     d = json.loads(io.open(path, encoding='utf-8').read())
-    return [j for j in d.get('journals', []) if j.get('issn') and not j.get('off')]
+    return [dict(j, tier=(j.get('tier') or 'C').upper())
+            for j in d.get('journals', []) if j.get('issn') and not j.get('off')]
 
 
 def load_seen(path=None):
@@ -114,6 +159,7 @@ def fetch(journals, days=7, log=None, today=None):
             continue
         for w in ws:
             w['venue'] = j['name'] or w['venue']     # 用清单里的名字，Crossref 的偶尔带副标题
+            w['tier'] = j.get('tier', 'C')
         out.extend(ws)
         log('  %-42s %3d 篇（%s 起）' % (j['name'], len(ws), since))
     return out, failed
@@ -132,6 +178,9 @@ def annotate(items, seen, today=None):
         have.add(d)
         w['in_library'] = lib.get(d, '')
         w['is_new'] = d not in dois
+        # 相关度第一道线：它引了证据库里几篇（参考文献 DOI 对证据库 DOI 表）
+        w['lib_cites'] = sum(1 for r in (w.get('refs') or []) if r in lib)
+        w['passes'] = w['lib_cites'] >= TIER_GATE.get(w.get('tier', 'C'), 3)
         dois.setdefault(d, today)
         out.append(w)
     out.sort(key=lambda w: (w['venue'], w['created'] or '', w['title']), reverse=False)
@@ -159,6 +208,10 @@ def patrol(days=7, journals=None, log=None, only_new=False, today=None, remember
             store.upsert(con, rows, today=today)
         finally:
             con.close()
+        try:
+            refresh(log=lambda *a: None)
+        except Exception:
+            pass
     if only_new:
         rows = [w for w in rows if w['is_new']]
     return {'items': rows, 'failed': failed, 'since': _since(days, today),
@@ -201,6 +254,8 @@ def backfill(years=3, journals=None, log=None, until=None, progress=None):
                         for w in items:
                             w['in_library'] = lib.get(catalog.norm_doi(w['doi']), '')
                             w['venue'] = j['name'] or w['venue']      # Crossref 的刊名偶尔带换行 / 副标题
+                            w['tier'] = j.get('tier', 'C')
+                            w['lib_cites'] = sum(1 for r in (w.get('refs') or []) if r in lib)
                         n_new += store.upsert(con, items)
                         got += len(items)
                 except crossref.CrossrefError as e:
@@ -218,3 +273,15 @@ def backfill(years=3, journals=None, log=None, until=None, progress=None):
         con.close()
     heartbeat.done('journalwatch-backfill')
     return {'works': total_new, 'chunks': chunks, 'failed': sorted(set(failed))}
+
+
+def refresh(log=None):
+    """证据库长了之后重算雷达里的「引了库内几篇」与档位（回填完、每天巡逻后各跑一次，几秒钟）。"""
+    log = log or _log.info
+    con = store.connect()
+    try:
+        n = store.refresh_lib_cites(con, list(catalog.by_doi()), {j['name']: j['tier'] for j in load_journals()})
+    finally:
+        con.close()
+    log('雷达里引了库内文献的：%d 篇' % n)
+    return n

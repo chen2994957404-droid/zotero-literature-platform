@@ -16,11 +16,18 @@ python -m tools.journalwatch --刊 Macro --含摘要
 python -m tools.discover.collect 1,3,5-7
 ```
 
-## 盯哪些刊
+## 盯哪些刊，分三档
 
-`data/serving/journal_watch.json`：每条 `name` + `issn`。第一次跑会用一份种子清单
-（28 本材料/化学/综合类刊，ISSN 都在 Crossref 上验过）把文件建出来，之后你自己改。
-不想盯的加 `"off": true`，不用删。
+`data/serving/journal_watch.json`：每条 `name` + `issn` + `tier`。第一次跑会用种子清单（59 本，按证据库里 987 篇的
+真实出处拟的，ISSN 都在 Crossref 上逐个验过）把文件建出来，之后你自己改。不想盯的加 `"off": true`，不用删。
+
+| 档 | 回答什么 | 谁 | 过线门槛（引了库内几篇） |
+|---|---|---|---|
+| A 方向层 | 行业往哪走、新概念第一次出现 | Nature/Science 系、JACS、Angew、AM、AFM、Chem Rev… | ≥2 |
+| B 领域层 | 这个体系怎么做、参数在哪 | Macromolecules、Polym Chem、Chem Mater、Polymer、Soft Matter… | ≥1（实验细节密度高，放宽） |
+| C 宽口层 | 两头都有、噪音最大 | CEJ、AMI、Small、Adv Sci、JMCA、Green Chem… | ≥3 |
+
+档位是每篇的属性，不是收不收的闸门；闸门是相关度。门槛在 `TIER_GATE`，看几周清单再调。
 
 ## 雷达库（0 级）
 

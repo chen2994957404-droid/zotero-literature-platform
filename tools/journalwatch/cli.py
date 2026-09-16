@@ -5,6 +5,7 @@
   python -m tools.journalwatch                 最近 7 天，所有盯着的刊
   python -m tools.journalwatch --天 3          只看最近 3 天
   python -m tools.journalwatch --只看新的      只列这次首见的（定时跑用这个）
+  python -m tools.journalwatch --过线          只列过了相关度门槛的（引了库内 A≥2 / B≥1 / C≥3 篇）
   python -m tools.journalwatch --刊 Macro      只看名字里带 Macro 的刊
   python -m tools.journalwatch --含摘要        每篇带一行摘要
   python -m tools.journalwatch --不记          只看看，不把这些记成「见过」、不入雷达库
@@ -100,14 +101,19 @@ def main():
         return 0
     n_new = sum(1 for w in rows if w['is_new'])
     n_have = sum(1 for w in rows if w['in_library'])
-    print('\n共 %d 篇（首见 %d 篇，库里已有 %d 篇）：' % (len(rows), n_new, n_have))
+    n_pass = sum(1 for w in rows if w.get('passes'))
+    print('\n共 %d 篇（首见 %d，库里已有 %d，**过线 %d**）：' % (len(rows), n_new, n_have, n_pass))
+    if flag('--过线'):
+        rows = [w for w in rows if w.get('passes')]
+        rows.sort(key=lambda w: (-w['lib_cites'], w['venue']))
     cur = None
     for i, w in enumerate(rows, 1):
         if w['venue'] != cur:
             cur = w['venue']
-            print('\n── %s' % cur)
+            print('\n── %s（%s 档）' % (cur, w.get('tier', '?')))
         mark = '库' if w['in_library'] else ('新' if w['is_new'] else '  ')
-        print('%3d. [%s] %s  %s' % (i, mark, w['published'] or w['created'], w['title'][:100]))
+        cites = ('引%d篇%s' % (w['lib_cites'], '✓' if w.get('passes') else '')) if w.get('lib_cites') else ''
+        print('%3d. [%s] %s  %s  %s' % (i, mark, w['published'] or w['created'], w['title'][:96], cites))
         print('        %s' % w['doi'])
         if with_abs and w.get('abstract'):
             print('        ' + w['abstract'][:220].replace('\n', ' '))
