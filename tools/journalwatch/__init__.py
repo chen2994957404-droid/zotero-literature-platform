@@ -113,26 +113,30 @@ DEFAULT_JOURNALS = [
 #   C 档：宽口刊，不自动升级（用户点名才取）
 # OpenAlex 收录比 Crossref 晚几天到两周，所以刚登记的文章先在雷达里等分类，等到了再过闸 —— 0 级是即时的，1 级晚一两周没关系。
 # 「引了库内几篇」（lib_cites）仍然算、仍然存，但**只在用户明说「跟我相关的」时用**。
-SOFT_SUBFIELDS = {'Polymers and Plastics', 'Materials Chemistry', 'Biomaterials', 'Mechanics of Materials',
-                  'Ceramics and Composites', 'Surfaces, Coatings and Films', 'Physical and Theoretical Chemistry'}
-SOFT_TOPIC_RE = re.compile(r'polymer|hydrogel|elastomer|composite|self-heal|silicone|siloxane|\bgel|adhesi|soft (matter|material)|'
-                           r'rubber|supramolecular|mechanical|mechanic|rheolog|viscoelast|ionogel|conductive|stretchable|wearable|'
-                           r'membrane|fiber|fibre|coating|surface|interface', re.I)
+SOFT_SUBFIELDS = {'Polymers and Plastics'}
+SOFT_TOPIC_RE = re.compile(r'polymer|hydrogel|elastomer|gel|organogel|ionogel|rubber|supramolecular|self-heal|silicone|siloxane|'
+                           r'soft matter|adhesi|viscoelast|rheolog|vitrimer|dynamic covalent|macromolec', re.I)
 AUTO_TIERS = ('A', 'B')
+# 正刊：量极小，放宽 —— 三个 topic 里任一个沾边就过（Nature 2026 力化学弹道那篇首要 topic 是 Force Microscopy，
+# 第二个才是 Polymer Nanocomposites；按「首要」判会漏掉它）。其余刊按首要 topic / 首要 subfield 判，否则噪音太大
+# （2026-09-16 在主力机 60 天数据上实测：A 档「任一沾边」808 篇 vs「首要沾边」261 篇，前者一半是电池 / MOF / 生医）。
+PRIME_JOURNALS = {'Nature', 'Science', 'Nature Materials', 'Nature Chemistry', 'Nature Nanotechnology', 'Nature Reviews Materials'}
 
 
-def is_soft_matter(topics, subfields):
-    """OpenAlex 的分类里有没有软物质 / 高分子 / 材料力学的影子（任一 topic 或 subfield 命中即算）。"""
-    if any(sf in SOFT_SUBFIELDS for sf in (subfields or [])):
-        return True
-    return any(SOFT_TOPIC_RE.search(t or '') for t in (topics or []))
+def is_soft_matter(topics, subfields, generous=False):
+    """OpenAlex 分类是不是软物质 / 高分子。默认看**首要** topic / subfield；generous=True 看任一。"""
+    tp, sf = list(topics or []), list(subfields or [])
+    if generous:
+        return bool(set(sf) & SOFT_SUBFIELDS) or any(SOFT_TOPIC_RE.search(t or '') for t in tp)
+    return (bool(sf) and sf[0] in SOFT_SUBFIELDS) or (bool(tp) and SOFT_TOPIC_RE.search(tp[0] or '') is not None)
 
 
-def gate(tier, topics, subfields):
+def gate(tier, topics, subfields, venue=''):
     """这篇该不该自动升 1 级。分类还没到（None）→ False，等下次。"""
     if tier not in AUTO_TIERS or topics is None:
         return False
-    return is_soft_matter(topics, subfields)
+    return is_soft_matter(topics, subfields, generous=venue in PRIME_JOURNALS)
+
 
 MAX_DAYS = 60          # 窗口再大 Crossref 一页也装不下，且「新刊」本来就只看最近
 
@@ -205,7 +209,7 @@ def annotate(items, seen, today=None):
         w['is_new'] = d not in dois
         # 相关度第一道线：它引了证据库里几篇（参考文献 DOI 对证据库 DOI 表）
         w['lib_cites'] = sum(1 for r in (w.get('refs') or []) if r in lib)      # 只记录，不做门槛（「跟我相关」模式才用）
-        w['passes'] = gate(w.get('tier', 'C'), w.get('topics'), w.get('subfields'))
+        w['passes'] = gate(w.get('tier', 'C'), w.get('topics'), w.get('subfields'), w.get('venue', ''))
         dois.setdefault(d, today)
         out.append(w)
     out.sort(key=lambda w: (w['venue'], w['created'] or '', w['title']), reverse=False)
@@ -421,7 +425,7 @@ def enqueue_recent(days=60):
     for d, t, v, tr, lc, pub, tp, sf in rows:
         topics, subfields = json.loads(tp or '[]'), json.loads(sf or '[]')
         items.append({'doi': d, 'title': t, 'venue': v, 'tier': tr or 'C', 'lib_cites': lc or 0, 'in_library': '',
-                      'published': pub, 'passes': gate(tr or 'C', topics, subfields)})
+                      'published': pub, 'passes': gate(tr or 'C', topics, subfields, v)})
     return enqueue_passing(items)
 
 
