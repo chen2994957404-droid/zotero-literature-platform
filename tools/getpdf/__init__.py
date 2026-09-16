@@ -193,10 +193,21 @@ def resolve_id(doi, zotero_index=None):
 
 
 def _copy(src, dst):
-    """把文件复制成正本（已经在就不动）。返回是否真复制了。"""
+    """把文件收成正本（已经在就不动）。返回是否真收了。
+
+    来源在临时处理区（`paths.INCOMING`）的**搬**而不是复制 —— 2026-09-15 量过主力机：
+    `_incoming` 里躺着 12 GB 早已落地的副本，占了 raw 的三成。别处来的（Zotero 附件、
+    调用方给的文件）仍然复制，那不是我们的东西。
+    """
     if os.path.exists(dst) and os.path.getsize(dst) > 0:
         return False
     os.makedirs(os.path.dirname(dst), exist_ok=True)
+    if os.path.abspath(src).startswith(os.path.abspath(paths.INCOMING)):
+        try:
+            os.replace(src, dst)
+            return True
+        except OSError:
+            pass                              # 跨盘等情况退回复制
     with io.open(src, 'rb') as a, io.open(dst, 'wb') as b:
         b.write(a.read())
     return True

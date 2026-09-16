@@ -9,6 +9,7 @@
 
 对外接口：
   - parse_pdf(pdf_path, out_dir) → out_dir（含 full.md/layout.json/images/*_origin.pdf）
+  - link_origin(out_dir, pdf_path) → 把 *_origin.pdf 换成指向正本的硬链接（省一份空间）
                                     已解析过（out_dir 有 layout.json）则直接复用，省 MineRU。
   - parse_docx(path, out_dir)    → out_dir（只有 full.md：文字 + 表格，python-docx 读，不花额度）
   - parse_document(path, out_dir) → 按扩展名分派到上面两个。**精读 / 取全文 / 落地流水线
@@ -102,7 +103,34 @@ def parse_pdf(pdf_path, out_dir, reuse=True):
     # 4. 下载解压
     zip_bytes = urllib.request.urlopen(zip_url, timeout=120).read()
     zipfile.ZipFile(io.BytesIO(zip_bytes)).extractall(out_dir)
+    link_origin(out_dir, pdf_path)
     return out_dir
+
+
+def link_origin(out_dir, pdf_path):
+    """MineRU 的 `*_origin.pdf` 就是输入 PDF 的原样副本 —— 换成指向正本的硬链接，不再占第二份空间。
+
+    2026-09-15 量过主力机：1424 个 origin.pdf 共 9.2 GB，全是 main.pdf / si.pdf 的重复。
+    硬链接在 NTFS 上不要管理员权限、同一份数据两个名字，裁图（figure_crop）照旧按名字找得到。
+    只在大小一致时换；换不成（跨盘、权限）就保留副本，不影响功能。返回换了几个。
+    """
+    if not (pdf_path and os.path.isfile(pdf_path)):
+        return 0
+    n = 0
+    for f in os.listdir(out_dir):
+        if not f.endswith('_origin.pdf'):
+            continue
+        dup = os.path.join(out_dir, f)
+        try:
+            if os.path.getsize(dup) != os.path.getsize(pdf_path) or os.path.samefile(dup, pdf_path):
+                continue
+            tmp = dup + '.lnk'
+            os.link(pdf_path, tmp)
+            os.replace(tmp, dup)
+            n += 1
+        except OSError:
+            continue
+    return n
 
 
 def parse_docx(path, out_dir, reuse=True):
