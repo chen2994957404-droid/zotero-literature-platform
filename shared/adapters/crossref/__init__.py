@@ -78,7 +78,7 @@ def normalize(m):
     auth = m.get('author') or []
     first = auth[0].get('family') or auth[0].get('name') or '' if auth else ''
     return {
-        'title': ' '.join((m.get('title') or [''])[0].split()),
+        'title': ' '.join(re.sub(r'<[^>]+>', '', (m.get('title') or [''])[0]).split()),   # ACS 标题里带 <i>co</i>
         'doi': (m.get('DOI') or '').lower(),
         'year': int(_date('issued', 'published-online', 'created')[:4] or 0) or None,
         'venue': (m.get('container-title') or [''])[0],
