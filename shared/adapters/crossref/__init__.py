@@ -11,6 +11,8 @@ Crossref 免费、无需密钥。礼貌起见 User-Agent 带项目名（官方�
 对外接口：
   - work(doi)            → Crossref 的 message 原始字典；查不到抛 CrossrefError
   - to_zotero_item(m, tags) → message → Zotero journalArticle 条目字典
+  - journal_works_since(issn, since) → 这本刊从某天起新登记的文章（2026-09-15 加，给「盯新刊」用）
+  - normalize(m)         → message → 本平台统一的文献字典（与 openalex.normalize 同形）
 
 `to_zotero_item` 放在这里而不是调用方：**字段名对齐属于「外部世界长什么样」**，
 Crossref 换字段就只改这一个文件。
@@ -18,6 +20,7 @@ Crossref 换字段就只改这一个文件。
 依赖：Python 标准库 + shared.kernel.errors。
 """
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -56,6 +59,64 @@ def work(doi):
     if not doi:
         raise DoiNotFound('空 DOI')
     return get('/works/' + urllib.parse.quote(doi))['message']
+
+
+def normalize(m):
+    """Crossref message → 本平台统一的文献字典（字段名对齐 `openalex.normalize`）。
+
+    只取「盯新刊 / 列清单」用得到的那几项；要收进 Zotero 走 `to_zotero_item`。
+    """
+    def _date(*fields):
+        for f in fields:
+            p = ((m.get(f) or {}).get('date-parts') or [[]])[0]
+            if p:
+                return '-'.join('%02d' % int(x) if i else str(x) for i, x in enumerate(p))
+        return ''
+    abstract = m.get('abstract') or ''
+    for junk in ('<jats:p>', '</jats:p>', '<jats:title>', '</jats:title>', '<jats:sec>', '</jats:sec>'):
+        abstract = abstract.replace(junk, '')
+    auth = m.get('author') or []
+    first = auth[0].get('family') or auth[0].get('name') or '' if auth else ''
+    return {
+        'title': ' '.join((m.get('title') or [''])[0].split()),
+        'doi': (m.get('DOI') or '').lower(),
+        'year': int(_date('issued', 'published-online', 'created')[:4] or 0) or None,
+        'venue': (m.get('container-title') or [''])[0],
+        'issn': (m.get('ISSN') or [''])[0],
+        'publisher': m.get('publisher') or '',
+        'type': m.get('type') or '',
+        'published': _date('published-online', 'published-print', 'issued'),
+        'created': _date('created'),          # DOI 登记日：最早能知道「它出来了」的时刻
+        'abstract': abstract.strip()[:1500],
+        'first_author': first,
+        'citations': m.get('is-referenced-by-count') or 0,
+    }
+
+
+_NOT_A_PAPER = re.compile(r'^(Correction|Corrigendum|Erratum|Retraction|Expression of Concern|'
+                          r'Author Correction|Publisher Correction|Editorial|Addendum)\b', re.I)
+
+
+def journal_works_since(issn, since, rows=1000, types=('journal-article',), timeout=90):
+    """一本刊（ISSN）从 `since`（YYYY-MM-DD）起**新登记**的文章 → [normalize 后的字典]。
+
+    按 **登记日**（`from-created-date`）而不是出版日筛：出版社注册 DOI 的那一刻
+    Crossref 就有了，比 OpenAlex 收录早几天到几周（2026-09-15 实测 Adv. Mater.
+    一周：Crossref 91 篇 / OpenAlex 71 篇）—— 「盯新刊」要的就是这个最早时刻。
+
+    `types` 只留正式论文（Nature/Science 的新闻、社论、勘误都在同一本刊下）。
+    一页最多 1000 条；一本刊一周远到不了，超了就说明 `since` 给得太远，调用方缩窗口。
+    """
+    path = ('/journals/%s/works?filter=from-created-date:%s&rows=%d&sort=created&order=desc'
+            '&select=DOI,title,author,container-title,ISSN,publisher,type,issued,created,'
+            'published-online,published-print,abstract,is-referenced-by-count'
+            % (urllib.parse.quote(str(issn).strip()), since, min(int(rows), 1000)))
+    items = get(path, timeout=timeout)['message'].get('items') or []
+    out = [normalize(m) for m in items]
+    if types:
+        out = [w for w in out if w['type'] in types]
+    # 更正 / 撤稿 / 勘误在 Crossref 里也是 journal-article，只能按标题认
+    return [w for w in out if w['doi'] and w['title'] and not _NOT_A_PAPER.match(w['title'])]
 
 
 def to_zotero_item(m, tags=None):

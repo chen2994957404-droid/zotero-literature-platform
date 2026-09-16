@@ -1,0 +1,12 @@
+# 工具清单（格式见 REBUILD.md 第二节；读它的是 host/mcp/registry.py）
+name          = "journalwatch"
+one_line      = "盯新刊：好期刊最近新登记的论文列出来，标出库里有没有（只问 Crossref，免费）"
+expose        = "tool"
+costs_money   = false
+side_effects  = []              # 只写自己的「见过」状态文件；不写 Zotero、不取全文
+requires_role = "none"
+prompts       = []
+
+# ── 允许模型自己发起的入口 ─────────────────────────────────────────────
+# 列清单只读、免费、可重来：Crossref 不要密钥，一本刊一次请求。
+agent_tools   = ["journalwatch_recent"]

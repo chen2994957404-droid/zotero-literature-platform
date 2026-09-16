@@ -25,6 +25,8 @@
 |---|---|
 | `work(doi)` | → Crossref 的 message 字典；DOI 不存在抛 `DoiNotFound` |
 | `to_zotero_item(m, tags=None)` | message → Zotero `journalArticle` 条目字典 |
+| `normalize(m)` | message → 本平台统一的文献字典（与 `openalex.normalize` 同形，多 `created` 登记日） |
+| `journal_works_since(issn, since)` | 一本刊从某天起**新登记**的正式论文（2026-09-15 加，给 `tools/journalwatch`） |
 
 两个异常分得很清楚：`DoiNotFound`（重试没用，跳过这条）
 vs `CrossrefError`（对方抖动，可重试）。调用方据此决定批量作业是跳过还是重来。
@@ -32,6 +34,7 @@ vs `CrossrefError`（对方抖动，可重试）。调用方据此决定批量�
 ## 谁在用
 
 - `tools/discover/importer.py` —— 按 DOI 收进 Zotero
+- `tools/journalwatch` —— 盯新刊（按 ISSN + 登记日列新文章）
 
 ## 改完必须做
 

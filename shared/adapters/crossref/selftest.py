@@ -66,6 +66,16 @@ def main():
     except crossref.DoiNotFound:
         print('  [PASS] 空 DOI 抛 DoiNotFound（可重试与不可重试分开）'); ok += 1
 
+    total += 1
+    n = crossref.normalize(dict(SAMPLE, type='journal-article', created={'date-parts': [[2020, 3, 7]]},
+                                ISSN=['0935-9648', '1521-4095'], publisher='Wiley'))
+    if (n['doi'] == '10.1002/adma.202100000' and n['year'] == 2020 and n['created'] == '2020-03-07'
+            and n['published'] == '2021-05' and n['issn'] == '0935-9648' and n['first_author'] == 'Wang'
+            and n['abstract'] == 'A gel that stiffens.'):
+        print('  [PASS] normalize：登记日补零、出版日优先在线版、摘要去 JATS'); ok += 1
+    else:
+        print(f'  [FAIL] normalize 不对：{n}')
+
     # 联网那条：通了就验真实返回，不通按 SKIP（本机没网不是功能坏了）
     try:
         m = crossref.work('10.1002/adma.201703549')

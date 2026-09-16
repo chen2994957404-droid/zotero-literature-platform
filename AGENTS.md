@@ -17,7 +17,7 @@
 
 ```
 docs/  ← 跨工具的档案（另有 3 份日志直接躺在下面）
-    explain/（7）、howto/（3）、reference/（7）、incidents/（2）  ← 为什么 / 怎么做 / 事实 / 坑
+    explain/（7）、howto/（3）、reference/（8）、incidents/（2）  ← 为什么 / 怎么做 / 事实 / 坑
 host/  ← 平台自身：让平台活着的东西（没人 import 它）（9 块）
     autosync、codegen、deploy、doctor、ingest、mcp、panel、watcher、wechat_import
 launch/  ← 给人双击的入口（10 个）
@@ -35,15 +35,15 @@ specs/ （0 个脚本）
 tests/ （5 个脚本）
     test_architecture.py、test_budget.py、test_llm_routing.py、test_no_undefined_names.py、test_principles.py
 toolbox/ （0 个脚本）
-tools/  ← 工具包：一个工具 = 一个自包含的包（12 块）
-    ask、askworld、curate、deepread、digitize、direction、discover、extract、getpdf、library、litsearch、paperdb
+tools/  ← 工具包：一个工具 = 一个自包含的包（13 块）
+    ask、askworld、curate、deepread、digitize、direction、discover、extract、getpdf、journalwatch、library、litsearch、paperdb
 
 根目录文件：AGENTS.md、BA_TRIS_DMAEMA_三元共聚20g小试实验指南.md、CLAUDE.md、LICENSE、README.md、REBUILD.md、pyproject.toml、requirements.txt、各部分的关系.md
 
 （data/ 是数据目录（五层），3000+ 文件，**不要去 glob 它**）
 ```
 
-**可枚举的模块 32 个**（`tools/` 工具包 + `shared/` 共用件，每个都有 `__init__.py` 与 `selftest.py`）
+**可枚举的模块 33 个**（`tools/` 工具包 + `shared/` 共用件，每个都有 `__init__.py` 与 `selftest.py`）
 
 进度、健康状况、下一步做什么 → 见 `HANDOVER.md`
 

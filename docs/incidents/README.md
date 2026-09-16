@@ -2,7 +2,7 @@
 
 源：各 `tools/<工具>/INCIDENTS.md`。生成器：`host/codegen/incidents.py`。
 
-**全文在 [踩坑记录.md](踩坑记录.md)**（163 条，按时间排，唯一真相）。
+**全文在 [踩坑记录.md](踩坑记录.md)**（164 条，按时间排，唯一真相）。
 这里只回答一个问题：**我要改的这个工具，前人在哪些地方栽过？**
 
 ## 按工具
@@ -84,6 +84,12 @@
 ### getpdf（0 条）
 
 还没有本工具特有的坑。
+
+### journalwatch（1 条）
+
+| 坑号 | 现象 | 对这个工具意味着什么 |
+|---|---|---|
+| #160 | Crossref `/journals?query=` 按名字搜刊会给错刊（"Nature" 搜出 NatureJobs，"Chem" 搜出 ChemInform） | 清单里的 ISSN 一律用 `/journals/<ISSN>` 逐个验过再写，别按名字搜 |
 
 ### library（3 条）
 

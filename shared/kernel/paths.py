@@ -547,6 +547,23 @@ def last_search():
     return os.path.join(STATE, '_last_search.json')
 
 
+def journal_watch():
+    """serving/journal_watch.json —— 用户盯着的刊物清单（名字 + ISSN），他自己编辑。
+
+    住 serving 而不是 state：它是**人定的**，不是程序算出来的，删了不能重建。
+    没有这个文件时 `tools.journalwatch` 会用一份种子清单把它建出来。
+    """
+    return os.path.join(SERVING, 'journal_watch.json')
+
+
+def journal_watch_seen():
+    """state/journal_watch_seen.json —— 盯新刊时已经见过的 DOI（首见日期）+ 每本刊上次查到哪天。
+
+    删了只会让下次把最近几天的当成「新」再列一遍，不丢任何真相。
+    """
+    return os.path.join(STATE, 'journal_watch_seen.json')
+
+
 def junk_list(ext='json'):
     """state/待删条目清单.<ext> —— 库房维护的待删清单。"""
     return os.path.join(STATE, '待删条目清单.' + ext)
