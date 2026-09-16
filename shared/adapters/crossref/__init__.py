@@ -100,7 +100,7 @@ def normalize(m):
 _NOT_A_PAPER = re.compile(r'^(Correction|Corrigendum|Erratum|Retraction|Expression of Concern|'
                           r'Author Correction|Publisher Correction|Editorial|Addendum|'
                           r'Issue Publication Information|Issue Editorial Masthead|Masthead|'
-                          r'Front Cover|Back Cover|Inside Cover|Cover Picture|Cover Feature|Table of Contents)\b', re.I)
+                          r'Front Cover|Back Cover|Inside Cover|Cover Picture|Cover Feature|Table of Contents|New Products|Editors. Choice)\b', re.I)
 
 
 _SELECT = ('DOI,title,author,container-title,ISSN,publisher,type,issued,created,'

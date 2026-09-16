@@ -177,7 +177,7 @@ def normalize(w):
         # OpenAlex 的学科分类（2026-09-16 加）：一篇最多 3 个 topic，各带 subfield / field。
         # 这是**普适的**领域信号 —— 盯新刊按它判「是不是软物质 / 高分子」，不看用户自己的库。
         'topics': [t.get('display_name') or '' for t in (w.get('topics') or [])][:3],
-        'subfields': sorted({((t.get('subfield') or {}).get('display_name') or '') for t in (w.get('topics') or [])} - {''}),
+        'subfields': [((t.get('subfield') or {}).get('display_name') or '') for t in (w.get('topics') or [])][:3],   # 与 topics 同序：第 0 个就是首要
     }
 
 
