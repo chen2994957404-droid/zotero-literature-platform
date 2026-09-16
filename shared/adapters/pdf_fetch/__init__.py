@@ -513,9 +513,30 @@ def _state_ready(page, settle):
         waited += 0.4
 
 
+# doi.org 解析出来的地址偶尔在浏览器里打不开（2026-09-16：ACS 新文章解析到 /amlccd/article/15/9/… 那种
+# Silverchair 深链接，Edge 报 ERR_TOO_MANY_REDIRECTS；而 pubs.acs.org/doi/<doi> 这个入口一次就开）。
+# 这种时候按出版商前缀换一个已知能开的入口再试一次。只列验证过的。
+_DIRECT = {
+    '10.1021': 'https://pubs.acs.org/doi/{doi}',
+    '10.1002': 'https://onlinelibrary.wiley.com/doi/{doi}',
+}
+
+
+def _goto_landing(page, doi, timeout):
+    try:
+        page.goto(f'https://doi.org/{doi}', wait_until='domcontentloaded', timeout=timeout * 1000)
+        return
+    except Exception as e:
+        tmpl = _DIRECT.get(doi.split('/', 1)[0])
+        if not tmpl or 'REDIRECT' not in str(e).upper():
+            raise
+        log.info(f'{doi} doi.org 的地址在浏览器里打不开（{str(e).splitlines()[0][:60]}），改走出版商入口')
+        page.goto(tmpl.format(doi=doi), wait_until='domcontentloaded', timeout=timeout * 1000)
+
+
 def _land(page, doi, timeout, settle, kind='fulltext'):
     """打开 doi.org/<doi> → 页面状态。正文找不到链接时再看第二眼（Wiley 慢渲染）。"""
-    page.goto(f'https://doi.org/{doi}', wait_until='domcontentloaded', timeout=timeout * 1000)
+    _goto_landing(page, doi, timeout)
     st = _state_ready(page, settle)
     # 2026-09-14 实测：Wiley 一篇第一次报 no_pdf_link，几分钟后重取就拿到了 ——
     # 页面里 `/doi/pdf/` 链接和 citation_pdf_url 都在，只是还没渲染出来。
