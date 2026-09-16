@@ -1124,6 +1124,7 @@ def test_只给人的那几类不许出现在任何白名单里():
 ROOT_FILES_APPROVED = {
     '.env.example', '.gitattributes', '.gitignore', 'AGENTS.md', 'CLAUDE.md',
     'LICENSE', 'README.md', 'REBUILD.md', 'pyproject.toml', 'requirements.txt', '各部分的关系.md',
+    'conftest.py',      # pytest 公共夹具（心跳写临时目录），只能住根目录
 }
 
 
