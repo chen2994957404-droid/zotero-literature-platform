@@ -56,6 +56,8 @@ KEY_NAMES = [
     # OpenAlex 2026-02 起按量计费：无 key 只有 $0.10/天，免费 key 有 $1/天（10 倍）。
     # 不填也能跑，只是方向地图那类批量作业一天就把额度打光（踩坑 #77）。
     ('OPENALEX_KEY',    'OpenAlex（方向地图检索，建议填）', False),
+    # Semantic Scholar：免费 key，每秒 1 次。给雷达补一句话摘要（TLDR）、引用意图、开放获取直链。
+    ('S2_API_KEY',      'Semantic Scholar（雷达补 TLDR / 引用意图，可空）', False),
     # 阿里云百炼：模型名以 qwen 开头就会自动走这里，不用另选「哪一家」。
     ('DASHSCOPE_KEY',   '阿里云百炼（通义千问，可空；新号有 90 天免费额度）', False),
 ]
