@@ -114,7 +114,7 @@ DEFAULT_JOURNALS = [
 # OpenAlex 收录比 Crossref 晚几天到两周，所以刚登记的文章先在雷达里等分类，等到了再过闸 —— 0 级是即时的，1 级晚一两周没关系。
 # 「引了库内几篇」（lib_cites）仍然算、仍然存，但**只在用户明说「跟我相关的」时用**。
 SOFT_SUBFIELDS = {'Polymers and Plastics'}
-SOFT_TOPIC_RE = re.compile(r'polymer|hydrogel|elastomer|bgel|organogel|ionogel|rubber|supramolecular|self-heal|silicone|siloxane|'
+SOFT_TOPIC_RE = re.compile(r'polymer|hydrogel|elastomer|\bgel|organogel|ionogel|rubber|supramolecular|self-heal|silicone|siloxane|'
                            r'soft matter|adhesi|viscoelast|rheolog|vitrimer|dynamic covalent|macromolec', re.I)
 AUTO_TIERS = ('A', 'B')
 # 正刊：量极小，放宽 —— 三个 topic 里任一个沾边就过（Nature 2026 力化学弹道那篇首要 topic 是 Force Microscopy，
