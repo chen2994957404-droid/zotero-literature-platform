@@ -32,6 +32,7 @@
 | `openalex` | OpenAlex 学术检索（按量计费，免费 key 每天 $1）|
 | `crossref` | DOI 登记处：元数据、按刊列新文章、参考文献列表（免费）|
 | `unpaywall` | 一个 DOI 有没有合法的开放获取全文（免费，只要留邮箱）|
+| `semanticscholar` | S2 学术图谱：批量元数据 / 被引数 / OA 直链、谁引了它怎么引的（免费 key，每秒 1 次）|
 | `sciverse` | Sciverse 学术检索（4.55 亿条，需密钥）|
 | `snowball` | 引文网络雪球扩展（建在 openalex 之上）|
 | `vectordb` | 向量库（当前实现 Chroma）|

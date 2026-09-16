@@ -25,7 +25,7 @@ import io
 import json
 import os
 
-from shared.adapters import crossref, openalex
+from shared.adapters import crossref, openalex, semanticscholar
 from shared.kernel import catalog, heartbeat, paths
 from shared.kernel.log import get_logger
 from tools.journalwatch import store
@@ -394,3 +394,51 @@ def enqueue_recent(days=60):
     items = [{'doi': d, 'title': t, 'venue': v, 'tier': tr or 'C', 'lib_cites': lc or 0, 'in_library': '',
               'passes': (lc or 0) >= TIER_GATE.get(tr or 'C', 3)} for d, t, v, tr, lc in rows]
     return enqueue_passing(items)
+
+
+def fill_from_s2(max_papers=2000, log=None):
+    """Semantic Scholar 补第二轮：OpenAlex 也没有的摘要（Elsevier 有一部分它有）、被引数、开放获取直链。
+
+    2026-09-16 实测：S2 的「引用意图」对材料类文章是空的（100 条引用 0 条有意图，19 条有上下文句），
+    TLDR 也基本没有 —— 所以这里只拿它稳定有的三样。批量端点一次 500 篇，每秒 1 次；2000 篇 = 4 次。
+    问过没有的记 seen['no_abstract_s2']，不重问。返回 (补上摘要几篇, 问了几篇)。
+    """
+    log = log or _log.info
+    seen = load_seen()
+    asked = set(seen.get('no_abstract_s2') or [])
+    con = store.connect()
+    try:
+        have = {r[1] for r in con.execute('PRAGMA table_info(works)')}
+        for col in ('s2_citations', 'oa_pdf'):
+            if col not in have:
+                con.execute('ALTER TABLE works ADD COLUMN %s %s' % (col, 'INTEGER' if col == 's2_citations' else 'TEXT'))
+        rows = con.execute("""SELECT doi FROM works WHERE length(coalesce(abstract,''))<200
+                              ORDER BY published DESC""").fetchall()
+        todo = [d for (d,) in rows if d not in asked][:max_papers]
+        if not todo:
+            return 0, 0
+        try:
+            got = semanticscholar.papers(todo)
+        except Exception as e:
+            log('  S2 补摘要中断：%s' % str(e)[:80])
+            return 0, 0
+        filled = 0
+        for d in todo:
+            n = got.get(d)
+            if not n:
+                asked.add(d)
+                continue
+            if len(n['abstract']) >= 200:
+                con.execute('UPDATE works SET abstract=? WHERE doi=?', (n['abstract'], d))
+                filled += 1
+            else:
+                asked.add(d)
+            con.execute('UPDATE works SET s2_citations=?, oa_pdf=? WHERE doi=?', (n['citations'], n['oa_pdf'], d))
+        con.commit()
+        seen['no_abstract_s2'] = sorted(asked)
+        save_seen(seen)
+    finally:
+        con.close()
+        heartbeat.done('journalwatch-abstracts')
+    log('S2 补摘要：问了 %d 篇，补上 %d 篇' % (len(todo), filled))
+    return filled, len(todo)

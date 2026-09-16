@@ -81,7 +81,9 @@ def main():
         return _radar_stats()
     if opt('--补摘要'):
         f, n = journalwatch.fill_abstracts(int(opt('--补摘要') or 400), log=print)
-        print('补上 %d / 问了 %d' % (f, n))
+        print('OpenAlex 补上 %d / 问了 %d' % (f, n))
+        f2, n2 = journalwatch.fill_from_s2(max_papers=int(opt('--补摘要') or 400) * 5, log=print)
+        print('Semantic Scholar 补上 %d / 问了 %d' % (f2, n2))
         return 0
     if opt('--回填'):
         return _backfill(int(opt('--回填') or 3), (opt('--刊') or '').strip().lower())

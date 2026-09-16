@@ -10,7 +10,9 @@
 
 ## 文件
 
-- `__init__.py`：`load_journals` / `fetch` / `annotate` / `patrol` / `backfill`
+- `__init__.py`：`load_journals` / `fetch` / `annotate` / `patrol` / `backfill` / `refresh`
+  补摘要：`fill_abstracts`（OpenAlex）→ `fill_from_s2`（Semantic Scholar，顺带被引数与 OA 直链）
+  升 1 级队列：`enqueue_passing` / `enqueue_recent` / `next_to_harvest` / `mark_harvest`（取件由 host/watcher 做）
 - `store.py`：雷达库（SQLite，`paths.radar_db()`）：works + refs；`upsert` / `stats` / `cited_in_library`
 - `cli.py`：`python -m tools.journalwatch`；结果暂存成 `paths.last_search()` 格式，
   `tools.discover.collect` 能按编号收（两个工具**不互相 import**，只共用那个文件）

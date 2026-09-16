@@ -355,6 +355,9 @@ def main():
                 f, n = journalwatch.fill_abstracts(max_calls=200, log=lambda *a: None)
                 if n:
                     print(f'[补摘要] OpenAlex 问了 {n} 篇，补上 {f} 篇')
+                f2, n2 = journalwatch.fill_from_s2(max_papers=3000, log=lambda *a: None)
+                if n2:
+                    print(f'[补摘要] Semantic Scholar 问了 {n2} 篇，补上 {f2} 篇（外加被引数 / 开放获取直链）')
                 # 过线 → 升 1 级：每天最多 HARVEST_PER_DAY 篇，引库内最多的先取。
                 # 取的是正本 + SI 落地（不精读、不花模型钱）；落地流水线随后自动解析 / 骨架 / 向量化。
                 # 取不到的隔天再试（刚登记的全文常常几天后才挂出来），最多试四天。
