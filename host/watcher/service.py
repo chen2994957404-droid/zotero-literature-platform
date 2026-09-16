@@ -289,6 +289,10 @@ def main():
     # 卡死杀掉**（主力机一个月被误杀约 20 次，每次都白花一份 MineRU + DeepSeek）。
     # 见 shared/kernel/heartbeat.py 与踩坑记录。
     heartbeat.start('watcher')
+    # 本进程里跑的批量步骤（落地 / 补摘要 / 补分类）如果上次被重启打断，progress 留着、done 没写，
+    # 面板 20 分钟后会把它当「卡住」—— 重启本身就是它们的终点，开机先把 done 补上
+    for _job in ('ingest', 'journalwatch-abstracts', 'journalwatch-topics'):
+        heartbeat.done(_job)
     while True:
         # 「还活着」由后台线程报；这里只记「有进展」——
         # 两个信号回答的是不同问题，见 shared/kernel/heartbeat.py 开头的说明。
