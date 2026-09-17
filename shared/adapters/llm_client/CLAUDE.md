@@ -24,6 +24,7 @@
 | `chat(system, user, ...)` | 纯文本输出（精读、问答） |
 | `chat_json(system, user, ...)` | 强制 JSON 并解析成 dict（结构化抽取） |
 | `chat_vision(system, user, image_b64, ...)` | 看图（图表数字化） |
+| `list_models(channel)` | 这条通道的密钥能用哪些模型（`GET /models`，不花钱；面板下拉用） |
 
 **2026-09-11 起推荐只传 `purpose`**（如 `chat(..., purpose='DEEPREAD')`）：
 走哪条通道、用哪个模型、备用是谁，由 `shared.kernel.config.routing` 的两张表决定，

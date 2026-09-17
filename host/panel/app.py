@@ -318,6 +318,25 @@ def collect_config():
     }
 
 
+_MODELS_CACHE = {}
+
+
+def collect_models(channel):
+    """面板下拉用：{ok, models, msg}。按通道缓存在面板进程里（改了通道地址或密钥后
+    保存路由会清掉），免得每次重画都去敲一遍接口。"""
+    if channel in _MODELS_CACHE:
+        return _MODELS_CACHE[channel]
+    try:
+        from shared.adapters import llm_client
+        ok, ids, msg = llm_client.list_models(channel)
+    except Exception as e:
+        ok, ids, msg = False, [], f'列不了：{type(e).__name__}'
+    out = {'ok': bool(ok), 'models': ids, 'msg': msg}
+    if ok:
+        _MODELS_CACHE[channel] = out
+    return out
+
+
 def _routing_view():
     """通道表 + 用途表 + 体检问题，给面板画。取不到就说取不到。"""
     try:
@@ -365,6 +384,7 @@ def action_save_routing(payload):
         purps[pid] = {k: (u.get(k) or '').strip()
                       for k in ('channel', 'model', 'fallback', 'fallback_model')}
     routing.save(channels=chans, purposes=purps)
+    _MODELS_CACHE.clear()          # 通道地址/密钥可能变了，模型清单重新拉
     probs = routing.problems()
     bad = [m for lvl, m in probs if lvl == 'fail']
     warn = [m for lvl, m in probs if lvl == 'warn']
@@ -845,6 +865,11 @@ class Handler(BaseHTTPRequestHandler):
                     'elapsed': int(time.time() - _JOB['started']) if _JOB['started'] else 0,
                     'result': _JOB['result'],
                 })
+        if p == '/api/models':
+            # 这条通道能用哪些模型（不花钱）。列不出来就 ok=False，前端退回手输。
+            import urllib.parse
+            q = urllib.parse.parse_qs(self.path.partition('?')[2])
+            return self._send(collect_models(q.get('channel', [''])[0]))
         if p == '/api/logs':
             import urllib.parse
             q = urllib.parse.parse_qs(self.path.partition('?')[2])
@@ -1142,73 +1167,7 @@ async function load(force){
          <input id="k_${s.name}" value="${esc(s.value||'')}" placeholder="${esc(s.help)}">
          </div>`).join('')
   + renderRouting(d.config.routing, d.config.budget);
-  cfgReady=true; }
-
-// ── 大模型：通道 / 用途 / 账本（2026-09-11，用户拍板的三段式）────────────
-// 面板只画表、收表，不算账、不猜家。逻辑全在 shared.kernel.config.routing。
-var RT = null;      // 当前编辑中的路由表（通道 + 用途），保存时整体送回
-// ⚠ 用 var 不用 let：这段代码写在 load() 后面，而 load() 一进页面就跑；
-//   let 有暂时性死区，先用到就是 ReferenceError（2026-09-11 真打开页面才抓到）。
-function renderRouting(r, b){
-  if(!r || r.error) return `<h3 style="margin:18px 0 6px;font-size:15px">大模型</h3><div class="hint bad">${esc((r&&r.error)||'读不到路由表')}</div>`;
-  RT = {channels: JSON.parse(JSON.stringify(r.channels)), purposes: JSON.parse(JSON.stringify(r.purposes))};
-  const chNames = Object.keys(RT.channels);
-  const capsAll = r.caps_all || [];
-  // ① 通道
-  let h = `<h3 style="margin:18px 0 6px;font-size:15px">① 大模型通道<span class="hint" style="font-weight:normal">（填入对应的 API：官方的、中转站的都在这里；密钥值仍进凭据库）</span></h3>
-  <table><tr><th>名字</th><th>地址</th><th>密钥名</th><th>密钥值</th><th>能力</th><th></th></tr>`
-  + chNames.map(n=>{const c=RT.channels[n]; return `<tr>
-    <td><b>${esc(n)}</b>${c.builtin?'<div class="hint">内置</div>':''}</td>
-    <td><input style="width:260px" value="${esc(c.base||'')}" onchange="RT.channels['${esc(n)}'].base=this.value"></td>
-    <td><input style="width:150px" value="${esc(c.key||'')}" placeholder="如 ALIYUN_RELAY_KEY" onchange="RT.channels['${esc(n)}'].key=this.value.trim()"></td>
-    <td>${c.key?`<input id="k_${esc(c.key)}" style="width:150px" placeholder="${c.key_set?'已配置，留空即不改':'⚠ 未配置'}">`:'<span class="hint">（不用）</span>'}</td>
-    <td>${capsAll.map(cap=>`<label style="margin-right:6px"><input type="checkbox" ${((c.caps||[]).includes(cap))?'checked':''} onchange="rtCap('${esc(n)}','${cap}',this.checked)">${cap}</label>`).join('')}</td>
-    <td>${c.builtin?'':`<button class="ghost" onclick="rtDelChannel('${esc(n)}')">删</button>`}</td></tr>`;}).join('')
-  + `<tr><td><input id="rt_new_name" placeholder="新通道名字，如 阿里云-优惠中转" style="width:170px"></td>
-       <td><input id="rt_new_base" placeholder="OpenAI 兼容地址，到 /v1 为止" style="width:260px"></td>
-       <td><input id="rt_new_key" placeholder="密钥名（要以 _KEY 结尾）" style="width:150px"></td>
-       <td colspan="2"><span class="hint">先加通道并保存，再回来填密钥值</span></td>
-       <td><button class="ghost" onclick="rtAddChannel()">加一条</button></td></tr></table>`;
-  // ② 用途
-  h += `<h3 style="margin:18px 0 6px;font-size:15px">② 谁用哪条通道<span class="hint" style="font-weight:normal">（每个环节：走哪条通道 + 用哪个模型；主用不行自动切备用）</span></h3>
-  <table><tr><th>用途</th><th>主用通道</th><th>模型</th><th>备用通道</th><th>备用模型</th><th>状态</th></tr>`
-  + Object.keys(RT.purposes).map(pid=>{const u=RT.purposes[pid]; const sel=(id,val,allowEmpty)=>`<select onchange="RT.purposes['${pid}'].${id}=this.value">${allowEmpty?`<option value="">（无）</option>`:''}${chNames.map(n=>`<option value="${esc(n)}"${val===n?' selected':''}>${esc(n)}</option>`).join('')}</select>`;
-    return `<tr><td><b>${esc(u.label)}</b><div class="hint">${(u.needs||[]).join('/')}${u.note?'<br>⚠ '+esc(u.note):''}</div></td>
-     <td>${sel('channel',u.channel,false)}</td>
-     <td><input style="width:190px" value="${esc(u.model||'')}" onchange="RT.purposes['${pid}'].model=this.value.trim()"></td>
-     <td>${u.no_fallback?'<span class="hint">不许配备用<br>（换模型=向量库重建）</span>':sel('fallback',u.fallback,true)}</td>
-     <td>${u.no_fallback?'':`<input style="width:150px" value="${esc(u.fallback_model||'')}" placeholder="留空=同主用" onchange="RT.purposes['${pid}'].fallback_model=this.value.trim()">`}</td>
-     <td>${u.inferred?'<span class="bad">按模型名猜的</span>':'<span class="ok">已指定</span>'}</td></tr>`;}).join('')
-  + `</table><div class="row" style="margin-top:8px"><button onclick="saveRouting()">保存通道与用途</button>
-     <span class="hint">保存到 ${esc(r.file||'llm_routing.json')}（不进版本库；密钥值请在上表填好后点最上面的「保存」）</span></div>`;
-  if(r.problems && r.problems.length){
-    h += `<div style="margin:8px 0">` + r.problems.map(([lvl,m])=>`<div class="msg ${lvl==='fail'?'bad':''}">${lvl==='fail'?'✗':'⚠'} ${esc(m)}</div>`).join('') + `</div>`;
-  }
-  // ③ 账本
-  const bp = (b && b.by_purpose) || {};
-  const rows = Object.keys(bp).flatMap(pid=>Object.keys(bp[pid]).map(k=>({pid, k, ...bp[pid][k]})));
-  h += `<h3 style="margin:18px 0 6px;font-size:15px">③ 今天谁调了哪条通道<span class="hint" style="font-weight:normal">（按 用途 × 通道/模型；换天自动清零）</span></h3>`
-    + (rows.length ? `<table><tr><th>用途</th><th>通道/模型</th><th>次数</th><th>产出 token</th></tr>`
-        + rows.sort((a,b2)=>b2.completion-a.completion).map(x=>`<tr><td>${esc((RT.purposes[x.pid]||{}).label||x.pid)}</td><td>${esc(x.k)}</td><td>${x.calls}</td><td>${x.completion}</td></tr>`).join('') + `</table>`
-      : `<div class="hint">今天还没有调用</div>`)
-    + (b && (b.limit_calls||b.limit_tokens) ? `<div class="hint">上限：${b.limit_calls?`次数 ${b.calls}/${b.limit_calls}`:''} ${b.limit_tokens?`产出 ${b.completion}/${b.limit_tokens}`:''}</div>`
-      : `<div class="msg bad">⚠ 没设当日上限 —— 外部 agent 可以无人确认地花钱。在上面「本机设置」里填 DAILY_LLM_TOKENS</div>`);
-  return h;
-}
-function rtCap(n, cap, on){ const c=RT.channels[n]; c.caps=(c.caps||[]).filter(x=>x!==cap); if(on) c.caps.push(cap); }
-function rtDelChannel(n){ if(!confirm('删掉通道「'+n+'」？')) return; delete RT.channels[n]; saveRouting(); }
-function rtAddChannel(){
-  const n=$('#rt_new_name').value.trim(), base=$('#rt_new_base').value.trim(), key=$('#rt_new_key').value.trim();
-  if(!n||!base){ toast('名字和地址都要填'); return; }
-  if(key && !/_(KEY|TOKEN)$/.test(key)){ toast('密钥名要以 _KEY 或 _TOKEN 结尾，这样它才会进凭据库而不是明文落盘'); return; }
-  RT.channels[n]={base, key, kind:'openai', caps:['text','json']};
-  saveRouting();
-}
-async function saveRouting(){
-  if(!RT) return;
-  const r=await (await fetch('/api/routing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(RT)})).json();
-  toast(r.msg); load(true);
-}
+  cfgReady=true; fillModelLists(); }
 
   const st = d.structure || {flows:[],blocks:[]};
   $('#flows').innerHTML = `<table><tr><th>文件夹</th><th>是什么</th><th>脚本数</th><th>说明书</th></tr>`
@@ -1259,6 +1218,92 @@ async function saveRouting(){
         <td>${r.figs}</td></tr>`).join('') + `</table>`
     : '<div class="hint">还没有精读记录</div>';
 }
+
+// ⚠ 这一段必须在 load() 外面。它曾被塞在 load() 函数体中间（2026-09-11 起）——
+//   于是 var RT、renderRouting、saveRouting 全成了 load 的局部变量，
+//   页面上 onchange="RT.purposes[...]" 与「保存通道与用途」按钮一直是 ReferenceError，
+//   路由表从没保存成功过（2026-09-17 做模型下拉时才抓到）。
+// ── 大模型：通道 / 用途 / 账本（2026-09-11，用户拍板的三段式）────────────
+// 面板只画表、收表，不算账、不猜家。逻辑全在 shared.kernel.config.routing。
+var RT = null;      // 当前编辑中的路由表（通道 + 用途），保存时整体送回
+// ⚠ 用 var 不用 let：这段代码写在 load() 后面，而 load() 一进页面就跑；
+//   let 有暂时性死区，先用到就是 ReferenceError（2026-09-11 真打开页面才抓到）。
+function renderRouting(r, b){
+  if(!r || r.error) return `<h3 style="margin:18px 0 6px;font-size:15px">大模型</h3><div class="hint bad">${esc((r&&r.error)||'读不到路由表')}</div>`;
+  RT = {channels: JSON.parse(JSON.stringify(r.channels)), purposes: JSON.parse(JSON.stringify(r.purposes))};
+  const chNames = Object.keys(RT.channels);
+  const capsAll = r.caps_all || [];
+  // ① 通道
+  let h = `<h3 style="margin:18px 0 6px;font-size:15px">① 大模型通道<span class="hint" style="font-weight:normal">（填入对应的 API：官方的、中转站的都在这里；密钥值仍进凭据库）</span></h3>
+  <table><tr><th>名字</th><th>地址</th><th>密钥名</th><th>密钥值</th><th>能力</th><th></th></tr>`
+  + chNames.map(n=>{const c=RT.channels[n]; return `<tr>
+    <td><b>${esc(n)}</b>${c.builtin?'<div class="hint">内置</div>':''}</td>
+    <td><input style="width:260px" value="${esc(c.base||'')}" onchange="RT.channels['${esc(n)}'].base=this.value"></td>
+    <td><input style="width:150px" value="${esc(c.key||'')}" placeholder="如 ALIYUN_RELAY_KEY" onchange="RT.channels['${esc(n)}'].key=this.value.trim()"></td>
+    <td>${c.key?`<input id="k_${esc(c.key)}" style="width:150px" placeholder="${c.key_set?'已配置，留空即不改':'⚠ 未配置'}">`:'<span class="hint">（不用）</span>'}</td>
+    <td>${capsAll.map(cap=>`<label style="margin-right:6px"><input type="checkbox" ${((c.caps||[]).includes(cap))?'checked':''} onchange="rtCap('${esc(n)}','${cap}',this.checked)">${cap}</label>`).join('')}</td>
+    <td>${c.builtin?'':`<button class="ghost" onclick="rtDelChannel('${esc(n)}')">删</button>`}</td></tr>`;}).join('')
+  + `<tr><td><input id="rt_new_name" placeholder="新通道名字，如 阿里云-优惠中转" style="width:170px"></td>
+       <td><input id="rt_new_base" placeholder="OpenAI 兼容地址，到 /v1 为止" style="width:260px"></td>
+       <td><input id="rt_new_key" placeholder="密钥名（要以 _KEY 结尾）" style="width:150px"></td>
+       <td colspan="2"><span class="hint">先加通道并保存，再回来填密钥值</span></td>
+       <td><button class="ghost" onclick="rtAddChannel()">加一条</button></td></tr></table>`;
+  // ② 用途
+  h += `<h3 style="margin:18px 0 6px;font-size:15px">② 谁用哪条通道<span class="hint" style="font-weight:normal">（每个环节：走哪条通道 + 用哪个模型；主用不行自动切备用）</span></h3>
+  <table><tr><th>用途</th><th>主用通道</th><th>模型</th><th>备用通道</th><th>备用模型</th><th>状态</th></tr>`
+  + Object.keys(RT.purposes).map(pid=>{const u=RT.purposes[pid]; const sel=(id,val,allowEmpty)=>`<select onchange="RT.purposes['${pid}'].${id}=this.value;this.parentNode.nextElementSibling.querySelector('input').setAttribute('list','ml_'+chIdx(this.value))">${allowEmpty?`<option value="">（无）</option>`:''}${chNames.map(n=>`<option value="${esc(n)}"${val===n?' selected':''}>${esc(n)}</option>`).join('')}</select>`;
+    return `<tr><td><b>${esc(u.label)}</b><div class="hint">${(u.needs||[]).join('/')}${u.note?'<br>⚠ '+esc(u.note):''}</div></td>
+     <td>${sel('channel',u.channel,false)}</td>
+     <td><input style="width:190px" list="ml_${chIdx(u.channel)}" value="${esc(u.model||'')}" placeholder="点一下选，也能手输" onchange="RT.purposes['${pid}'].model=this.value.trim()"></td>
+     <td>${u.no_fallback?'<span class="hint">不许配备用<br>（换模型=向量库重建）</span>':sel('fallback',u.fallback,true)}</td>
+     <td>${u.no_fallback?'':`<input style="width:150px" list="ml_${chIdx(u.fallback)}" value="${esc(u.fallback_model||'')}" placeholder="留空=同主用" onchange="RT.purposes['${pid}'].fallback_model=this.value.trim()">`}</td>
+     <td>${u.inferred?'<span class="bad">按模型名猜的</span>':'<span class="ok">已指定</span>'}</td></tr>`;}).join('')
+  + `</table>` + chNames.map(n=>`<datalist id="ml_${chIdx(n)}"></datalist>`).join('')
+  + `<div id="ml_status" class="hint" style="margin-top:4px">正在向各通道询问可用的模型清单…</div>`
+  + `<div class="row" style="margin-top:8px"><button onclick="saveRouting()">保存通道与用途</button>
+     <span class="hint">保存到 ${esc(r.file||'llm_routing.json')}（不进版本库；密钥值请在上表填好后点最上面的「保存」）</span></div>`;
+  if(r.problems && r.problems.length){
+    h += `<div style="margin:8px 0">` + r.problems.map(([lvl,m])=>`<div class="msg ${lvl==='fail'?'bad':''}">${lvl==='fail'?'✗':'⚠'} ${esc(m)}</div>`).join('') + `</div>`;
+  }
+  // ③ 账本
+  const bp = (b && b.by_purpose) || {};
+  const rows = Object.keys(bp).flatMap(pid=>Object.keys(bp[pid]).map(k=>({pid, k, ...bp[pid][k]})));
+  h += `<h3 style="margin:18px 0 6px;font-size:15px">③ 今天谁调了哪条通道<span class="hint" style="font-weight:normal">（按 用途 × 通道/模型；换天自动清零）</span></h3>`
+    + (rows.length ? `<table><tr><th>用途</th><th>通道/模型</th><th>次数</th><th>产出 token</th></tr>`
+        + rows.sort((a,b2)=>b2.completion-a.completion).map(x=>`<tr><td>${esc((RT.purposes[x.pid]||{}).label||x.pid)}</td><td>${esc(x.k)}</td><td>${x.calls}</td><td>${x.completion}</td></tr>`).join('') + `</table>`
+      : `<div class="hint">今天还没有调用</div>`)
+    + (b && (b.limit_calls||b.limit_tokens) ? `<div class="hint">上限：${b.limit_calls?`次数 ${b.calls}/${b.limit_calls}`:''} ${b.limit_tokens?`产出 ${b.completion}/${b.limit_tokens}`:''}</div>`
+      : `<div class="msg bad">⚠ 没设当日上限 —— 外部 agent 可以无人确认地花钱。在上面「本机设置」里填 DAILY_LLM_TOKENS</div>`);
+  return h;
+}
+// 模型名不用手敲：每条通道问一次 GET /models（不花钱），灌进 <datalist>，
+// 输入框点一下就是下拉、打字能筛、通道没实现这个接口时照样能手输（2026-09-17）。
+function chIdx(n){ return RT ? Math.max(0, Object.keys(RT.channels).indexOf(n)) : 0; }
+async function fillModelLists(){
+  if(!RT) return; const notes=[];
+  await Promise.all(Object.keys(RT.channels).map(async n=>{
+    let r; try{ r=await (await fetch('/api/models?channel='+encodeURIComponent(n))).json(); }catch(e){ return; }
+    const dl=document.getElementById('ml_'+chIdx(n)); if(!dl) return;
+    dl.innerHTML=(r.models||[]).map(m=>`<option value="${esc(m)}">`).join('');
+    notes.push(`${esc(n)}：${r.ok?r.models.length+' 个可选':'⚠ '+esc(r.msg)}`);
+  }));
+  const st=$('#ml_status'); if(st) st.innerHTML='模型清单（问的是各通道自己，中转站列出的就是这把密钥放开的）· '+notes.join(' · ');
+}
+function rtCap(n, cap, on){ const c=RT.channels[n]; c.caps=(c.caps||[]).filter(x=>x!==cap); if(on) c.caps.push(cap); }
+function rtDelChannel(n){ if(!confirm('删掉通道「'+n+'」？')) return; delete RT.channels[n]; saveRouting(); }
+function rtAddChannel(){
+  const n=$('#rt_new_name').value.trim(), base=$('#rt_new_base').value.trim(), key=$('#rt_new_key').value.trim();
+  if(!n||!base){ toast('名字和地址都要填'); return; }
+  if(key && !/_(KEY|TOKEN)$/.test(key)){ toast('密钥名要以 _KEY 或 _TOKEN 结尾，这样它才会进凭据库而不是明文落盘'); return; }
+  RT.channels[n]={base, key, kind:'openai', caps:['text','json']};
+  saveRouting();
+}
+async function saveRouting(){
+  if(!RT) return;
+  const r=await (await fetch('/api/routing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(RT)})).json();
+  toast(r.msg); load(true);
+}
+
 
 async function restart(task){
   toast('正在重启…');

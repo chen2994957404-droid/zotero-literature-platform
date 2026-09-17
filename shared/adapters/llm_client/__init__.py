@@ -560,6 +560,54 @@ def chat_json(system, user, provider=None, model=None, key=None,
     return _parse_json_lenient(out)
 
 
+def list_models(channel, timeout=15):
+    """这条通道的密钥能用哪些模型？返回 (ok, [模型名], 人话说明)。**不花钱。**
+
+    为什么需要（2026-09-17 用户提的）：面板里通道能选，模型却要手敲 ——
+    敲错一个字母就是跑到一半 404，而且中转站到底放开了哪些模型，人根本记不住。
+    OpenAI 兼容接口有标准的 `GET /models`，**返回的就是这把密钥被允许用的那些**
+    （中转站按 key 分组放开模型，正是靠它告诉你能用啥）；Ollama 是 `/api/tags`。
+    实测（2026-09-17）：DeepSeek 官方 2 个、阿里云百炼 253 个。
+
+    列不出来（老中转站没实现 / 没密钥 / 连不上）不是错误 —— 面板退回手输即可。
+    `channel` 可以是通道名，也可以直接给通道字典（面板改了地址还没保存时用）。
+    """
+    from shared.kernel.config import routing
+    ch = channel if isinstance(channel, dict) else routing.channels().get(channel)
+    if not ch:
+        return False, [], f'没有叫「{channel}」的通道'
+    base = (ch.get('base') or '').rstrip('/')
+    if ch.get('kind') == 'ollama':
+        url, hdr = base + '/api/tags', {}
+    else:
+        k = _channel_key(ch)
+        if ch.get('key') and not k:
+            return False, [], f'密钥 {ch["key"]} 还没配，列不了'
+        url, hdr = base + '/models', {'Authorization': 'Bearer ' + k}
+    try:
+        r = urllib.request.urlopen(urllib.request.Request(url, headers=hdr), timeout=timeout)
+        d = json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return False, [], ('密钥无效（HTTP 401）' if e.code == 401
+                           else f'这条通道不支持列模型（HTTP {e.code}），只能手输')
+    except Exception as e:
+        return False, [], f'连不上：{type(e).__name__}'
+    items = d.get('data') if isinstance(d, dict) else None
+    if items is None and isinstance(d, dict):
+        items = d.get('models')          # Ollama 的形状
+    ids = []
+    for x in items or []:
+        mid = (x.get('id') or x.get('name') or '') if isinstance(x, dict) else str(x)
+        # Gemini 的 OpenAI 兼容层给的是 models/gemini-…，聊天接口两种写法都认，统一去掉前缀
+        mid = mid[len('models/'):] if mid.startswith('models/') else mid
+        if mid:
+            ids.append(mid)
+    ids = sorted(set(ids))
+    if not ids:
+        return False, [], '接口通了但一个模型都没列出来，只能手输'
+    return True, ids, f'{len(ids)} 个模型'
+
+
 def check_key(key=None, timeout=15):
     """这把 DeepSeek 密钥现在还有效吗？返回 (ok, 人话说明)。**不花钱**。
 
