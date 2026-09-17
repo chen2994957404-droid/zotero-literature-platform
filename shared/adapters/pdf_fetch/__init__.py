@@ -452,6 +452,31 @@ def _connect(url=None):
     return browser, ctx
 
 
+def _new_page(browser, ctx):
+    """开一个**后台**标签，不把浏览器窗口拉到最前面。
+
+    Playwright 的 `ctx.new_page()` 走的是 CDP `Target.createTarget` 的前台档：Chromium 会把新标签
+    设成当前标签**并激活整个窗口** —— 用户 2026-09-17 反映每取一篇 Edge 就跳出来盖住正在干的活。
+    直接发 `Target.createTarget(background=True)` 就是后台标签：窗口该最小化还最小化。
+    Playwright 照样会把这个新 target 接管成 page（ctx 的 page 事件），拿到就能用。
+    走不通（老浏览器不认 background、事件没等到）退回原来的开法。
+    """
+    try:
+        cdp = browser.new_browser_cdp_session()
+        try:
+            with ctx.expect_page(timeout=10000) as ev:
+                cdp.send('Target.createTarget', {'url': 'about:blank', 'background': True})
+            return ev.value
+        finally:
+            try:
+                cdp.detach()
+            except Exception:
+                pass
+    except Exception as e:
+        log.warn(f'后台开标签失败（{str(e)[:80]}），退回前台开法')
+        return ctx.new_page()
+
+
 def _sweep(ctx, keep=3):
     """连上时顺手关掉上次漏下的出版商标签（超过 keep 个才动手；edge:// 之类不碰）。"""
     try:
@@ -587,6 +612,84 @@ def _pick_si_on(page, st, timeout, settle):
     return pick
 
 
+class _Intercept:
+    """导航期间在**网络层**截住「文件型」的主文档响应（PDF / Office / 附件下载）。
+
+    **为什么要这么做**（2026-09-17 用户反映：每取一篇，最小化着的 Edge 都会跳出来盖住正在干的活）。
+    在主力机上实测定位：新开标签不会把窗口拉起来；**导航到 PDF（Edge 内置阅读器接管）和
+    触发下载（下载气泡）这两件事会把最小化的窗口还原并抢到最前面**。
+    所以要在阅读器 / 下载管理器看到响应**之前**把字节拿走，然后回一个 204 让导航作废 ——
+    用的是 CDP 的 Fetch 域在 Response 阶段拦截：请求仍是**真实导航**发出的（Elsevier 的
+    中转 → 校验 → 签名直链那条链照走，浏览器指纹与 cookie 都在），只是响应到手后不交给页面。
+
+    用法：
+        with _Intercept(page) as cap:
+            page.goto(cand)            # 落到 PDF 时抛 ERR_ABORTED，正常
+        raw = cap.raw                  # None = 这次导航落到的不是文件（多半是 HTML 中转页）
+    """
+    FILE_TYPES = ('application/pdf', 'application/octet-stream', 'application/zip',
+                  'application/msword', 'officedocument', 'application/x-msdownload')
+
+    def __init__(self, page, limit=MAX_PDF_BYTES):
+        self.page, self.limit = page, limit
+        self.raw, self.url, self.mime, self.too_big = None, '', '', False
+        self._cdp = None
+
+    def __enter__(self):
+        try:
+            self._cdp = self.page.context.new_cdp_session(self.page)
+            self._cdp.on('Fetch.requestPaused', self._paused)
+            self._cdp.send('Fetch.enable', {'patterns': [
+                {'urlPattern': '*', 'resourceType': 'Document', 'requestStage': 'Response'}]})
+        except Exception as e:
+            log.warn(f'拦截响应没开成（{str(e)[:80]}），这篇按老路导航')
+            self._cdp = None
+        return self
+
+    def __exit__(self, *exc):
+        if self._cdp:
+            try:
+                self._cdp.send('Fetch.disable')
+            except Exception:
+                pass
+            try:
+                self._cdp.detach()
+            except Exception:
+                pass
+        return False
+
+    def _paused(self, ev):
+        rid = ev.get('requestId')
+        try:
+            headers = {h['name'].lower(): h['value'] for h in (ev.get('responseHeaders') or [])}
+            mime = headers.get('content-type', '').lower()
+            disp = headers.get('content-disposition', '').lower()
+            is_file = any(t in mime for t in self.FILE_TYPES) or 'attachment' in disp
+            if not is_file or self.raw is not None:
+                self._cdp.send('Fetch.continueResponse', {'requestId': rid})
+                return
+            size = int(headers.get('content-length') or 0)
+            if size > self.limit:
+                self.too_big, self.url = True, ev.get('request', {}).get('url', '')
+                self._cdp.send('Fetch.fulfillRequest', {'requestId': rid, 'responseCode': 204})
+                return
+            body = self._cdp.send('Fetch.getResponseBody', {'requestId': rid})
+            data = body.get('body') or ''
+            raw = base64.b64decode(data) if body.get('base64Encoded') else data.encode('utf-8', 'replace')
+            if len(raw) > self.limit:
+                self.too_big = True
+            else:
+                self.raw, self.url, self.mime = raw, ev.get('request', {}).get('url', ''), mime
+            # 回 204：导航作废，阅读器 / 下载气泡都不会出现，窗口也就不会被拉起来
+            self._cdp.send('Fetch.fulfillRequest', {'requestId': rid, 'responseCode': 204})
+        except Exception as e:
+            log.warn(f'拦截响应出错（{str(e)[:80]}），放行')
+            try:
+                self._cdp.send('Fetch.continueResponse', {'requestId': rid})
+            except Exception:
+                pass
+
+
 def _grab(page, ctx, cands, kind, timeout, settle, out):
     """按候选顺序把字节取回来，填进 out。拿到返回 True。
 
@@ -629,11 +732,23 @@ def _grab(page, ctx, cands, kind, timeout, settle, out):
         #   - 导航过去 + `fetch(location.href)` → ✅ 真身
         # 截响应也不行：Chrome 把 PDF 交给内置阅读器，`response.body()` 只能拿到 348 字节的壳。
         # 导航还顺带解决跨域：`citation_pdf_url` 常在另一个子域上，直取会 CORS 失败。
-        try:
-            page.goto(cand, wait_until='domcontentloaded', timeout=timeout * 1000)
-        except Exception:
-            pass    # 导航到 PDF 常抛 ERR_ABORTED，不代表失败
-        page.wait_for_timeout(min(settle, 3) * 1000)
+        with _Intercept(page) as cap:
+            try:
+                page.goto(cand, wait_until='domcontentloaded', timeout=timeout * 1000)
+            except Exception:
+                pass    # 导航到 PDF 常抛 ERR_ABORTED（被拦截后一定抛），不代表失败
+            page.wait_for_timeout(min(settle, 3) * 1000)
+        if cap.too_big:
+            out['reason'], out['pdf_url'] = 'too_big', cap.url or cand
+            return False
+        raw = None
+        if cap.raw is not None:
+            # 网络层截到的文件：跟浏览器里 fetch 回来的走同一道验收
+            raw = _decode({'ok': True, 'b64': base64.b64encode(cap.raw).decode('ascii'),
+                           'type': cap.mime}, want)
+            if raw:
+                out.update(ok=True, reason='ok', pdf=raw, pdf_url=cap.url or cand)
+                return True
         got = _eval(page, _JS_GRAB_HERE)
         raw = _decode(got, want)
         if got.get('tooBig'):
@@ -699,8 +814,8 @@ def fetch(doi, url=None, timeout=90, settle=6, kind='fulltext'):
     正文和 SI 都要的话用 `fetch_both`：只落地一次。
     """
     out = _blank(doi)
-    _, ctx = _connect(url)
-    page = ctx.new_page()
+    browser, ctx = _connect(url)
+    page = _new_page(browser, ctx)
     try:
         st = _land(page, doi, timeout, settle, kind)
         out['landing'], out['title'] = st.get('url', ''), (st.get('title') or '').strip()
@@ -741,8 +856,8 @@ def fetch_both(doi, url=None, timeout=90, settle=6):
     2026-09-14 实测每篇中位 55 s，其中正文落地到 SI 落地 24 s，这一刀砍掉的就是它。
     """
     main, si = _blank(doi), _blank(doi)
-    _, ctx = _connect(url)
-    page = ctx.new_page()
+    browser, ctx = _connect(url)
+    page = _new_page(browser, ctx)
     try:
         st = _land(page, doi, timeout, settle)
         main['landing'] = si['landing'] = st.get('url', '')
