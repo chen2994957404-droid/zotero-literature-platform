@@ -1137,3 +1137,20 @@ def test_根目录只许住登记过的文件():
     stray = sorted(tracked - ROOT_FILES_APPROVED)
     assert not stray, ('根目录多了没登记的文件（多半是外部 agent 的产物被 git add -A 带进来了）：'
                        + ', '.join(stray) + ' —— 要么 git rm --cached，要么在 ROOT_FILES_APPROVED 登记')
+
+
+# ── 产物目录不进版本库（2026-09-17）──────────────────────────────────────
+# outputs/ 与 scratch/ 是外部 agent（Codex / Antigravity）丢产物的地方。2026-09-10 Codex 在
+# outputs/ 里留了指向它自己运行时的 node_modules 软链接，Windows 上 git 不认软链接、
+# 顺着把 6600 个第三方文件当成本仓库的文件提交了 —— 仓库一夜之间大了一倍还多。
+# .gitignore 已经拦；这条守被跟踪的：谁 `git add -f` 硬塞进来，红。
+UNTRACKED_DIRS = ('outputs/', 'scratch/')
+
+
+def test_产物目录不进版本库():
+    import subprocess
+    out = subprocess.run(['git', '-c', 'core.quotePath=false', 'ls-files', *UNTRACKED_DIRS],
+                         cwd=ROOT, capture_output=True, text=True, encoding='utf-8').stdout
+    tracked = [f for f in out.splitlines() if f]
+    assert not tracked, (f'{len(tracked)} 个产物文件被 git 跟踪了（前几个：{tracked[:3]}）'
+                         ' —— git rm -r --cached outputs scratch，别提交别人的产物')

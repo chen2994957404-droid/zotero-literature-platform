@@ -81,15 +81,46 @@ def collect_status():
         ('Ollama 服务', H.c_ollama), ('数据资产', H.c_data),
         ('后台任务', H.c_services),
     ]
-    out = []
-    for name, fn in checks:
+    def _run(item):
+        name, fn = item
         try:
             status, msg = fn()
         except Exception as e:
             status, msg = H.FAIL, f'{type(e).__name__}: {e}'
         level = {H.OK: 'ok', H.WARN: 'warn'}.get(status, 'fail')
-        out.append({'name': name, 'level': level, 'msg': msg})
-    return out
+        return {'name': name, 'level': level, 'msg': msg}
+    # Zotero / Ollama 没开时各要等 2 秒才被拒绝，串着就是 4 秒；并行只等最慢的一个
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=len(checks)) as pool:
+        return list(pool.map(_run, checks))
+
+
+def collect_all():
+    """面板一页要的全部数据。**各项并行取**（2026-09-17）。
+
+    每 15 秒刷新一次，原来是十一项串着取：Zotero 探一次 2 秒、Ollama 探一次 2 秒、
+    警报里再探一次 Zotero 2 秒、PowerShell 查进程 1 秒…… 服务没开的机器上一次刷新 7 秒，
+    页面大半时间在转圈。这些项互不依赖，并行之后取决于最慢的一项（≈2 秒）。
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    parts = {
+        'status': collect_status, 'processes': collect_processes,
+        'heartbeat': collect_heartbeat, 'progress': collect_progress,
+        'alerts': collect_alerts, 'version': collect_version,
+        'config': collect_config, 'recent': collect_recent_reads,
+        'jobs': collect_jobs, 'structure': collect_blocks,
+    }
+
+    def _safe(fn):
+        try:
+            return fn()
+        except Exception as e:
+            return {'error': f'{type(e).__name__}: {e}'}
+    with ThreadPoolExecutor(max_workers=len(parts)) as pool:
+        got = dict(zip(parts, pool.map(_safe, parts.values())))
+    got['services'] = SERVICES
+    got['time'] = time.strftime('%H:%M:%S')
+    return got
 
 
 def collect_processes():
@@ -787,20 +818,7 @@ class Handler(BaseHTTPRequestHandler):
         if p == '/':
             return self._send(PAGE.encode('utf-8'), ctype='text/html')
         if p == '/api/all':
-            return self._send({
-                'status': collect_status(),
-                'processes': collect_processes(),
-                'heartbeat': collect_heartbeat(),
-                'progress': collect_progress(),
-                'alerts': collect_alerts(),
-                'version': collect_version(),
-                'config': collect_config(),
-                'services': SERVICES,
-                'recent': collect_recent_reads(),
-                'jobs': collect_jobs(),
-                'structure': collect_blocks(),
-                'time': time.strftime('%H:%M:%S'),
-            })
+            return self._send(collect_all())
         if p == '/summary':
             # 直接在面板里打开精读，省得切到 Zotero 去找 —— 看完就地评价
             import urllib.parse as _up

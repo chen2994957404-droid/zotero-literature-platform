@@ -11,7 +11,7 @@ from shared.adapters import pdf_fetch
 from tools import getpdf
 
 
-def test_selftest_passes():
+def test_getpdf自测全过():   # 名字跟其它 12 个工具的壳对齐：体检靠这个词把壳跳过
     """selftest 全绿 —— 它是这块的第一道闸。"""
     r = subprocess.run([sys.executable, 'tools/getpdf/selftest.py'],
                        capture_output=True, text=True, encoding='utf-8',

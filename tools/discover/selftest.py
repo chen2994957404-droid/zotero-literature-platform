@@ -82,15 +82,24 @@ def main():
     titles, dois = build_index(force=True)
     print(f'  [INFO] 库索引：{len(titles)} 个标题 / {len(dois)} 个 DOI'
           + ('（Zotero 未开，已降级）' if not titles else ''))
+    # 2026-09-13 起 build_index 是「证据库 ∪ Zotero」，Zotero 没开索引也不空 ——
+    # 所以「索引非空」不再等于「Zotero 开着」，抽样那一步得自己接住连不上（离线测试必须全绿）
+    sample = None
+    zotero_up = False
     if titles:
         from shared.adapters.zotero_client import USER_ID, zget
-        sample = None
-        for x in zget(f'/users/{USER_ID}/items/top?limit=25'):
+        try:
+            tops = zget(f'/users/{USER_ID}/items/top?limit=25')
+            zotero_up = True
+        except Exception:
+            tops = []
+        for x in tops:
             d = x['data']
             if d.get('title') and d.get('itemType') == 'journalArticle':
                 sample = {'title': d['title'], 'doi': d.get('DOI') or '',
                           'abstract': (d.get('abstractNote') or '')[:800]}
                 break
+    if zotero_up:
         if sample:
             total += 1
             r = match_many([sample])[0]

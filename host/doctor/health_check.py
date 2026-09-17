@@ -7,6 +7,7 @@
 
 用法: python host/doctor/health_check.py            两档都跑
       python host/doctor/health_check.py --offline  只跑离线档（改完代码先跑这个）
+      python host/doctor/health_check.py --full     连慢自测一起跑
 """
 import os, sys, ast, glob, json, urllib.request, subprocess
 
@@ -329,17 +330,30 @@ def c_modules():
     mods = [d for _r, _n, d in paths.block_dirs()
             if os.path.exists(os.path.join(d, 'selftest.py'))]
     passed, failed, skipped = [], [], []
-    for m in mods:
-        name = os.path.basename(m.rstrip('/\\'))
-        if name in SLOW_TESTS and not full:
-            skipped.append(name); continue
+
+    def _one(m):
         try:
             r = subprocess.run([sys.executable, os.path.join(m, 'selftest.py')],
                                capture_output=True, text=True, encoding='utf-8',
                                errors='replace', timeout=60, creationflags=_NOWIN)
-            (passed if r.returncode == 0 else failed).append(name)
+            return r.returncode == 0
         except subprocess.TimeoutExpired:
-            failed.append(f'{name}(超时)')
+            return None
+    todo = []
+    for m in mods:
+        name = os.path.basename(m.rstrip('/\\'))
+        if name in SLOW_TESTS and not full:
+            skipped.append(name); continue
+        todo.append((name, m))
+    # 35 个自测串行要 80 秒（几个 adapter 的自测会真去敲外部 API，一个就十几秒）；
+    # 它们是独立子进程、互不相干，并行 4 个 → 20 秒（2026-09-17）。
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        for (name, _m), ok in zip(todo, pool.map(lambda t: _one(t[1]), todo)):
+            if ok is None:
+                failed.append(f'{name}(超时)')
+            else:
+                (passed if ok else failed).append(name)
     total = len(paths.block_dirs())
     msg = f'{len(passed)}/{len(mods)-len(skipped)} 自测通过（共 {total} 个原子模块）'
     if skipped:
@@ -580,8 +594,13 @@ def c_offline_tests():
         import pytest  # noqa: F401
     except ImportError:
         return WARN, '没装 pytest，离线测试跑不了：pip install "pytest>=8.0"'
-    r = subprocess.run([sys.executable, '-m', 'pytest', '-q', '--no-header'],
-                       capture_output=True, text=True, encoding='utf-8',
+    cmd = [sys.executable, '-m', 'pytest', '-q', '--no-header']
+    if not flag('--offline'):
+        # 13 个工具的 pytest 壳（test_<工具>_selftest.py）只是再跑一遍 selftest.py，
+        # 而完整体检的「原子模块自测」那一项本来就会把每个 selftest 跑一遍 ——
+        # 同一份判据跑两次，白等 30 秒。完整档这里跳过壳，离线档（不跑那一项）照跑。
+        cmd += ['-k', 'not 自测全过']
+    r = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8',
                        errors='replace', cwd=ROOT, timeout=300,
                        creationflags=_NOWIN)
     tail = [ln for ln in (r.stdout or '').strip().splitlines() if ln.strip()]
@@ -592,6 +611,10 @@ def c_offline_tests():
 
 
 if __name__ == '__main__':
+    from shared.kernel.cli import wants_help
+    if wants_help():                # 踩坑 #85 同类：--help 曾直接触发整套体检（两分钟）
+        print(__doc__)
+        sys.exit(0)
     offline = flag('--offline')     # 只跑不依赖外部服务的检查
     print('=== 平台健康检查%s ===\n' % ('（离线档）' if offline else ''), flush=True)
     check('机器角色', c_role)

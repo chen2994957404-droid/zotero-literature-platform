@@ -22,8 +22,8 @@ host/  ← 平台自身：让平台活着的东西（没人 import 它）（9 �
     autosync、codegen、deploy、doctor、ingest、mcp、panel、watcher、wechat_import
 launch/  ← 给人双击的入口（10 个）
     取全文用的浏览器.bat、导入公众号精读.bat、控制面板.bat、更新平台.bat、比一比两个模型.bat、精读监听.bat、诊断报告.bat、连上文献平台（Antigravity用）.bat、重抽缺SI的文献.bat、重跑精读PRO.bat
-outputs/ （0 个脚本）
-scratch/ （0 个脚本）
+outputs/  ← 外部 agent 的产物 / 草稿，不进版本库
+scratch/  ← 外部 agent 的产物 / 草稿，不进版本库
 shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
     kernel/  ← 基础设施：谁都依赖它，它不依赖任何人（14 块）
         cli、config、proc_lock、prompts、subproc、budget.py、catalog.py、errors.py、heartbeat.py、jobs.py、log.py、mcp_prompt.py、paths.py、role.py
@@ -31,7 +31,6 @@ shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
         figure_crop、libmatch、schema
     adapters/  ← 外接口：唯一允许联网/用第三方库的一环（14 块）
         crossref、embed、llm_client、openalex、pdf_fetch、pdf_parse、query_expand、sciverse、semanticscholar、snowball、unpaywall、vectordb、wechat_seed、zotero_client
-specs/ （0 个脚本）
 tests/ （5 个脚本）
     test_architecture.py、test_budget.py、test_llm_routing.py、test_no_undefined_names.py、test_principles.py
 toolbox/ （0 个脚本）

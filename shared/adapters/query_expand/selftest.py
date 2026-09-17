@@ -6,6 +6,7 @@ try:
 except Exception:
     pass
 from shared.adapters.query_expand import to_english, expand, looks_chinese, _clean_lines
+from shared.kernel.cli import flag
 from shared.kernel.config import get_key
 
 def main():
@@ -30,7 +31,13 @@ def main():
     # ⚠ 下面两条要真调 LLM。**没配密钥 = 环境问题，不是功能坏了** ——
     #   两种情况都报 FAIL 的话，体检会长期挂着一条查不出所以然的红，
     #   久而久之没人再认真看它（这正是体检要分离线/实测两档的原因）。
-    if not get_key('DEEPSEEK_KEY'):
+    # 2026-09-17：这两条**每跑一次花两次 DeepSeek**。pytest 的壳 + 体检的自测项各跑一遍，
+    #   一天体检几次就是十来次付费调用 —— 自测的规矩是「不联网、不花钱」，默认跳过，
+    #   要真测就 `python .../selftest.py --live`。
+    if not flag('--live'):
+        total -= 2
+        print('  [SKIP] 检索式扩展要花 DeepSeek 的钱，默认不跑（加 --live 才真调）')
+    elif not get_key('DEEPSEEK_KEY'):
         total -= 2
         print('  [SKIP] 检索式扩展（要 DEEPSEEK_KEY，本机没配）')
         print('         这两条只在配了密钥的机器上才有意义。')

@@ -98,3 +98,9 @@ llm_routing.json.tmp
 !/README.md
 !/REBUILD.md
 !/各部分的关系.md
+
+# --- 产物与草稿目录：外部 agent（Codex / Antigravity）的输出，永远不进版本库（2026-09-17）---
+# 2026-09-10 Codex 在 outputs/ 里留了两个指向它自己运行时的 node_modules 软链接，
+# Windows 上 git 顺着软链接把 6600 个第三方文件当成本仓库的文件提交了进去。
+/outputs/
+/scratch/

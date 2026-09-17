@@ -149,6 +149,10 @@ def tree():
                 lines.append(f'{d}/  ← 给人双击的入口（{len(bats)} 个）')
                 if bats:
                     lines.append('    ' + '、'.join(bats))
+            elif d in ('outputs', 'scratch'):
+                # 外部 agent（Codex / Antigravity）丢产物的地方，不进版本库（踩坑 #163）——
+                # 画出来是为了让新会话知道这里的东西不是平台的一部分。
+                lines.append(f'{d}/  ← 外部 agent 的产物 / 草稿，不进版本库')
             else:
                 pys = sorted(os.path.basename(f) for f in glob.glob(os.path.join(p, '*.py')))
                 lines.append(f'{d}/ （{len(pys)} 个脚本）')
