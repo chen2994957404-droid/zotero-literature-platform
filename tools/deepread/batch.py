@@ -162,8 +162,11 @@ def read_one(key, force=False, model=None, log=print):
 def read_many(keys, force=False, log=print):
     """批量正文精读。返回 (成功, 失败/跳过)。"""
     role.require_prod('批量精读（调用付费 API）', force=force)
-    model = _model()
-    log(f'批量精读 {len(keys)} 篇（模型 {model}{"，强制重跑" if force else ""}）\n')
+    # ⚠ 别把老设置项 DEEPREAD_MODEL 当模型显式传下去（2026-09-17 真撞上）：路由表已指向本地 Ollama，
+    #   显式传 'deepseek-v4-flash' 等于让 Ollama 找一个它没有的模型 → 404 → 每一栏都静默切到云端备用，
+    #   看日志才知道「本地精读」其实一行都没在本地跑。model=None = 路由表说了算。
+    model = None
+    log(f'批量精读 {len(keys)} 篇（{_route_model()}{"，强制重跑" if force else ""}）\n')
     ok = fail = 0
     for i, key in enumerate(keys, 1):
         log(f'[{i}/{len(keys)}] {key}')

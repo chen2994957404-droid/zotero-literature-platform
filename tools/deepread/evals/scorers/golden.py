@@ -25,8 +25,8 @@ GOLDEN_VER = 1
 
 SKELETON = ('## 导读', '## 引言', '（1）', '（2）', '（3）', 'Question：各', '## 讨论',
             'Question：本论文', '总之，', '## 文献信息')
-# 与流水线的「清单先行」共用同一把尺子（tools/deepread/numbers.py）：两边认的「数」必须是同一批
-from tools.deepread.numbers import NUM_UNIT as _NUM_UNIT, norm as _norm
+# 与流水线的「清单先行」共用同一把尺子（shared/domain/numcheck）：两边认的「数」必须是同一批
+from shared.domain.numcheck import NUM_UNIT as _NUM_UNIT, norm as _norm
 _ABBR = re.compile(r'\b[A-Z][A-Z0-9]{1,}(?:-[A-Za-z0-9]+)*\b')
 _CJK = re.compile(r'[一-鿿]')
 

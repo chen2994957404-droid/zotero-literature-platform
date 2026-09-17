@@ -38,7 +38,7 @@ import re
 from shared.domain.schema import is_review
 from shared.domain.schema import outline as _ol
 from shared.kernel import prompts
-from tools.deepread import numbers as _nums
+from shared.domain import numcheck as _nums
 
 # v2（2026-09-15）：金标三轮实测我们的汉字数中位 5900、范文（774 篇）中位 3872，篇幅比 1.75 ——
 # 各栏一起收：导读 300–400、引言 2 段、实验各段封顶、索引段 80–120、Q2 300–450、总之 250–330。
@@ -644,25 +644,5 @@ def compose(md, si_md, figs, meta, chat, log=print, model=None, local=False, cac
     return content, stats
 
 
-_NUM = re.compile(r'(?<![\d.])(\d+(?:\.\d+)?)(?!\d)')
-
-
-def unverified_numbers(content, source):
-    """精读里出现、原文（正文+SI）里找不到的数。**只报不改**：这是给评测和人看的信号。
-
-    过滤掉不是"数据"的数：图号/表号/第几/年份/单个位数（"3 种方法"这种）。
-    源文本去掉空格与千分位逗号再比 —— MineRU 常把 `1 000` 拆开。
-    """
-    src = re.sub(r'[\s,]', '', source or '')
-    out, seen = [], set()
-    for m in _NUM.finditer(content or ''):
-        s = m.group(1)
-        pre = content[max(0, m.start() - 2):m.start()]
-        if s in seen or re.search(r'[图表第（(]$', pre) or re.search(r'^[a-z]', content[m.end():m.end() + 1]):
-            continue
-        if ('.' not in s and (len(s) < 2 or (len(s) == 4 and s.startswith(('19', '20'))))):
-            continue
-        seen.add(s)
-        if s not in src and s.rstrip('0').rstrip('.') not in src:
-            out.append(s)
-    return out
+# 「原文里找不到的数」的判定住在 shared.domain.numcheck（问答线也用它）；这里留个同名入口，评测与测试照旧调。
+unverified_numbers = _nums.unverified_numbers

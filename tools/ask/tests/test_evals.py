@@ -29,7 +29,7 @@ def wired(monkeypatch):
     """把外部依赖全换成假的，并把送进模型的上下文截下来。"""
     box = {}
 
-    def fake_answer_with(system, user):
+    def fake_answer_with(system, user, context=""):
         box['system'] = system
         box['user'] = user
         return '（假答案）'
@@ -95,3 +95,25 @@ def test_向量库空的时候不硬答(wired):
 def test_阈值只有一个出处():
     """跟别的工具一样：数字写在 thresholds.toml，不在 .py 里再抄一遍。"""
     assert 0 < evals.MIN_PASS_RATE <= 1.0
+
+
+def test_答案要标出处_数字要来自片段(monkeypatch):
+    """生成后校验的闭环：第一稿没标【片段N】且编了个数 → 带着原因重写一次（2026-09-17）。"""
+    from tools import ask
+    calls = []
+
+    def fake_chat(system, user, purpose=None, temperature=0.3, **kw):
+        calls.append(user)
+        if '上一稿的问题' in user:
+            return '拉伸强度为 12.5 MPa【片段1】。'
+        return '拉伸强度为 12.5 MPa，断裂伸长率 999%。'          # 没标出处，999 是编的
+
+    monkeypatch.setattr(ask, '_chat', fake_chat)
+    ctx = '【片段1·来自《X》的正文】\nThe tensile strength reached 12.5 MPa.'
+    out = ask.answer_with(ask.SYS, '文献片段：' + ctx + '\n\n用户问题：强度多少', context=ctx)
+    assert out == '拉伸强度为 12.5 MPa【片段1】。' and len(calls) == 2
+    assert '没有在句末标出处' in calls[1] and '999' in calls[1]
+    # 一次就合格的不重写
+    calls.clear()
+    monkeypatch.setattr(ask, '_chat', lambda s, u, **kw: (calls.append(u), '12.5 MPa【片段1】')[1])
+    assert ask.answer_with(ask.SYS, 'x', context=ctx) == '12.5 MPa【片段1】' and len(calls) == 1

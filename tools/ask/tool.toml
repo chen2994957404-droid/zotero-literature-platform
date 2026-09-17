@@ -4,7 +4,7 @@ expose        = "prompt"
 costs_money   = true            # 每问一次调一次云端大模型
 side_effects  = ["写向量库（vectorize）"]
 requires_role = "prod"          # 全库向量化是全库作业，编程端不许跑
-prompts       = ["main@v1"]
+prompts       = ["main@v1", "main@v2"]
 
 # ── 允许模型自己发起的入口（2026-09-01 加）─────────────────────────────
 # **留空 = 一个都不许**，模型只能通过 prompt 请你来点。

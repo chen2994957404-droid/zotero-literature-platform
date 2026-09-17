@@ -468,7 +468,23 @@ def c_routing():
     不报错、只降级 —— 只有把通道和模型明说出来，这种变化才看得见。
     """
     from shared.kernel.config import routing
-    probs = routing.problems()
+    probs = list(routing.problems())
+    # 本地通道多一道：用途指定的模型本机 Ollama 到底有没有（2026-09-17 真撞上：路由指向本地，
+    # 模型名却是云端的 → Ollama 404 → 每次调用静默切到云端备用，日志里才看得见「本地精读」一行没在本地跑）。
+    # 这一查要联网（问本机 Ollama），所以放体检（本项只在联网档跑）不放 kernel 的 problems()。
+    from shared.adapters.llm_client import list_models
+    seen = {}
+    for pid, p in routing.purposes().items():
+        for ch_name, model in ((p['channel'], p['model']), (p['fallback'], p['fallback_model'] or p['model'])):
+            ch = routing.channels().get(ch_name)
+            if not ch or ch.get('kind') != 'ollama' or not model:
+                continue
+            if ch_name not in seen:
+                seen[ch_name] = list_models(ch_name)
+            ok, ids, msg = seen[ch_name]
+            if ok and model not in ids:
+                probs.append(('fail', f'用途「{p["label"]}」指向本地通道「{ch_name}」的模型 {model}，'
+                                      f'但本机 Ollama 没装它（有：{"、".join(ids[:5])}）—— 会静默切到备用'))
     fails = [m for lvl, m in probs if lvl == 'fail']
     warns = [m for lvl, m in probs if lvl == 'warn']
     n = len(routing.purposes())

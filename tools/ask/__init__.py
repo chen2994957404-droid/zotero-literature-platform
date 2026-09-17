@@ -34,13 +34,14 @@ import sys
 from shared.adapters import vectordb
 from shared.adapters.embed import embed as _embed_batch
 from shared.adapters.llm_client import chat as _chat
+from shared.domain import numcheck
 from shared.kernel import paths, prompts
 from shared.kernel.config import get_key, get_model
 
 VECTOR_DB = paths.VECTOR_DB
 TOP_K = 6
 
-SYS = prompts.load('ask', 'main@v1')
+SYS = prompts.load('ask', 'main@v2')     # v2（2026-09-17）：句末标【片段N】、数只许抄片段的 —— 本地小模型也能被脚本校验
 
 
 def _store():
@@ -61,10 +62,32 @@ def embed(text):
     return _embed_batch([text])[0]
 
 
-def answer_with(system, user):
-    """调云端 DeepSeek 作答（问答输出较长，用 flash 省钱；模型可在控制面板切换）。"""
+def answer_with(system, user, context=''):
+    """作答：生成 → 查 → 不合格带着原因重写一次（2026-09-17，与精读同一套「生成后校验」）。
+
+    查两件事：(1) 有没有标【片段N】出处；(2) 答案里的数是不是都在片段里（`numcheck.unverified_numbers`）。
+    本地小模型的两个典型毛病正是漏出处和顺手编个数；云端模型多半一次就过，多花不了什么。
+    只重写一次：问答是交互式的，用户在等。
+    """
     # 只说「我是问答」——走哪条通道、用哪个模型由路由表决定（2026-09-11）
-    return _chat(system, user, purpose='ASK', temperature=0.3)
+    ans = _chat(system, user, purpose='ASK', temperature=0.3)
+    if not context or _answer_ok(ans, context):
+        return ans
+    bad = numcheck.unverified_numbers(ans, context)
+    why = []
+    if '【片段' not in ans:
+        why.append('没有在句末标出处（写成【片段N】）')
+    if bad:
+        why.append('这些数在片段里找不到：%s，删掉或改成片段里的说法' % '、'.join(bad[:8]))
+    fixed = _chat(system, user + '\n\n⚠ 上一稿的问题：' + '；'.join(why) + '。其余内容保持不变，按同样要求重写。',
+                  purpose='ASK', temperature=0.3)
+    return fixed if _answer_ok(fixed, context) or len(fixed) > 50 else ans
+
+
+def _answer_ok(ans, context):
+    if '没有找到' in (ans or ''):
+        return True
+    return '【片段' in (ans or '') and not numcheck.unverified_numbers(ans, context)
 
 
 def ask_answer(question, top_k=TOP_K):
@@ -91,7 +114,7 @@ def ask_answer(question, top_k=TOP_K):
         sources[t] = m.get('doi', '')
         if m.get('source') == 'si':
             si_titles.add(t)
-    answer = answer_with(SYS, f'文献片段：\n{context}\n\n用户问题：{question}')
+    answer = answer_with(SYS, f'文献片段：\n{context}\n\n用户问题：{question}', context=context)
     return {'answer': answer,
             'sources': [{'title': t, 'doi': d, 'si': t in si_titles}
                         for t, d in sources.items()],

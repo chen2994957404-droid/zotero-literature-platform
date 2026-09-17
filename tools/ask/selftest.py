@@ -63,7 +63,7 @@ def main():
              'meta': {'title': 'Dynamic boron chemistry', 'doi': ''}}]
     seen = {}
 
-    def fake_llm(system, user):
+    def fake_llm(system, user, context=""):
         seen['user'] = user          # 记下提示词，下面要验「片段真的喂进去了」
         return '答案正文'
 

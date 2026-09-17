@@ -133,7 +133,7 @@ def test_综述按综述写():
 
 
 def test_清单先行_列清单与查漏():
-    from tools.deepread import numbers as n
+    from shared.domain import numcheck as n
     must = n.must_numbers('droplets 19 μm, 46 μm (Fig. 2b); strain 1160% and 200 %; Tg 25 °C in 2024; Mn 1,500 g/mol; 0.50 MPa')
     assert must == ['19 μm', '46 μm', '1160 %', '200 %', '25 °C', '1,500 g/mol', '0.50 MPa']   # 年份不算数据；千分位认得出
     miss = n.missing_numbers('液滴 19 微米与 46 μm，应变 1160%，Tg 25 ℃，Mn 1500 g/mol，0.5 MPa', must)
