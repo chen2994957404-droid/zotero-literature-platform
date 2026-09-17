@@ -39,9 +39,10 @@ HERE = os.path.join(ROOT, 'host', 'panel')
 LAUNCH_LOG = os.path.join(HERE, 'panel_launch.log')
 
 PORT = int(os.environ.get('PANEL_PORT', '8777'))
-# 两个页面共用一个后台：`/` 日常用（找文献 / 精读评价 / 进度），
-# `/settings` 管理用（密钥 / 通道 / 模型 / 进程 / 日志）。bat 传 settings 就开后者。
-PAGE = 'settings' if 'settings' in sys.argv[1:] else ''
+# 三个页面共用一个后台：`/` 日常用（找文献 / 精读评价 / 进度），
+# `/settings` 设置（密钥 / 通道 / 模型），`/logs` 运行与日志（进程 / 服务 / 日志）。
+# bat 传 settings / logs 就开对应那页。
+PAGE = next((a for a in sys.argv[1:] if a in ('settings', 'logs')), '')
 URL = f'http://127.0.0.1:{PORT}/{PAGE}'
 WAIT_SECONDS = 30          # 冷启动 + 首次导入，给足余量
 POLL_EVERY = 0.5

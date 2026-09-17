@@ -814,7 +814,7 @@ class Handler(BaseHTTPRequestHandler):
         if bad:
             return self._send({'error': bad[1]}, bad[0])
         p = self.path.split('?')[0]
-        if p in ('/', '/settings'):
+        if p in ('/', '/settings', '/logs'):
             # 同一份页面，前端按路径只显示日常卡片或管理卡片
             return self._send(PAGE.encode('utf-8'), ctype='text/html')
         if p == '/api/all':
@@ -929,7 +929,8 @@ pre{background:#20232a;color:#c8d0dc;padding:12px;border-radius:8px;font-size:12
 #toast{position:fixed;right:22px;bottom:22px;background:#2f3542;color:#fff;padding:11px 17px;
  border-radius:8px;opacity:0;transition:.25s;font-size:13px;max-width:380px}
 #toast.on{opacity:1}
-body[data-page="daily"] .card[data-page="settings"],body[data-page="settings"] .card[data-page="daily"]{display:none}
+.card[data-page]{display:none}
+body[data-page="daily"] .card[data-page="daily"],body[data-page="settings"] .card[data-page="settings"],body[data-page="logs"] .card[data-page="logs"]{display:block}
 </style>
 <div class="wrap">
 <h1 id="title">文献平台 · 控制面板</h1>
@@ -985,11 +986,11 @@ body[data-page="daily"] .card[data-page="settings"],body[data-page="settings"] .
   </div>
 </div>
 
-<div class="card" data-page="settings"><h2>运行状态</h2><div id="status"></div></div>
+<div class="card" data-page="logs"><h2>运行状态</h2><div id="status"></div></div>
 
-<div class="card" data-page="settings"><h2>正在运行的进程</h2><div id="procs"></div></div>
+<div class="card" data-page="logs"><h2>正在运行的进程</h2><div id="procs"></div></div>
 
-<div class="card" data-page="settings"><h2>后台服务（卡住了点重启）</h2><div id="svcs"></div></div>
+<div class="card" data-page="logs"><h2>后台服务（卡住了点重启）</h2><div id="svcs"></div></div>
 
 <div class="card" data-page="settings"><h2>密钥 · 本机设置 · 模型</h2>
   <div class="hint" style="margin-bottom:10px">
@@ -1014,7 +1015,7 @@ body[data-page="daily"] .card[data-page="settings"],body[data-page="settings"] .
 <div class="card" data-page="daily"><h2>精读进度</h2><div id="jobs"></div></div>
 <div class="card" data-page="daily"><h2>最近处理的文献</h2><div id="recent"></div></div>
 
-<div class="card" data-page="settings"><h2>日志</h2>
+<div class="card" data-page="logs"><h2>日志</h2>
   <div style="margin-bottom:10px">
     <select id="logname" onchange="loadLog()">
       <option value="zotero_watcher">精读监听</option>
@@ -1031,14 +1032,17 @@ body[data-page="daily"] .card[data-page="settings"],body[data-page="settings"] .
 <div id="toast"></div>
 <script>
 const $=s=>document.querySelector(s);
-// 两个页面、一个后台：`/` 日常（找文献 / 评价 / 进度），`/settings` 管理（密钥 / 通道 / 模型 / 进程 / 日志）。
+// 三个页面、一个后台：`/` 日常（找文献 / 评价 / 进度），`/settings` 设置（密钥 / 通道 / 模型 / 项目组成 / 模块），
+// `/logs` 运行与日志（运行状态 / 进程 / 后台服务 / 日志）。
 // 拆开的原因：用户只会主动点日常那几样，管理项堆在一起太杂（2026-09-17）。
-const PAGE_KIND = location.pathname.replace(/\/+$/,'') === '/settings' ? 'settings' : 'daily';
+const PATH = location.pathname.replace(/\/+$/,'');
+const PAGE_KIND = PATH === '/settings' ? 'settings' : PATH === '/logs' ? 'logs' : 'daily';
 document.body.dataset.page = PAGE_KIND;
-$('#title').textContent = PAGE_KIND === 'settings' ? '文献平台 · 设置与密钥' : '文献平台 · 控制面板';
-$('#nav').innerHTML = PAGE_KIND === 'settings'
-  ? '<a href="/">← 回到日常面板</a>'
-  : '密钥 / 模型通道 / 进程 / 日志在 <a href="/settings">设置与密钥</a>（或双击 launch/设置与密钥.bat）';
+const TITLES = {daily:'文献平台 · 控制面板', settings:'文献平台 · 设置与密钥', logs:'文献平台 · 运行与日志'};
+$('#title').textContent = TITLES[PAGE_KIND];
+$('#nav').innerHTML = [['daily','日常面板','/'],['settings','设置与密钥','/settings'],['logs','运行与日志','/logs']]
+  .map(([k,n,u]) => k === PAGE_KIND ? `<b>${n}</b>` : `<a href="${u}">${n}</a>`).join(' · ')
+  + ' <span class="hint">（launch/ 里各有一个同名 .bat）</span>';
 function toast(m){const e=$('#toast');e.textContent=m;e.className='on';
   setTimeout(()=>e.className='',3600);}
 function esc(s){return String(s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));}
