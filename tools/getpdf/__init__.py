@@ -340,11 +340,17 @@ def land(doi, with_si=True, allow_fetch=True, zotero_index=None,
                     src = find_si(pid)[0] or ''
                 except Exception:
                     src = ''
+            si_r = None
             if not src and fetched_si is not None:
+                si_r = fetched_si
                 src = fetched_si['path'] if fetched_si['ok'] else ''
             elif not src and allow_fetch and out['pdf']:
-                r = fetch_si_one(doi)
-                src = r['path'] if r['ok'] else ''
+                si_r = fetch_si_one(doi)
+                src = si_r['path'] if si_r['ok'] else ''
+            if si_r and not si_r['ok'] and si_r.get('reason') == 'no_si':
+                # 出版商页面确认没挂 SI（综述、老文献常见）：记下来，以后别再敲它
+                catalog.mark_si_none(pid, pdf_fetch.REASONS['no_si'])
+                out['note'] = (out['note'] + '；' if out['note'] else '') + '没有 SI（出版商页面确认）'
             if src:
                 ext = os.path.splitext(src)[1].lstrip('.').lower()
                 dst = paths.local_si(pid, ext if ext in ('pdf', 'docx') else 'pdf')

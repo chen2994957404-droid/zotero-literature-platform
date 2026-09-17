@@ -119,6 +119,23 @@ def register(pid, overwrite=False, **fields):
     return meta
 
 
+# SI 的三种状态（2026-09-17）。以前只有「盘上有没有」一个布尔，分不清「没取过」和「取过、出版商说没有」——
+# 于是综述、老文献这种本来就没 SI 的，每次进「该补 SI」的清单都会再敲一次出版商。
+SI_HAVE, SI_NONE, SI_UNKNOWN = 'have', 'none', 'unknown'
+
+
+def si_status(pid):
+    """这篇的 SI：have 盘上有 / none 取过、确认出版商没挂 / unknown 没取过或上次没取成。"""
+    if paths.find_local_si(pid):
+        return SI_HAVE
+    return read_meta(pid).get('si_status') or SI_UNKNOWN
+
+
+def mark_si_none(pid, why=''):
+    """记下「这篇没有 SI」（出版商页面确认过），以后别再去取。"""
+    register(pid, overwrite=True, si_status=SI_NONE, si_note=why or '出版商页面没挂补充材料')
+
+
 def ids():
     """证据库里所有文献 id（curated 与 raw 两层目录名的并集，只认合法 id）。"""
     out = set()

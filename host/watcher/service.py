@@ -19,7 +19,7 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-from shared.kernel import errors, heartbeat, paths, role
+from shared.kernel import catalog, errors, heartbeat, paths, role
 from shared.kernel.cli import flag
 
 from shared.kernel.config import get_key
@@ -96,6 +96,32 @@ def adopt_reference(pid, log=print):
         return False
 
 
+def _try_fetch_si(pid, item, pdf_path):
+    """精读前补一次 SI（2026-09-17 用户问起才发现：以前打标签精读**从不去取 SI**，手上没有就只做正文精读）。
+
+    只在三个条件都满足时去敲出版商：有 DOI、目录里没记「确认没有 SI」、取全文用的浏览器开着。
+    取到 → 落进 data/raw/<id>/si.*；出版商说没挂 → 记 si_status=none，以后不再来。
+    浏览器没开不算错：写一行日志，照常只精读正文（下次打标签再补）。
+    """
+    doi = (item.get('data') or {}).get('DOI') or catalog.doi_of(catalog.read_meta(pid))
+    if not doi:
+        return False
+    if catalog.si_status(pid) == catalog.SI_NONE:
+        print('  [SI] 目录记着这篇没有补充材料（出版商页面确认过），不再去取')
+        return False
+    try:
+        from tools import getpdf
+        r = getpdf.land(doi, pdf_path=pdf_path)
+    except Exception as e:                       # 浏览器没开 / 取件模块不可用 —— 不拖累精读
+        print(f'  [SI] 这次没能补 SI：{str(e)[:100]}（照常只精读正文）')
+        return False
+    if r.get('si'):
+        print(f'  [SI] 补到了补充材料：{os.path.basename(r["si"])}')
+        return True
+    print(f'  [SI] 没取到：{r.get("note") or "出版商那边没给"}')
+    return False
+
+
 def process_item(item):
     """状态机：检测有哪些附件、哪些还没精读 → 补做缺的 → 置对应状态标签。
 
@@ -116,6 +142,8 @@ def process_item(item):
     local = paths.local_pdf(pid)
     pdf_path = local if os.path.exists(local) else _find_pdf(key)
     si_exists = bool(paths.find_local_si(pid)) or has_si(key)
+    if not si_exists and pdf_path:
+        si_exists = _try_fetch_si(pid, item, pdf_path)
 
     # ── 精读流水线（原来是三段 subprocess，现在是一次函数调用）──
     # 「哪些步骤该跳过、哪个失败了不该拖累别的」全在 tools/deepread 里，

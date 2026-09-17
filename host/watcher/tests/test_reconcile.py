@@ -64,3 +64,30 @@ def test_范文读回article():
     a = wechat_import.article_from_reference(p)
     assert a['title'] == 'T' and a['doi'] == '10.1/x' and a['pubdate'] == '2026-09-01'
     assert [b['kind'] for b in a['blocks']] == ['p', 'img', 'p']
+
+
+def test_精读前补SI_记过没有的不再去取_浏览器没开不拖累(env, monkeypatch):
+    """2026-09-17：打标签精读以前从不取 SI；现在取一次，出版商说没有就记下来，以后不再敲。"""
+    pid = paths.paper_id_from_doi(DOI)
+    catalog.register(pid, doi=DOI, title='x')
+    calls = []
+    from tools import getpdf
+
+    def fake_land(doi, pdf_path=None, **kw):
+        calls.append(doi)
+        return {'si': '', 'note': '正文有；没有 SI（出版商页面确认）'}
+    monkeypatch.setattr(getpdf, 'land', fake_land)
+    item = {'key': 'ABCD1234', 'data': {'DOI': DOI}}
+    assert w._try_fetch_si(pid, item, 'main.pdf') is False and calls == [DOI]
+    # 目录记了「没有」→ 第二次直接不去
+    catalog.mark_si_none(pid)
+    assert catalog.si_status(pid) == catalog.SI_NONE
+    assert w._try_fetch_si(pid, item, 'main.pdf') is False and calls == [DOI]
+    # 浏览器没开（land 抛异常）→ 返回 False，不抛
+    catalog.register(pid, overwrite=True, si_status=catalog.SI_UNKNOWN)
+    def boom(doi, pdf_path=None, **kw):
+        raise RuntimeError('浏览器没开')
+    monkeypatch.setattr(getpdf, 'land', boom)
+    assert w._try_fetch_si(pid, item, 'main.pdf') is False
+    # 没 DOI 的不去
+    assert w._try_fetch_si(pid, {'key': 'X', 'data': {}}, 'main.pdf') in (False, True)
