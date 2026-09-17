@@ -423,7 +423,18 @@ def call(script, timeout=180):
 
 # ── 各条子命令 ────────────────────────────────────────────────────────
 
-MAC_FILE = os.path.join(os.path.expanduser('~'), '.ssh', 'b_host_mac.txt')
+# （MAC_FILE 在上面按机器分开定义过了 —— 这里曾经又定义了一次、指向 ~/.ssh/b_host_mac.txt，
+#   把按机器分开的那份静默盖掉，多台机器的 MAC 会互相覆盖。2026-09-17 删。）
+
+
+def _lan_candidate():
+    """候选地址里第一个**局域网**地址。ARP 只对同网段有意义：拿公网地址或 127.0.0.1:2223
+    （端口映射）去问 Get-NetNeighbor 永远是空，还白开一个 PowerShell。"""
+    for h in candidates():
+        addr, _port = split_hostport(h)
+        if addr.startswith(('10.', '192.168.')) or addr.startswith('172.') and 16 <= int(addr.split('.')[1] or 0) <= 31:
+            return addr
+    return ''
 
 
 def remember_mac():
@@ -432,8 +443,11 @@ def remember_mac():
     **只有它醒着时才拿得到**（ARP 要它回话）。所以每次连通都顺手记一次：
     等到真需要唤醒的那天，它已经睡了，那时再想拿就晚了。
     """
+    lan = _lan_candidate()
+    if not lan:
+        return ''
     out = powershell(
-        f"(Get-NetNeighbor -IPAddress {candidates()[0]} -ErrorAction SilentlyContinue | "
+        f"(Get-NetNeighbor -IPAddress {lan} -ErrorAction SilentlyContinue | "
         f"Where-Object {{$_.State -ne 'Unreachable'}}).LinkLayerAddress", timeout=30)
     mac = (out or '').strip().splitlines()[0].strip() if (out or '').strip() else ''
     if len(mac) == 17 and mac.count('-') == 5 and not mac.startswith('00-00-00'):
