@@ -39,7 +39,10 @@ HERE = os.path.join(ROOT, 'host', 'panel')
 LAUNCH_LOG = os.path.join(HERE, 'panel_launch.log')
 
 PORT = int(os.environ.get('PANEL_PORT', '8777'))
-URL = f'http://127.0.0.1:{PORT}/'
+# 两个页面共用一个后台：`/` 日常用（找文献 / 精读评价 / 进度），
+# `/settings` 管理用（密钥 / 通道 / 模型 / 进程 / 日志）。bat 传 settings 就开后者。
+PAGE = 'settings' if 'settings' in sys.argv[1:] else ''
+URL = f'http://127.0.0.1:{PORT}/{PAGE}'
 WAIT_SECONDS = 30          # 冷启动 + 首次导入，给足余量
 POLL_EVERY = 0.5
 
@@ -79,7 +82,7 @@ def log_tail(n=25):
 def main():
     if alive():
         print('面板已经在跑，直接打开。')
-        print('⚠ 如果你刚更新过代码，它跑的还是旧代码 —— 请先双击「更新平台.bat」，')
+        print('⚠ 如果你刚更新过代码，它跑的还是旧代码 —— 请先双击「不常用/更新平台.bat」，')
         print('  那里第 3 步会把旧面板停掉（见踩坑 #50）。')
         webbrowser.open(URL)
         return 0

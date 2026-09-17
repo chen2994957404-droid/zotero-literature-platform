@@ -814,7 +814,8 @@ class Handler(BaseHTTPRequestHandler):
         if bad:
             return self._send({'error': bad[1]}, bad[0])
         p = self.path.split('?')[0]
-        if p == '/':
+        if p in ('/', '/settings'):
+            # 同一份页面，前端按路径只显示日常卡片或管理卡片
             return self._send(PAGE.encode('utf-8'), ctype='text/html')
         if p == '/api/all':
             return self._send(collect_all())
@@ -928,15 +929,17 @@ pre{background:#20232a;color:#c8d0dc;padding:12px;border-radius:8px;font-size:12
 #toast{position:fixed;right:22px;bottom:22px;background:#2f3542;color:#fff;padding:11px 17px;
  border-radius:8px;opacity:0;transition:.25s;font-size:13px;max-width:380px}
 #toast.on{opacity:1}
+body[data-page="daily"] .card[data-page="settings"],body[data-page="settings"] .card[data-page="daily"]{display:none}
 </style>
 <div class="wrap">
-<h1>文献平台 · 控制面板</h1>
+<h1 id="title">文献平台 · 控制面板</h1>
+<div class="sub" id="nav"></div>
 <div class="sub">每 15 秒自动刷新 · 上次刷新 <span id="t">—</span></div>
 <div class="sub" id="ver">—</div>
 
 <div id="alertbox"></div>
 
-<div class="card">
+<div class="card" data-page="daily">
   <h2>找文献</h2>
   <div class="hint" style="margin-bottom:12px">
     会自动拆成多个检索式 + 沿引用网络扩展 + 排除你库里已有的，按「跟你多相关」排序。
@@ -967,7 +970,7 @@ pre{background:#20232a;color:#c8d0dc;padding:12px;border-radius:8px;font-size:12
   </div>
 </div>
 
-<div class="card">
+<div class="card" data-page="daily">
   <h2>精读评价</h2>
   <div class="hint" style="margin-bottom:10px">
     在 Zotero 给看完的文献打「<b>读完</b>」标签，就会出现在这里。
@@ -982,13 +985,13 @@ pre{background:#20232a;color:#c8d0dc;padding:12px;border-radius:8px;font-size:12
   </div>
 </div>
 
-<div class="card"><h2>运行状态</h2><div id="status"></div></div>
+<div class="card" data-page="settings"><h2>运行状态</h2><div id="status"></div></div>
 
-<div class="card"><h2>正在运行的进程</h2><div id="procs"></div></div>
+<div class="card" data-page="settings"><h2>正在运行的进程</h2><div id="procs"></div></div>
 
-<div class="card"><h2>后台服务（卡住了点重启）</h2><div id="svcs"></div></div>
+<div class="card" data-page="settings"><h2>后台服务（卡住了点重启）</h2><div id="svcs"></div></div>
 
-<div class="card"><h2>密钥 · 本机设置 · 模型</h2>
+<div class="card" data-page="settings"><h2>密钥 · 本机设置 · 模型</h2>
   <div class="hint" style="margin-bottom:10px">
     密钥只显示后 4 位。留空表示不改动，不会清空已有配置。保存前自动备份旧配置。</div>
   <div id="krbar"></div>
@@ -996,22 +999,22 @@ pre{background:#20232a;color:#c8d0dc;padding:12px;border-radius:8px;font-size:12
   <div style="margin-top:14px"><button onclick="saveCfg()">保存设置</button></div>
 </div>
 
-<div class="card"><h2>项目组成（想改哪块，就在新对话里单独选中那个文件夹）</h2>
+<div class="card" data-page="settings"><h2>项目组成（想改哪块，就在新对话里单独选中那个文件夹）</h2>
   <div class="hint" style="margin-bottom:10px">
     每个文件夹里都有一份说明书（CLAUDE.md），单独选中时 AI 也能看懂那一块。</div>
   <div id="flows"></div>
 </div>
 
-<div class="card"><h2>模块（底层能力，上面所有功能由它们搭成）</h2>
+<div class="card" data-page="settings"><h2>模块（底层能力，上面所有功能由它们搭成）</h2>
   <div class="hint" style="margin-bottom:10px">
     点「自测」可单独检验某块是否正常。只读操作，随便点。</div>
   <div id="blocks"></div>
 </div>
 
-<div class="card"><h2>精读进度</h2><div id="jobs"></div></div>
-<div class="card"><h2>最近处理的文献</h2><div id="recent"></div></div>
+<div class="card" data-page="daily"><h2>精读进度</h2><div id="jobs"></div></div>
+<div class="card" data-page="daily"><h2>最近处理的文献</h2><div id="recent"></div></div>
 
-<div class="card"><h2>日志</h2>
+<div class="card" data-page="settings"><h2>日志</h2>
   <div style="margin-bottom:10px">
     <select id="logname" onchange="loadLog()">
       <option value="zotero_watcher">精读监听</option>
@@ -1028,6 +1031,14 @@ pre{background:#20232a;color:#c8d0dc;padding:12px;border-radius:8px;font-size:12
 <div id="toast"></div>
 <script>
 const $=s=>document.querySelector(s);
+// 两个页面、一个后台：`/` 日常（找文献 / 评价 / 进度），`/settings` 管理（密钥 / 通道 / 模型 / 进程 / 日志）。
+// 拆开的原因：用户只会主动点日常那几样，管理项堆在一起太杂（2026-09-17）。
+const PAGE_KIND = location.pathname.replace(/\/+$/,'') === '/settings' ? 'settings' : 'daily';
+document.body.dataset.page = PAGE_KIND;
+$('#title').textContent = PAGE_KIND === 'settings' ? '文献平台 · 设置与密钥' : '文献平台 · 控制面板';
+$('#nav').innerHTML = PAGE_KIND === 'settings'
+  ? '<a href="/">← 回到日常面板</a>'
+  : '密钥 / 模型通道 / 进程 / 日志在 <a href="/settings">设置与密钥</a>（或双击 launch/设置与密钥.bat）';
 function toast(m){const e=$('#toast');e.textContent=m;e.className='on';
   setTimeout(()=>e.className='',3600);}
 function esc(s){return String(s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));}

@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-cd /d "%~dp0.."
+cd /d "%~dp0..\.."
 set PYTHONIOENCODING=utf-8
 echo ============================================
 echo   用 PRO 模型重跑精读（更准，适合重要文献）

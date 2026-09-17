@@ -129,7 +129,7 @@ def c_no_secrets():
     import re
     pat = re.compile(r"(sk-[a-zA-Z0-9]{24,}|['\"][A-Za-z0-9]{24}['\"]\s*#?\s*zotero)", re.I)
     hits = []
-    for f in code_files() + glob.glob('launch/*.bat') + glob.glob('wf_backup/*.json'):
+    for f in code_files() + glob.glob("launch/**/*.bat", recursive=True) + glob.glob('wf_backup/*.json'):
         try:
             s = open(f, encoding='utf-8', errors='replace').read()
         except Exception:

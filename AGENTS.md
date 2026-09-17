@@ -20,8 +20,9 @@ docs/  ← 跨工具的档案（另有 3 份日志直接躺在下面）
     explain/（7）、howto/（3）、reference/（9）、incidents/（2）  ← 为什么 / 怎么做 / 事实 / 坑
 host/  ← 平台自身：让平台活着的东西（没人 import 它）（10 块）
     autosync、codegen、daily、deploy、doctor、ingest、mcp、panel、watcher、wechat_import
-launch/  ← 给人双击的入口（10 个）
-    取全文用的浏览器.bat、导入公众号精读.bat、控制面板.bat、更新平台.bat、比一比两个模型.bat、精读监听.bat、诊断报告.bat、连上文献平台（Antigravity用）.bat、重抽缺SI的文献.bat、重跑精读PRO.bat
+launch/  ← 给人双击的入口（常用 4 个；不常用/ 里 7 个备用与开发用）
+    取全文用的浏览器.bat、导入公众号精读.bat、控制面板.bat、设置与密钥.bat
+    不常用/：更新平台.bat、比一比两个模型.bat、精读监听.bat、诊断报告.bat、连上文献平台（Antigravity用）.bat、重抽缺SI的文献.bat、重跑精读PRO.bat
 outputs/  ← 外部 agent 的产物 / 草稿，不进版本库
 scratch/  ← 外部 agent 的产物 / 草稿，不进版本库
 shared/  ← 共用件：被 ≥2 个工具用到才允许住这里

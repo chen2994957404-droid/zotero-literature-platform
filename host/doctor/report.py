@@ -9,7 +9,7 @@ Claude **看不见那台机器的任何东西** —— 能拿到的只有用户�
 所以这个脚本的目标是：**一次把该看的全给全，避免来回追问**。
 一次往返（你双击 → 把报告丢给 Claude）就能定位问题，而不是问五轮。
 
-用法：双击「诊断报告.bat」，或 `python host/doctor/report.py`
+用法：双击「不常用/诊断报告.bat」，或 `python host/doctor/report.py`
 产物：data/logs/诊断报告.txt（同时尝试复制到剪贴板）
 """
 import io
@@ -92,7 +92,7 @@ def collect():
     else:
         out.append('⚠⚠ 项目包没装好，读不到本机配置：' + CORE_ERR)
         out.append('    修法：在项目文件夹里跑一次  python -m pip install -e . --no-deps')
-        out.append('    （或双击「更新平台.bat」，它的第 2 步就是装包）')
+        out.append('    （或双击「不常用/更新平台.bat」，它的第 2 步就是装包）')
     out.append(f'项目路径：{ROOT}')
     out.append(f'Python：{sys.version.split()[0]}  {sys.executable}')
 
@@ -195,7 +195,7 @@ def collect():
         beat.append('进展信号：缺失')
         beat.append('  ⚠ 新版 watcher 才写这个信号 —— 缺失说明它**还在跑旧代码**。')
         beat.append('    旧代码在精读期间不报活，会被看门狗中途杀掉（踩坑 #61）。')
-        beat.append('    双击「更新平台.bat」会把它换成新代码。')
+        beat.append('    双击「不常用/更新平台.bat」会把它换成新代码。')
     elif prog is None:
         beat.append('进展信号：缺失（watcher 本来就没在跑）')
     else:

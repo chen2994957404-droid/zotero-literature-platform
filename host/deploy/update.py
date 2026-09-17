@@ -20,7 +20,7 @@
 读进内存了，所以这个脚本**可以安全地更新自己** —— 本次运行仍用旧逻辑跑完，
 下次运行才用新逻辑。放在 .bat 里则可能读到改到一半的文件。
 
-用法：双击「更新平台.bat」，或 `python host/deploy/update.py`
+用法：双击「不常用/更新平台.bat」，或 `python host/deploy/update.py`
 """
 import os
 import re

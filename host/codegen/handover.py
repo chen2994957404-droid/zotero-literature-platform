@@ -146,9 +146,12 @@ def tree():
                 # 这里装的是给人双击的 .bat（文件名 = 按钮标签），不是 .py。
                 # 按 .py 数会永远显示「0 个脚本」，等于没画。
                 bats = sorted(os.path.basename(f) for f in glob.glob(os.path.join(p, '*.bat')))
-                lines.append(f'{d}/  ← 给人双击的入口（{len(bats)} 个）')
+                rare = sorted(os.path.basename(f) for f in glob.glob(os.path.join(p, '不常用', '*.bat')))
+                lines.append(f'{d}/  ← 给人双击的入口（常用 {len(bats)} 个；不常用/ 里 {len(rare)} 个备用与开发用）')
                 if bats:
                     lines.append('    ' + '、'.join(bats))
+                if rare:
+                    lines.append('    不常用/：' + '、'.join(rare))
             elif d in ('outputs', 'scratch'):
                 # 外部 agent（Codex / Antigravity）丢产物的地方，不进版本库（踩坑 #163）——
                 # 画出来是为了让新会话知道这里的东西不是平台的一部分。
