@@ -683,6 +683,8 @@ class _Intercept:
             # 回 204：导航作废，阅读器 / 下载气泡都不会出现，窗口也就不会被拉起来
             self._cdp.send('Fetch.fulfillRequest', {'requestId': rid, 'responseCode': 204})
         except Exception as e:
+            if 'closed' in str(e).lower():
+                return          # 标签已经关了才送到的迟到事件，没什么可放行的
             log.warn(f'拦截响应出错（{str(e)[:80]}），放行')
             try:
                 self._cdp.send('Fetch.continueResponse', {'requestId': rid})
