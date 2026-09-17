@@ -65,31 +65,33 @@ SERVICES = [
 ]
 BEACON = SERVICES[0]['beacon']     # 老名字，测试与日志还在用
 
-# 看门狗拉起的进程各自持有的单实例锁（`shared.kernel.proc_lock`）。
-# **重启计划任务时要按这些锁把它们全停掉**：任务停的只是看门狗，孙子进程照跑旧代码（踩坑 #62）——
-# 面板的重启按钮与 `host.deploy.update` 都从这里取，别各写一份。
-CHILD_LOCKS = ('zotero_watcher', 'ingest_loop', 'daily')
-# 锁名 → 它的报活名。杀完顺手把报活文件删掉，新看门狗第一轮就把它拉起来 ——
-# 不删的话报活文件还新鲜（后台线程 30 秒写一次），要等 5 分钟过期才重启（2026-09-17 部署时实测）。
-_LOCK_BEACON = {'zotero_watcher': 'watcher', 'ingest_loop': 'ingest'}
+# 看门狗拉起的三个孙子进程。**重启计划任务时要把它们全停掉**：任务停的只是看门狗，
+# 孙子进程照跑旧代码（踩坑 #62）—— 面板的重启按钮与 `host.deploy.update` 都从这里取，别各写一份。
+# 认的是**命令行里的模块路径**（同 SERVICES 的 pat），不认锁文件：锁文件里的 PID 活没活要问 tasklist，
+# 那一步在无窗口会话里会误判（2026-09-17 部署时拿着一个早死的 PID 报「已停掉」，真活着的没停）。
+CHILD_LOCKS = ('zotero_watcher', 'ingest_loop', 'daily')     # 各自的单实例锁名（面板显示用）
+_CHILD_PATS = [(s['name'], s['pat'], s['beacon']) for s in SERVICES] + [('daily', "'host[" + chr(92) * 2 + "./]daily'", '')]
 
 
-def kill_children(run):
-    """按锁文件把三个孙子进程停掉。`run(cmd, timeout)` 由调用方给（面板与部署各有自己的静默 run）。"""
-    from shared.kernel.proc_lock import holder
+def kill_children(run=None):
+    """停掉三个孙子进程并清掉它们的报活 / 进度文件，让新看门狗**第一轮**就用新代码把它们拉起来。
+
+    不清信号文件的话，刚被杀的进程留下的是新鲜心跳（后台线程 30 秒写一次），
+    新看门狗要等满 300 秒才发现没人干活。`run` 参数已不用，留着不改调用方。
+    """
     killed = []
-    for lock in CHILD_LOCKS:
-        pid = holder(lock)
-        if pid:
-            run(['taskkill', '/PID', str(pid), '/F'], timeout=30)
-            killed.append(f'{lock}={pid}')
-            beacon = _LOCK_BEACON.get(lock)
-            if beacon:
+    for name, pat, beacon in _CHILD_PATS:
+        for pid in find_pids(pat):
+            _sp.run(['taskkill', '/F', '/PID', pid], timeout=20)
+            killed.append(f'{name}={pid}')
+        if beacon:
+            for kind in (heartbeat.ALIVE, heartbeat.PROGRESS):
                 try:
-                    os.remove(heartbeat.path(beacon, heartbeat.ALIVE))
+                    os.remove(heartbeat.path(beacon, kind))
                 except OSError:
                     pass
     return killed
+
 
 # ── 每日一次的作业 ───────────────────────────────────────────────────────────
 DAILY_MODULE = 'host.daily'

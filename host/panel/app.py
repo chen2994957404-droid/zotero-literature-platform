@@ -725,7 +725,7 @@ def action_restart(task_name):
         #   所以这里要按锁文件把真正干活的那个进程也停掉，让它带着新配置重新起。
         if _TASK_CHILDREN.get(task_name):
             from host.watcher.watchdog import kill_children
-            kill_children(lambda cmd, timeout: _run(cmd, timeout=timeout))
+            kill_children()
         r = _run(['powershell', '-NoProfile', '-NonInteractive', '-Command',
                   f'Start-ScheduledTask -TaskName {task_name}'], timeout=40)
         if r.returncode == 0:

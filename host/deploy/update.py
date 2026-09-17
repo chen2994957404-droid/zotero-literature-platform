@@ -170,47 +170,26 @@ def stop_panel():
 
 
 def stop_watcher():
-    """停掉旧 watcher，并清掉它的信号文件，好让看门狗**立刻**用新代码把它拉起来。
+    """停掉旧的干活进程（精读监听 / 落地流水线 / 每日作业），清掉信号文件，好让看门狗**立刻**用新代码把它们拉起来。
 
     **为什么光重启计划任务不够**（2026-08-27 实测）：计划任务拉起的是看门狗，
-    watcher 是看门狗**另外 spawn 的独立进程**。停任务只换掉看门狗，
-    老 watcher 照常活着 —— 对比两次诊断报告：看门狗 PID 变了，
-    watcher PID 一模一样，新代码根本没生效。
+    干活的进程是看门狗**另外 spawn 的独立进程**。停任务只换掉看门狗，
+    老进程照常活着 —— 对比两次诊断报告：看门狗 PID 变了，watcher PID 一模一样，新代码根本没生效。
 
-    清信号文件是关键一步：只杀不清的话，刚被杀的 watcher 留下的是**新鲜**心跳，
+    清信号文件是关键一步：只杀不清的话，刚被杀的进程留下的是**新鲜**心跳，
     新看门狗会认为「它还活着」，要等满 300 秒才发现没人干活。
-    清掉之后看门狗一上来就判「信号缺失」，当场拉起。
 
-    ⚠ **认模块路径，不认单个词**（与 `host/watcher/watchdog.py` 里同一条判据）。
-    这里曾经匹配 `*deepread*watcher*`，R7 把服务搬去 `host/watcher/service.py`
-    之后就再也匹配不到 —— 「停掉旧 watcher」会安静地报「没有 watcher 在跑」，
-    然后老进程带着旧代码继续活着。**部署脚本自己失效，是最难发现的那一类。**
+    2026-09-17 起看门狗管三个进程，停哪些、怎么认（**认模块路径，不认单个词**，踩坑 #81）
+    只在 `host.watcher.watchdog.kill_children` 一处定义 —— 这里抄一遍，下次再搬家又会安静失效。
     """
     if os.name != 'nt':
         return '（非 Windows，跳过）'
-    me = os.getpid()
-    script = (
-        "$hit = Get-CimInstance Win32_Process -Filter "
-        "\"Name='python.exe' or Name='pythonw.exe'\" | "
-        "Where-Object { $_.CommandLine -match 'watcher[\\\\./]service' -and "
-        f"$_.ProcessId -ne {me} }}; "
-        "if ($hit) { $hit | ForEach-Object { "
-        "  Write-Output ('停掉旧 watcher PID=' + $_.ProcessId); "
-        "  Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } } "
-        "else { Write-Output '没有 watcher 在跑' }"
-    )
-    _ok, out = run(ps(script), timeout=120, quiet=True)
-    msgs = [out.strip() or '（无输出）']
-    try:
-        from shared.kernel import heartbeat
-        for kind in (heartbeat.ALIVE, heartbeat.PROGRESS):
-            f = heartbeat.path('watcher', kind)
-            if os.path.exists(f):
-                os.remove(f)
-        msgs.append('已清掉心跳/进度信号，看门狗会立刻用新代码把 watcher 拉起来')
-    except Exception as e:
-        msgs.append(f'（信号文件没清掉：{e} —— 看门狗最多 5 分钟后也会发现）')
-    return chr(10).join(msgs)
+    from host.watcher.watchdog import kill_children
+    killed = kill_children()
+    if not killed:
+        return '没有干活的进程在跑（信号文件已清）'
+    return ('已停掉旧的干活进程：' + '、'.join(killed) + chr(10)
+            + '已清掉心跳/进度信号，看门狗会立刻用新代码把它们拉起来')
 
 
 def _task_action(task):
@@ -269,15 +248,6 @@ def repair_tasks():
 def restart_tasks():
     """重启计划任务，让 watcher 加载新代码。只在运行端做。"""
     msgs = []
-    # 停任务只停得掉看门狗；它拉起的 watcher / 落地流水线 / 每日作业是孙子进程，会揣着旧代码继续跑
-    # （踩坑 #62）。按锁把它们停掉，新看门狗起来后一分钟内会用新代码重新拉起。
-    try:
-        from host.watcher.watchdog import kill_children
-        killed = kill_children(lambda cmd, timeout: run(cmd, timeout=timeout, quiet=True))
-        if killed:
-            msgs.append('已停掉旧的干活进程：' + '、'.join(killed))
-    except Exception as e:
-        msgs.append(f'停旧进程失败（新代码可能没生效）：{e}')
     for task in RESTART_TASKS:
         script = (f"try {{ Stop-ScheduledTask -TaskName '{task}' -ErrorAction SilentlyContinue; "
               f"Start-Sleep -Seconds 1; Start-ScheduledTask -TaskName '{task}' "
