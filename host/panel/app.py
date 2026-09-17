@@ -1250,9 +1250,12 @@ function renderRouting(r, b){
        <td><button class="ghost" onclick="rtAddChannel()">加一条</button></td></tr></table>`;
   // ② 用途
   h += `<h3 style="margin:18px 0 6px;font-size:15px">② 谁用哪条通道<span class="hint" style="font-weight:normal">（每个环节：走哪条通道 + 用哪个模型；主用不行自动切备用）</span></h3>
-  <table><tr><th>用途</th><th>主用通道</th><th>模型</th><th>备用通道</th><th>备用模型</th><th>状态</th></tr>`
+  <div class="hint" style="margin:-4px 0 8px">「本地能行吗」一列是按实测/推断给的估算（鼠标放上去看依据）：<span style="color:#35c15f">●</span> 能用 <span style="color:#f0ad2e">●</span> 差一截 <span style="color:#e2504a">●</span> 别用本地。挑模型时先看这一列，再决定通道。</div>
+  <table><tr><th>用途</th><th>本地能行吗</th><th>主用通道</th><th>模型</th><th>备用通道</th><th>备用模型</th><th>状态</th></tr>`
   + Object.keys(RT.purposes).map(pid=>{const u=RT.purposes[pid]; const sel=(id,val,allowEmpty)=>`<select onchange="RT.purposes['${pid}'].${id}=this.value;this.parentNode.nextElementSibling.querySelector('input').setAttribute('list','ml_'+chIdx(this.value))">${allowEmpty?`<option value="">（无）</option>`:''}${chNames.map(n=>`<option value="${esc(n)}"${val===n?' selected':''}>${esc(n)}</option>`).join('')}</select>`;
+    const LV={ok:['#35c15f','能用'],meh:['#f0ad2e','差一截'],no:['#e2504a','别用本地'],only:['#4a9de0','本来就本地']}[u.local]||['#ccc','没评估'];
     return `<tr><td><b>${esc(u.label)}</b><div class="hint">${(u.needs||[]).join('/')}${u.note?'<br>⚠ '+esc(u.note):''}</div></td>
+     <td title="${esc(u.local_why||'')}" style="cursor:help"><span style="color:${LV[0]}">●</span> ${LV[1]}<div class="hint" style="max-width:220px;font-size:11px">${esc((u.local_why||'').split('；')[0])}</div></td>
      <td>${sel('channel',u.channel,false)}</td>
      <td><input style="width:190px" list="ml_${chIdx(u.channel)}" value="${esc(u.model||'')}" placeholder="点一下选，也能手输" onchange="RT.purposes['${pid}'].model=this.value.trim()"></td>
      <td>${u.no_fallback?'<span class="hint">不许配备用<br>（换模型=向量库重建）</span>':sel('fallback',u.fallback,true)}</td>

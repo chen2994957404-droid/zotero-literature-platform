@@ -66,7 +66,8 @@ BUILTIN_CHANNELS = {
                 '照样能调 qwen-plus 等通用模型（2026-09-12 实测）'},
     'ollama-本地': {
         'base': 'http://localhost:11434', 'key': '', 'kind': 'ollama',
-        'caps': ['text', 'json', 'embed'],
+        # thinking：Ollama 顶层 think=False 能关推理链（踩坑 #155 修好后可信），精读走这里不再被拦
+        'caps': ['text', 'json', 'thinking', 'embed'],
         'note': '免费，但 7B 看图会编假数据，别拿它做图表数字化'},
 }
 
@@ -78,27 +79,46 @@ _PREFIX_GUESS = (('gemini-', 'gemini-官方'), ('deepseek-', 'deepseek-官方'),
 # id 是代码里用的名字（调用方写 purpose='DEEPREAD'），label 给人看。
 # setting 是老的模型设置项名 —— 兼容：老配置里改过的模型名照样生效。
 # needs 是这个用途要求的能力，通道不满足就报。
+# local：这个用途**能不能用本地模型**（用户 2026-09-17 定的方针：能本地的都本地）。
+#   ok = 有实测、能用；meh = 能跑但差一截（实测或强推断）；no = 别用本地；only = 本来就只在本地。
+#   why 给人看，写清「凭什么这么说」—— 有实测写实测，没实测写「未实测」，别把推断说成事实。
 PURPOSES = {
     'DEEPREAD':       {'label': '精读',           'setting': 'DEEPREAD_MODEL',
-                       'needs': ['text', 'thinking']},
+                       'needs': ['text', 'thinking'],
+                       'local': ('ok', '本地 qwen3.5（9.7B）金标 40 篇均分 90.6、0 编数（2026-09-15 实测）；'
+                                       '代价是慢（约 4 分钟/篇，云端约 1 分钟）、图上的数漏得多一点。'
+                                       '云端同批对照还没跑，差多少不知道')},
     'EXTRACT':        {'label': '结构化抽取',     'setting': 'EXTRACT_MODEL',
-                       'needs': ['text', 'json']},
+                       'needs': ['text', 'json'],
+                       'local': ('meh', '2026-08-28 同料实测：本地不编数，但只抽到云端 1/4 的数字、不带样品编号；'
+                                        '抽取是一次性活、全库几块钱，买的是数据干净 → 建议留云端')},
     'ASK':            {'label': '问答',           'setting': 'ASK_MODEL',
-                       'needs': ['text']},
+                       'needs': ['text'],
+                       'local': ('meh', '输入是检索到的几段原文、输出一段带来源的中文；小模型综合多来源时容易漏引或混淆出处。'
+                                        '未实测，可以试：答错了不入库、随时切回')},
     'AUTOTAG':        {'label': '自动打标签',     'setting': 'AUTOTAG_MODEL',
-                       'needs': ['text', 'json']},
+                       'needs': ['text', 'json'],
+                       'local': ('ok', '标题+摘要 → 几个标签的 JSON，短输入短输出，小模型胜任。'
+                                       '（这条线已弃用：用户被 707 个自动标签坑过，现在不自动打标签）')},
     'BRAINSTORM':     {'label': '研究构想',       'setting': 'BRAINSTORM_MODEL',
-                       'needs': ['text']},
+                       'needs': ['text'],
+                       'local': ('no', '要的是跨领域的知识面与推理，10B 本地模型知识面窄、容易泛泛而谈；'
+                                       '单次调用、花不了几分钱 → 留云端最划算。未实测')},
     'DIRECTION_QUAD': {'label': '方向层摘要抽取', 'setting': 'DIRECTION_QUAD_MODEL',
-                       'needs': ['text', 'json']},
+                       'needs': ['text', 'json'],
+                       'local': ('ok', '一段摘要 → 固定字段的 JSON，跟打标签同一量级；而且是几百篇的批量活，'
+                                       '本地免费最合适。未逐篇对照，建议先跑 20 篇抽查')},
     'DIGITIZE':       {'label': '图表数字化',     'setting': 'DIGITIZE_MODEL',
-                       'needs': ['vision']},
+                       'needs': ['vision'],
+                       'local': ('no', '本地 7B 视觉模型会把曲线编成等差数列（踩坑 #15/#16 对照实验的决定性结论）；'
+                                       '主力机现在也没装视觉模型。必须云端')},
     # 向量化（2026-09-11 纳入）。以前走另一个适配器、本地独占、裸 os.environ 读模型名、不记账。
     # ⚠ 它和别的用途有一条本质区别：**不许有备用通道**。换了嵌入模型，
     #   整个向量库（主力机 13906 块）全部作废要重建 —— 两家的向量互不兼容。
     #   别的用途「主用不行切备用」是好事，向量化这么干是灾难。problems() 会拦。
     'EMBED':          {'label': '向量化',         'setting': None, 'default': 'bge-m3',
                        'needs': ['embed'], 'no_fallback': True,
+                       'local': ('only', '本来就是本地 bge-m3，免费；换模型 = 全库重建向量'),
                        'note': '换模型 = 整个向量库要重建（跑一次全库向量化）'},
 }
 
@@ -182,8 +202,10 @@ def purposes():
         inferred = not channel
         if inferred:
             channel = guess_channel(model)
+        lv, lw = meta.get('local', ('', ''))
         out[pid] = {'label': meta['label'], 'needs': list(meta['needs']),
                     'note': meta.get('note', ''), 'no_fallback': bool(meta.get('no_fallback')),
+                    'local': lv, 'local_why': lw,
                     'channel': channel, 'model': model,
                     'fallback': (u.get('fallback') or '').strip(),
                     'fallback_model': (u.get('fallback_model') or '').strip(),
