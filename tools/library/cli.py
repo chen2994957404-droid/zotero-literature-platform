@@ -9,6 +9,7 @@
     python -m tools.library 找 "配比" --si                # 只搜补充材料
     python -m tools.library 引文 ABCD1234                 # 参考文献，标出库里已有的
     python -m tools.library stats                       # Zotero 统计 + 通不通
+    python -m tools.library 盘点 [--明细]                # 库里有什么：类型 / 正文 / SI 三态 / 精读，两边对上
     python -m tools.library search 聚硼硅氧烷 --limit 10  # 搜标题作者年份
     python -m tools.library search 硼 --all              # --all = 连全文一起搜
     python -m tools.library search --tag 待处理          # 按标签
@@ -38,6 +39,10 @@ def main():
         print(__doc__)
         return 0
     action = (pos(0) or 'stats').lower()
+
+    if action in ('盘点', 'census'):
+        from tools.library import census
+        return census.main()
 
     if action in ('找', 'retrieve'):
         q = pos(1)
