@@ -69,6 +69,9 @@ BEACON = SERVICES[0]['beacon']     # 老名字，测试与日志还在用
 # **重启计划任务时要按这些锁把它们全停掉**：任务停的只是看门狗，孙子进程照跑旧代码（踩坑 #62）——
 # 面板的重启按钮与 `host.deploy.update` 都从这里取，别各写一份。
 CHILD_LOCKS = ('zotero_watcher', 'ingest_loop', 'daily')
+# 锁名 → 它的报活名。杀完顺手把报活文件删掉，新看门狗第一轮就把它拉起来 ——
+# 不删的话报活文件还新鲜（后台线程 30 秒写一次），要等 5 分钟过期才重启（2026-09-17 部署时实测）。
+_LOCK_BEACON = {'zotero_watcher': 'watcher', 'ingest_loop': 'ingest'}
 
 
 def kill_children(run):
@@ -80,6 +83,12 @@ def kill_children(run):
         if pid:
             run(['taskkill', '/PID', str(pid), '/F'], timeout=30)
             killed.append(f'{lock}={pid}')
+            beacon = _LOCK_BEACON.get(lock)
+            if beacon:
+                try:
+                    os.remove(heartbeat.path(beacon, heartbeat.ALIVE))
+                except OSError:
+                    pass
     return killed
 
 # ── 每日一次的作业 ───────────────────────────────────────────────────────────
