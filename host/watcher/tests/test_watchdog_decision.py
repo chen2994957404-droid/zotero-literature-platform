@@ -139,5 +139,8 @@ class TestDailyDue:
 
     def test_拉过之后印章落盘(self, wd, monkeypatch):
         monkeypatch.setattr(wd, 'spawn_module', lambda *a, **k: None)
+        # 别往真的 watchdog.log 里写「已拉起每日作业」—— 主力机上跑体检时这行混进生产日志，
+        # 看起来像每日作业被拉了三次（2026-09-17 实测把自己吓了一跳）
+        monkeypatch.setattr(wd, 'log', lambda *a, **k: None)
         wd.launch_daily()
         assert not wd.daily_due(self._at('23:00'))

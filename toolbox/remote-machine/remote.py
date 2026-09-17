@@ -510,6 +510,12 @@ def cmd_check():
 
 
 def cmd_run(script):
+    """跑一段 PowerShell。**先进项目目录**（配了 root 的话）——
+    2026-09-17 实测：`run "git status"` 在对面的家目录里跑，回一句 not a git repository，
+    每条命令都得自己拼 Set-Location，忘一次就白跑一次。`job` 的外壳早就这么做了，这里对齐。
+    """
+    if ROOT_R and not flag('--no-cd'):
+        script = f'Set-Location "{ROOT_R}"; ' + script
     ok, out = call(script, timeout=int(opt('--timeout') or 300))
     print(out)
     return 0 if ok else 1
@@ -567,8 +573,14 @@ def cmd_deploy():
         print('这台机器没配 deploy_cmd —— 在配置里写上「上线脚本怎么跑」再用这条。')
         return 2
     print(f'在对面跑：{M["deploy_cmd"]}' + _NL)
-    ok, out = call(f'Set-Location "{ROOT_R}"; {M["deploy_cmd"]}',
-                   timeout=int(opt('--timeout') or 1800))
+    timeout = int(opt('--timeout') or 1800)
+    # 走 job 通道（对面自己的登录会话）而不是 ssh 会话（2026-09-17）：
+    # 上线脚本最后一步是完整体检，ssh 会话里读不到凭据库（陷阱 1），体检必然报
+    # 「缺 DEEPSEEK_KEY / MINERU_TOKEN」两个 FAIL —— 每次部署都要人去分辨那是假红。
+    # 通道没装（或明确 --ssh）才退回 ssh。
+    if M['job_task'] and not flag('--ssh'):
+        return cmd_job(M['deploy_cmd'], wait=True, timeout=timeout)
+    ok, out = call(f'Set-Location "{ROOT_R}"; {M["deploy_cmd"]}', timeout=timeout)
     print(out)
     return 0 if ok else 1
 

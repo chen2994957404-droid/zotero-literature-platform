@@ -18,7 +18,7 @@ description: 涉及写回 Zotero、跑花钱的批量作业、起常驻服务（
 | Claude Code | **只在这里** | 没有 |
 | Ollama | 无（MX450 只有 2 GB，跑不动 bge-m3） | 有，带保活任务 |
 | Zotero 桌面 | 已装，平时不常开 | **常开**（本地 API 要它） |
-| 项目路径 | `D:\dev\zotero-literature-platform` | `D:\02_AI\Projects\zotero-literature-platform` |
+| 项目路径 | `D:\dev\literature-platform` | `D:\02_AI\Projects\literature-platform` |
 | `data/`（五层） | 测试账号自产的几篇 | **权威副本** |
 | 自启任务 | **一个都不注册** | 4 个：Watcher / Ollama / ZoteroApp / AutoSync |
 
@@ -59,12 +59,20 @@ description: 涉及写回 Zotero、跑花钱的批量作业、起常驻服务（
 
 ## 四、连 B 机（A 能直接连了，2026-08-28）
 
-⚠ **工具不在本仓库里** —— 2026-09-04 拆走了：它讲的是「怎么操作另一台 Windows」，
-跟文献毫无关系，现在住在独立项目 `D:\dev
-emote-machine`，
-并装成**全局技能 `remote-machine`**（任何项目都能用）。
+工具在 `toolbox/remote-machine/remote.py`（2026-09-08 并回仓库，同时装成**全局技能 `remote-machine`**）。
 连 B 的姿势、四种「连不上」怎么分、编码在哪四个地方咬人 —— **全在那份技能里，读它**。
 本节只留下「本项目特有」的那部分。
+
+**先说结论，别每次重新摸索**（2026-09-17 实测）：`check` 3.5 秒、`run` 1.5 秒、`job` 5 秒往返，
+连接本身不慢；慢的从来是**人**在犹豫走哪条路、拼引号、等超时。照下面这张表走，一次到位：
+
+| 要干的事 | 一条命令 |
+|---|---|
+| 看 B 现在什么状态 | `remote.py check` |
+| 看某个日志尾巴 | `remote.py logs zotero_watcher 40`（`watchdog` / `ingest` / `daily` / `auto_sync` 同理）|
+| 跑只读命令（已自动进项目目录） | `remote.py run "git log --oneline -3"` |
+| **上线**（推完 git 之后） | `remote.py deploy` —— 走 job 通道，体检里的密钥项才是真的；它会停掉旧的干活进程 |
+| 跑要密钥 / 花钱的活 | `remote.py job "python -m tools.xxx ..." --async` 然后 `job --tail` |
 
 ```bash
 python toolbox/remote-machine/remote.py check     # ← 用这个，别手敲 ssh
