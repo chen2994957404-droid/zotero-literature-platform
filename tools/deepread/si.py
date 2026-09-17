@@ -134,8 +134,10 @@ def _call_llm(user, model, log=print):
     last = ''
     for i, budget in enumerate(_BUDGETS, 1):
         try:
+            # num_ctx 只对本地 Ollama 起作用：输入截到 30000 字符（约 1 万 token）+ 几千字输出，
+            # 默认 16k 装得下但紧（踩坑 #43 那次 0 字输出就是被挤没的），给到 24k。
             out = chat(SYS, user, purpose='DEEPREAD', model=model,
-                       temperature=0.3, max_tokens=budget)
+                       temperature=0.3, max_tokens=budget, num_ctx=24576)
         except Exception as e:
             log(f'  第{i}次调用失败（额度 {budget}）：{str(e)[:120]}')
             continue
@@ -156,7 +158,7 @@ def read_si(key, out_html=None, model=None, log=print):
     """
     key = paths.check_key(key)
     out_html = out_html or paths.si_summary(key)
-    model = model or os.environ.get('SI_MODEL', 'deepseek-v4-flash')  # 输出长 → flash 省钱
+    model = model or None          # None = 路由表定（2026-09-17 起精读走本地时，SI 线跟着走）
 
     si_file, kind = find_si_file(key)
     if not si_file:

@@ -85,6 +85,16 @@ class Result:
         return f'<Result {self.key} {self.state} steps={len(self.steps)}>'
 
 
+def _route_model():
+    """没显式给模型时，状态库里记路由表实际会用的那个（以前记 None，看不出是谁产的）。"""
+    try:
+        from shared.kernel.config import routing
+        p = routing.purposes()['DEEPREAD']
+        return '%s/%s' % (p['channel'], p['model'])
+    except Exception:
+        return ''
+
+
 def _write_meta(key, item=None, model=''):
     """meta.json —— 向量化与问答要靠它知道这篇是什么。写失败不影响精读。"""
     try:
@@ -164,7 +174,7 @@ def run(key, item=None, pdf_path=_ASK, si_exists=_ASK, provider='deepseek',
         if parsed:
             try:
                 with jobs.track(key, STEP_MAIN, producer=main_text.PRODUCER,
-                                model=model, prompt_ver=main_text.PROMPT_VER):
+                                model=model or _route_model(), prompt_ver=main_text.PROMPT_VER):
                     d = (item or {}).get('data', {}) if item else {}
                     main_text.read_main(parsed, paths.summary(key), provider=provider,
                                         model=model, key=llm_key, log=log,
@@ -188,7 +198,7 @@ def run(key, item=None, pdf_path=_ASK, si_exists=_ASK, provider='deepseek',
             with jobs.track(key, STEP_SI, producer=_si.PRODUCER,
                             prompt_ver=_si.PROMPT_VER) as t:
                 out = _si.read_si(key, log=log)
-                t.note(model=os.environ.get('SI_MODEL', 'deepseek-v4-flash'))
+                t.note(model=_route_model())
             si_done = bool(out)
             r._mark(STEP_SI, 'ok' if si_done else 'skipped',
                     '' if si_done else '没有 SI 附件')

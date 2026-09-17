@@ -44,8 +44,15 @@ DONE_TAG = '已精读'                # 只回写附件、不走状态机时打�
 
 
 def _model():
-    """精读输出重 → 默认 flash 省钱；可在控制面板切换。"""
+    """老接口：面板里的模型设置项。批量入口的日志用；真正走哪条路由看 _route_model。"""
     return get_model('DEEPREAD_MODEL')
+
+
+def _route_model():
+    """路由表实际会用的「通道/模型」，记进状态库。"""
+    from shared.kernel.config import routing
+    p = routing.purposes()['DEEPREAD']
+    return '%s/%s' % (p['channel'], p['model'])
 
 
 # ───────────────────────── 回写 Zotero ─────────────────────────
@@ -145,7 +152,7 @@ def read_one(key, force=False, model=None, log=print):
     # 直接调函数，不再拉子进程 —— 失败拿得到原因，不只是退出码。
     # 每次执行都记进 shared.kernel.jobs（哪个模型、哪版提示词、失败原因）。
     with jobs.track(key, STEP_MAIN, producer=main_text.PRODUCER,
-                    model=model or _model(), prompt_ver=main_text.PROMPT_VER):
+                    model=model or _route_model(), prompt_ver=main_text.PROMPT_VER):
         main_text.read_main(parsed, out_html, provider=PROVIDER, model=model, log=log,
                             paper_key=key)
     log(f'  [完成] summary.html {round(os.path.getsize(out_html) / 1024)} KB')
