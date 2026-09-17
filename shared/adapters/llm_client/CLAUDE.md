@@ -32,7 +32,7 @@
 `provider / model / key` 三件套是老路，仍可用，但那是兜底不是主路。
 `purpose` + `model` 同时给 = 走该用途的通道、但用指定模型（「用 pro 重跑」就是这么用）。
 
-用途 id：`DEEPREAD` `EXTRACT` `ASK` `AUTOTAG` `BRAINSTORM` `DIRECTION_QUAD` `DIGITIZE`。
+用途 id：`DEEPREAD` `EXTRACT` `ASK` `AUTOTAG` `DIRECTION_QUAD` `DIGITIZE`。
 
 ## 实测教训教训（都是真实事故）
 

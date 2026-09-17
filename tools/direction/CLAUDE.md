@@ -88,7 +88,7 @@ python -m tools.direction stats
 只是 `source='abstract'` → `tier='摘要'`。于是方向层与细节层住进 `paperdb` 同一张表，
 「摘要档的合成条件是空的」一眼看得出是**料本来就薄**，不是没抽到。
 
-⚠ 这是本工具第二个**花钱**的动作（第一个是 brainstorm），
+⚠ 这是本工具唯一**花钱**的动作（研究构想 brainstorm 已于 2026-09-17 删除：那块交给外部大模型当大脑），
 `main()` 里有 `role.require_prod` 守卫。判重看产物在不在盘上，不另记台账。
 
 ## 下一步（还没做）

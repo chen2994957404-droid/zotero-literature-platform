@@ -16,12 +16,6 @@ python -m tools.direction stats   --band impact
 第一次用一条新窄带：先写 `band.json`（见 CLAUDE.md）→ seeds → build → cluster → report。
 **之后 cluster / report 都不再联网**，可以反复调参数。
 
-想直接要 idea：
-
-```
-python -m tools.direction.brainstorm      # 检索本地库 + 大模型找空白（花钱）
-```
-
 ## 三路种子
 
 | 来源 | 说明 |
@@ -51,4 +45,4 @@ python -m tools.direction quads --band impact               # 这条窄带全跑
 
 ## 花钱吗
 
-建图走 OpenAlex，**免费但很慢**（十几分钟）；`brainstorm` 要大模型，花钱。
+建图走 OpenAlex，**免费但很慢**（十几分钟）；摘要抽取要大模型，花钱。

@@ -7,7 +7,7 @@
 
 ## 怎么用
 
-我是 **prompt**（建图慢、brainstorm 花钱）：
+我是 **prompt**（建图慢、摘要抽取花钱）：
 
 ```
 python -m tools.direction bands                  # 先看有哪些窄带

@@ -52,7 +52,6 @@
 | `build(band, min_df)` | 拉元数据与参考文献，建引用图（联网，十几分钟）|
 | `cluster(band)` / `report(band)` | 聚类 / 出人读的地图（**纯本地，可反复调参**）|
 | `stats(band)` | 这条窄带现在有多少料 |
-| `brainstorm` 子模块 | 结合库里文献做创意发散讨论（找空白、提 idea）|
 
 依赖：shared.adapters.wechat_seed / shared.adapters.openalex / shared.adapters.zotero_client /
 包内的 bibliometrics / shared.kernel。本工具**不联网**（联网都在 adapters 里）。

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""direction 的 MCP 面：一条提示词（建图很慢、brainstorm 花钱 → prompt）。
+"""direction 的 MCP 面：一条提示词（建图很慢、摘要抽取花钱 → prompt）。
 
 本文件只做参数转换，一行业务逻辑都没有。
 """
@@ -26,5 +26,4 @@ def register(server):
             steps=['python -m tools.direction %s --band %s'
                    % (a.get('step') or 'stats', a['band'])],
             notes='一条新窄带的顺序：写 band.json → seeds → build → cluster → report。\n'
-                  'cluster 与 report 不联网，可以反复调参数、反复看。\n'
-                  '只是想「帮我想个 idea」→ `python -m tools.direction.brainstorm`（要大模型）。'))
+                  'cluster 与 report 不联网，可以反复调参数、反复看。'))

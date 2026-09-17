@@ -86,7 +86,8 @@ PURPOSES = {
     'DEEPREAD':       {'label': '精读',           'setting': 'DEEPREAD_MODEL',
                        'needs': ['text', 'thinking'],
                        'local': ('ok', '本地 qwen3.5（9.7B）金标 40 篇均分 90.6、0 编数（2026-09-15 实测）；'
-                                       '代价是慢（约 4 分钟/篇，云端约 1 分钟）、图上的数漏得多一点。'
+                                       '代价是慢（约 4 分钟/篇，云端约 1 分钟）。'
+                                       '漏掉的数多半只在图上（曲线读数、误差棒），文字里本来就没有 —— 只读文字的流程天花板，云端也一样。'
                                        '云端同批对照还没跑，差多少不知道')},
     'EXTRACT':        {'label': '结构化抽取',     'setting': 'EXTRACT_MODEL',
                        'needs': ['text', 'json'],
@@ -100,10 +101,6 @@ PURPOSES = {
                        'needs': ['text', 'json'],
                        'local': ('ok', '标题+摘要 → 几个标签的 JSON，短输入短输出，小模型胜任。'
                                        '（这条线已弃用：用户被 707 个自动标签坑过，现在不自动打标签）')},
-    'BRAINSTORM':     {'label': '研究构想',       'setting': 'BRAINSTORM_MODEL',
-                       'needs': ['text'],
-                       'local': ('no', '要的是跨领域的知识面与推理，10B 本地模型知识面窄、容易泛泛而谈；'
-                                       '单次调用、花不了几分钱 → 留云端最划算。未实测')},
     'DIRECTION_QUAD': {'label': '方向层摘要抽取', 'setting': 'DIRECTION_QUAD_MODEL',
                        'needs': ['text', 'json'],
                        'local': ('ok', '一段摘要 → 固定字段的 JSON，跟打标签同一量级；而且是几百篇的批量活，'

@@ -19,7 +19,7 @@ description: 方向地图：一条窄带里谁做了什么、有哪些簇、空�
 
 ## 怎么用
 
-我是 **prompt**（建图慢、brainstorm 花钱）：
+我是 **prompt**（建图慢、摘要抽取花钱）：
 
 ```
 python -m tools.direction bands                  # 先看有哪些窄带
