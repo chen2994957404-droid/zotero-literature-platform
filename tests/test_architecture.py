@@ -865,7 +865,8 @@ def test_只读的云端封装必须保持只读():
 def test_常驻服务不许在编程端启动():
     """watcher / 看门狗两台都跑会重复精读、重复写回、重复烧钱，标签状态机还会打架。"""
     offenders = []
-    for rel in ('host/watcher/service.py', 'host/watcher/watchdog.py'):
+    for rel in ('host/watcher/service.py', 'host/watcher/watchdog.py',
+                'host/ingest/__main__.py', 'host/daily/__main__.py'):   # 2026-09-17 拆成三个进程
         f = os.path.join(ROOT, rel.replace('/', os.sep))
         if not os.path.isfile(f):
             continue

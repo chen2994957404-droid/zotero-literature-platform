@@ -95,3 +95,49 @@ def test_看门狗盯的名字和watcher报活的名字一致(wd):
     assert f"heartbeat.start('{wd.BEACON}')" in src, (
         f'看门狗盯的是 {wd.BEACON!r}，但 watcher 没有用这个名字报活')
     assert f"heartbeat.progress('{wd.BEACON}')" in src
+
+
+# ── 2026-09-17 起看门狗管三个进程 + 每日作业 ─────────────────────────────
+
+def test_进程表里每个报活名都真有人在用(wd):
+    """看门狗按 beacon 盯进程；进程那头必须真用同一个名字 heartbeat.start，否则永远「报活缺失」→ 每分钟重启一次。"""
+    import importlib
+    for svc in wd.SERVICES:
+        mod = importlib.import_module(svc['module'] + ('.__main__' if svc['module'] == 'host.ingest' else ''))
+        src = open(mod.__file__, encoding='utf-8', errors='replace').read()
+        assert (f"heartbeat.start('{svc['beacon']}')" in src
+                or f"heartbeat.start(BEACON)" in src and f"BEACON = '{svc['beacon']}'" in src), (
+            f'看门狗盯的是 {svc["beacon"]!r}，但 {svc["module"]} 没有用这个名字报活')
+
+
+def test_进程表的正则认不到看门狗自己(wd):
+    """认模块路径不认单个词：`watcher` 一个词会把 host.watcher.watchdog 自己杀掉。"""
+    import re
+    me = 'python -m host.watcher.watchdog'
+    for svc in wd.SERVICES:
+        pat = svc['pat'].strip("'").replace(chr(92) * 2, chr(92))
+        assert not re.search(pat, me), f'{svc["name"]} 的正则 {pat!r} 会匹配到看门狗自己'
+        assert re.search(pat, f'python -m {svc["module"]} {" ".join(svc["args"])}')
+
+
+class TestDailyDue:
+    def _at(self, hhmm):
+        import time
+        y, m, d = 2026, 9, 17
+        h, mi = map(int, hhmm.split(':'))
+        return time.mktime((y, m, d, h, mi, 0, 0, 0, -1))
+
+    def test_今天拉过就不再拉(self, wd):
+        assert not wd.daily_due(self._at('03:00'), last_day='2026-09-17')
+
+    def test_没到凌晨两点不拉(self, wd):
+        assert not wd.daily_due(self._at('01:59'), last_day='2026-09-16')
+
+    def test_过了两点且今天没拉过就拉(self, wd):
+        assert wd.daily_due(self._at('02:00'), last_day='2026-09-16')
+        assert wd.daily_due(self._at('15:00'), last_day='')      # 从没跑过：白天开机也补上
+
+    def test_拉过之后印章落盘(self, wd, monkeypatch):
+        monkeypatch.setattr(wd, 'spawn_module', lambda *a, **k: None)
+        wd.launch_daily()
+        assert not wd.daily_due(self._at('23:00'))

@@ -18,8 +18,9 @@
 | `panel/` | 控制面板（本地网页）—— 用户与整个系统的交互入口 | 双击 `launch/控制面板.bat` |
 | `doctor/` | 一键体检 + 诊断报告 + 产物缺口 | 双击 `launch/诊断报告.bat` |
 | `deploy/` | 拉新代码 + 装包 + 重启服务；数据搬家 | 双击 `launch/更新平台.bat` |
-| `watcher/` | **常驻服务**：盯 Zotero 标签 → 精读 → 抽取 → 回写 → 改标签；每轮顺手跑 `ingest` | 打个标签，剩下不用管 |
-| `ingest/` | **落地流水线**：证据库里有正本没解析的 → MineRU 解析 → 骨架 → 向量化（全部不花大模型钱） | 文献一落地就自动做；`python -m host.ingest` 手动清积压 |
+| `watcher/` | **看门狗 + 精读监听**：看门狗管三个进程；监听只做「盯 Zotero 标签 → 精读 → 抽取 → 回写 → 改标签」 | 打个标签，剩下不用管 |
+| `ingest/` | **落地流水线**（自己的常驻进程 `--loop`）：有正本没解析的 → MineRU 解析 → 骨架 → 向量化（不花大模型钱） | 文献一落地就自动做；`python -m host.ingest` 手动清积压 |
+| `daily/` | **每日作业**（自己的进程，一天拉一次）：盯新刊 → 补摘要 / 分类 → 过线入队 → 自动升 1 级取件 | 不用管；`python -m host.daily` 手动跑一次 |
 | `mcp/` | MCP 协议层：读各 `tools/*/tool.toml` 聚合暴露面 | 在 Claude 里直接用工具 |
 | `codegen/` | 所有生成器：`HANDOVER.md` · `.claude/` · `docs/incidents/` | 不直接碰 |
 | `wechat_import/` | 公众号推送 → Zotero 条目 + **推文本身当正文精读**（串 `getpdf` 与 `deepread`） | 双击 `launch/导入公众号精读.bat` |
@@ -73,12 +74,22 @@ python host/doctor/health_check.py             # 完整档：另加配置、Zote
 **运行时导入检查比语法检查更重要**：语法过 ≠ 能跑（踩坑 #49）。
 另有「关键入口找不到」检查 —— 按**模块名**查，不按文件名（踩坑 #81：搬家会静默失效）。
 
-## watcher：两个进程，别搞混
+## watcher：一个看门狗管三个进程（2026-09-17 起）
 
-`service.py` 是轮询器本体，`watchdog.py` 是看门狗（**只在它真死了才重启，
-绝不打断正在干活的它**）。计划任务拉起的是看门狗，service 是它 spawn 的孙子进程 ——
-所以停任务停不掉 service（踩坑 #62）。找进程要认**模块路径**，只认单个词会出事
-（看门狗自己的命令行里也有 "watcher"，会把自己杀掉）。
+```
+计划任务 ZoteroLiteratureWatcher
+  └─ host.watcher.watchdog（看门狗：每分钟看一眼，死了才重启，绝不打断正在干活的）
+       ├─ host.watcher.service   精读监听（盯标签 → 精读 → 回写）      常驻，锁 zotero_watcher
+       ├─ host.ingest --loop     落地流水线（解析 / 骨架 / 向量化）     常驻，锁 ingest_loop
+       └─ host.daily             盯新刊 + 补摘要 + 升 1 级取件          每天 02:00 后拉一次，锁 daily
+```
+
+**为什么拆**：三件事原来挤在监听的一个循环里串着做，每天一次的盯新刊 + 取件一跑几十分钟，
+用户打的标签得干等。本来就是不同的活，就该是不同的进程；都是等网络的活，同时开着不吃资源。
+
+停任务只停得掉看门狗，三个孙子进程照跑旧代码（踩坑 #62）—— 面板的重启按钮和
+`host.deploy.update` 都走 `watchdog.kill_children()` 按锁把它们停掉。找进程要认**模块路径**
+（`SERVICES[*]['pat']`），只认单个词会出事（看门狗自己的命令行里也有 "watcher"，会把自己杀掉）。
 
 ## mcp：清单驱动，没有硬编码的工具名
 

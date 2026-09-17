@@ -13,6 +13,7 @@ except Exception:
     pass
 
 from shared.adapters.snowball import expand, work_by_doi, _abstract, _norm
+from shared.kernel.cli import flag
 
 # 用户库里真实存在的一篇 PBS 机理文章，方向对口，适合当测试种子
 SEED = '10.1016/j.mtchem.2023.101677'
@@ -44,6 +45,14 @@ def main():
         print('  [PASS] 字段归一（与 sciverse 结构一致，可共用 lib_match）'); ok += 1
     else:
         print(f'  [FAIL] 归一结果异常: {n}')
+
+    # 下面三条真敲 OpenAlex（一次十几秒）。2026-09-17 起默认跳过，`--live` 才跑：
+    # pytest 的壳 + 体检各跑一遍，等网络的时间比验逻辑的时间还长。
+    if not flag('--live'):
+        total -= 3
+        print('  [SKIP] 真实雪球扩展默认不跑（加 --live 才真敲 OpenAlex）')
+        print(f'\n{ok}/{total} 通过')
+        sys.exit(0 if ok == total else 1)
 
     # 3. 查不到的 DOI 返回 None 而不是抛异常（批量时要能跳过）
     if work_by_doi('10.9999/definitely-not-exist-xyz') is None:

@@ -25,7 +25,7 @@
 
     python -m host.ingest              # 把积压的全部做完（幂等，做过的跳过）
     python -m host.ingest --limit 5    # 先做 5 篇
-`host.watcher.service` 每轮顺手做几篇（`ingest.run_backlog(limit=...)`），所以日常不用人管。
+    python -m host.ingest --loop       # 常驻：每 60 秒扫一次（看门狗拉的就是它，日常不用人管）
 """
 import io
 import os

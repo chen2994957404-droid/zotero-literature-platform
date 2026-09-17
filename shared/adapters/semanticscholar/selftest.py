@@ -8,6 +8,7 @@ except Exception:
     pass
 
 from shared.adapters import semanticscholar as s2
+from shared.kernel.cli import flag
 
 REC = {'paperId': 'abc', 'externalIds': {'DOI': '10.1038/S41467-024-45485-8'}, 'title': 'Tough  double\nnetwork',
        'abstract': 'x' * 10, 'tldr': {'text': ' one line '}, 'citationCount': 348,
@@ -28,6 +29,12 @@ def main():
         print('  [PASS] 查不到 → None'); ok += 1
     else:
         print('  [FAIL] None 没原样返回')
+    # 2026-09-17：真敲 S2 一次要十几秒（公共池常 429、带退避），pytest 与体检各跑一遍就是半分钟；
+    # 默认跳过，`--live` 才真调。
+    if not flag('--live'):
+        print('  [SKIP] 真实批量查询默认不跑（加 --live 才真敲 Semantic Scholar）')
+        print('\n%d/%d 通过' % (ok, total))
+        sys.exit(0 if ok == total else 1)
     try:
         got = s2.papers(['10.1038/s41467-024-45485-8', '10.9999/not-a-real-doi'])
         total += 1

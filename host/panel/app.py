@@ -126,7 +126,7 @@ def collect_all():
 def collect_processes():
     """本平台相关的 python 进程。用 CIM 查，比 wmic 可靠。"""
     ps = ("Get-CimInstance Win32_Process -Filter \"Name like 'python%'\" | "
-          "Where-Object {$_.CommandLine -match 'deepread|watchdog|watcher|"
+          "Where-Object {$_.CommandLine -match 'deepread|watchdog|watcher|ingest|daily|"
           "extract|vectorize|curate|discover|direction|panel'} | "
           "Select-Object ProcessId,CreationDate,CommandLine | ConvertTo-Json -Compress")
     # 走 subproc 模块：面板每 15 秒刷新一次，裸调 powershell 会不停闪窗口（踩坑 #31）
@@ -198,8 +198,8 @@ def collect_alerts():
     return alerts
 
 
-JOB_LABELS = {'watcher': '精读监听', 'ingest': '落地流水线', 'getpdf': '取全文', 'golden': '金标取件',
-              'journalwatch-backfill': '雷达回填'}
+JOB_LABELS = {'watcher': '精读监听', 'ingest': '落地流水线', 'daily': '每日作业（盯新刊 + 升1级）',
+              'getpdf': '取全文', 'golden': '金标取件', 'journalwatch-backfill': '雷达回填'}
 
 
 def collect_progress():
@@ -619,7 +619,7 @@ def action_selftest(name):
 
 
 def collect_logs(name='zotero_watcher', lines=40):
-    safe = {'zotero_watcher', 'watchdog', 'auto_sync'}      # 白名单，防路径穿越
+    safe = {'zotero_watcher', 'watchdog', 'ingest', 'daily', 'auto_sync'}      # 白名单，防路径穿越
     if name not in safe:
         return ['(不允许的日志名)']
     p = paths.log(name)
@@ -699,7 +699,9 @@ def collect_recent_reads(n=8):
 
 # 任务 → 它真正干活的那个进程持有的锁名（`shared.kernel.proc_lock`）。
 # 重启任务时要连这个进程一起停，否则新配置进不去（见 action_restart）。
-_TASK_LOCKS = {'ZoteroLiteratureWatcher': 'zotero_watcher'}   # 锁名见 host/watcher/service.py
+# 2026-09-17 起看门狗管三个进程：精读监听、落地流水线常驻、每日作业 —— 重启任务要把它们全停掉，
+# 锁名收在 host.watcher.watchdog.CHILD_LOCKS（部署脚本也用它），别在这里另抄一份
+_TASK_CHILDREN = {'ZoteroLiteratureWatcher': True}
 
 def action_restart(task_name):
     """重启一个自启任务。
@@ -721,12 +723,9 @@ def action_restart(task_name):
         #   停任务不会停 watcher。于是「重启」之后 watcher 还揣着启动那一刻的配置。
         #   2026-08-28 就栽在这儿：密钥换新了、任务也重启了，watcher 照用旧密钥。
         #   所以这里要按锁文件把真正干活的那个进程也停掉，让它带着新配置重新起。
-        lock = _TASK_LOCKS.get(task_name)
-        if lock:
-            from shared.kernel.proc_lock import holder
-            pid = holder(lock)
-            if pid:
-                _run(['taskkill', '/PID', str(pid), '/F'], timeout=30)
+        if _TASK_CHILDREN.get(task_name):
+            from host.watcher.watchdog import kill_children
+            kill_children(lambda cmd, timeout: _run(cmd, timeout=timeout))
         r = _run(['powershell', '-NoProfile', '-NonInteractive', '-Command',
                   f'Start-ScheduledTask -TaskName {task_name}'], timeout=40)
         if r.returncode == 0:
@@ -1017,6 +1016,8 @@ pre{background:#20232a;color:#c8d0dc;padding:12px;border-radius:8px;font-size:12
     <select id="logname" onchange="loadLog()">
       <option value="zotero_watcher">精读监听</option>
       <option value="watchdog">看门狗</option>
+      <option value="ingest">落地流水线</option>
+      <option value="daily">每日作业</option>
       <option value="auto_sync">自动同步</option>
     </select>
     <button class="ghost" onclick="loadLog()">刷新日志</button>

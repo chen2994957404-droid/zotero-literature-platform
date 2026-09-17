@@ -100,7 +100,10 @@ host  →  tools  →  shared.domain / shared.adapters  →  shared.kernel
 
 ### 新增共用件 `shared/<环>/<名>/`：必备文件缺一不可
 - `__init__.py` —— docstring 写清「解决的真实问题 + 用法」，公开函数列表用表格注释
-- `selftest.py` —— **不联网、不依赖用户数据**的纯逻辑自测（体检会挨个跑）
+- `selftest.py` —— **不联网、不依赖用户数据、不花钱**的纯逻辑自测（体检会挨个跑，pytest 也有壳跑它）。
+  要验「真实 API 通不通」那一条，**必须**藏在 `flag('--live')` 后面、默认 SKIP ——
+  「没密钥就跳过」不算：有密钥的机器上它就会每次体检都真敲一遍（踩坑 #164：一天白花十几次 DeepSeek；
+  S2 一次 14 秒还会 429）
 - `CLAUDE.md` —— 照 `shared/kernel/config/CLAUDE.md` 的版式
 
 **只做一件不可再分的事。** 想在模块里加「顺便还做 XX」时，XX 属于上层。

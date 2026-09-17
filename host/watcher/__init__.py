@@ -14,15 +14,17 @@ REBUILD.md 第一节对 host 的定义本身：**host 不是能力，是让平�
 正是这个定义。而硬规则 4 明写「`host/` 可以 import 一切」——
 跨工具的编排本来就该发生在这一层。
 
-## 两个进程，别搞混
+## 一个看门狗，三个干活的进程（2026-09-17 起）
 
 | 模块 | 是什么 | 怎么起 |
 |---|---|---|
-| `service.py`  | 轮询器本体：发现标签 → 精读 → 抽取 → 回写 Zotero → 改标签 | `python -m host.watcher.service` |
-| `watchdog.py` | 看门狗：`service` 真死了才重启它，**绝不打断正在干活的它** | `python -m host.watcher.watchdog` |
+| `watchdog.py` | 看门狗：下面三个真死了才重启，**绝不打断正在干活的** | `python -m host.watcher.watchdog` |
+| `service.py`  | 精读监听：发现标签 → 精读 → 抽取 → 回写 Zotero → 改标签（**只做这一件**） | `python -m host.watcher.service` |
+| `host.ingest --loop` | 落地流水线常驻（另一个包） | 看门狗拉 |
+| `host.daily` | 每日作业：盯新刊 + 补摘要 + 升 1 级取件（另一个包，一天一次） | 看门狗拉 |
 
-日常由任务计划 `ZoteroLiteratureWatcher` 拉起**看门狗**，看门狗再 spawn 出
-`service` —— 所以停任务停不掉 service（它是孙子进程，踩坑 #62）。
+日常由任务计划 `ZoteroLiteratureWatcher` 拉起**看门狗**，看门狗再 spawn 出三个
+干活的 —— 所以停任务停不掉它们（孙子进程，踩坑 #62），要用 `watchdog.kill_children()`。
 
 ## 两台机器
 

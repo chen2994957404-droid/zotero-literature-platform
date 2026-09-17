@@ -269,6 +269,15 @@ def repair_tasks():
 def restart_tasks():
     """重启计划任务，让 watcher 加载新代码。只在运行端做。"""
     msgs = []
+    # 停任务只停得掉看门狗；它拉起的 watcher / 落地流水线 / 每日作业是孙子进程，会揣着旧代码继续跑
+    # （踩坑 #62）。按锁把它们停掉，新看门狗起来后一分钟内会用新代码重新拉起。
+    try:
+        from host.watcher.watchdog import kill_children
+        killed = kill_children(lambda cmd, timeout: run(cmd, timeout=timeout, quiet=True))
+        if killed:
+            msgs.append('已停掉旧的干活进程：' + '、'.join(killed))
+    except Exception as e:
+        msgs.append(f'停旧进程失败（新代码可能没生效）：{e}')
     for task in RESTART_TASKS:
         script = (f"try {{ Stop-ScheduledTask -TaskName '{task}' -ErrorAction SilentlyContinue; "
               f"Start-Sleep -Seconds 1; Start-ScheduledTask -TaskName '{task}' "

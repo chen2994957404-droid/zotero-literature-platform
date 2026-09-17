@@ -3,6 +3,8 @@
 
 检测带触发标签的文献 → 拉PDF → MineRU解析+精读 → 回写Zotero附件 → 改标签。
 依赖 Zotero 桌面开着（本地API读）+ Zotero Web API key（写回）。
+**只做这一件事**（2026-09-17）：落地流水线是 `host.ingest --loop`，盯新刊是 `host.daily`，
+三个进程都由看门狗 `host.watcher.watchdog` 拉起。
 
 运行: python -m host.watcher.service        （日常由任务计划 + 看门狗拉起）
 
@@ -54,7 +56,6 @@ os.makedirs(LIBRARY, exist_ok=True)
 DEEPSEEK_KEY = get_key('DEEPSEEK_KEY')      # 只用于启动时的密钥自检
 PROVIDER = 'deepseek'
 MODEL = None                                 # None = 让路由表定
-HARVEST_PER_DAY = 10                         # 盯新刊过线后每天自动升 1 级的上限（2026-09-16）：MineRU 每天 1000 页优先额度 ≈ 25 篇，留一半给打标签的精读
 def paper_id_for(item):
     """Zotero 条目 → 它在证据库里的文献 id。**跨来源认同一篇靠 DOI。**
 
@@ -281,22 +282,16 @@ def main():
     print(f'回写: {"已配置Web API" if WEB_API_KEY else "未配key(仅生成本地精读)"}')
     log_key_status()
     seen = {}          # key -> (上次处理时的条目 version, 上次处理时刻)
-    cycle = [0]        # 轮数（落地流水线用它决定「每小时扫一次向量化积压」）
-    patrol_day = ['']      # 盯新刊：上次跑的日期（一天一次）
     fail_streak = [0]      #连续失败轮数，用于「持续异常」提醒与「已恢复」提示
     # 后台线程固定节奏报活：精读一篇要几分钟到几十分钟，期间主线程根本回不到
     # 循环顶部。原来把心跳写在循环开头，于是**正在干活的 watcher 会被看门狗当成
     # 卡死杀掉**（主力机一个月被误杀约 20 次，每次都白花一份 MineRU + DeepSeek）。
     # 见 shared/kernel/heartbeat.py 与踩坑记录。
     heartbeat.start('watcher')
-    # 本进程里跑的批量步骤（落地 / 补摘要 / 补分类）如果上次被重启打断，progress 留着、done 没写，
-    # 面板 20 分钟后会把它当「卡住」—— 重启本身就是它们的终点，开机先把 done 补上
-    for _job in ('ingest', 'journalwatch-abstracts', 'journalwatch-topics'):
-        heartbeat.done(_job)
     while True:
         # 「还活着」由后台线程报；这里只记「有进展」——
         # 两个信号回答的是不同问题，见 shared/kernel/heartbeat.py 开头的说明。
-        items = []            # Zotero 没开这轮就当没有标签在排队（落地流水线据此决定做几篇）
+        items = []
         try:
             q = urllib.parse.quote(' || '.join(TRIGGER_TAGS))
             items = zget(f'/users/{USER_ID}/items?tag={q}&limit=25')
@@ -331,63 +326,10 @@ def main():
             if fail_streak[0]:
                 print(f'[已恢复] 之前连续失败 {fail_streak[0]} 轮，现已恢复正常')
                 fail_streak[0] = 0
-        # ── 落地流水线（2026-09-13）：证据库里有正本没解析的，每轮顺手做几篇 ──
-        # 跟 Zotero 无关（Zotero 没开也照做），所以单独一个 try，别让它跟上面互相拖累。
-        # 每轮最多 2 篇：解析一篇一两分钟，做太多会让「打了标签要精读」等太久。
-        cycle[0] += 1
-        try:
-            from host import ingest
-            if ingest.backlog() or cycle[0] % 60 == 1:      # 每小时也扫一次向量化的积压
-                # 没人在等精读（这轮没有待处理标签）就多做几篇：批量取回 15 篇曾经要等半小时
-                # （每轮 2 篇 + 睡 60 秒）。有标签在排队时仍只做 2 篇，别让精读等。
-                c = ingest.run_backlog(limit=2 if items else 8, say=print)
-                if any(c.values()):
-                    heartbeat.progress('watcher')
-        except Exception as e:
-            print(f'[落地流水线失败] {type(e).__name__}: {e}')
-        # ── 盯新刊（2026-09-15）：每天一次问 Crossref 登记处，新文章的题目/摘要/参考文献进雷达库 ──
-        # 免费、几十次请求、不取件不花模型钱。日期变了才跑，跑挂了下一轮再试（不阻塞精读）。
-        try:
-            today = time.strftime('%Y-%m-%d')
-            if patrol_day[0] != today:
-                from tools import journalwatch
-                r = journalwatch.patrol(days=3, log=lambda *a: None, only_new=True)
-                patrol_day[0] = today
-                print(f'[盯新刊] {r["n_journals"]} 本刊，首见 {len(r["items"])} 篇，'
-                      f'过线 {sum(1 for w in r["items"] if w.get("passes"))} 篇'
-                      + (f'；没查成：{"、".join(r["failed"])}' if r['failed'] else ''))
-                f, n = journalwatch.fill_abstracts(max_calls=200, log=lambda *a: None)
-                if n:
-                    print(f'[补摘要] OpenAlex 问了 {n} 篇，补上 {f} 篇')
-                f2, n2 = journalwatch.fill_from_s2(max_papers=3000, log=lambda *a: None)
-                if n2:
-                    print(f'[补摘要] Semantic Scholar 问了 {n2} 篇，补上 {f2} 篇（外加被引数 / 开放获取直链）')
-                # 过线 → 升 1 级：每天最多 HARVEST_PER_DAY 篇，引库内最多的先取。
-                # 取的是正本 + SI 落地（不精读、不花模型钱）；落地流水线随后自动解析 / 骨架 / 向量化。
-                # 取不到的隔天再试（刚登记的全文常常几天后才挂出来），最多试四天。
-                ft, nt = journalwatch.fill_topics(days=60, max_calls=100, log=lambda *a: None)
-                if nt:
-                    print(f'[补分类] OpenAlex 问了 {nt} 篇，拿到 {ft} 篇')
-                q_new = journalwatch.enqueue_passing(r['items']) + journalwatch.enqueue_recent(days=60)
-                todo = journalwatch.next_to_harvest(HARVEST_PER_DAY)
-                if todo:
-                    from tools import getpdf
-                    got = 0
-                    for doi, info in todo:
-                        try:
-                            res = getpdf.land(doi, with_si=True)
-                            ok = bool(res.get('ok'))
-                            journalwatch.mark_harvest(doi, ok, res.get('note', ''))
-                            got += ok
-                            print(f'  [升1级] {"✓" if ok else "×"} {info.get("venue","")[:20]} 引{info.get("lib_cites",0)}篇 '
-                                  f'{info.get("title","")[:60]}' + ('' if ok else f' —— {res.get("note","")[:60]}'))
-                        except Exception as e:
-                            journalwatch.mark_harvest(doi, False, str(e))
-                            print(f'  [升1级失败] {doi}: {type(e).__name__}: {str(e)[:80]}')
-                    heartbeat.progress('watcher')
-                    print(f'[升1级] 新入队 {q_new} 篇；今天取了 {got}/{len(todo)} 篇')
-        except Exception as e:
-            print(f'[盯新刊失败] {type(e).__name__}: {e}')
+        # 落地流水线与盯新刊**不在这里了**（2026-09-17）：它们各是自己的进程
+        # （`host.ingest --loop` 常驻、`host.daily` 每天一次），由看门狗拉起。
+        # 之前挤在这个循环里串着做，每天一次的盯新刊 + 取件一跑几十分钟，
+        # 用户打的「待处理」标签得干等 —— 本来就是不同的活，就该是不同的进程。
         time.sleep(60)  # 每60秒检查一次，避免API限流
 
 if __name__ == '__main__':
