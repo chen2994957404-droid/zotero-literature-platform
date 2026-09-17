@@ -45,16 +45,19 @@ def main():
     real = jw.catalog.by_doi
     jw.catalog.by_doi = lambda: {'10.1/c': 'doi_x', '10.1/l1': 'p1', '10.1/l2': 'p2'}
     try:
-        a = dict(_w('10.1/C', venue='Nature'), tier='A', refs=['10.1/l1', '10.1/l2', '10.1/zz'], topics=['Force Microscopy', 'Polymer crystallization'], subfields=['Atomic Physics'])   # 正刊：任一 topic 沾边就过
+        a = dict(_w('10.1/C', venue='Nature'), tier='A', refs=['10.1/l1', '10.1/l2'] + ['10.1/zz%d' % i for i in range(40)], topics=['Force Microscopy', 'Polymer crystallization'], subfields=['Atomic Physics'])   # 正刊：任一 topic 沾边就过
         g = dict(_w('10.1/G', venue='Advanced Materials'), tier='A', refs=[], topics=['Thermoelectrics', 'Polymer Surface Interaction'], subfields=['Electrical Engineering'])   # 非正刊：只看首要 → 不过
         b = dict(_w('10.1/D'), tier='C', refs=['10.1/l1', '10.1/l2'], topics=['Polymer composites'], subfields=['Polymers and Plastics'])   # C 档不自动
         c = dict(_w('10.1/E'), tier='A', refs=['10.1/l1'], topics=['Quantum dots'], subfields=['Optics'])                                    # A 档但不是软物质
         e = dict(_w('10.1/F'), tier='B', refs=[], topics=None, subfields=None)                                                                # 分类还没到 → 等
-        rows = jw.annotate([a, b, c, e, g], {'dois': {}}, today=today)
+        h = dict(_w('10.1/H', venue='Nature'), tier='A', refs=['10.1/x'] * 10, topics=['Polymer foams'], subfields=['Polymers and Plastics'])   # 正刊短评：参考文献才 10 条 → 不过
+        i = dict(_w('10.1/I', venue='Nature Materials'), tier='A', refs=['10.1/x'] * 40, topics=['MOF synthesis', 'Flame retardant materials'], subfields=['Polymers and Plastics'])   # 正刊、subfield 沾边但 topic 不沾 → 不过
+        rows = jw.annotate([a, b, c, e, g, h, i], {'dois': {}}, today=today)
     finally:
         jw.catalog.by_doi = real
     got = {r['doi']: (r['in_library'], r['lib_cites'], r['passes']) for r in rows}
-    if got == {'10.1/C': ('doi_x', 2, True), '10.1/D': ('', 2, False), '10.1/E': ('', 1, False), '10.1/F': ('', 0, False), '10.1/G': ('', 0, False)}:
+    if got == {'10.1/C': ('doi_x', 2, True), '10.1/D': ('', 2, False), '10.1/E': ('', 1, False), '10.1/F': ('', 0, False), '10.1/G': ('', 0, False),
+               '10.1/H': ('', 0, False), '10.1/I': ('', 0, False)}:
         print('  [PASS] 证据库里有的标出 id；引库内几篇只记录不当门槛；门槛 = 档位 + OpenAlex 分类（C 档不自动、非软物质不过、分类没到先等）'); ok += 1
     else:
         print('  [FAIL] 库内标注 / 门槛不对：%s' % got)

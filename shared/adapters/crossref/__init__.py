@@ -112,7 +112,9 @@ def _clean(items, types):
     if types:
         out = [w for w in out if w['type'] in types]
     # 更正 / 撤稿 / 勘误在 Crossref 里也是 journal-article，只能按标题认
-    return [w for w in out if w['doi'] and w['title'] and not _NOT_A_PAPER.match(w['title'])]
+    # Nature 系的新闻 / 评论 / 研究简报用 10.1038/d4xxxx- 这种 DOI（研究论文是 s4xxxx-），按前缀就能认
+    return [w for w in out if w['doi'] and w['title'] and not _NOT_A_PAPER.match(w['title'])
+            and not w['doi'].startswith('10.1038/d4')]
 
 
 def journal_works(issn, filters, rows=1000, cursor='*', types=('journal-article',), timeout=120):

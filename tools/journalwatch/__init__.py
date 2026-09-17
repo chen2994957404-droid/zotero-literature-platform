@@ -123,17 +123,23 @@ AUTO_TIERS = ('A', 'B')
 PRIME_JOURNALS = {'Nature', 'Science', 'Nature Materials', 'Nature Chemistry', 'Nature Nanotechnology', 'Nature Reviews Materials'}
 
 
+MIN_REFS = 15   # 参考文献少于这个数的不是研究论文（正刊的 News & Views / 研究简报 ≈ 10 条；Crossref 把它们也标成 journal-article）
+
+
 def is_soft_matter(topics, subfields, generous=False):
-    """OpenAlex 分类是不是软物质 / 高分子。默认看**首要** topic / subfield；generous=True 看任一。"""
+    """OpenAlex 分类是不是软物质 / 高分子。默认看**首要** topic / subfield；generous=True 看任一 topic
+    （subfield 太粗：「Flame retardant materials」的 subfield 也是 Polymers and Plastics，MOF 短评就是这么混进来的）。"""
     tp, sf = list(topics or []), list(subfields or [])
     if generous:
-        return bool(set(sf) & SOFT_SUBFIELDS) or any(SOFT_TOPIC_RE.search(t or '') for t in tp)
+        return any(SOFT_TOPIC_RE.search(t or '') for t in tp)
     return (bool(sf) and sf[0] in SOFT_SUBFIELDS) or (bool(tp) and SOFT_TOPIC_RE.search(tp[0] or '') is not None)
 
 
-def gate(tier, topics, subfields, venue=''):
-    """这篇该不该自动升 1 级。分类还没到（None）→ False，等下次。"""
+def gate(tier, topics, subfields, venue='', n_refs=None):
+    """这篇该不该自动升 1 级。分类还没到（None）→ False，等下次；参考文献太少（评论 / 简报）→ False。"""
     if tier not in AUTO_TIERS or topics is None:
+        return False
+    if n_refs is not None and n_refs < MIN_REFS:
         return False
     return is_soft_matter(topics, subfields, generous=venue in PRIME_JOURNALS)
 
@@ -209,7 +215,8 @@ def annotate(items, seen, today=None):
         w['is_new'] = d not in dois
         # 相关度第一道线：它引了证据库里几篇（参考文献 DOI 对证据库 DOI 表）
         w['lib_cites'] = sum(1 for r in (w.get('refs') or []) if r in lib)      # 只记录，不做门槛（「跟我相关」模式才用）
-        w['passes'] = gate(w.get('tier', 'C'), w.get('topics'), w.get('subfields'), w.get('venue', ''))
+        w['passes'] = gate(w.get('tier', 'C'), w.get('topics'), w.get('subfields'), w.get('venue', ''),
+                           n_refs=len(w.get('refs') or []) if w.get('refs') is not None else None)
         dois.setdefault(d, today)
         out.append(w)
     out.sort(key=lambda w: (w['venue'], w['created'] or '', w['title']), reverse=False)
@@ -375,7 +382,8 @@ def enqueue_passing(items):
     n = 0
     for w in items:
         d = catalog.norm_doi(w.get('doi'))
-        if not d or not w.get('passes') or w.get('in_library') or d in q or d in (seen.get('harvested') or {}):
+        if (not d or not w.get('passes') or w.get('in_library') or d in q or d in (seen.get('harvested') or {})
+                or d in (seen.get('blocked') or {})):        # blocked：用户点名清掉过的，永不再排
             continue
         q[d] = {'tier': w.get('tier'), 'lib_cites': w.get('lib_cites', 0), 'title': (w.get('title') or '')[:120],
                 'venue': w.get('venue', ''), 'attempts': 0, 'published': (w.get('published') or w.get('created') or '')[:10]}
@@ -422,16 +430,18 @@ def enqueue_recent(days=60):
     since = (_dt.date.today() - _dt.timedelta(days=days)).isoformat()
     con = store.connect()
     try:
-        rows = con.execute("""SELECT doi, title, venue, tier, lib_cites, published, topics, subfields FROM works
-                              WHERE published >= ? AND in_library = '' AND tier IN ('A', 'B') AND topics IS NOT NULL""",
+        rows = con.execute("""SELECT w.doi, w.title, w.venue, w.tier, w.lib_cites, w.published, w.topics, w.subfields,
+                                     (SELECT count(*) FROM refs r WHERE r.doi = w.doi) AS n_refs
+                              FROM works w
+                              WHERE w.published >= ? AND w.in_library = '' AND w.tier IN ('A', 'B') AND w.topics IS NOT NULL""",
                            (since,)).fetchall()
     finally:
         con.close()
     items = []
-    for d, t, v, tr, lc, pub, tp, sf in rows:
+    for d, t, v, tr, lc, pub, tp, sf, n_refs in rows:
         topics, subfields = json.loads(tp or '[]'), json.loads(sf or '[]')
         items.append({'doi': d, 'title': t, 'venue': v, 'tier': tr or 'C', 'lib_cites': lc or 0, 'in_library': '',
-                      'published': pub, 'passes': gate(tr or 'C', topics, subfields, v)})
+                      'published': pub, 'passes': gate(tr or 'C', topics, subfields, v, n_refs=n_refs)})
     return enqueue_passing(items)
 
 
