@@ -14,6 +14,7 @@
 
     python -m tools.getpdf --从Zotero落地                # 把 Zotero 里已有的文献复制成本地正本（一次性回流）
     python -m tools.getpdf --从Zotero落地 --limit 20     # 先试 20 篇
+    python -m tools.getpdf --补SI [--limit 20] [--gap 20] # 给证据库里没取过 SI 的补 SI（幂等，停了再跑接着补）
 
 **取到的默认收进证据库**（raw/<id>/main.pdf + si.* + 目录登记），不写 Zotero。
 
@@ -104,6 +105,13 @@ def main():
 
     if flag('--从Zotero落地'):
         return _land_from_zotero()
+    if flag('--补SI'):
+        # 给证据库里「没取过 SI」的文献补 SI；幂等，停了再跑接着补
+        if not getpdf.probe().get('ok'):
+            print('取全文用的浏览器没开：先双击 launch/取全文用的浏览器.bat')
+            return 1
+        getpdf.fill_si(gap=int(opt('--gap') or getpdf.GAP), limit=int(opt('--limit') or 0) or None)
+        return 0
 
     dois = list(positionals())
     src = opt('--file')

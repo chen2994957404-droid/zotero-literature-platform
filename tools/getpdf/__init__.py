@@ -368,6 +368,48 @@ def land(doi, with_si=True, allow_fetch=True, zotero_index=None,
     return out
 
 
+def si_todo():
+    """该补 SI 的清单：有正文、有 DOI、SI 状态是「没取过」（不含出版商确认没有的）。零网络。"""
+    out = []
+    for pid in catalog.ids():
+        r = catalog.record(pid)
+        if r['pdf'] and r['doi'] and not r['si'] and catalog.si_status(pid) == catalog.SI_UNKNOWN:
+            out.append((pid, r['doi']))
+    return out
+
+
+def fill_si(gap=GAP, limit=None, log=print):
+    """给证据库里「没取过 SI」的文献补 SI（2026-09-17 用户要求）。→ Counter(拿到 / 确认没有 / 没成 / 人机验证)。
+
+    幂等、可断点：每篇结果当场登记（拿到 → si.*；出版商说没挂 → si_status=none），中途停了再跑只做剩下的。
+    节奏按 `GAP`（默认 20 秒），撞上人机验证**就停**（人去那个浏览器点一下再跑）—— 出版商掐的是全校的 IP。
+    """
+    from collections import Counter
+    todo = si_todo()
+    if limit:
+        todo = todo[:limit]
+    c = Counter()
+    log(f'该补 SI 的 {len(todo)} 篇，每篇间隔 {gap} 秒，预计 {len(todo) * (gap + 8) // 60} 分钟')
+    for i, (pid, doi) in enumerate(todo, 1):
+        r = land(doi, pdf_path=paths.local_pdf(pid))
+        if r.get('si'):
+            c['拿到'] += 1; mark = '✓ 拿到'
+        elif catalog.si_status(pid) == catalog.SI_NONE:
+            c['确认没有'] += 1; mark = '— 出版商没挂'
+        elif '人机验证' in (r.get('note') or ''):
+            c['人机验证'] += 1
+            log(f'  [{i}/{len(todo)}] {doi}  撞上人机验证，停在这里 —— 去「取全文用的浏览器」点一下，再跑一次接着补')
+            break
+        else:
+            c['没成'] += 1; mark = '× ' + (r.get('note') or '没取到')
+        log(f'  [{i}/{len(todo)}] {mark}  {doi}')
+        if i < len(todo):
+            time.sleep(gap)
+    log(f'补 SI 结束：拿到 {c["拿到"]} · 确认没有 {c["确认没有"]} · 没成 {c["没成"]}'
+        + ('（撞人机验证停下）' if c['人机验证'] else ''))
+    return c
+
+
 # ── 推到 Zotero ────────────────────────────────────────────────────────────
 # 这一段是「有副作用」的那一半：会往用户真实的库里写东西。
 # 每一步都做成**幂等**的 —— 同一批 DOI 跑两遍，结果必须跟跑一遍一样。
