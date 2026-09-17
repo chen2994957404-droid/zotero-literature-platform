@@ -14,6 +14,7 @@
     图的段落   认「Figures 3 and 4」「Fig. 3a–c」这类写法，不只认单个「Fig. N」
     格式硬修   🌿🍁☘️ 用错栏、「图 1」多空格、漏 Question 前缀、混进列表 —— 正则一行的事不劳模型
     数字回查   查出原文没有的数，带着「这几个数原文没有」把那一栏重生成一次
+    清单先行   生成前把这栏材料里带单位的数列成清单塞进提示词，生成后查覆盖，漏的点名补（2026-09-17）
     分栏缓存   每栏产出落盘；断了从断处接，改一栏提示词只重跑那一栏
     篇幅       深解段长度由图数算：图多每段自动压短，全篇稳在范文的量级
 
@@ -37,6 +38,7 @@ import re
 from shared.domain.schema import is_review
 from shared.domain.schema import outline as _ol
 from shared.kernel import prompts
+from tools.deepread import numbers as _nums
 
 # v2（2026-09-15）：金标三轮实测我们的汉字数中位 5900、范文（774 篇）中位 3872，篇幅比 1.75 ——
 # 各栏一起收：导读 300–400、引言 2 段、实验各段封顶、索引段 80–120、Q2 300–450、总之 250–330。
@@ -50,6 +52,9 @@ CAP_INTRO, CAP_CONCL, CAP_EXP, CAP_SI, CAP_FIG, CAP_BODY, CAP_TABLES = 12000, 40
 # 深解段总预算（字）：范文全篇中位 7000，讨论占一半以上；按图数均分，单段夹在 250–450 之间。
 # 2026-09-15 金标第一轮（10 篇本地）篇幅比中位 1.74，超了 1.5 的上限 → 总预算 3600 收到 3000、单段上限 550 收到 450。
 DEEP_BUDGET, DEEP_MIN, DEEP_MAX = 2400, 200, 380
+# 清单先行：一栏漏掉超过这个比例的清单数才重写（全写进去不现实：实验栏几百字装不下 SI 里的几十个投料量）。
+# 图那栏清单短、每个数都要；实验栏清单长、容忍一点。
+MISS_TOL, MUST_CAP_FIG, MUST_CAP_EXP = 0.2, 30, 30
 
 _Q1 = '各组分的作用是？'
 _Q1_REVIEW = '各类材料体系/结构单元分别起什么作用？'
@@ -322,10 +327,11 @@ def _sub(tpl, **kw):
     return tpl
 
 
-def _with_fix(chat, sysp, user, max_tokens, model, parse, ok, source, log, what):
-    """调一栏：合形检查 → 中文检查 → 数字回查 → 不合格带着原因重来（最多三次）。
+def _with_fix(chat, sysp, user, max_tokens, model, parse, ok, source, log, what, must=None):
+    """调一栏：合形检查 → 中文检查 → 数字回查 → 漏数检查 → 不合格带着原因重来（最多三次）。
 
     `parse(raw) -> dict`，`ok(d) -> bool`。数字回查对 dict 里所有字符串值做。
+    `must` 是这栏材料里的数值清单（`numbers.must_numbers`）：漏得多（超过 MISS_TOL）就点名补。
     三次都不干净就把最后一稿交出去 —— 拼装那头还有统计，不在这里死磕。
     """
     note, best, d = '', None, {}
@@ -352,6 +358,13 @@ def _with_fix(chat, sysp, user, max_tokens, model, parse, ok, source, log, what)
             log('  %s第 %d 次有原文没有的数 %s，重写' % (what, attempt, '、'.join(bad[:6])))
             note = ('\n\n⚠ 上一稿里这些数在原文里找不到：%s。删掉它们或改成原文的说法，'
                     '其余内容保持不变，按同样格式重写。' % '、'.join(bad[:10]))
+            best = d
+            continue
+        miss = _nums.missing_numbers('\n'.join(texts), must or [])
+        if must and attempt < 3 and len(miss) > MISS_TOL * len(must):
+            log('  %s第 %d 次漏了 %d/%d 个数（%s…），补写' % (what, attempt, len(miss), len(must), '、'.join(miss[:4])))
+            note = ('\n\n⚠ 上一稿漏了材料里的这些数：%s。把它们写进对应的句子里（带单位、带样品编号），'
+                    '其余内容保持不变，按同样格式重写。' % '、'.join(miss[:15]))
             best = d
             continue
         return d
@@ -394,6 +407,8 @@ def _exp(chat, md, si_md, outline, review, gloss, source, model, log):
         si_tabs = _tables(si_md, si_ol, cap=3000)
         si_part = '\n\n【补充材料 SI 的实验细节】\n' + si_txt + ('\n\n【SI 里的表】\n' + si_tabs if si_tabs else '')
     user = gloss + '\n\n【正文的实验/方法部分】\n' + mat + ('\n\n【正文里的表】\n' + tabs if tabs else '') + si_part
+    must = _nums.must_numbers(mat + '\n' + tabs + '\n' + si_part, cap=MUST_CAP_EXP)
+    user += _nums.checklist_block(must)
 
     def parse(raw):
         d = _parse_tagged(raw)
@@ -405,7 +420,7 @@ def _exp(chat, md, si_md, outline, review, gloss, source, model, log):
 
     def ok(d):
         return all(x in d['实验'] for x in ('（1）', '（2）', '（3）')) and bool(d.get('Q1'))
-    d = _with_fix(chat, sysp, user, 4500, model, parse, ok, source, log, '实验/Q1')
+    d = _with_fix(chat, sysp, user, 4500, model, parse, ok, source, log, '实验/Q1', must=must)
     return _paras(d.get('实验', '')), d.get('Q1', '')
 
 
@@ -418,6 +433,8 @@ def _one_fig(chat, md, outline, num, n_figs, gloss, source, model, log):
             % (num, n_figs, gloss, cap_txt or '（未找到图注）',
                body or '（正文没有单独讨论这张图的段落，按图注写）',
                ('\n\n【这些段落引到的表】\n' + tabs) if tabs else ''))
+    must = _nums.must_numbers(cap_txt + '\n' + body + '\n' + tabs, cap=MUST_CAP_FIG)
+    user += _nums.checklist_block(must)
 
     def parse(raw):
         ps = [normalize('fig_idx', p) for p in _paras(re.sub(r'<think>[\s\S]*?</think>', '', raw or ''))]
@@ -430,7 +447,7 @@ def _one_fig(chat, md, outline, num, n_figs, gloss, source, model, log):
         return {'idx': idx, 'deep': deep, '_ps': ps}
 
     d = _with_fix(chat, sysp, user, 1800, model, parse,
-                  lambda d: bool(d['idx'] and d['deep']), source, log, '图 %d ' % num)
+                  lambda d: bool(d['idx'] and d['deep']), source, log, '图 %d ' % num, must=must)
     ps = d.get('_ps') or []
     # 三次都不合形：能拿到什么用什么，别让一张图拖死整篇
     return d['idx'] or (ps[0] if ps else ''), d['deep'] or (ps[1] if len(ps) > 1 else '')
@@ -554,9 +571,10 @@ def compose(md, si_md, figs, meta, chat, log=print, model=None, local=False, cac
     source = (md or '') + '\n' + (si_md or '')
     # 指纹里带上篇幅参数：2026-09-15 第二轮评测把深解预算收紧了，缓存却按旧参数原样复用，
     # 10 篇里 8 篇分数一字不差 —— 改了参数看不到效果比没缓存更糟。
-    fp = '%s|%s|%s|deep=%d-%d-%d' % ('|'.join('%s=%s' % kv for kv in sorted(PROMPTS.items())),
+    fp = '%s|%s|%s|deep=%d-%d-%d|must=%d-%d-%s' % ('|'.join('%s=%s' % kv for kv in sorted(PROMPTS.items())),
                                      model or '', 'local' if local else 'route',
-                                     DEEP_BUDGET, DEEP_MIN, DEEP_MAX)
+                                     DEEP_BUDGET, DEEP_MIN, DEEP_MAX,
+                                     MUST_CAP_FIG, MUST_CAP_EXP, MISS_TOL)
     C = _Cache(cache, fp)
     n_figs = len(figs)
     log('  按%s写；%d 张图；骨架 %d 节；术语 %d 条%s' % (

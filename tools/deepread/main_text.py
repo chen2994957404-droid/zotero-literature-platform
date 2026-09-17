@@ -22,7 +22,7 @@ from shared.kernel import prompts
 
 # 提示词版本：改范式 = 新建 prompts/main_v<N+1>.txt，再把这里 +1（提示词只增不改）。
 # 状态库据此回答「哪些精读该重跑」（jobs.stale('main_summary', prompt_ver=3)）。
-PROMPT_VER = 5      # v5 = fig/exp @v3（数值一个不落、步骤写到成品）；v4 = 四段 @v2；v3 = 分段 @v1；v2 = 一次调用
+PROMPT_VER = 6      # v6 = 清单先行（材料里的数先列清单、漏了点名补，提示词文件没变）；v5 = fig/exp @v3；v4 = 四段 @v2；v3 = 分段 @v1；v2 = 一次调用
 PRODUCER = 'deepread_v4'
 MODE = 'sectioned'  # 'sectioned' 分段生成（默认）/ 'single' 老路一次调用（A/B 对比用）
 

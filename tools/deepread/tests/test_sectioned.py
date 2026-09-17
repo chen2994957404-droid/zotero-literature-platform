@@ -66,8 +66,10 @@ def fake_chat(calls):
                     '【引言】\n冲击防护需要率相关材料。\n\n此前只有 3.2 MPa。')
         if '【实验】' in system:
             # 故意犯错：用错的🌿、英文冒号、改写过的问句 —— 都该被脚本修回来
+            # 第一稿漏掉清单里的 0.5 g / 4.1 MPa；被脚本点名后第二稿补上 —— 清单先行的闭环（2026-09-17）
+            extra = '，投料 0.5 g，模量 4.1 MPa' if '漏了' in user else ''
             return ('【实验】\n(1）主要实验药品是：PDMS（Mw 5 kDa，Gelest）、硼酸（99%，Aldrich）。\n\n'
-                    '（2）实验步骤是：🌿180 °C 下加热 2 h；🍁氮气保护。\n\n（3）测试表征方法包括：拉伸、流变。\n'
+                    '（2）实验步骤是：🌿180 °C 下加热 2 h' + extra + '；🍁氮气保护。\n\n（3）测试表征方法包括：拉伸、流变。\n'
                     '【Q1】\nQuestion: 各个组分的作用是？🍁PDMS：柔性主链；🌿硼酸：动态 B-O 交联。')
         if '只讲一张图' in system:
             n = re.search(r'这是图 (\d+)', user).group(1)
@@ -110,7 +112,9 @@ def test_骨架齐全_图由脚本放_数字回查_格式硬修():
 def test_每栏只喂它该看的材料():
     calls = []
     sectioned.compose(MD, 'SI text: 5 kDa PDMS 0.5 g, 180 °C', FIGS, META, fake_chat(calls), log=lambda *a: None)
-    lead, exp, f1, f1b, f2, f2b, wrap = calls
+    lead, exp, exp2, f1, f1b, f2, f2b, wrap = calls
+    assert '漏了材料里的这些数：4.1 MPa、0.5 g' in exp2['user']                # 清单先行：漏的点名补
+    assert '【材料里出现的数值清单】' in exp['user'] and '5 kDa' in exp['user']
     assert 'Introduction' not in exp['user'] and 'Materials' not in lead['user'].split('【结论】')[1]
     assert 'boric acid' in exp['user'] and 'SI text' in exp['user']          # 实验栏拿到方法节 + SI
     assert '缩写：' in exp['user'] and 'PBS = polyborosiloxane' in exp['user']   # 术语表贯穿
@@ -126,6 +130,15 @@ def test_综述按综述写():
     sectioned.compose(MD, '', FIGS, meta, fake_chat(calls), log=lambda *a: None)
     assert '系统总结了' in calls[0]['system']
     assert '主要材料体系' in calls[1]['system'] and '综述' in calls[-1]['system']
+
+
+def test_清单先行_列清单与查漏():
+    from tools.deepread import numbers as n
+    must = n.must_numbers('droplets 19 μm, 46 μm (Fig. 2b); strain 1160% and 200 %; Tg 25 °C in 2024; Mn 1,500 g/mol; 0.50 MPa')
+    assert must == ['19 μm', '46 μm', '1160 %', '200 %', '25 °C', '1,500 g/mol', '0.50 MPa']   # 年份不算数据；千分位认得出
+    miss = n.missing_numbers('液滴 19 微米与 46 μm，应变 1160%，Tg 25 ℃，Mn 1500 g/mol，0.5 MPa', must)
+    assert miss == ['200 %']            # 单位译成中文不算漏；0.50 与 0.5、1,500 与 1500 是同一个数
+    assert n.checklist_block([]) == '' and '19 μm、46 μm' in n.checklist_block(must)
 
 
 def test_数字回查的过滤():

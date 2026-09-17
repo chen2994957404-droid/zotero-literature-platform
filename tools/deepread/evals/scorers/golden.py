@@ -25,8 +25,8 @@ GOLDEN_VER = 1
 
 SKELETON = ('## 导读', '## 引言', '（1）', '（2）', '（3）', 'Question：各', '## 讨论',
             'Question：本论文', '总之，', '## 文献信息')
-_NUM_UNIT = re.compile(r'(\d+(?:\.\d+)?)\s*(?:wt%|vol%|mol%|%|℃|°C|kPa|MPa|GPa|Pa·s|Pa|nm|μm|um|mm|cm|'
-                       r'kJ|J|mol|Hz|kHz|min|h|s⁻¹|s|g/mol|kDa|Da|mg|g|mL|L|V|mA|W|K|°)(?![A-Za-z])')
+# 与流水线的「清单先行」共用同一把尺子（tools/deepread/numbers.py）：两边认的「数」必须是同一批
+from tools.deepread.numbers import NUM_UNIT as _NUM_UNIT, norm as _norm
 _ABBR = re.compile(r'\b[A-Z][A-Z0-9]{1,}(?:-[A-Za-z0-9]+)*\b')
 _CJK = re.compile(r'[一-鿿]')
 
@@ -52,8 +52,7 @@ def text_of_reference(md):
 
 
 def _numbers(text):
-    return {m.group(1).rstrip('0').rstrip('.') if '.' in m.group(1) else m.group(1)
-            for m in _NUM_UNIT.finditer(text or '')}
+    return {_norm(m.group(1)) for m in _NUM_UNIT.finditer(text or '')}
 
 
 def _terms(text):
