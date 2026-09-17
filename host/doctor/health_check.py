@@ -482,7 +482,9 @@ def c_routing():
             if ch_name not in seen:
                 seen[ch_name] = list_models(ch_name)
             ok, ids, msg = seen[ch_name]
-            if ok and model not in ids:
+            # Ollama 里 `bge-m3` 与 `bge-m3:latest` 是同一个（不带标签默认 latest），别把它报成没装
+            want = model if ':' in model else model + ':latest'
+            if ok and want not in ids and model not in ids:
                 probs.append(('fail', f'用途「{p["label"]}」指向本地通道「{ch_name}」的模型 {model}，'
                                       f'但本机 Ollama 没装它（有：{"、".join(ids[:5])}）—— 会静默切到备用'))
     fails = [m for lvl, m in probs if lvl == 'fail']
