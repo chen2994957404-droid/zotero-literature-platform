@@ -326,7 +326,23 @@ def si_format(c):
     return m.group(1).lower() if m else ''
 
 
-def pick_si(cands, loose=False):
+_DOI_IN_URL = re.compile(r'10\.\d{4,9}/[^\s/?#&]+', re.I)
+
+
+def _foreign_doi(url, doi):
+    """链接里带着**别人的** DOI 吗。综述页面上「引文的补充材料」链接就是这样混进候选的
+    （2026-09-18 实测：Prog. Polym. Sci. 的落地页给了一个 ACS 文章的 SI）。没 DOI 可比就放行。"""
+    if not doi:
+        return False
+    mine = doi.lower().rstrip('/')
+    for m in _DOI_IN_URL.finditer(url or ''):
+        found = m.group(0).lower().rstrip('.')
+        if not (found.startswith(mine) or mine.startswith(found)):
+            return True
+    return False
+
+
+def pick_si(cands, loose=False, doi=None):
     """一堆 SI 链接 → 最可能是「实验部分」的那一个（没有就返回 None）。
 
     `cands` 是 [{url, text}, ...]。返回同样的 dict。
@@ -341,6 +357,8 @@ def pick_si(cands, loose=False):
         blob = (c.get('url', '') + ' ' + c.get('text', ''))
         if SI_BAD_RE.search(blob):
             continue                      # 视频、压缩包：直接不要
+        if _foreign_doi(c.get('url', ''), doi):
+            continue                      # 别篇文章的 SI（综述页上的引文链接）：不是我们要的
         (good if si_format(c) else rest).append(c)
     # 默认**只认像文档的**。放宽会把「跳到补充材料那一节」的锚点当成文件 ——
     # 2026-09-06 实测 ACS 就这样：`?goto=supporting-info` 也被收进了候选，
@@ -407,15 +425,16 @@ def _decode(got, want='pdf'):
     raw = base64.b64decode(got['b64'])
     if _looks_like_pdf(raw[:4], got.get('type')):
         return raw
-    # 验收没过：记下拿到的到底是什么（类型 / 大小 / 开头），否则 not_pdf 永远是黑盒（2026-09-18）
-    log.info('  候选验收没过：type=%s size=%s head=%r' % (got.get('type'), len(raw), raw[:40]))
     if want == 'si':
         mime = (got.get('type') or '').lower()
         if 'html' in mime or raw[:9].lower().startswith(b'<!doctype'):
+            log.info('  候选验收没过：是网页（%s，%d 字节）—— 多半被挡回了登录页或验证页' % (mime, len(raw)))
             return None
         # .docx/.xlsx 都是 zip 包，魔数是 PK
         if raw[:4] == b'PK' or 'officedocument' in mime or 'msword' in mime:
             return raw
+    # 验收没过：记下拿到的到底是什么（类型 / 大小 / 开头），否则 not_pdf 永远是黑盒（2026-09-18）
+    log.info('  候选验收没过：type=%s size=%s head=%r' % (got.get('type'), len(raw), raw[:24]))
     return None
 
 # ── 浏览器连接复用 ─────────────────────────────────────────────────────
@@ -587,12 +606,12 @@ def _scroll_for_si(page):
     return _eval(page, _JS_STATE, timeout_ms=20000)
 
 
-def _pick_si_on(page, st, timeout, settle):
+def _pick_si_on(page, st, timeout, settle, doi=None):
     """当前落地页上挑 SI；页面没列、只给了 /doi/suppl/ 入口（ACS）就再进一层。→ pick 或 None"""
-    pick = pick_si(st.get('si'))
+    pick = pick_si(st.get('si'), doi=doi)
     if not pick:
         st = _scroll_for_si(page)
-        pick = pick_si(st.get('si'))
+        pick = pick_si(st.get('si'), doi=doi)
     # 「链接一出现就走」对正文是对的，对 SI 不够：Wiley 的 Supporting Information 那一段
     # 比正文直链晚渲染好几秒（2026-09-14 提速后头 26 篇里 16 篇报 no_si，老流程同批只有几篇）。
     # 所以 SI 这边保留一次「等到 settle 秒」的机会：每 0.5 s 看一眼，出现就走，再滚一遍兜底。
@@ -601,14 +620,14 @@ def _pick_si_on(page, st, timeout, settle):
         page.wait_for_timeout(500)
         waited += 0.5
         st = _eval(page, _JS_STATE, timeout_ms=20000)
-        pick = pick_si(st.get('si'))
+        pick = pick_si(st.get('si'), doi=doi)
     if not pick:
         st = _scroll_for_si(page)
-        pick = pick_si(st.get('si'))
+        pick = pick_si(st.get('si'), doi=doi)
     if not pick and st.get('suppPage'):
         try:
             page.goto(st['suppPage'], wait_until='domcontentloaded', timeout=timeout * 1000)
-            pick = pick_si(_state_ready(page, settle).get('si'))
+            pick = pick_si(_state_ready(page, settle).get('si'), doi=doi)
         except Exception:
             pass
     return pick
@@ -717,6 +736,8 @@ def _grab(page, ctx, cands, kind, timeout, settle, out):
 
         # 第一趟：直接取。RSC / Springer 这类 citation_pdf_url 多半指的就是真身，同源时一次就成。
         got = _eval(page, _JS_GRAB, cand)
+        if not got.get('ok') and not got.get('tooBig'):
+            log.info('  直取没成（%s）：%s' % (got.get('status') or got.get('err') or '?', cand[:120]))
         raw = _decode(got, want)
         if got.get('tooBig'):
             out['reason'], out['pdf_url'] = 'too_big', cand
@@ -828,7 +849,7 @@ def fetch(doi, url=None, timeout=90, settle=6, kind='fulltext'):
             out['reason'] = 'captcha'
             return out
         if kind == 'si':
-            pick = _pick_si_on(page, st, timeout, settle)
+            pick = _pick_si_on(page, st, timeout, settle, doi=doi)
             if not pick:
                 out['reason'] = 'no_si'
                 return out
@@ -872,9 +893,9 @@ def fetch_both(doi, url=None, timeout=90, settle=6):
             return main, si
         cands = st.get('candidates') or []
         # SI 先在落地页上挑（要滚页面 / 进 suppl 入口），此时页面还没被正文的导航带走
-        pick = pick_si(st.get('si'))
+        pick = pick_si(st.get('si'), doi=doi)
         if not pick:
-            pick = _pick_si_on(page, st, timeout, settle)
+            pick = _pick_si_on(page, st, timeout, settle, doi=doi)
             if page.url != st.get('url'):        # 进过 suppl 入口，回落地页取正文候选
                 try:
                     page.goto(st.get('url') or f'https://doi.org/{doi}',
