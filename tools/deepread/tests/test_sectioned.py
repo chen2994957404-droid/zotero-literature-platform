@@ -62,7 +62,8 @@ def fake_chat(calls):
              thinking=None, provider=None):
         calls.append({'system': system, 'user': user, 'max_tokens': max_tokens})
         if '【导读】' in system:
-            return ('【导读】\n近期，A. Zhang, B. Li 报道了拉伸强度 12.5 MPa 的 PBS 弹性体🎉。\n'
+            # 原文介绍过 polyborosiloxane (PBS)：首次出现要带介绍（2026-09-18 用户定：缩写保持缩写、介绍不许漏）
+            return ('【导读】\n近期，A. Zhang, B. Li 报道了拉伸强度 12.5 MPa 的聚硼硅氧烷（PBS）弹性体🎉。\n'
                     '【引言】\n冲击防护需要率相关材料。\n\n此前只有 3.2 MPa。')
         if '【实验】' in system:
             # 故意犯错：用错的🌿、英文冒号、改写过的问句 —— 都该被脚本修回来
@@ -117,11 +118,32 @@ def test_每栏只喂它该看的材料():
     assert '【材料里出现的数值清单】' in exp['user'] and '5 kDa' in exp['user']
     assert 'Introduction' not in exp['user'] and 'Materials' not in lead['user'].split('【结论】')[1]
     assert 'boric acid' in exp['user'] and 'SI text' in exp['user']          # 实验栏拿到方法节 + SI
-    assert '缩写：' in exp['user'] and 'PBS = polyborosiloxane' in exp['user']   # 术语表贯穿
+    assert '原文介绍过的缩写' in exp['user'] and 'PBS = polyborosiloxane' in exp['user']   # 术语表贯穿
     assert '找不到：77.7' in f1b['user']                                       # 数字回查的提示
     assert 'Figure 1.' in f1['user'] and 'Figure 2.' not in f1['user'].split('【正文里讨论它的段落】')[0]
     assert 'crossover at 15 rad/s' in f2['user'] and '797.4' not in f2['user']  # 参考文献不进材料
     assert '▲图1' in wrap['user'] and '▲图2' in wrap['user']                  # 收尾看的是已写好的深解
+
+
+def test_缩写介绍不许漏_缩写不硬译(monkeypatch):
+    """原文介绍过 polyborosiloxane (PBS)：导读里只写 PBS 会被要求补介绍；写成「聚硼硅氧烷（PBS）」或英文全称都算带上了。"""
+    pairs = sectioned.intro_pairs(MD)
+    assert ('PBS', 'polyborosiloxane') in pairs
+    assert sectioned.missing_intros('PBS 弹性体很强', pairs) == [('PBS', 'polyborosiloxane')]
+    assert sectioned.missing_intros('polyborosiloxane (PBS) 弹性体', pairs) == []
+    assert sectioned.missing_intros('PBS (polyborosiloxane) 弹性体', pairs) == []
+    assert sectioned.missing_intros('这一栏没提它', pairs) == []
+    calls = []
+    base = fake_chat(calls)
+
+    def chat(system, user, **kw):
+        out = base(system, user, **kw)
+        if '【导读】' in system and '原文有介绍' not in user:
+            return out.replace('聚硼硅氧烷（PBS）', 'PBS')            # 第一稿漏了介绍
+        return out
+    content, _ = sectioned.compose(MD, '', FIGS, META, chat, log=lambda *a: None)
+    assert any('PBS = polyborosiloxane' in c['user'] and '原文有介绍' in c['user'] for c in calls)
+    assert '聚硼硅氧烷（PBS）' in content
 
 
 def test_综述按综述写():
@@ -247,9 +269,9 @@ def test_术语表_注入与错译重写(monkeypatch):
     def chat(system, user, **kw):
         out = base(system, user, **kw)
         if '【导读】' in system and '译名错' not in user and '写错了' not in user:
-            return out.replace('PBS 弹性体', '聚苯乙烯（PBS）弹性体')      # 第一稿译错
+            return out.replace('聚硼硅氧烷（PBS）', '聚苯乙烯（PBS）')      # 第一稿译错
         return out
     content, _ = sectioned.compose(MD, '', FIGS, META, chat, log=lambda *a: None)
-    assert '译名（公众号惯用' in calls[0]['user'] and 'PBS=聚硼硅氧烷' in calls[0]['user'] and 'PDMS=' in calls[0]['user']
+    assert '公众号惯用的译名是' in calls[0]['user'] and 'PBS=聚硼硅氧烷' in calls[0]['user'] and 'PDMS=' in calls[0]['user']
     assert any('PBS 应为「聚硼硅氧烷」（你写成了「聚苯乙烯」）' in c['user'] for c in calls)
     assert '聚苯乙烯' not in content

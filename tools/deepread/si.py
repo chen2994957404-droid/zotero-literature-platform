@@ -24,7 +24,7 @@ from tools.deepread.si_filter import filtered_text
 from shared.domain import numcheck
 
 # 提示词版本：改范式 = 新建 prompts/si_v<N+1>.txt，再把这里 +1（提示词只增不改）。
-PROMPT_VER = 2      # v2（2026-09-18）：只许照搬、禁推断，配合脚本的搪塞词与数字回查；v1 的「复现指南」让本地模型编出整套通用流程
+PROMPT_VER = 3      # v3（2026-09-18）：缩写保持缩写、原文给了全称才带、不强行中文（用户定）；v2：只许照搬、禁推断，配合脚本的搪塞词与数字回查；v1 的「复现指南」让本地模型编出整套通用流程
 PRODUCER = 'si_deepread'
 
 SYS = prompts.load('deepread', f'si@v{PROMPT_VER}')

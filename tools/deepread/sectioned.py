@@ -14,7 +14,8 @@
     图的段落   认「Figures 3 and 4」「Fig. 3a–c」这类写法，不只认单个「Fig. N」
     格式硬修   🌿🍁☘️ 用错栏、「图 1」多空格、漏 Question 前缀、混进列表 —— 正则一行的事不劳模型
     数字回查   查出原文没有的数，带着「这几个数原文没有」把那一栏重生成一次
-    术语表     范文里挖出的缩写→中文（data/serving/glossary.json）：这篇里出现的词塞进每次调用，写错译名就重写（2026-09-18）
+    缩写介绍   原文「全称 (缩写)」介绍过的，实验/导读栏首次出现必须带上；缩写保持缩写、不强行译中文（用户 2026-09-18 定）
+    术语表     范文里挖出的缩写→中文（data/serving/glossary.json）只作参考塞进调用；写了错的中文名才重写（票≥5 且无歧义）
     清单先行   生成前把这栏材料里带单位的数列成清单塞进提示词，生成后查覆盖，漏的点名补（2026-09-17）
     分栏缓存   每栏产出落盘；断了从断处接，改一栏提示词只重跑那一栏
     篇幅       深解段长度由图数算：图多每段自动压短，全篇稳在范文的量级
@@ -116,7 +117,8 @@ def is_review_doc(title, outline, journal=''):
     return not (kinds & {_ol.SYNTHESIS, _ol.METHODS}) and outline.get('stats', {}).get('n_figures', 0) >= 8
 
 
-_ABBR = re.compile(r'((?:[A-Za-z][A-Za-z0-9\-,\'’]*\s+){1,8})\(([A-Z][A-Za-z0-9\-]{1,14})\)')
+# 全称里允许带一层括号：poly(vinylidene difluoride) (PVDF)、bis(trifluoromethanesulfonyl)imide (TFSI) 这类常见写法（2026-09-18）
+_ABBR = re.compile(r'((?:[A-Za-z][A-Za-z0-9\-,\'’]*(?:\([A-Za-z0-9\-, ]+\)[A-Za-z0-9\-]*)?\s+){1,8})\(([A-Z][A-Za-z0-9\-]{1,14})\)')
 _CODE = re.compile(r'\b[A-Z]{2,}[A-Za-z0-9]*(?:-[A-Za-z0-9]+){1,3}\b')
 
 
@@ -158,12 +160,8 @@ def domain_glossary():
     return _GLOSSARY['table']
 
 
-def glossary(md, limit=30):
-    """从原文抽术语表：「全称（缩写）」对 + 出现 ≥3 次的样品编号（PDMS-IU-12 这种）。
-
-    塞给每一次调用，十几次调用才会用同一套名字。**只抽不译**：译名让模型统一给，
-    这里保证的是英文缩写与样品编号不走样。
-    """
+def intro_pairs(md, limit=30):
+    """原文里介绍过的缩写：[(缩写, 全称)]，按首次出现顺序。「全称 (缩写)」写法。"""
     text = _ol.scan.clean_body(md or '')
     pairs, seen = [], set()
     for m in _ABBR.finditer(text):
@@ -172,9 +170,40 @@ def glossary(md, limit=30):
         if ab in seen or len(ab) < 2 or len(full) < 4 or full.lower().startswith(('fig', 'table', 'eq')):
             continue
         seen.add(ab)
-        pairs.append('%s = %s' % (ab, full))
+        pairs.append((ab, full))
         if len(pairs) >= limit:
             break
+    return pairs
+
+
+def missing_intros(text, pairs):
+    """产出里用到了、但没带上原文介绍的缩写 → [(缩写, 全称)]。
+
+    用户 2026-09-18 定的规矩：**缩写保持缩写，不强行译成中文**；但原文介绍过的（「全称 (缩写)」），
+    首次出现时要把介绍带过来，不许遗漏。「带过来」认三种写法：英文全称原样、「中文名（缩写）」、「缩写（全称）」。
+    """
+    out = []
+    for ab, full in pairs or []:
+        if not re.search(r'(?<![A-Za-z0-9])%s(?![A-Za-z0-9])' % re.escape(ab), text or ''):
+            continue                                   # 这栏根本没用到它
+        introduced = (full.lower() in (text or '').lower()
+                      or re.search(r'[\u4e00-\u9fff][\u4e00-\u9fff\d\-]{1,14}[（(]%s[)）]' % re.escape(ab), text or '')
+                      or re.search(r'%s\s*[（(][^（()）]{4,}[)）]' % re.escape(ab), text or ''))
+        if not introduced:
+            out.append((ab, full))
+    return out
+
+
+def glossary(md, limit=30):
+    """从原文抽术语表：「全称（缩写）」对 + 出现 ≥3 次的样品编号（PDMS-IU-12 这种）。
+
+    塞给每一次调用，十几次调用才会用同一套名字。**只抽不译**：缩写保持缩写，不强行给中文；
+    原文介绍过的，首次出现带上介绍（`missing_intros` 会查）。领域术语表只作参考。
+    """
+    text = _ol.scan.clean_body(md or '')
+    ip = intro_pairs(md, limit)
+    pairs = ['%s = %s' % (ab, full) for ab, full in ip]
+    seen = {ab for ab, _ in ip}
     counts = {}
     for m in _CODE.finditer(text):
         c = m.group(0)
@@ -183,7 +212,8 @@ def glossary(md, limit=30):
     codes = [c for c, n in sorted(counts.items(), key=lambda x: -x[1]) if n >= 3][:20]
     lines = []
     if pairs:
-        lines.append('缩写：' + '；'.join(pairs))
+        lines.append('原文介绍过的缩写（缩写保持缩写，不必硬译；首次出现时按原文带上介绍，写成「全称 (缩写)」或「中文名 (缩写)」，'
+                     '原文没介绍的只写缩写）：' + '；'.join(pairs))
     if codes:
         lines.append('样品/体系编号（原样使用，不许改写）：' + '、'.join(codes))
     tr = _gl.prompt_block(domain_glossary(), text)
@@ -347,7 +377,7 @@ def _sub(tpl, **kw):
     return tpl
 
 
-def _with_fix(chat, sysp, user, max_tokens, model, parse, ok, source, log, what, must=None):
+def _with_fix(chat, sysp, user, max_tokens, model, parse, ok, source, log, what, must=None, intros=None):
     """调一栏：合形检查 → 中文检查 → 数字回查 → 漏数检查 → 不合格带着原因重来（最多三次）。
 
     `parse(raw) -> dict`，`ok(d) -> bool`。数字回查对 dict 里所有字符串值做。
@@ -371,6 +401,13 @@ def _with_fix(chat, sysp, user, max_tokens, model, parse, ok, source, log, what,
             log('  %s第 %d 次有没翻的英文「%s…」，重写' % (what, attempt, runs[0][:30]))
             note = ('\n\n⚠ 上一稿里这些英文没有翻译：%s。把英文全称译成中文，括号里保留缩写；'
                     '其余内容保持不变，按同样格式重写。' % '；'.join(r[:60] for r in runs[:5]))
+            best = d
+            continue
+        lost = missing_intros('\n'.join(texts), intros or [])
+        if lost and attempt < 3:
+            log('  %s第 %d 次漏了原文对缩写的介绍：%s，补写' % (what, attempt, '、'.join(ab for ab, _ in lost[:4])))
+            note = ('\n\n⚠ 上一稿这些缩写原文有介绍，首次出现时要带上（写成「全称 (缩写)」或「中文名 (缩写)」）：%s。'
+                    '其余内容保持不变，按同样格式重写。' % '；'.join('%s = %s' % (ab, full) for ab, full in lost[:8]))
             best = d
             continue
         wrong = _gl.mismatches(domain_glossary(), '\n'.join(texts))
@@ -409,7 +446,7 @@ def _lead(chat, md, outline, meta, review, gloss, source, model, log):
         _by_kind(md, outline, (_ol.ABSTRACT, _ol.BACKGROUND), CAP_INTRO),
         _by_kind(md, outline, (_ol.CONCLUSION,), CAP_CONCL)))
     d = _with_fix(chat, sysp, user, 3500, model, _parse_tagged,
-                  lambda d: bool(d.get('导读') and d.get('引言')), source, log, '导读/引言')
+                  lambda d: bool(d.get('导读') and d.get('引言')), source, log, '导读/引言', intros=intro_pairs(md))
     return normalize('lead', d.get('导读', '')), [normalize('intro', p) for p in _paras(d.get('引言', ''))]
 
 
@@ -447,7 +484,7 @@ def _exp(chat, md, si_md, outline, review, gloss, source, model, log):
 
     def ok(d):
         return all(x in d['实验'] for x in ('（1）', '（2）', '（3）')) and bool(d.get('Q1'))
-    d = _with_fix(chat, sysp, user, 4500, model, parse, ok, source, log, '实验/Q1', must=must)
+    d = _with_fix(chat, sysp, user, 4500, model, parse, ok, source, log, '实验/Q1', must=must, intros=intro_pairs(md))
     return _paras(d.get('实验', '')), d.get('Q1', '')
 
 

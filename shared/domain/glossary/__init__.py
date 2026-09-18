@@ -92,7 +92,7 @@ def prompt_block(table, text, limit=40):
     for t in ts:
         zh = lookup(table, t)
         items.append('%s=%s' % (t, zh[0]) if len(zh) == 1 else '%s=%s（按原文全称定）' % (t, '/'.join(zh)))
-    return '译名（公众号惯用，缩写对应的中文名必须照用）：' + '；'.join(items)
+    return '若要给中文名，公众号惯用的译名是（仅供参考，缩写本身保持缩写）：' + '；'.join(items)
 
 
 # 只有「票数够多、且只有一个意思」的词才拿来纠错。2026-09-18 抽检抓到反例：表里 ODA=十八胺（octadecylamine），
