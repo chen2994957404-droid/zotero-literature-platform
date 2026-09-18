@@ -63,16 +63,26 @@ def parse_pdf(pdf_path, out_dir, reuse=True):
     """解析 PDF 到 out_dir。已解析过且 reuse=True 则直接复用（省 MineRU 额度）。
 
     产出：out_dir/{full.md, layout.json, *_origin.pdf, images/}。返回 out_dir。
+    先用 vlm 档；MineRU 那边回「parsing failed」就换 pipeline 档再试一次
+    （2026-09-18：两份 6–9 MB 的 Nature Mater. / Sci. Adv. 正文 vlm 连败三次，文件本身没坏）。
     """
     os.makedirs(out_dir, exist_ok=True)
     if reuse and is_parsed(out_dir):
         return out_dir
+    try:
+        return _parse_once(pdf_path, out_dir, model_version='vlm', ocr=True)
+    except PDFParseError as e:
+        if '解析失败' not in str(e):
+            raise
+        return _parse_once(pdf_path, out_dir, model_version='pipeline', ocr=False)
 
+
+def _parse_once(pdf_path, out_dir, model_version, ocr):
     fname = os.path.basename(pdf_path)
     # 1. 申请上传地址
     r = _api('/file-urls/batch', 'POST', {
-        "enable_formula": True, "enable_table": True, "language": "en", "model_version": "vlm",
-        "files": [{"name": fname, "is_ocr": True, "data_id": "zot_" + str(int(time.time()))}]})
+        "enable_formula": True, "enable_table": True, "language": "en", "model_version": model_version,
+        "files": [{"name": fname, "is_ocr": ocr, "data_id": "zot_" + str(int(time.time()))}]})
     batch_id = r['data']['batch_id']
     upload_url = r['data']['file_urls'][0]
 
