@@ -17,7 +17,7 @@ PVDF 写成「聚丙烯腈」、mesitylhydroborate 译名胡来。小模型化�
 | `build(counts, min_count=2)` | 洗：去动词前缀、合并后缀变体、留可信译名 → 表 {en: {'zh': [主译名, 备选…], 'n': 次数}} |
 | `lookup(table, term)` | 一个英文词/缩写 → 译名列表（没有就空） |
 | `prompt_block(table, text)` | 这篇原文里出现过的缩写 → 塞进提示词的「译名（必须照用）」段 |
-| `mismatches(table, output)` | 产出里「中文（缩写）」与表不符的 → [(缩写, 写成了, 应为)] |
+| `mismatches(table, output)` | 产出里「中文（缩写）」与表不符的 → [(缩写, 写成了, 应为)]；只对票≥5 且无歧义的词强制 |
 """
 import re
 from collections import Counter, defaultdict
@@ -95,8 +95,19 @@ def prompt_block(table, text, limit=40):
     return '译名（公众号惯用，缩写对应的中文名必须照用）：' + '；'.join(items)
 
 
+# 只有「票数够多、且只有一个意思」的词才拿来纠错。2026-09-18 抽检抓到反例：表里 ODA=十八胺（octadecylamine），
+# 而那篇的 ODA 是八亚甲基二胺（octamethylenediamine），论文没错、表错了；GF 在表里是玻璃纤维/应变系数，那篇是石墨烯泡沫。
+# 缩写在不同论文里指不同东西是常态 —— 歧义词和票少的词只当提示塞进提示词，**不强制**。
+ENFORCE_MIN = 5
+
+
+def enforceable(table, term):
+    e = (table or {}).get(term)
+    return bool(e) and len(e['zh']) == 1 and e.get('n', 0) >= ENFORCE_MIN
+
+
 def mismatches(table, output):
-    """产出里写成「中文（缩写）」的，缩写在表里、中文却不在表里的 → [(缩写, 写成了, 应为)]。
+    """产出里写成「中文（缩写）」的，缩写在表里（且可强制）、中文却不在表里的 → [(缩写, 写成了, 应为)]。
 
     只判「中文名 + 括号缩写」这种明确对应的写法；单独出现的缩写不判（无法知道它想说哪个词）。
     """
@@ -104,7 +115,7 @@ def mismatches(table, output):
     for zh, en in _PAIR.findall(output or ''):
         en = en.strip()
         accepted = lookup(table, en)
-        if not accepted or en in seen:
+        if not accepted or en in seen or not enforceable(table, en):
             continue
         zh = _clean_zh(zh) or zh
         if not any(zh.endswith(a) or a.endswith(zh) for a in accepted):

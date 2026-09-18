@@ -37,8 +37,11 @@ def main():
     check('歧义都留', set(lookup(t, 'TA')) == {'单宁酸', '硫辛酸'}, str(lookup(t, 'TA')))
     pb = prompt_block(t, 'We used SEM and PVDF binder. DMF was the solvent.')
     check('只列原文里有的', 'SEM=扫描电子显微镜' in pb and 'PVDF=聚偏氟乙烯' in pb and 'TA' not in pb, pb)
+    t['PVDF']['n'] = 9                                   # 票够多、无歧义 → 强制
     m = mismatches(t, '以聚丙烯腈（PVDF）为粘结剂，用扫描电子显微镜（SEM）观察，硫辛酸（TA）交联')
     check('抓错译不误报', m == [('PVDF', '聚丙烯腈', '聚偏氟乙烯')], str(m))
+    t['PVDF']['n'] = 2
+    check('票少的不强制', mismatches(t, '聚丙烯腈（PVDF）') == [] and mismatches(t, '石墨烯（TA）') == [])
     print('\n%d/%d 通过' % (5 - len(_fail), 5))
     return 0 if not _fail else 1
 
