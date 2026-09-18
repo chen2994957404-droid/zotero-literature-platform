@@ -122,13 +122,15 @@ def test_进程表的正则认不到看门狗自己(wd):
 
 class TestDailyDue:
     def _at(self, hhmm):
+        # 用「今天」而不是写死某一天：launch_daily 落的印章是今天的日期，
+        # 写死 2026-09-17 的话，一到 9 月 18 日「拉过之后不再拉」那条就红（2026-09-18 主力机体检真红了）
         import time
-        y, m, d = 2026, 9, 17
+        lt = time.localtime()
         h, mi = map(int, hhmm.split(':'))
-        return time.mktime((y, m, d, h, mi, 0, 0, 0, -1))
+        return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, h, mi, 0, 0, 0, -1))
 
     def test_今天拉过就不再拉(self, wd):
-        assert not wd.daily_due(self._at('03:00'), last_day='2026-09-17')
+        assert not wd.daily_due(self._at('03:00'), last_day=__import__('time').strftime('%Y-%m-%d'))
 
     def test_没到凌晨两点不拉(self, wd):
         assert not wd.daily_due(self._at('01:59'), last_day='2026-09-16')
