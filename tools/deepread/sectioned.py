@@ -598,10 +598,14 @@ def compose(md, si_md, figs, meta, chat, log=print, model=None, local=False, cac
     source = (md or '') + '\n' + (si_md or '')
     # 指纹里带上篇幅参数：2026-09-15 第二轮评测把深解预算收紧了，缓存却按旧参数原样复用，
     # 10 篇里 8 篇分数一字不差 —— 改了参数看不到效果比没缓存更糟。
-    fp = '%s|%s|%s|deep=%d-%d-%d|must=%d-%d-%s' % ('|'.join('%s=%s' % kv for kv in sorted(PROMPTS.items())),
+    # 指纹里也带上术语表的版本（建表时间 + 词数）：2026-09-18 金标 v7 十篇分数与 v6 一字不差 ——
+    # 术语表塞进了提示词，缓存却按旧指纹原样复用，等于什么都没跑。
+    gt = domain_glossary()
+    fp = '%s|%s|%s|deep=%d-%d-%d|must=%d-%d-%s|gloss=%s-%d' % ('|'.join('%s=%s' % kv for kv in sorted(PROMPTS.items())),
                                      model or '', 'local' if local else 'route',
                                      DEEP_BUDGET, DEEP_MIN, DEEP_MAX,
-                                     MUST_CAP_FIG, MUST_CAP_EXP, MISS_TOL)
+                                     MUST_CAP_FIG, MUST_CAP_EXP, MISS_TOL,
+                                     gt.get('_built', ''), len(gt))
     C = _Cache(cache, fp)
     n_figs = len(figs)
     log('  按%s写；%d 张图；骨架 %d 节；术语 %d 条%s' % (
