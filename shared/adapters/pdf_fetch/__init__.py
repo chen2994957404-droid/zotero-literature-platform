@@ -407,6 +407,8 @@ def _decode(got, want='pdf'):
     raw = base64.b64decode(got['b64'])
     if _looks_like_pdf(raw[:4], got.get('type')):
         return raw
+    # 验收没过：记下拿到的到底是什么（类型 / 大小 / 开头），否则 not_pdf 永远是黑盒（2026-09-18）
+    log.info('  候选验收没过：type=%s size=%s head=%r' % (got.get('type'), len(raw), raw[:40]))
     if want == 'si':
         mime = (got.get('type') or '').lower()
         if 'html' in mime or raw[:9].lower().startswith(b'<!doctype'):
@@ -780,6 +782,7 @@ def _grab(page, ctx, cands, kind, timeout, settle, out):
         except Exception:
             pass
     out['reason'] = 'not_pdf'
+    log.info('  not_pdf：试过 %d 个候选：%s' % (len(tried), ' | '.join(list(tried)[:5])))
     return False
 
 

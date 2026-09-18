@@ -347,6 +347,8 @@ def land(doi, with_si=True, allow_fetch=True, zotero_index=None,
             elif not src and allow_fetch and out['pdf']:
                 si_r = fetch_si_one(doi)
                 src = si_r['path'] if si_r['ok'] else ''
+            if si_r and not si_r['ok']:
+                out['si_reason'] = si_r.get('reason', '')
             if si_r and not si_r['ok'] and si_r.get('reason') == 'no_si':
                 # 出版商页面确认没挂 SI（综述、老文献常见）：记下来，以后别再敲它
                 catalog.mark_si_none(pid, pdf_fetch.REASONS['no_si'])
@@ -392,6 +394,11 @@ def fill_si(gap=GAP, limit=None, log=print):
     log(f'该补 SI 的 {len(todo)} 篇，每篇间隔 {gap} 秒，预计 {len(todo) * (gap + 8) // 60} 分钟')
     for i, (pid, doi) in enumerate(todo, 1):
         r = land(doi, pdf_path=paths.local_pdf(pid))
+        if r.get('si_reason') == 'navigate_failed':
+            # 页面根本没打开（多半是 ERR_CONNECTION_CLOSED 这种一过性的网络抖动）：歇一下再来一次
+            log(f'  [{i}/{len(todo)}] 页面没打开，{gap} 秒后重试一次  {doi}')
+            time.sleep(gap)
+            r = land(doi, pdf_path=paths.local_pdf(pid))
         if r.get('si'):
             c['拿到'] += 1; mark = '✓ 拿到'
         elif catalog.si_status(pid) == catalog.SI_NONE:
