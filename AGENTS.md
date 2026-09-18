@@ -28,8 +28,8 @@ scratch/  ← 外部 agent 的产物 / 草稿，不进版本库
 shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
     kernel/  ← 基础设施：谁都依赖它，它不依赖任何人（14 块）
         cli、config、proc_lock、prompts、subproc、budget.py、catalog.py、errors.py、heartbeat.py、jobs.py、log.py、mcp_prompt.py、paths.py、role.py
-    domain/  ← 纯逻辑：不联网、不知道文件放在哪（4 块）
-        figure_crop、libmatch、numcheck、schema
+    domain/  ← 纯逻辑：不联网、不知道文件放在哪（5 块）
+        figure_crop、glossary、libmatch、numcheck、schema
     adapters/  ← 外接口：唯一允许联网/用第三方库的一环（14 块）
         crossref、embed、llm_client、openalex、pdf_fetch、pdf_parse、query_expand、sciverse、semanticscholar、snowball、unpaywall、vectordb、wechat_seed、zotero_client
 tests/ （5 个脚本）
@@ -43,7 +43,7 @@ tools/  ← 工具包：一个工具 = 一个自包含的包（13 块）
 （data/ 是数据目录（五层），3000+ 文件，**不要去 glob 它**）
 ```
 
-**可枚举的模块 36 个**（`tools/` 工具包 + `shared/` 共用件，每个都有 `__init__.py` 与 `selftest.py`）
+**可枚举的模块 37 个**（`tools/` 工具包 + `shared/` 共用件，每个都有 `__init__.py` 与 `selftest.py`）
 
 进度、健康状况、下一步做什么 → 见 `HANDOVER.md`
 
