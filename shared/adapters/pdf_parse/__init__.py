@@ -113,7 +113,7 @@ def _parse_once(pdf_path, out_dir, model_version, ocr):
         if st == 'failed':
             # 把 MineRU 回的整条记录和 batch_id 留下：它的 err_msg 只有一句通用话，
             # 拿 batch_id 才能去它后台查（2026-09-18 一晚 10 次失败，事后只剩这一句）
-            log.warning('MineRU 解析失败 batch=%s model=%s ocr=%s 返回=%s' % (batch_id, model_version, ocr, res))
+            log.warn('MineRU 解析失败 batch=%s model=%s ocr=%s 返回=%s' % (batch_id, model_version, ocr, res))
             raise PDFParseError('解析失败: ' + res.get('err_msg', '') + f'（batch {batch_id}，{model_version}）')
     if not zip_url:
         raise PDFParseError('解析超时')
