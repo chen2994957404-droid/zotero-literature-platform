@@ -223,7 +223,14 @@ def glossary(md, limit=30):
 
 
 def _mentions(block, num):
-    """这段文字提到第 num 张图吗。认「Fig. 3」「Figures 3 and 4」「Figs. 3–5」「Fig. 3a–c」。"""
+    """这段文字提到第 num 张图吗。认「Fig. 3」「Figures 3 and 4」「Figs. 3–5」「Fig. 3a–c」。
+
+    两种不算：「Supplementary Fig. 2」是 SI 的图不是正文图 2（Nature 系用这种写法而非 Fig. S2）；
+    「as described in Fig. 2 legend」是图 3 的段落借图 2 的图注省字。
+    2026-09-18 抽检：图 3 整段带着「80 °C 修复 74%」那些数被喂给了图 2，两种原因都占了。
+    """
+    block = re.sub(r'\bSupplementary\s+(?:Fig(?:ure)?s?\.?)\s*\d+[a-z]?', '', block, flags=re.I)
+    block = re.sub(r'\b(?:Fig(?:ure)?s?\.?|Scheme)\s*S?\d+[a-z]?\s+(?:legend|caption)s?\b', '', block, flags=re.I)
     for m in re.finditer(r'\b(?:Fig(?:ure)?s?\.?|Scheme)\s*((?:S?\d+[a-z]?(?:\s*[–\-‒]\s*S?\d*[a-z]?)?\s*(?:,|and|&)?\s*)+)',
                          block, re.I):
         for tok in re.split(r'\s*(?:,|and|&)\s*', m.group(1)):
@@ -250,10 +257,15 @@ def _fig_context(md, outline, num, cap=CAP_FIG):
             break
     nonbody = [(s['start'], s['end']) for s in outline.get('sections') or []
                if s['kind'] == _ol.NONBODY]
+    # 图注本身不算「讨论它的段落」。只认块首的 _FIGCAP_RE 不够：MineRU 常把「上一段残片 + 图片行 + 图注」
+    # 挤在一个块里，图注从块中间开始（2026-09-18 抽检：图 3 的 2000 字图注被整块当正文再喂一遍，
+    # 顶掉了 7000 字上限里的真段落）—— 按骨架登记的图注区间判，与区间相交的块整个跳过。
+    caps = [(f['start'], f['end']) for f in outline.get('figures') or []]
     paras, pos, tabs = [], 0, set()
     for block in re.split(r'(\n\s*\n)', text):
+        end = pos + len(block)
         if block.strip() and _mentions(block, num) and not _ol._FIGCAP_RE.match(block):
-            if not any(a <= pos < b for a, b in nonbody):
+            if not any(a <= pos < b for a, b in nonbody) and not any(a < end and pos < b for a, b in caps):
                 paras.append(block.strip())
                 tabs.update(int(x) for x in re.findall(r'\bTable\s*(\d+)', block, re.I))
         pos += len(block)
