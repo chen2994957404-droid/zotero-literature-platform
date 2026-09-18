@@ -62,6 +62,11 @@ def build_server():
                     lambda a: {'text': _deepread_status(a.get('itemKey') or ''),
                                'structured': _deepread_status_raw(a.get('itemKey') or '')})
     s._report = registry.register_all(s)      # --list 与自测要看这份账
+    # 某个工具包 import 就炸时，registry 只把错记进账本，服务照样起来 —— 结果是那一包的
+    # 工具「凭空消失」，模型只看到「未知工具」，没人知道为什么（踩坑 #173）。起服务时喊出来。
+    for name, man, got in s._report:
+        if got.get('error'):
+            print(f'⚠ 工具包 {name} 没挂上（它的工具这次全都不可用）：{got["error"]}', file=sys.stderr)
     return s
 
 

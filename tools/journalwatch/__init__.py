@@ -254,6 +254,42 @@ def patrol(days=7, journals=None, log=None, only_new=False, today=None, remember
             'n_journals': len(journals)}
 
 
+def recent_from_store(days=7, pick='', only_new=False, today=None):
+    """从雷达库（每日巡逻已经写进去的）取最近几天的新论文 —— **零网络、瞬时**。
+
+    为什么有它（2026-09-18）：`patrol()` 逐刊问 Crossref，59 本刊串行要两分多钟，
+    而 MCP 客户端约 60 秒就超时 —— 作为 MCP tool 永远跑不完。主力机每天已经巡逻并入库，
+    模型要的只是「最近有什么」，直接读库就够；真要现场问 Crossref 走 `patrol()`（人点）。
+    返回形状与 `patrol()` 一致：{'items', 'failed', 'since', 'n_journals', 'last_patrol'}。
+    """
+    since = _since(days, today)
+    journals = load_journals()
+    if pick:
+        journals = [j for j in journals if pick in j['name'].lower()]
+    names = {j['name'] for j in journals}
+    seen = load_seen()
+    checked = (seen.get('checked') or {}).values()
+    last = max(checked) if checked else ''
+    con = store.connect()
+    try:
+        con.row_factory = __import__('sqlite3').Row
+        rows = con.execute('''SELECT * FROM works WHERE coalesce(created, published) >= ?
+                              ORDER BY coalesce(created, published) DESC''', (since,)).fetchall()
+    finally:
+        con.close()
+    items = []
+    for r in rows:
+        w = dict(r)
+        if names and w.get('venue') not in names:
+            continue
+        w['is_new'] = (w.get('first_seen') or '') >= since
+        if only_new and not w['is_new']:
+            continue
+        items.append(w)
+    return {'items': items, 'failed': [], 'since': since,
+            'n_journals': len(journals), 'last_patrol': last}
+
+
 def backfill(years=3, journals=None, log=None, until=None, progress=None):
     """把过去几年的正式论文拉进雷达库（0 级：题目 / 摘要 / 作者 / 参考文献 DOI）。
 

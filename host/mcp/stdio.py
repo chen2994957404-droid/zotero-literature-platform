@@ -46,6 +46,15 @@ ERR_METHOD = -32601
 ERR_PARAMS = -32602
 
 
+def _hint(e):
+    """给异常补一句「该往哪查」。模型拿到裸 `WinError 10061` 只会瞎猜参数（2026-09-18 MCP 全量走查发现）。"""
+    msg = str(e)
+    if '10061' in msg or isinstance(e, ConnectionRefusedError) or 'Connection refused' in msg:
+        return ('\n（连接被拒 = 它依赖的本机服务没在跑，不是参数问题：library_* 系列靠 Zotero 桌面，'
+                'library_retrieve / ask 靠 Ollama。换一个不依赖它的工具，或请用户把那个程序打开。）')
+    return ''
+
+
 class MCPStdioServer:
     """MCP stdio 服务端：newline-delimited JSON-RPC 2.0，零依赖。"""
 
@@ -290,7 +299,7 @@ class MCPStdioServer:
                     f'只接受 dict（{{"text": ...}}）或 str')
         except Exception as e:  # 业务异常 → 作为工具错误回给模型（isError），而非协议错误
             self._respond(req_id, {
-                'content': [{'type': 'text', 'text': f'工具 {name} 执行失败：{e}'}],
+                'content': [{'type': 'text', 'text': f'工具 {name} 执行失败：{e}{_hint(e)}'}],
                 'isError': True,
             })
             return
