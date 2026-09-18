@@ -21,3 +21,12 @@ def test_si过滤自测全过():
                        text=True, encoding='utf-8', errors='replace', timeout=120)
     assert r.returncode == 0, (
         'si_filter/selftest.py 没过：\n' + (r.stdout or '') + (r.stderr or ''))
+
+
+def test_SI段校验_搪塞词与编数都要抓():
+    """2026-09-18 抽检：本地模型把 SI 段写成「通用复现指南」（通常 / 光气法或 MDI 法 / 需依据主文），整段是编的。"""
+    from tools.deepread import si
+    src = 'To a solution of 0.966 g LiMHB in 40 mL THF was added 1.0 g PAA; stirred 24 h.'
+    assert si.problems('将 0.966 g LiMHB 溶于 40 mL THF，加入 1.0 g PAA，搅拌 24 h', src) == []
+    p = si.problems('通常在碱性条件下反应；投料 12.5 g，需依据主文配方', src)
+    assert len(p) == 2 and '搪塞词' in p[0] and '12.5' in p[1]
