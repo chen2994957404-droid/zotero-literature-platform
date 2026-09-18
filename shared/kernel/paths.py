@@ -409,6 +409,12 @@ def chunk_measurements(key):
     return os.path.join(paper_dir(key), 'chunk_measurements.json')
 
 
+def glossary():
+    """serving/glossary.json —— 领域术语表（缩写 → 中文译名），从范文挖出来的，**可重建**：
+    `python -m tools.deepread --建术语表`。精读 / 问答生成时注入、生成后校验（shared.domain.glossary）。"""
+    return os.path.join(SERVING, 'glossary.json')
+
+
 # ── 结构化抽取产物 ────────────────────────────────────────────────────
 def structured(key):
     """★ structured/<key>.json —— 单篇的结构化字段。"""

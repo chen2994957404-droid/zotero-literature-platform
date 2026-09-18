@@ -28,12 +28,14 @@
 
 `ask_answer` **返回**而不是打印 —— 面板、MCP、命令行共用同一份逻辑。
 """
+import io
 import os
 import sys
 
 from shared.adapters import vectordb
 from shared.adapters.embed import embed as _embed_batch
 from shared.adapters.llm_client import chat as _chat
+from shared.domain import glossary as _gl
 from shared.domain import numcheck
 from shared.kernel import paths, prompts
 from shared.kernel.config import get_key, get_model
@@ -74,7 +76,10 @@ def answer_with(system, user, context=''):
     if not context or _answer_ok(ans, context):
         return ans
     bad = numcheck.unverified_numbers(ans, context)
+    wrong = _gl.mismatches(_glossary(), ans)
     why = []
+    if wrong:
+        why.append('这些缩写的中文名写错了：' + '；'.join('%s 应为「%s」' % (en, ok) for en, _, ok in wrong[:6]))
     if '【片段' not in ans:
         why.append('没有在句末标出处（写成【片段N】）')
     if bad:
@@ -84,10 +89,19 @@ def answer_with(system, user, context=''):
     return fixed if _answer_ok(fixed, context) or len(fixed) > 50 else ans
 
 
+def _glossary():
+    try:
+        import json
+        return json.load(io.open(paths.glossary(), encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+
+
 def _answer_ok(ans, context):
     if '没有找到' in (ans or ''):
         return True
-    return '【片段' in (ans or '') and not numcheck.unverified_numbers(ans, context)
+    return ('【片段' in (ans or '') and not numcheck.unverified_numbers(ans, context)
+            and not _gl.mismatches(_glossary(), ans))
 
 
 def ask_answer(question, top_k=TOP_K):

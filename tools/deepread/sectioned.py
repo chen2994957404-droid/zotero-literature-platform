@@ -14,6 +14,7 @@
     图的段落   认「Figures 3 and 4」「Fig. 3a–c」这类写法，不只认单个「Fig. N」
     格式硬修   🌿🍁☘️ 用错栏、「图 1」多空格、漏 Question 前缀、混进列表 —— 正则一行的事不劳模型
     数字回查   查出原文没有的数，带着「这几个数原文没有」把那一栏重生成一次
+    术语表     范文里挖出的缩写→中文（data/serving/glossary.json）：这篇里出现的词塞进每次调用，写错译名就重写（2026-09-18）
     清单先行   生成前把这栏材料里带单位的数列成清单塞进提示词，生成后查覆盖，漏的点名补（2026-09-17）
     分栏缓存   每栏产出落盘；断了从断处接，改一栏提示词只重跑那一栏
     篇幅       深解段长度由图数算：图多每段自动压短，全篇稳在范文的量级
@@ -38,6 +39,7 @@ import re
 from shared.domain.schema import is_review
 from shared.domain.schema import outline as _ol
 from shared.kernel import prompts
+from shared.domain import glossary as _gl
 from shared.domain import numcheck as _nums
 
 # v2（2026-09-15）：金标三轮实测我们的汉字数中位 5900、范文（774 篇）中位 3872，篇幅比 1.75 ——
@@ -141,6 +143,21 @@ def _long_form(before, ab):
     return s[i + 1:].strip(' ,')
 
 
+_GLOSSARY = {'loaded': False, 'table': {}}
+
+
+def domain_glossary():
+    """领域术语表（缩写 → 中文），没建过就是空表：一切照旧，只是不校验译名。"""
+    if not _GLOSSARY['loaded']:
+        _GLOSSARY['loaded'] = True
+        try:
+            from shared.kernel import paths as _p
+            _GLOSSARY['table'] = json.load(io.open(_p.glossary(), encoding='utf-8'))
+        except (OSError, ValueError):
+            _GLOSSARY['table'] = {}
+    return _GLOSSARY['table']
+
+
 def glossary(md, limit=30):
     """从原文抽术语表：「全称（缩写）」对 + 出现 ≥3 次的样品编号（PDMS-IU-12 这种）。
 
@@ -169,6 +186,9 @@ def glossary(md, limit=30):
         lines.append('缩写：' + '；'.join(pairs))
     if codes:
         lines.append('样品/体系编号（原样使用，不许改写）：' + '、'.join(codes))
+    tr = _gl.prompt_block(domain_glossary(), text)
+    if tr:
+        lines.append(tr)
     return '\n'.join(lines)
 
 
@@ -351,6 +371,13 @@ def _with_fix(chat, sysp, user, max_tokens, model, parse, ok, source, log, what,
             log('  %s第 %d 次有没翻的英文「%s…」，重写' % (what, attempt, runs[0][:30]))
             note = ('\n\n⚠ 上一稿里这些英文没有翻译：%s。把英文全称译成中文，括号里保留缩写；'
                     '其余内容保持不变，按同样格式重写。' % '；'.join(r[:60] for r in runs[:5]))
+            best = d
+            continue
+        wrong = _gl.mismatches(domain_glossary(), '\n'.join(texts))
+        if wrong and attempt < 3:
+            log('  %s第 %d 次译名错：%s，重写' % (what, attempt, '、'.join('%s→%s' % (en, ok) for en, _, ok in wrong[:4])))
+            note = ('\n\n⚠ 上一稿这些缩写的中文名写错了：%s。改成给定的译名，其余内容保持不变，按同样格式重写。'
+                    % '；'.join('%s 应为「%s」（你写成了「%s」）' % (en, ok, zh) for en, zh, ok in wrong[:8]))
             best = d
             continue
         bad = unverified_numbers('\n'.join(texts), source)

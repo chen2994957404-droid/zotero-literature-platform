@@ -21,6 +21,7 @@
     python -m tools.deepread --金标评测 --tag v3_cloud --篇数 10               走路由表（花钱）
     python -m tools.deepread --金标评测 --tag v3_local --篇数 10 --对照         同一批老精读（v2）也打分做对照
     python -m tools.deepread --金标重算 v3_local                                改了评分口径只重算
+    python -m tools.deepread --建术语表                                        从范文重建领域术语表（缩写→中文，零成本）
     --同批 v3_local 用上一轮那一批（候选池在长，同 seed 抽出来会变；跨轮对比必须同批）
     --seed 1 固定抽样；--model qwen3.5:4b 指定模型；--篇数 0 = 全部
 
@@ -53,6 +54,10 @@ def main():
     fp = opt('--file')
     keys = ([l.strip() for l in open(fp, encoding='utf-8') if l.strip()]
             if fp else positionals())
+
+    if flag('--建术语表'):
+        from tools.deepread import glossary_build
+        return glossary_build.main()
 
     if flag('--金标评测') or flag('--金标重算'):
         from shared.kernel import role

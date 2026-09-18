@@ -235,3 +235,21 @@ def test_渲染时转义尖括号():
     from tools.deepread.main_text import render_html
     h = render_html('## 讨论\n\n低压（<1×10^4 kPa^-1）下灵敏度 **高**\n\n图4，标题为"x"。')
     assert '（&lt;1×10^4' in h and '<strong>高</strong>' in h and '<p>图4，' in h
+
+
+def test_术语表_注入与错译重写(monkeypatch):
+    """2026-09-18：范文挖的术语表塞进每次调用；写错译名（PVDF→聚丙烯腈）被抓出来重写。"""
+    monkeypatch.setitem(sectioned._GLOSSARY, 'loaded', True)
+    monkeypatch.setitem(sectioned._GLOSSARY, 'table', {'PBS': {'zh': ['聚硼硅氧烷'], 'n': 9}, 'PDMS': {'zh': ['聚二甲基硅氧烷'], 'n': 9}})
+    calls = []
+    base = fake_chat(calls)
+
+    def chat(system, user, **kw):
+        out = base(system, user, **kw)
+        if '【导读】' in system and '译名错' not in user and '写错了' not in user:
+            return out.replace('PBS 弹性体', '聚苯乙烯（PBS）弹性体')      # 第一稿译错
+        return out
+    content, _ = sectioned.compose(MD, '', FIGS, META, chat, log=lambda *a: None)
+    assert '译名（公众号惯用' in calls[0]['user'] and 'PBS=聚硼硅氧烷' in calls[0]['user'] and 'PDMS=' in calls[0]['user']
+    assert any('PBS 应为「聚硼硅氧烷」（你写成了「聚苯乙烯」）' in c['user'] for c in calls)
+    assert '聚苯乙烯' not in content
