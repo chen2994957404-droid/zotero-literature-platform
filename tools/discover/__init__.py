@@ -299,6 +299,7 @@ def _save_record(query, mode, year_from, prefer, topic_floor, r):
         'results': [{'doi': p.get('doi') or '', 'title': (p.get('title') or '')[:120],
                      'year': p.get('year'), 'status': m.get('status'),
                      'score': round(score, 3) if isinstance(score, (int, float)) else None,
+                     'topic_sim': m.get('topic_sim'), 'jev': m.get('jev'),   # 留档两种打分，日后拿真实取舍对照
                      'from': p.get('from') or 'search'}
                     for p, m, score in (r.get('rows') or [])],
     }
