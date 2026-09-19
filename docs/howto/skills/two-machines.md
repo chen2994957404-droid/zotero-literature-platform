@@ -20,7 +20,7 @@ description: 涉及写回 Zotero、跑花钱的批量作业、起常驻服务（
 | Zotero 桌面 | 已装，平时不常开 | **常开**（本地 API 要它） |
 | 项目路径 | `D:\dev\literature-platform` | `D:\02_AI\Projects\literature-platform` |
 | `data/`（五层） | 测试账号自产的几篇 | **权威副本** |
-| 自启任务 | **一个都不注册** | 4 个：Watcher / Ollama / ZoteroApp / AutoSync |
+| 自启任务 | **只有一个例外**：`LiteraturePlatformTunnel`（给 Antigravity 的 SSH 隧道，只往外连、不花钱不写库；`host/deploy/tunnel_task.py`，2026-09-19）| 4 个：Watcher / Ollama / ZoteroApp / AutoSync |
 
 ## 二、谁干什么（有争议以此为准）
 
