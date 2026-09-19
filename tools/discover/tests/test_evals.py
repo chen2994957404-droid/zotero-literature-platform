@@ -147,4 +147,4 @@ def test_每次检索都留档_能回放(tmp_path, monkeypatch):
     assert d['question'] == '原始问题' and d['queries'] == ['q1', 'q2'] and d['explore'] is True
     assert d['filters']['year_from'] == 2024 and d['contrib'][1] == {'query': 'q2', 'got': 8, 'new': 3}
     assert d['results'][0] == {'doi': '10.1/a', 'title': 'A', 'year': 2024, 'status': 'new',
-                               'score': 0.71, 'from': 'forward'}
+                               'score': 0.71, 'topic_sim': None, 'jev': None, 'from': 'forward'}
