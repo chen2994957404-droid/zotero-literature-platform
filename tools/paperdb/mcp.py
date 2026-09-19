@@ -21,11 +21,35 @@ def _json(obj):
     return {'text': json.dumps(obj, ensure_ascii=False, indent=2), 'structured': obj}
 
 
+# paperdb_find 默认只回这几列：papers 一行十几个长文本字段，搜一个词能吐 16 万字，
+# 模型上下文直接被冲掉（2026-09-18 在 B 机实测）。要看某篇全貌传 full=true。
+_BRIEF = ('key', 'title', 'doi', 'journal', 'journal_tier', 'tier',
+          'material_system', 'dynamic_bond_type')
+_CLIP = 200
+
+
+def _brief(rows, full):
+    if full:
+        return rows
+    out = []
+    for r in rows:
+        d = {k: r.get(k) for k in _BRIEF}
+        for k in ('material_system', 'dynamic_bond_type'):
+            v = d.get(k)
+            if isinstance(v, str) and len(v) > _CLIP:
+                d[k] = v[:_CLIP] + '…'
+        out.append(d)
+    return out
+
+
 def register(server):
     server.register_tool(
         'paperdb_find',
-        '按条件筛结构化记录：关键词 / 档次 / 某字段有值 / 某性能数值范围。',
+        '按条件筛结构化记录：关键词 / 档次 / 某字段有值 / 某性能数值范围。'
+        '默认只回 id/标题/DOI/期刊档次/抽取档次/体系/动态键这几列（长文本截 200 字）；'
+        '要某篇的全部字段传 full=true 并把 limit 收小。',
         {'type': 'object', 'properties': {
+            'full': {'type': 'boolean', 'description': '回全部字段（很长，配小 limit 用）'},
             'text': {'type': 'string', 'description': '标题或字段里的关键词'},
             'tier': {'type': 'string', 'description': '抽取档次：精+SI / 精层 / 粗层'},
             'journal': {'type': 'string',
@@ -39,12 +63,12 @@ def register(server):
                      'description': '单位，如 MPa（**不做单位换算**，要连单位一起筛）'},
             'limit': {'type': 'integer', 'minimum': 1, 'maximum': 500},
         }},
-        lambda a: _json(paperdb.find(
+        lambda a: _json(_brief(paperdb.find(
             text=a.get('text'), tier=a.get('tier'), field=a.get('field'),
             journal=a.get('journal'),
             prop=a.get('prop'), min_value=a.get('min_value'),
             max_value=a.get('max_value'), unit=a.get('unit'),
-            limit=a.get('limit', 100))))
+            limit=a.get('limit', 100)), bool(a.get('full')))))
 
     server.register_tool(
         'paperdb_stats', '库里有多少篇、每个字段的有值率多少（数据有多准）。',
