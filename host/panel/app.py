@@ -60,6 +60,9 @@ KEY_NAMES = [
     ('S2_API_KEY',      'Semantic Scholar（雷达补 TLDR / 引用意图，可空）', False),
     # 阿里云百炼：模型名以 qwen 开头就会自动走这里，不用另选「哪一家」。
     ('DASHSCOPE_KEY',   '阿里云百炼（通义千问，可空；新号有 90 天免费额度）', False),
+    # TypeSafe Jev（2026-09-18 试用）：只做判断不写字的模型，接口不是 OpenAI 兼容，
+    # 所以不进路由表的「通道」，先只存密钥；适配器与实测另做。
+    ('TYPESAFE_KEY',    'TypeSafe Jev（判断模型，试用中，可空）', False),
 ]
 
 # 面板可重启的后台服务：任务计划名 → 显示名
