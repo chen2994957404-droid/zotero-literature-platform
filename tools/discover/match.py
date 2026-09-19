@@ -242,3 +242,58 @@ def rank(papers, matches, w_rel=0.6, w_cite=0.25, w_fresh=0.15, year_now=None,
         rows.append((p, m, round(score, 4)))
     rows.sort(key=lambda r: r[2], reverse=True)
     return rows
+
+
+# ── 第二层：Jev 精排（2026-09-19 加，可选） ──────────────────────────────
+# 向量只认字面像不像；「主题一样但说法换了」的篇（剪切增稠水下胶、抗冲击自修复聚脲）
+# 会被排到 150 名开外。对照实验（变更记录 2026-09-19）：Jev 四档打分 AP 0.752 vs 向量 0.72，
+# 前 50 名命中 76% vs 64%，190 篇约 0.006 美元。证据还不硬（真值是「已精读」的代理），
+# 所以做成开关、默认关；每次用户真实取舍就是新的真值。
+JEV_LEVELS = ['Unrelated to this topic',
+              'Peripheral: shares a keyword or material but asks a different question',
+              'Related: the topic appears, but is not the main subject',
+              'Core: the topic is the main subject of the paper']
+
+
+def rerank_jev(rows, topic, n=60, say=None):
+    """对排序后的前 n 篇（不含库里已有的）用 Jev 打「跟本次主题贴不贴」四档分，
+    与向量分几何平均后重排。每条 match 上留 `jev`（0–3）/ `jev_conf`。
+    Jev 没配 / 挂了 → 原样返回并说明，不让检索失败。
+    """
+    say = say or (lambda s: None)
+    from shared.adapters import typesafe
+    from shared.kernel import errors
+    head = [r for r in rows if r[1].get('status') == 'new'][:n]
+    if not head:
+        return rows
+    q = typesafe.build_questions(score={'rel': ('How relevant is this paper to the topic?', JEV_LEVELS)})
+    top = len(JEV_LEVELS) - 1
+    done = 0
+    for p, m, _ in head:
+        state = {'topic': topic, 'paper_title': p.get('title') or '',
+                 'paper_abstract': (p.get('abstract') or '')[:1500]}
+        try:
+            a = typesafe.ask(state, q, purpose='DISCOVER_RERANK')['rel']
+        except errors.ConfigError as e:
+            say(f'Jev 精排跳过：{e}')
+            return rows
+        except Exception as e:
+            say(f'Jev 精排中断（{str(e)[:60]}），已打分的 {done} 篇照用')
+            break
+        m['jev'] = round(a['value'], 2)
+        m['jev_conf'] = round(a['confidence'], 2)
+        done += 1
+    say(f'Jev 精排：给前 {done} 篇打了贴题档位（0–3）')
+    out = []
+    for p, m, score in rows:
+        if m.get('jev') is not None:
+            vec = m.get('topic_sim')
+            vec = 0.5 if vec is None else max(vec, 0.0)
+            mixed = ((m['jev'] / top) * vec) ** 0.5
+            # 只替换相关度那一项的贡献：原分数里 rel 的权重是 0.6，其余（被引/新鲜）保留
+            base_rel = m.get('topic_sim') if 'topic_sim' in m else m.get('relevance')
+            base_rel = 0.5 if base_rel is None else base_rel
+            score = round(score - 0.6 * base_rel + 0.6 * mixed, 4)
+        out.append((p, m, score))
+    out.sort(key=lambda r: r[2], reverse=True)
+    return out

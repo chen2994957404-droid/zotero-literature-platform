@@ -54,6 +54,31 @@ def main():
     else:
         print('  [FAIL] 已有的没沉底')
 
+    # Jev 精排：向量分高但 Jev 说「不贴」的要被 Jev 说「核心」的反超；已有的不送去打分；没密钥不炸
+    total += 1
+    from shared.adapters import typesafe
+    from shared.kernel import errors
+    from tools.discover.match import rerank_jev
+    rows = [({'title': 'lookalike', 'abstract': ''}, {'status': 'new', 'topic_sim': 0.80, 'relevance': 0.80}, 0.60),
+            ({'title': 'core paper', 'abstract': ''}, {'status': 'new', 'topic_sim': 0.55, 'relevance': 0.55}, 0.45),
+            ({'title': 'mine', 'abstract': ''}, {'status': 'have', 'topic_sim': 0.9, 'relevance': 0.9}, -0.4)]
+    fake = {'lookalike': 0.5, 'core paper': 3.0}
+    real_ask = typesafe.ask
+    asked = []
+    typesafe.ask = lambda state, q, **kw: (asked.append(state['paper_title']) or
+                                           {'rel': {'value': fake[state['paper_title']], 'confidence': 0.9, 'probabilities': {}}})
+    try:
+        out = rerank_jev(rows, 'topic')
+        typesafe.ask = lambda *a, **k: (_ for _ in ()).throw(errors.ConfigError('no key'))
+        same = rerank_jev(rows, 'topic')
+    finally:
+        typesafe.ask = real_ask
+    if (out[0][0]['title'] == 'core paper' and 'mine' not in asked and out[-1][0]['title'] == 'mine'
+            and [r[0]['title'] for r in same] == [r[0]['title'] for r in rows]):
+        print('  [PASS] Jev 精排：核心篇反超字面像的；已有的不打分仍沉底；没密钥原样返回'); ok += 1
+    else:
+        print('  [FAIL] Jev 精排不对：%s / asked=%s' % ([r[0]['title'] for r in out], asked))
+
     # 多式合并去重：同一篇 DOI 只算一次，且统计每式的新增贡献
     total += 1
     real_fetch = discover.fetch_one

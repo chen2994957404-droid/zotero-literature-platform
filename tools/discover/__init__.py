@@ -43,7 +43,7 @@ from shared.kernel import paths
 from shared.adapters.zotero_client import library_index
 from shared.domain.libmatch import looks_like_book
 
-from tools.discover.match import match_many, pick_seeds, rank
+from tools.discover.match import match_many, pick_seeds, rank, rerank_jev
 
 
 def search(query, limit=25, mailto='research@example.com'):
@@ -177,7 +177,7 @@ def snowball_more(queries, items, seen_keys, n_seeds=3, limit_per_seed=30, say=N
 
 def run_discovery(query, limit=25, n_queries=5, mode='survey', year_from=None,
                   prefer='relevance', snowball_seeds=3, topic_floor=0.45,
-                  use_openalex=False, log=None, explore=False):
+                  use_openalex=False, log=None, explore=False, rerank=False):
     """完整的混合检索流程，返回结构化结果。
 
     **命令行与控制面板共用本函数** —— 逻辑只有一份。
@@ -185,6 +185,7 @@ def run_discovery(query, limit=25, n_queries=5, mode='survey', year_from=None,
     导致我在提示里给了一条根本无效的命令（教训：能被复用是脚本的基本素养）。
 
     log: 可选的进度回调 log(str)，面板用它做实时进度显示。
+    rerank: True 时对前 60 篇新文献用 Jev 打贴题档位重排（`--精排`，花几分之一分钱，默认关）。
     返回 {'queries', 'contrib', 'seeds', 'snow_added', 'filtered',
           'total_pool', 'source', 'rows'}；rows 为 [(paper, match, score)] 已排序。
     """
@@ -269,6 +270,10 @@ def run_discovery(query, limit=25, n_queries=5, mode='survey', year_from=None,
            'snow_added': snow_added, 'filtered': filtered,
            'total_pool': total_pool, 'source': source, 'explore': explore,
            'rows': rank(items, ms, explore=explore)}
+    if rerank and out['rows']:
+        say('Jev 精排中（前 60 篇新文献）…')
+        out['rows'] = rerank_jev(out['rows'], topic_text, say=say)
+        out['rerank'] = True
     out['record'] = _save_record(query, mode, year_from, prefer, topic_floor, out)
     return out
 

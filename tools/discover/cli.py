@@ -13,6 +13,7 @@
   python -m tools.discover "..." --种子 5      雪球用几篇种子（默认 3）
   python -m tools.discover "..." --不雪球      跳过引用网络扩展（快，但召回明显下降）
   python -m tools.discover "..." --宽松        不按贴题度过滤
+  python -m tools.discover "..." --精排        前 60 篇再让 Jev 判「贴不贴题」重排（几分之一分钱；主力机）
   python -m tools.discover "..." --all         同时显示库里已有的
   python -m tools.discover "..." --openalex    改用免费的 OpenAlex（不需要密钥）
 
@@ -95,7 +96,8 @@ def main():
                           year_from=opt('--since'), prefer=prefer,
                           snowball_seeds=n_seeds, topic_floor=floor,
                           use_openalex=flag('--openalex'), log=print,
-                          explore=not flag('--跟我相关'))
+                          explore=not flag('--跟我相关'),
+                          rerank=flag('--精排'))
     except Exception as e:
         print(f'检索失败：{e}')
         return
@@ -151,9 +153,10 @@ def main():
             else:
                 detail = f'（贴题{m["topic_sim"]} 近库{ls}）'
         src = {'backward': ' [引用源头]', 'forward': ' [跟进工作]'}.get(p.get('from'), '')
+        jev = f' Jev{m["jev"]:.1f}/3' if m.get('jev') is not None else ''
         print(f'{i:2d}. {tag}[{p.get("year") or "????"}] '
               f'{"贴题" if explore else "相关度"} {rel if rel is not None else "—"} {bar:<10} '
-              f'被引{p.get("citations", 0)}{detail}{src}')
+              f'被引{p.get("citations", 0)}{jev}{detail}{src}')
         print(f'    {(p.get("title") or "")[:76]}')
         meta = []
         if p.get('venue'):
