@@ -305,6 +305,19 @@ def main():
         httpd.shutdown()
         httpd.server_close()
 
+    # 4. 握手说明（instructions.md）：里面提到的工具名必须真的存在 —— 说明与清单一分家，
+    #    外部 agent 就会照着一个不存在的名字调（2026-09-18 加）
+    import re
+    from host.mcp import server as _srv
+    real = _srv.build_server()
+    rs = feed(real, '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}')
+    ins = (rs[0].get('result') or {}).get('instructions', '') if rs else ''
+    check('initialize 带 instructions（非空）', len(ins) > 200, f'{len(ins)} 字')
+    names = {t['name'] for t in real._tools} | {q['name'] for q in real._prompts}
+    ghosts = sorted(n for n in set(re.findall(r'`([a-z][a-z0-9_]+)`', ins))
+                    if n not in names and n not in ('tool', 'prompt', 'resource'))
+    check('instructions 提到的工具名都存在', not ghosts, '不存在的：' + ', '.join(ghosts))
+
     print(f'\n结果：{len(_PASS)} 过 / {len(_FAIL)} 挂')
     if _FAIL:
         print('挂掉项：', ', '.join(_FAIL))

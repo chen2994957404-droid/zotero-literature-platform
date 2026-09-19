@@ -30,9 +30,19 @@ VERSION = '0.2.0'          # 0.1 = 手写 10 个 zotero 工具；0.2 = 按工具
 NAME = 'zotero-platform'
 
 
+def _instructions():
+    """握手时发给客户端的使用说明，源在同目录 `instructions.md`（给人改的是那个文件）。"""
+    import io
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instructions.md')
+    try:
+        return io.open(p, encoding='utf-8').read().strip()
+    except OSError:
+        return ''
+
+
 def build_server():
     """装配服务：先挂服务自己的 ping，再把各工具包挂上去。"""
-    s = MCPStdioServer(NAME, VERSION)
+    s = MCPStdioServer(NAME, VERSION, instructions=_instructions())
     s.register_tool('ping', '存活检查：确认 MCP 服务本身在跑。',
                     {'type': 'object', 'properties': {}},
                     lambda a: {'text': f'{NAME} {VERSION} 在跑',

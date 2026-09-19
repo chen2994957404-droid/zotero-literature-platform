@@ -58,9 +58,13 @@ def _hint(e):
 class MCPStdioServer:
     """MCP stdio 服务端：newline-delimited JSON-RPC 2.0，零依赖。"""
 
-    def __init__(self, name, version):
+    def __init__(self, name, version, instructions=''):
         self.name = name
         self.version = version
+        # 握手时给客户端的「使用说明」（规范里 InitializeResult.instructions，可选）。
+        # 这是唯一一条不靠项目记忆也能到达外部 agent 的路：Antigravity 那边没有 AGENTS.md，
+        # 只有这段话和 41 条工具描述（2026-09-18 加）。
+        self.instructions = instructions or ''
         self._tools = []      # dict(name, description, inputSchema, handler)
         self._resources = []  # dict(uri, name, description, mimeType, reader)
         self._prompts = []    # dict(name, description, arguments, builder)
@@ -171,11 +175,14 @@ class MCPStdioServer:
                 caps['resources'] = {'subscribe': False, 'listChanged': False}
             if self._prompts:
                 caps['prompts'] = {'listChanged': False}
-            self._respond(req_id, {
+            result = {
                 'protocolVersion': PROTOCOL_VERSION,
                 'capabilities': caps,
                 'serverInfo': {'name': self.name, 'version': self.version},
-            })
+            }
+            if self.instructions:
+                result['instructions'] = self.instructions
+            self._respond(req_id, result)
             return
         if req_id is None:
             return                        # 通知（initialized/cancelled 等）一律不回
