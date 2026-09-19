@@ -245,6 +245,40 @@ def repair_tasks():
     return msgs
 
 
+def restart_mcp_http():
+    """重启 MCP 的 HTTP 服务（给 Antigravity 那条腿），让它加载新代码。
+
+    它不是计划任务，是 2026-09-14 在主力机上用 pythonw 手起的常驻进程 ——
+    于是更新只重启 watcher 时它就一直跑旧代码（2026-09-18 部署后实测：进程创建时间还是 9/14）。
+    没在跑就不起（说明主力机没用这条腿）；在跑就原样换新：同一个解释器、同一组参数、
+    项目根为工作目录。跑在 job 通道（交互会话）里，凭据库可读，和当初手起的一样。
+    """
+    if os.name != 'nt':
+        return '（非 Windows，跳过）'
+    me = os.getpid()
+    script = (
+        "$hit = Get-CimInstance Win32_Process -Filter "
+        "\"Name='python.exe' or Name='pythonw.exe'\" | "
+        "Where-Object { $_.CommandLine -like '*mcp*server.py*--http*' "
+        f"-and $_.ProcessId -ne {me} }}; "
+        "if (-not $hit) { Write-Output 'MCP HTTP 服务没在跑，不起'; exit 0 }; "
+        "$old = $hit | Select-Object -First 1; "
+        "$exe = $old.ExecutablePath; "
+        "$mcpArgs = ($old.CommandLine -split 'server[.]py',2)[1].Trim(); "
+        "$hit | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; "
+        "Start-Sleep -Seconds 1; "
+        f"Start-Process -FilePath $exe -ArgumentList ('host/mcp/server.py ' + $mcpArgs) "
+        f"-WorkingDirectory '{ROOT}' -WindowStyle Hidden; "
+        "Start-Sleep -Seconds 3; "
+        "$new = Get-CimInstance Win32_Process -Filter \"Name='python.exe' or Name='pythonw.exe'\" | "
+        "Where-Object { $_.CommandLine -like '*mcp*server.py*--http*' }; "
+        "if ($new) { Write-Output ('MCP HTTP 服务已换成新代码 PID=' + $new.ProcessId + ' 参数：' + $mcpArgs) } "
+        "else { Write-Output '⚠ MCP HTTP 服务停了但没起来 —— 手动跑 host/mcp/server.py --http' }"
+    )
+    ok, out = run(ps(script), timeout=120, quiet=True)
+    return out.strip() or '（无输出）'
+
+
 def restart_tasks():
     """重启计划任务，让 watcher 加载新代码。只在运行端做。"""
     msgs = []
@@ -359,6 +393,7 @@ def main():
             print(m)
         for m in restart_tasks():
             print(m)
+        print(restart_mcp_http())
     else:
         print('本机是编程端，不注册也不重启常驻服务（跳过）')
 
