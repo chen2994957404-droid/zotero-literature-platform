@@ -47,7 +47,7 @@ def register(server):
         'paperdb_find',
         '按条件筛结构化记录：关键词 / 档次 / 某字段有值 / 某性能数值范围。'
         '默认只回 id/标题/DOI/期刊档次/抽取档次/体系/动态键这几列（长文本截 200 字）；'
-        '要某篇的全部字段传 full=true 并把 limit 收小。',
+        '要某篇的全部字段传 full=true 并把 limit 收小。默认最多 30 篇。',
         {'type': 'object', 'properties': {
             'full': {'type': 'boolean', 'description': '回全部字段（很长，配小 limit 用）'},
             'text': {'type': 'string', 'description': '标题或字段里的关键词'},
@@ -68,7 +68,7 @@ def register(server):
             journal=a.get('journal'),
             prop=a.get('prop'), min_value=a.get('min_value'),
             max_value=a.get('max_value'), unit=a.get('unit'),
-            limit=a.get('limit', 100)), bool(a.get('full')))))
+            limit=a.get('limit', 30)), bool(a.get('full')))))
 
     server.register_tool(
         'paperdb_stats', '库里有多少篇、每个字段的有值率多少（数据有多准）。',
