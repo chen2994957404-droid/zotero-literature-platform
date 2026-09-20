@@ -54,7 +54,7 @@ import tomllib
 
 # 强制 UTF-8 输出（中文 Windows 控制台默认 GBK）
 try:
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[attr-defined]
 except Exception:
     pass
 

@@ -15,7 +15,7 @@ import tomllib
 
 # 中文 Windows 控制台默认 GBK，不这么写中文输出就是乱码
 try:
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[attr-defined]
 except Exception:
     pass
 

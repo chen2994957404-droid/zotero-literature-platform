@@ -2,7 +2,7 @@
 """schema 自测：纯逻辑，全离线、毫秒级。"""
 import sys
 try:
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[attr-defined]
 except Exception:
     pass
 from shared.domain import schema

@@ -8,7 +8,7 @@ OpenAlex 免费无密钥，所以这里做真实调用是安全的（不烧用�
 import sys, os
 
 try:
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[attr-defined]
 except Exception:
     pass
 

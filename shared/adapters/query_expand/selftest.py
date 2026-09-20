@@ -2,7 +2,7 @@
 """query_expand 自测：验证扩展能真的产出多个互补检索式，且降级安全。"""
 import sys, os
 try:
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
 except Exception:
     pass
 from shared.adapters.query_expand import to_english, expand, looks_chinese, _clean_lines

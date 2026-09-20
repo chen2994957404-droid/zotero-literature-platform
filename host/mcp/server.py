@@ -2,7 +2,7 @@
 import os, sys
 # 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[attr-defined]
 except Exception:
     pass
 """host.mcp.server · 平台的 MCP 服务：把各工具包的 `mcp.py` 聚合成一个服务。
@@ -171,7 +171,7 @@ def _claim_stdout_for_protocol():
     """
     real = sys.stdout
     try:
-        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[attr-defined]
     except Exception:
         pass
     sys.stdout = sys.stderr      # 之后任何 print / 日志都落到 stderr，不污染协议

@@ -27,7 +27,7 @@
 import os, sys
 # 【标准开头】强制 UTF-8 输出
 try:
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[attr-defined]
 except Exception:
     pass
 

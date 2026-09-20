@@ -9,7 +9,7 @@ import sys, os, subprocess, time, io
 # 用 reconfigure 而非替换 sys.stdout：后者会让原对象被回收、底层缓冲被关闭，
 # 表现为程序跑到一半 print 抛「I/O operation on closed file」（踩坑 #37）
 try:
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[attr-defined]
 except Exception:
     pass
 

@@ -2,7 +2,7 @@
 """paperdb 自测：不碰真实数据、不调任何服务，验建库 / 筛选 / 只读约束。"""
 import io, json, os, sys, tempfile
 try:
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[attr-defined]
 except Exception:
     pass
 from shared.kernel import paths

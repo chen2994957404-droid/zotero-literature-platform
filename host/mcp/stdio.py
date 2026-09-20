@@ -2,7 +2,7 @@
 import os, sys
 # 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[attr-defined]
 except Exception:
     pass
 """host.mcp.stdio · 极简 MCP stdio 服务端协议层（零第三方依赖）
@@ -140,7 +140,7 @@ class MCPStdioServer:
         # 「聚硼硅氧烷」变成「鑱氱〖纭呮哀鐑」，拿去搜库自然一篇都搜不到。
         # 标准开头只管了 stdout，读的那一头一直没人管；英文参数不受影响，所以一直没暴露。
         try:
-            sys.stdin.reconfigure(encoding='utf-8', errors='replace')
+            sys.stdin.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[attr-defined]
         except Exception:
             pass
         for raw in sys.stdin:

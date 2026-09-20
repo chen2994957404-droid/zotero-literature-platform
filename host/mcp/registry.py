@@ -2,7 +2,7 @@
 import os, sys
 # 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[attr-defined]
 except Exception:
     pass
 """host.mcp.registry · 工具清单：读每个 `tools/<t>/tool.toml`，挂上它的 `mcp.py`。
