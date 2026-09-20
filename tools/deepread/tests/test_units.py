@@ -39,3 +39,9 @@ def test_汇总_栏乘类矩阵():
     s = U.summarize([r])
     assert s['col_type']['图']['fact'] == 1 and s['by_type']['claim']['none'] == 1
     assert s['per_paper'][0]['total'] == 2
+
+
+def test_老版式_头部DOI行不把整篇吞成文献信息():
+    ref = '# T\n\n来源: x\nDOI: 10.1/x\n\n---\n\nJessica 高分子学人\n\n东华大学团队聚焦于水下粘合剂难题，合成含氟离子液体基粘合剂，形成坚固疏水网络，这是一段足够长的正文。\n\n1. 1\n\n引言\n\n水下粘合在多个领域发挥重要作用。\n'
+    ps = U.paragraphs(ref)
+    assert ps and all(c != '文献信息' for c, _ in ps) and '水下粘合' in ''.join(t for _, t in ps)

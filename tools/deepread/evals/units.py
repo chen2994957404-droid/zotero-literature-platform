@@ -52,16 +52,19 @@ def column_of(para, prev):
         return '文献信息'
     if prev in ('导读',) and len(p) > 60:
         return '引言'
-    return prev or '引言'
+    return prev if prev and prev != '文献信息' else '引言'      # 文献信息不粘：老版式头部就有 DOI 行，粘上整篇就没了
 
 
 def paragraphs(ref_text):
     """范文 → [(栏, 段)]。图链接行、空行丢掉；短段攒到 PARA_TARGET。"""
     out, cur, buf, used = [], '', [], 0
-    for raw in ref_text.split('\n'):
+    body = ref_text.split('\n---\n', 1)[1] if '\n---\n' in ref_text else ref_text     # 头部（标题 / 来源 / DOI）不算正文
+    for raw in body.split('\n'):
         p = raw.strip()
         if not p or p.startswith('![') or p.startswith('#') or p.startswith('来源:') or p.startswith('---'):
             continue
+        if re.match(r'^\d+\.\s*\d*$', p) or p in ('引言', '实验', '讨论', '总结', '结论'):
+            continue                                       # 老版式的编号行 / 光杆小标题
         col = column_of(p, cur)
         if buf and (col != cur or used + len(p) > PARA_TARGET):
             out.append((cur, '\n'.join(buf)))
