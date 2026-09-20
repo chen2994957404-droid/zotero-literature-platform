@@ -30,6 +30,9 @@
     python -m tools.deepread --审稿校准 --篇数 10 --tag v1   拿范文校准审稿：干净范文的误报率 + 故意塞错的查全率
     --本地 走本机 Ollama（免费）；--seed 固定抽样
 
+单元拆解研究（把人写的范文拆成七类最小信息单元，量「基本单元长什么样」，产物 data/state/unit_study/<tag>/）：
+    python -m tools.deepread --单元拆解 --篇数 20 --本地 --tag u1
+
 ⚠ 除 --rerun-pro 列清单外，每一条都**花钱**（付费大模型 + MineRU 额度），
    并且会把结果写回 Zotero。只允许在主力机上跑（role.require_prod 会拦）。
 
@@ -63,6 +66,21 @@ def main():
     if flag('--建术语表'):
         from tools.deepread import glossary_build
         return glossary_build.main()
+
+    if flag('--单元拆解'):
+        from shared.kernel import role, paths
+        from shared.adapters.llm_client import chat_json
+        from tools.deepread.evals import units as U, golden as GE
+        local = flag('--本地')
+        if not local:
+            role.require_prod('单元拆解研究（调用付费大模型拆二十篇范文）', force=force)
+        n, seed = int(opt('--篇数') or 20), int(opt('--seed') or 1)
+        keys = keys or (GE.candidates() if n == 0 else GE.sample(n, seed))
+        tag = opt('--tag') or 'u1'
+        summary, path = U.run(keys, chat_json, tag=tag, local=local)
+        print('\n%d 篇 · 单元合计 %d\n报告 → %s' % (len(summary['per_paper']),
+              sum(r['total'] for r in summary['per_paper']), path))
+        return 0
 
     if flag('--审稿校准'):
         from shared.kernel import role, paths

@@ -4,7 +4,7 @@ expose        = "prompt"
 costs_money   = true            # MineRU 解析额度 + 云端大模型长文输出
 side_effects  = ["写Zotero（回写精读附件与状态标签）", "写 data/raw/<key>/ 与 data/curated/<key>/"]
 requires_role = "prod"
-prompts       = ["main@v2", "si@v1", "si@v2", "si@v3", "lead@v1", "exp@v1", "fig@v1", "wrap@v1", "lead@v2", "exp@v2", "fig@v2", "wrap@v2", "exp@v3", "fig@v3", "review_claims@v1", "review_keypoints@v1", "review_cover@v1"]
+prompts       = ["main@v2", "si@v1", "si@v2", "si@v3", "lead@v1", "exp@v1", "fig@v1", "wrap@v1", "lead@v2", "exp@v2", "fig@v2", "wrap@v2", "exp@v3", "fig@v3", "review_claims@v1", "review_keypoints@v1", "review_cover@v1", "units@v1"]
 
 # ── 允许模型自己发起的入口（2026-09-01 加）─────────────────────────────
 # **留空 = 一个都不许**，模型只能通过 prompt 请你来点。

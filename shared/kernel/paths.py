@@ -544,6 +544,11 @@ def evalset():
     return os.path.join(STATE, 'evalset.json')
 
 
+def unit_study_dir(tag):
+    """state/unit_study/<tag>/ —— 单元拆解研究的产物（每篇一份单元 JSON + summary.json + report.md）。可重建。"""
+    return os.path.join(STATE, 'unit_study', re.sub(r'[^A-Za-z0-9._-]+', '-', str(tag)))
+
+
 def review_calib_dir(tag):
     """state/review_calib/<tag>/ —— 一轮审稿校准的产物（calib.json + report.md）。可重建。"""
     return os.path.join(STATE, 'review_calib', re.sub(r'[^A-Za-z0-9._-]+', '-', str(tag)))
