@@ -1128,6 +1128,7 @@ ROOT_FILES_APPROVED = {
     '.env.example', '.gitattributes', '.gitignore', 'AGENTS.md', 'CLAUDE.md',
     'LICENSE', 'README.md', 'REBUILD.md', 'pyproject.toml', 'requirements.txt', '各部分的关系.md',
     'conftest.py',      # pytest 公共夹具（心跳写临时目录），只能住根目录
+    'pyrightconfig.json',   # 类型检查配置，pyright 只在项目根找它（host/doctor/typecheck.py）
 }
 
 

@@ -12,7 +12,6 @@
  "host/wechat_import/__main__.py": 1,
  "host/wechat_import/wizard.py": 1,
  "shared/adapters/llm_client/__init__.py": 3,
- "shared/adapters/pdf_fetch/__init__.py": 39,
  "shared/adapters/pdf_fetch/selftest.py": 2,
  "shared/adapters/pdf_parse/__init__.py": 2,
  "shared/adapters/semanticscholar/selftest.py": 5,

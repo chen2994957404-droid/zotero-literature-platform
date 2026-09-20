@@ -254,9 +254,22 @@ def _eval(page, js, arg=None, timeout_ms=EVAL_TIMEOUT_MS):
     return (r.get('result') or {}).get('value')
 
 
+def _eval_obj(page, js, arg=None, timeout_ms=EVAL_TIMEOUT_MS) -> dict:
+    """同 `_eval`，但保证拿回来的是 dict：JS 返回 null / undefined / 别的形状一律当 {}。
+    以前直接 `.get()`，页面脚本偶尔返回空就整篇按异常处理。"""
+    v = _eval(page, js, arg, timeout_ms)
+    return v if isinstance(v, dict) else {}
+
+
+def _eval_list(page, js, arg=None, timeout_ms=EVAL_TIMEOUT_MS) -> list:
+    """同上，保证是 list。"""
+    v = _eval(page, js, arg, timeout_ms)
+    return v if isinstance(v, list) else []
+
+
 def pdf_url_of(page):
     """当前页面上的 PDF 直链候选（按可信度排序）。排查时单独用得上。"""
-    return _eval(page, _JS_STATE, timeout_ms=20000).get('candidates') or []
+    return _eval_obj(page, _JS_STATE, timeout_ms=20000).get('candidates') or []
 
 
 def _looks_like_pdf(head, mime):
@@ -538,7 +551,7 @@ def _state_ready(page, settle):
     st = {}
     while True:
         try:
-            st = _eval(page, _JS_STATE, timeout_ms=20000)
+            st = _eval_obj(page, _JS_STATE, timeout_ms=20000)
         except Exception as e:
             # ScienceDirect 落地后自己再跳一次（`?via=ihub`），跳的那一瞬 evaluate 会报
             # 「Execution context was destroyed」。这是过程不是失败，等一下再看。
@@ -589,7 +602,7 @@ def _land(page, doi, timeout, settle, kind='fulltext'):
     if (kind != 'si' and not st.get('candidates') and not st.get('captcha')
             and not st.get('paywall')):
         page.wait_for_timeout(settle * 1000)
-        st = _eval(page, _JS_STATE, timeout_ms=20000)
+        st = _eval_obj(page, _JS_STATE, timeout_ms=20000)
     return st
 
 
@@ -603,7 +616,7 @@ def _scroll_for_si(page):
         _eval(page, '() => window.scrollBy(0, document.body.scrollHeight / 5)', timeout_ms=10000)
         page.wait_for_timeout(300)
     page.wait_for_timeout(600)
-    return _eval(page, _JS_STATE, timeout_ms=20000)
+    return _eval_obj(page, _JS_STATE, timeout_ms=20000)
 
 
 def _pick_si_on(page, st, timeout, settle, doi=None):
@@ -619,7 +632,7 @@ def _pick_si_on(page, st, timeout, settle, doi=None):
     while not pick and waited < settle:
         page.wait_for_timeout(500)
         waited += 0.5
-        st = _eval(page, _JS_STATE, timeout_ms=20000)
+        st = _eval_obj(page, _JS_STATE, timeout_ms=20000)
         pick = pick_si(st.get('si'), doi=doi)
     if not pick:
         st = _scroll_for_si(page)
@@ -680,6 +693,9 @@ class _Intercept:
         return False
 
     def _paused(self, ev):
+        cdp = self._cdp
+        if cdp is None:             # 没开成就不会注册回调；这里只是把「可能为 None」说清楚
+            return
         rid = ev.get('requestId')
         try:
             headers = {h['name'].lower(): h['value'] for h in (ev.get('responseHeaders') or [])}
@@ -687,14 +703,14 @@ class _Intercept:
             disp = headers.get('content-disposition', '').lower()
             is_file = any(t in mime for t in self.FILE_TYPES) or 'attachment' in disp
             if not is_file or self.raw is not None:
-                self._cdp.send('Fetch.continueResponse', {'requestId': rid})
+                cdp.send('Fetch.continueResponse', {'requestId': rid})
                 return
             size = int(headers.get('content-length') or 0)
             if size > self.limit:
                 self.too_big, self.url = True, ev.get('request', {}).get('url', '')
-                self._cdp.send('Fetch.fulfillRequest', {'requestId': rid, 'responseCode': 204})
+                cdp.send('Fetch.fulfillRequest', {'requestId': rid, 'responseCode': 204})
                 return
-            body = self._cdp.send('Fetch.getResponseBody', {'requestId': rid})
+            body = cdp.send('Fetch.getResponseBody', {'requestId': rid})
             data = body.get('body') or ''
             raw = base64.b64decode(data) if body.get('base64Encoded') else data.encode('utf-8', 'replace')
             if len(raw) > self.limit:
@@ -702,13 +718,13 @@ class _Intercept:
             else:
                 self.raw, self.url, self.mime = raw, ev.get('request', {}).get('url', ''), mime
             # 回 204：导航作废，阅读器 / 下载气泡都不会出现，窗口也就不会被拉起来
-            self._cdp.send('Fetch.fulfillRequest', {'requestId': rid, 'responseCode': 204})
+            cdp.send('Fetch.fulfillRequest', {'requestId': rid, 'responseCode': 204})
         except Exception as e:
             if 'closed' in str(e).lower():
                 return          # 标签已经关了才送到的迟到事件，没什么可放行的
             log.warn(f'拦截响应出错（{str(e)[:80]}），放行')
             try:
-                self._cdp.send('Fetch.continueResponse', {'requestId': rid})
+                cdp.send('Fetch.continueResponse', {'requestId': rid})
             except Exception:
                 pass
 
@@ -735,7 +751,7 @@ def _grab(page, ctx, cands, kind, timeout, settle, out):
         tried.add(cand)
 
         # 第一趟：直接取。RSC / Springer 这类 citation_pdf_url 多半指的就是真身，同源时一次就成。
-        got = _eval(page, _JS_GRAB, cand)
+        got = _eval_obj(page, _JS_GRAB, cand)
         if not got.get('ok') and not got.get('tooBig'):
             log.info('  直取没成（%s）：%s' % (got.get('status') or got.get('err') or '?', cand[:120]))
         raw = _decode(got, want)
@@ -774,7 +790,7 @@ def _grab(page, ctx, cands, kind, timeout, settle, out):
             if raw:
                 out.update(ok=True, reason='ok', pdf=raw, pdf_url=cap.url or cand)
                 return True
-        got = _eval(page, _JS_GRAB_HERE)
+        got = _eval_obj(page, _JS_GRAB_HERE)
         raw = _decode(got, want)
         if got.get('tooBig'):
             out['reason'], out['pdf_url'] = 'too_big', cand
@@ -797,7 +813,7 @@ def _grab(page, ctx, cands, kind, timeout, settle, out):
         # 里面一个 iframe 指向 `/doi/pdfdirect/<DOI>`，那个才是 application/pdf 的真身。
         # 与其给 Wiley 写死一条 URL 规则，不如把「页面里嵌着的东西」一律当作新候选。
         try:
-            for u in _eval(page, _JS_EMBEDS, timeout_ms=20000):
+            for u in _eval_list(page, _JS_EMBEDS, timeout_ms=20000):
                 if _worth_trying(u) and u not in tried:
                     queue.append(u)
         except Exception:
