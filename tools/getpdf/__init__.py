@@ -30,7 +30,7 @@ import io
 import os
 import time
 
-from shared.adapters import pdf_fetch
+from shared.adapters import pdf_fetch, pdf_parse
 from shared.kernel import catalog, paths
 from shared.kernel.log import get_logger
 
@@ -160,6 +160,7 @@ def fetch_pair(doi, where=None):
         ext = os.path.splitext(rs.get('filename') or '')[1].lower() or '.pdf'
         if ext not in ('.pdf', '.docx', '.doc', '.txt'):
             ext = '.pdf'
+        ext = pdf_parse.real_ext(rs['pdf'], ext)      # 文件头说了算：Elsevier 的 mmc1.docx 常常是 PDF
         path = os.path.join(where, stem + ext)
         with io.open(path, 'wb') as fh:
             fh.write(rs['pdf'])
@@ -354,7 +355,7 @@ def land(doi, with_si=True, allow_fetch=True, zotero_index=None,
                 catalog.mark_si_none(pid, pdf_fetch.REASONS['no_si'])
                 out['note'] = (out['note'] + '；' if out['note'] else '') + '没有 SI（出版商页面确认）'
             if src:
-                ext = os.path.splitext(src)[1].lstrip('.').lower()
+                ext = pdf_parse.real_ext(src, os.path.splitext(src)[1].lower()).lstrip('.')
                 dst = paths.local_si(pid, ext if ext in ('pdf', 'docx') else 'pdf')
                 changed |= _copy(src, dst)
                 out['si'] = dst
@@ -696,6 +697,7 @@ def fetch_si_one(doi, where=None):
     ext = os.path.splitext(r.get('filename') or '')[1].lower() or '.pdf'
     if ext not in ('.pdf', '.docx', '.doc', '.txt'):
         ext = '.pdf'
+    ext = pdf_parse.real_ext(r['pdf'], ext)           # 文件头说了算
     path = os.path.join(where, stem + ext)
     os.makedirs(where, exist_ok=True)
     with io.open(path, 'wb') as fh:

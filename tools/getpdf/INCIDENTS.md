@@ -174,3 +174,7 @@ Wiley 那两个的**编号都是 `sup-0001`**，按序号排根本分不开。
 
 **实测四家全通**（都验到文件内容，不是只看下载成功）：
 Wiley 1.15MB pdf · Elsevier 12.1MB docx · ACS 老 1.68MB pdf(18页) · ACS 新 1.33MB docx。
+## 12 · Elsevier 的 mmc1.docx 下下来其实是 PDF（2026-09-20，全局记为踩坑 #181）
+
+扩展名照抄出版商给的文件名，文件头却是 `%PDF`；python-docx 打开当然「Package not found」，主力机 24 篇 SI 天天解析失败。
+**落盘与解析都看文件头**（`pdf_parse.real_ext`），扩展名只兜底。

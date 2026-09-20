@@ -25,6 +25,9 @@ def env(tmp_path, monkeypatch):
     from shared.kernel import jobs
     monkeypatch.setattr(paths, 'STATE', str(tmp_path / 'state'))
     monkeypatch.setattr(wechat_import, 'fetch_images', lambda article, log=print: {})
+    # service 里的 print 就是写 data/logs/zotero_watcher.log 的 logger：不拦住，pytest 每跑一次都往主力机的真日志里塞
+    # 四行「[SI] 没能补 SI：浏览器没开」（2026-09-20 重启后排查日志时发现，以为是线上在空转）
+    monkeypatch.setattr(w, 'print', lambda *a, **k: None)
     catalog._cache_clear() if hasattr(catalog, '_cache_clear') else None
     return tmp_path
 

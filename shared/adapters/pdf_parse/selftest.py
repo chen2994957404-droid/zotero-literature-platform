@@ -6,7 +6,7 @@ import sys, os, tempfile
 from shared.adapters.pdf_parse import parse_pdf, parse_document, is_parsed, PDFParseError
 
 def main():
-    ok = 0; total = 4
+    ok = 0; total = 5
 
     # 1. is_parsed 对空目录应为 False，有 layout.json 应为 True
     with tempfile.TemporaryDirectory() as d:
@@ -47,6 +47,17 @@ def main():
                 print('  [PASS] parse_document 拒绝未知扩展名并说明只认 pdf/docx'); ok += 1
             else:
                 print('  [FAIL] 报错没说清只认什么')
+
+    # 4. real_ext 看文件头不看扩展名：.docx 名字装着 PDF 要认成 .pdf（#181）
+    from shared.adapters.pdf_parse import real_ext
+    with tempfile.TemporaryDirectory() as d:
+        fake = os.path.join(d, 'si.docx')
+        open(fake, 'wb').write(b'%PDF-1.7 rest')
+        if (real_ext(fake, '.docx') == '.pdf' and real_ext(b'PK\x03\x04xx', '.pdf') == '.docx'
+                and real_ext(b'??', '.txt') == '.txt'):
+            print('  [PASS] real_ext 按文件头判 pdf/docx，认不出退回兜底'); ok += 1
+        else:
+            print('  [FAIL] real_ext 判错')
 
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)

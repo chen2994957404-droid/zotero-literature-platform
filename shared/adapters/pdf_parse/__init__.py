@@ -196,9 +196,33 @@ def is_text_parsed(out_dir):
     return os.path.exists(os.path.join(out_dir, 'full.md'))
 
 
+def real_ext(path_or_bytes, fallback=''):
+    """看文件头判真实类型：'.pdf' / '.docx' / fallback。
+
+    2026-09-20 主力机 ingest 里 12 篇 SI 反复报 PackageNotFoundError：Elsevier / Nature 给的
+    `mmc1.docx` 链接下来的其实是 PDF（文件头 %PDF-1.7），按扩展名当 docx 读当然炸。
+    落地和解析都别信扩展名，信文件头。docx 的头是 zip 的 PK\x03\x04。
+    """
+    if isinstance(path_or_bytes, (bytes, bytearray)):
+        head = bytes(path_or_bytes[:8])
+    elif path_or_bytes:
+        try:
+            with io.open(str(path_or_bytes), 'rb') as fh:
+                head = fh.read(8)
+        except OSError:
+            return fallback
+    else:
+        head = b''
+    if head.startswith(b'%PDF'):
+        return '.pdf'
+    if head.startswith(b'PK\x03\x04'):
+        return '.docx'
+    return fallback
+
+
 def parse_document(path, out_dir, reuse=True):
-    """PDF 或 docx → out_dir/full.md。按扩展名分派；不认识的扩展名抛 PDFParseError。"""
-    ext = os.path.splitext(path or '')[1].lower()
+    """PDF 或 docx → out_dir/full.md。**按文件头分派**，扩展名只是兜底；两样都不认抛 PDFParseError。"""
+    ext = real_ext(path, os.path.splitext(path or '')[1].lower())
     if ext == '.pdf':
         return parse_pdf(path, out_dir, reuse=reuse)
     if ext == '.docx':
