@@ -250,9 +250,27 @@ def match_paper(ref_units, src_units, embed):
     return out
 
 
+def _batched(embed, size=48, max_chars=1200):
+    """Ollama 的 /api/embed 一次塞几百条会 400（2026-09-21 实测）：分批、截长；单批再失败就逐条。"""
+    def run(texts):
+        out = []
+        for i in range(0, len(texts), size):
+            batch = [t[:max_chars] for t in texts[i:i + size]]
+            try:
+                out += embed(batch)
+            except Exception:
+                for t in batch:
+                    try:
+                        out += embed([t])
+                    except Exception:
+                        out.append([0.0])
+        return out
+    return run
+
+
 def coverage(tag, embed=None, log=print):
     from shared.adapters.embed import embed as _embed
-    embed = embed or _embed
+    embed = _batched(embed or _embed)
     out_dir = paths.unit_study_dir(tag)
     per_type = {t: {'n': 0, 'covered': 0, 'sims': []} for t in TYPES}
     rows = []
