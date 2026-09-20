@@ -16,7 +16,22 @@ R4 窗（2026-08-31）从 `host/mcp/zotero_server.py` 拆过来的 9 个。
 """
 from tools import library
 
-_KEY = {'itemKey': {'type': 'string', 'description': 'Zotero 条目 key（8 位字母数字）'}}
+_KEY = {'itemKey': {'type': 'string',
+                    'description': '文献 id（Zotero 编号 / OpenAlex id / 由 DOI 生成的 id 都行），'
+                                   '也可以直接给 DOI（10.xxxx/...），会先在证据库里对账'}}
+
+
+def _k(a):
+    """把 itemKey 参数解析成证据库 id：给的是 DOI 就按 DOI 对账（外部 agent 手里常常只有 DOI，
+    2026-09-19 Antigravity 实测传 DOI 被拒）。对不上就原样返回，让下游报「没这篇」。"""
+    from shared.kernel import catalog
+    k = (a.get('itemKey') or '').strip()
+    if k.startswith('10.') and '/' in k:
+        pid = catalog.find(k)
+        if not pid:
+            raise ValueError(f'证据库里没有 DOI {k} 这篇（先用 library_db_search 确认，或用 paper_fulltext 把它拿进来）')
+        return pid
+    return k
 
 
 def register(server):
@@ -53,7 +68,7 @@ def register(server):
         '这篇的参考文献列表，标出哪些已经在证据库里（可直接读）。模型读到 "[12]" 时用它'
         '知道 12 是谁；也是在证据库内部顺引用走的入口。纯脚本，零成本。',
         {'type': 'object', 'properties': dict(_KEY), 'required': ['itemKey']},
-        lambda a: library.render_refs(library.refs(a['itemKey']), a['itemKey']))
+        lambda a: library.render_refs(library.refs(_k(a)), _k(a)))
 
     server.register_tool(
         'library_db_stats', '证据库有多大：篇数，以及有正文/SI/已解析/已精读/已结构化各几篇。',
@@ -88,12 +103,12 @@ def register(server):
     server.register_tool(
         'library_item', '按 key 取单篇完整信息：元数据、附件、笔记数、正文 PDF 路径。',
         {'type': 'object', 'properties': dict(_KEY), 'required': ['itemKey']},
-        lambda a: _item(library.item(a['itemKey'])))
+        lambda a: _item(library.item(_k(a))))
 
     server.register_tool(
         'library_pdf', '定位某篇文献的正文 PDF 本地路径（自动排除补充材料 SI）。',
         {'type': 'object', 'properties': dict(_KEY), 'required': ['itemKey']},
-        lambda a: _pdf(library.pdf(a['itemKey'])))
+        lambda a: _pdf(library.pdf(_k(a))))
 
     server.register_tool(
         'library_fulltext',
@@ -103,7 +118,7 @@ def register(server):
                          'description': f'返回字符上限，默认 {library.MAX_CHARS}'}}),
          'required': ['itemKey']},
         lambda a: _fulltext(library.fulltext(
-            a['itemKey'], max_chars=a.get('maxChars', library.MAX_CHARS))))
+            _k(a), max_chars=a.get('maxChars', library.MAX_CHARS))))
 
     # ── 菜单与分组（2026-09-08 加）──────────────────────────────────
     # 为什么要这两个：`library_fulltext` 一口气吐几万字符，模型读三篇就把
@@ -115,7 +130,7 @@ def register(server):
         '字数、含多少数字与表图；长节列到段（s5.p3），表（t1）和图注（f2）单独有地址。'
         '**读全文之前先看它**，然后用 library_section 只取要看的那几节/段/表。',
         {'type': 'object', 'properties': dict(_KEY), 'required': ['itemKey']},
-        lambda a: _outline(library.outline(a['itemKey'])))
+        lambda a: _outline(library.outline(_k(a))))
 
     server.register_tool(
         'library_section',
@@ -128,7 +143,7 @@ def register(server):
                          'description': f'返回字符上限，默认 {library.MAX_CHARS}'}}),
          'required': ['itemKey', 'sectionId']},
         lambda a: _section(library.section(
-            a['itemKey'], a['sectionId'], si=bool(a.get('si')),
+            _k(a), a['sectionId'], si=bool(a.get('si')),
             max_chars=a.get('maxChars', library.MAX_CHARS))))
 
     server.register_tool(

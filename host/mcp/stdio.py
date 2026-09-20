@@ -55,6 +55,32 @@ def _hint(e):
     return ''
 
 
+# 参数名的同义词：模型对「检索词」叫 query / term / q、对「文献 id」叫 key / id / doi 都很自然，
+# 41 个工具没法保证每个都叫同一个名字。缺了必填参数、但同义词在 —— 就当它写对了。
+# 只在「必填的那个缺席」时搬，不覆盖模型明确给的值（2026-09-19，Antigravity 实测两次被此拒）。
+_ALIASES = {
+    'term': ('query', 'q', 'keyword', 'keywords'),
+    'query': ('term', 'q', 'keyword', 'keywords', 'text'),
+    'itemKey': ('key', 'id', 'paperId', 'doi'),
+    'dois': ('doi',),
+}
+
+
+def _alias(schema, args):
+    props = (schema or {}).get('properties') or {}
+    out = dict(args)
+    for want in (schema or {}).get('required') or []:
+        if want in out or want not in _ALIASES:
+            continue
+        for alt in _ALIASES[want]:
+            if alt in out and alt not in props:
+                out[want] = out.pop(alt)
+                break
+    if 'dois' in out and isinstance(out['dois'], str):      # 给了单个字符串就包成列表
+        out['dois'] = [out['dois']]
+    return out
+
+
 class MCPStdioServer:
     """MCP stdio 服务端：newline-delimited JSON-RPC 2.0，零依赖。"""
 
@@ -283,6 +309,7 @@ class MCPStdioServer:
         if tool is None:
             self._error(req_id, ERR_PARAMS, f'未知工具：{name}')
             return
+        arguments = _alias(tool['inputSchema'], arguments)
         bad = self._validate(tool['inputSchema'], arguments)
         if bad:
             self._respond(req_id, {
