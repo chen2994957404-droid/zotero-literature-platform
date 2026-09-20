@@ -208,13 +208,13 @@ def match_paper(ref_units, src_units, embed):
     by_type = {}
     for s in src_units:
         by_type.setdefault(s['type'], []).append(s)
-    vec_cache = {}
+    vec_cache = {}                                   # 按类缓存原文单元的向量：每类只向量化一次
 
-    def vecs(units):
-        key = id(units)
-        if key not in vec_cache:
-            vec_cache[key] = embed([text_of(u) for u in units]) if units else []
-        return vec_cache[key]
+    def vecs_by_type(t):
+        if t not in vec_cache:
+            us = by_type.get(t, [])
+            vec_cache[t] = embed([text_of(u) for u in us]) if us else []
+        return vec_cache[t]
 
     out = []
     sem = []
@@ -238,12 +238,12 @@ def match_paper(ref_units, src_units, embed):
     if sem:
         rv = embed([text_of(r) for r, _, _ in sem])
         for (r, t, rec), v in zip(sem, rv):
-            cands = []
+            cvs = []
             for nt in NEAR.get(t, (t,)):
-                cands += by_type.get(nt, [])
-            if not cands:
+                cvs += vecs_by_type(nt)
+            if not cvs:
                 continue
-            best = max((_cos(v, cv) for cv in vecs(cands)), default=0.0)
+            best = max((_cos(v, cv) for cv in cvs), default=0.0)
             rec['sim'] = round(best, 3)
             if best >= SIM_LINE:
                 rec['how'] = 'sim'
