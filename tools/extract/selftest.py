@@ -259,6 +259,11 @@ def main():
     src = ('As shown in ref. [16], vitrimers flow above Tv. ' + 'x' * 800 +
            ' The Mn of sample H85 was 16 kg/mol by SEC, while H90 gave 22 kg/mol.')
     segs = V.windows(src, '16', 'H85')
+    # 单位优先 + 表格整张带上（2026-09-20 首批 38 条误判里 17 条是段落切错）
+    src2 = 'cited $^{22-24}$ here. ' + 'y' * 300 + ' swollen for 24 h at RT. <table><tr><th>Sample</th><th>Mn</th></tr><tr><td>H85</td><td>12</td></tr></table>'
+    w_unit = V.windows(src2, '24', '', 'hours', width=60)
+    w_tbl = V.windows(src2, '12', 'H85', 'kg')
+    segs = segs if ('24 h' in w_unit[0] and 'Sample | Mn' in w_tbl[0]) else []
     rec = {'measurements': [
         {'sample_id': 'H85', 'name': 'Mn', 'value_text': '16 kg/mol'},
         {'sample_id': 'H90', 'name': 'Mn', 'value_text': '22 kg/mol'},

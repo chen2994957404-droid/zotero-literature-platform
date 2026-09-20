@@ -86,25 +86,57 @@ def number_of(m):
     return nums[0] if nums else ''
 
 
-def windows(source, number, sample_id='', n=MAX_WINDOWS, width=WINDOW):
+_TAG = re.compile(r'<[^>]+>')
+
+
+def _tidy(seg):
+    """HTML 表格压成一行后模型读不出「哪个数在哪一列」：行换成换行、格换成竖线，再去掉别的标签。"""
+    if '<td' not in seg and '<th' not in seg:
+        return seg
+    seg = re.sub(r'</t[dh]>\s*<t[dh][^>]*>', ' | ', seg)
+    seg = re.sub(r'</?tr[^>]*>', '\n', seg)
+    return _TAG.sub(' ', seg)
+
+
+def windows(source, number, sample_id='', unit='', n=MAX_WINDOWS, width=WINDOW):
     """原文里这个数的出现处 → 段落列表（去掉空白和千分位后比对，MineRU 常把 1 000 拆开）。
 
-    优先带**含样品号**的段落 —— 同一个数常在引用编号、图片哈希里也出现，
-    带错段落会让判断模型说「没说过」（实测里 25 条「误判」有一半是这么来的）。
+    段落按三件事排优先级（2026-09-20 首批 38 条误判逐条看出来的）：
+      ① 含**样品号** —— 同一个数常在引用编号、图片哈希里也出现，带错段落模型只能说「没说过」
+      ② 数后面紧跟**同一个单位** —— 「24 h」和引用 $^{22-24}$ 里的 24 靠这个分开
+      ③ 落在表格里时把整张表从 `<table` 起带上 —— 只给半行表格，模型看不出列名
     """
     if not number or not source:
         return []
     pat = re.compile(r'(?<![\d.])' + re.escape(number).replace(',', r'[,\s]?') + r'(?![\d.])')
+    unit = (unit or '').strip()
     hits = []
     for mt in pat.finditer(source):
         lo, hi = max(0, mt.start() - width), min(len(source), mt.end() + width)
+        tbl = source.rfind('<table', max(0, mt.start() - 4000), mt.start())
+        if tbl >= 0 and source.find('</table>', tbl, mt.start()) < 0:
+            lo = tbl                                   # 数在表格里：从表头开始带
         seg = source[lo:hi]
         has_sid = bool(sample_id) and sample_id.lower() not in ('main', 'n/a') and sample_id.lower() in seg.lower()
-        hits.append((0 if has_sid else 1, len(hits), seg))
+        tok = re.match(r'[\s$\\~]*([A-Za-z°℃%μ]+)', source[mt.end():mt.end() + 12])
+        tok = tok.group(1).lower() if tok else ''
+        # 「24 h」对「hours」、「12 kg」对「kg mol-1」都算同一个单位
+        has_unit = bool(unit) and bool(tok) and (unit.lower().startswith(tok) or tok.startswith(unit.lower()[:3]))
+        hits.append((0 if has_sid else 1, 0 if has_unit else 1, len(hits), _tidy(seg)))
         if len(hits) >= 12:
             break
     hits.sort()
-    return [seg for _, _, seg in hits[:n]]
+    return [seg for _, _, _, seg in hits[:n]]
+
+
+def unit_of(m, number):
+    """value_text 里紧跟主数值后面的单位（「24 hours」→ hours；「1.14 kg mol-1」→ kg）。"""
+    vt = str(m.get('value_text') or '')
+    i = vt.find(number)
+    if i < 0:
+        return ''
+    mt = re.match(r'\s*([A-Za-z°℃%μ][A-Za-z°℃%μ·/^\-0-9]*)', vt[i + len(number):])
+    return mt.group(1) if mt else ''
 
 
 def verify_record(record, source, ask=None, threshold=THRESHOLD):
@@ -127,7 +159,7 @@ def verify_record(record, source, ask=None, threshold=THRESHOLD):
             m.pop('verify_score', None)
             stat['skipped'] = stat.get('skipped', 0) + 1
             continue
-        segs = windows(source, num, m.get('sample_id') or '')
+        segs = windows(source, num, m.get('sample_id') or '', unit_of(m, num))
         if not segs:
             m['verified'] = 'unfound'
             m.pop('verify_score', None)
