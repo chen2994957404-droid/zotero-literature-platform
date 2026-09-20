@@ -67,6 +67,12 @@ def main():
         from tools.deepread import glossary_build
         return glossary_build.main()
 
+    if flag('--单元重定位'):
+        from tools.deepread.evals import units as U
+        summary, path = U.relocate(opt('--单元重定位') or opt('--tag') or 'u1')
+        print('报告 →', path)
+        return 0
+
     if flag('--单元拆解'):
         from shared.kernel import role, paths
         from shared.adapters.llm_client import chat_json

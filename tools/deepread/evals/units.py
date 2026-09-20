@@ -121,33 +121,106 @@ def _probe_tokens(u):
     return [x for x in vals if len(x) >= 2 and x not in ('10', '20', '100')], names[:4]
 
 
+_UNIT_ALIAS = {'°c': ('°c', '℃', 'oc', '° c'), '℃': ('°c', '℃'), '%': ('%',), 'kpa': ('kpa',), 'mpa': ('mpa',), 'gpa': ('gpa',),
+               'h': ('h', 'hr', 'hours', 'hour'), 'min': ('min', 'minutes'), 's': ('s', 'sec'), 'nm': ('nm',), 'μm': ('μm', 'um', 'µm'),
+               'mm': ('mm',), 'cm': ('cm',), 'g': ('g',), 'mg': ('mg',), 'ml': ('ml',), 'wt%': ('wt%', 'wt %'), 'mol%': ('mol%', 'mol %'),
+               'kda': ('kda',), 'g/mol': ('g/mol', 'g mol'), 'v': ('v',), 'hz': ('hz',), 'j': ('j',), 'kj': ('kj',)}
+
+
+def _unit_variants(unit):
+    u = (unit or '').strip().lower().replace(' ', '')
+    if not u:
+        return ()
+    for k, vs in _UNIT_ALIAS.items():
+        if u == k or u in vs:
+            return vs
+    return (u,)
+
+
+def _nonbody(outline):
+    return [(s['start'], s['end']) for s in outline.get('sections') or [] if s['kind'] == _ol.NONBODY]
+
+
 def locate(u, md, outline, si_md=''):
-    """→ {'where': 'main'|'si'|'none', 'kind': 骨架节类, 'pos': 全文位置 0–1}。找不到就 none。"""
+    """→ {'where': 'main'|'si'|'none', 'kind': 骨架节类, 'pos': 0–1, 'strength': 'unit'|'name'|'weak'}。
+
+    第一版只找「这个数在全文里第一次出现」—— 参考文献里全是数，几乎每个数都能在正文前 1% 处「找到」，
+    位置分布全挤在开头、SI 一条都定不到（2026-09-20 第一轮实测）。现在：
+      - 数后面 6 个字符内跟着这条单元的单位 → 强证据（unit）
+      - 没单位就看 300 字符内有没有这条单元的样品 / 材料名 → 中证据（name）
+      - 两样都没有 → 只接受正文非参考文献区的第一次出现，记 weak
+      - 参考文献区一律不算；正文和 SI 都找，取证据最强的
+    """
     nums, names = _probe_tokens(u)
+    unit_vs = _unit_variants(u.get('unit') or '')
+    best = None
     for where, text in (('main', md), ('si', si_md)):
         if not text:
             continue
-        hit = -1
+        dead = _nonbody(outline) if where == 'main' else []
         for n in nums:
-            m = re.search(r'(?<![\d.])' + re.escape(n) + r'(?![\d])', text)
-            if m:
-                hit = m.start()
-                break
-        if hit < 0 and nums == [] and names:
-            for nm in names:
-                m = re.search(r'\b' + re.escape(nm) + r'\b', text)
-                if m:
-                    hit = m.start()
+            for m in re.finditer(r'(?<![\d.])' + re.escape(n) + r'(?![\d])', text):
+                pos = m.start()
+                if any(a <= pos < b for a, b in dead):
+                    continue
+                tail = text[m.end():m.end() + 8].lower().replace(' ', '')
+                if unit_vs and any(tail.startswith(v.replace(' ', '')) for v in unit_vs):
+                    strength, score = 'unit', 3
+                elif names and any(re.search(r'\b' + re.escape(nm) + r'\b', text[max(0, pos - 300):pos + 300]) for nm in names):
+                    strength, score = 'name', 2
+                else:
+                    strength, score = 'weak', 1
+                if best is None or score > best[0]:
+                    best = (score, where, pos, strength, len(text))
+                if score == 3:
                     break
-        if hit >= 0:
-            kind = ''
-            if where == 'main':
-                for s in outline.get('sections') or []:
-                    if s['start'] <= hit < s['end']:
-                        kind = s['kind']
-                        break
-            return {'where': where, 'kind': kind, 'pos': round(hit / max(1, len(text)), 3)}
-    return {'where': 'none', 'kind': '', 'pos': None}
+            if best and best[0] == 3:
+                break
+        if not nums and names:                       # 实体类单元：没有数，找名字
+            for nm in names:
+                for m in re.finditer(r'\b' + re.escape(nm) + r'\b', text):
+                    if any(a <= m.start() < b for a, b in dead):
+                        continue
+                    if best is None or 2 > best[0]:
+                        best = (2, where, m.start(), 'name', len(text))
+                    break
+                if best and best[0] >= 2:
+                    break
+    if not best:
+        return {'where': 'none', 'kind': '', 'pos': None, 'strength': ''}
+    score, where, pos, strength, total = best
+    kind = ''
+    if where == 'main':
+        for s in outline.get('sections') or []:
+            if s['start'] <= pos < s['end']:
+                kind = s['kind']
+                break
+    return {'where': where, 'kind': kind, 'pos': round(pos / max(1, total), 3), 'strength': strength}
+
+
+def relocate(tag, log=print):
+    """不重跑模型，只按新的定位规则重算已有单元的 loc，再出报告。"""
+    out_dir = paths.unit_study_dir(tag)
+    results = []
+    for f in sorted(os.listdir(out_dir)):
+        if not f.endswith('.json') or f == 'summary.json':
+            continue
+        r = json.load(io.open(os.path.join(out_dir, f), encoding='utf-8'))
+        md = io.open(paths.fulltext(r['pid']), encoding='utf-8').read()
+        sp = paths.si_fulltext(r['pid'])
+        si = io.open(sp, encoding='utf-8').read() if os.path.exists(sp) else ''
+        outline = _ol.build_outline(md)
+        for u in r['units']:
+            u['loc'] = locate(u, md, outline, si)
+        json.dump(r, io.open(os.path.join(out_dir, f), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+        results.append(r)
+        log('%s 重定位 %d 条' % (r['pid'], len(r['units'])))
+    when = time.strftime('%Y-%m-%d %H:%M')
+    summary = summarize(results)
+    json.dump({'tag': tag, 'when': when, **summary}, io.open(os.path.join(out_dir, 'summary.json'), 'w', encoding='utf-8'),
+              ensure_ascii=False, indent=1)
+    write_report(out_dir, tag, summary, when)
+    return summary, os.path.join(out_dir, 'report.md')
 
 
 # ── 跑与汇总 ─────────────────────────────────────────────────────────
@@ -174,7 +247,7 @@ def run_one(pid, chat_json, local=True, log=print):
 
 
 def summarize(results):
-    by_type = {t: {'n': 0, 'len': 0, 'located_main': 0, 'located_si': 0, 'none': 0, 'kinds': {}, 'pos': []} for t in TYPES}
+    by_type = {t: {'n': 0, 'len': 0, 'located_main': 0, 'located_si': 0, 'none': 0, 'kinds': {}, 'pos': [], 'strength': {}} for t in TYPES}
     col_type = {}
     per_paper = []
     for r in results:
@@ -186,6 +259,7 @@ def summarize(results):
             b['n'] += 1
             b['len'] += u.get('len', 0)
             loc = u.get('loc') or {}
+            b['strength'][loc.get('strength') or '']  = b['strength'].get(loc.get('strength') or '', 0) + 1
             if loc.get('where') == 'main':
                 b['located_main'] += 1
                 b['kinds'][loc.get('kind') or '?'] = b['kinds'].get(loc.get('kind') or '?', 0) + 1
@@ -214,13 +288,15 @@ def write_report(out_dir, tag, summary, when):
         L.append('| %s | %d | %d | %s | %d |' % (r['pid'], r['ref_chars'], r['n_paras'],
                                                 ' | '.join(str(r[t]) for t in TYPES), r['total']))
     L += ['', '## 每类单元：多少条、多长、在原文哪里（定位靠数值 / 样品名 / 缩写，找不到记 none）', '',
-          '| 类 | 条数 | 平均长度(字符) | 定位到正文 | 定位到 SI | 没定位到 | 正文里落在哪类节 | 正文位置四分位 |',
-          '|---|---|---|---|---|---|---|---|']
+          '| 类 | 条数 | 平均长度(字符) | 定位到正文 | 定位到 SI | 没定位到 | 证据强度(单位/名字/弱) | 正文里落在哪类节 | 正文位置四分位 |',
+          '|---|---|---|---|---|---|---|---|---|']
     for t in TYPES:
         b = summary['by_type'][t]
         kinds = '、'.join('%s %d' % kv for kv in sorted(b['kinds'].items(), key=lambda x: -x[1])[:4])
-        L.append('| %s | %d | %s | %d | %d | %d | %s | %s |' % (
-            t, b['n'], b['avg_len'], b['located_main'], b['located_si'], b['none'], kinds or '—',
+        st = b.get('strength') or {}
+        L.append('| %s | %d | %s | %d | %d | %d | %d/%d/%d | %s | %s |' % (
+            t, b['n'], b['avg_len'], b['located_main'], b['located_si'], b['none'],
+            st.get('unit', 0), st.get('name', 0), st.get('weak', 0), kinds or '—',
             ' / '.join(str(p) for p in b['pos_quartiles']) or '—'))
     L += ['', '## 栏 × 类（范文的每一栏由哪些单元组成）', '',
           '| 栏 | ' + ' | '.join(TYPES) + ' |', '|---|' + '---|' * len(TYPES)]
