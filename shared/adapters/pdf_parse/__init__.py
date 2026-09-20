@@ -38,8 +38,6 @@ def _token():
     t = os.environ.get('MINERU_TOKEN')
     if not t:
         try:
-            import sys as _s
-            _s.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
             from shared.kernel.config import get_key
             t = get_key('MINERU_TOKEN')
         except Exception:

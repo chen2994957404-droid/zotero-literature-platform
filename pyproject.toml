@@ -32,7 +32,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # 开发期依赖，用户日常运行不需要
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "pyright>=1.1.400"]   # pyright：类型检查棘轮（host/doctor/typecheck.py），改代码的机器必须装
 
 [tool.setuptools.packages.find]
 # 重构后的三个顶层包（见 REBUILD.md 第一节）：

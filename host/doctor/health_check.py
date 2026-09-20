@@ -13,7 +13,7 @@ import os, sys, ast, glob, json, urllib.request, subprocess
 
 # 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
 try:
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[attr-defined]
 except Exception:
     pass
 from shared.kernel import paths
@@ -628,6 +628,23 @@ def c_offline_tests():
     return FAIL, f'离线测试有红的（结构被改坏了）：{summary}'
 
 
+def c_types():
+    """类型检查棘轮：没有文件比基线更差（细节见 host/doctor/typecheck.py）。"""
+    from host.doctor import typecheck
+    if not typecheck.is_available():
+        return WARN, '没装 pyright，类型检查跑不了（改代码的机器必须装）：pip install pyright'
+    counts, _ = typecheck.run()
+    baseline = typecheck.load_baseline()
+    worse, better = typecheck.compare(counts, baseline)
+    total, base = sum(counts.values()), sum(baseline.values())
+    if worse:
+        return FAIL, (f'{len(worse)} 个文件的类型错误比基线多：'
+                      + '、'.join(f'{f}({was}→{now})' for f, was, now in worse[:5])
+                      + '。跑 python host/doctor/typecheck.py 看明细')
+    hint = f'；{len(better)} 个文件变好了，可以 --基线 收紧' if better else ''
+    return OK, f'类型错误 {total} 条，未超基线 {base}{hint}'
+
+
 if __name__ == '__main__':
     from shared.kernel.cli import wants_help
     if wants_help():                # 踩坑 #85 同类：--help 曾直接触发整套体检（两分钟）
@@ -640,6 +657,7 @@ if __name__ == '__main__':
     check('离线测试', c_offline_tests)
     check('语法', c_syntax)
     check('未导入的模块', c_undefined_names)
+    check('类型检查', c_types)
     check('密钥安全', c_no_secrets)
     check('无弹窗', c_no_popup)
     if not offline:

@@ -30,20 +30,20 @@ shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
         cli、config、proc_lock、prompts、subproc、budget.py、catalog.py、errors.py、heartbeat.py、jobs.py、log.py、mcp_prompt.py、paths.py、role.py
     domain/  ← 纯逻辑：不联网、不知道文件放在哪（5 块）
         figure_crop、glossary、libmatch、numcheck、schema
-    adapters/  ← 外接口：唯一允许联网/用第三方库的一环（14 块）
-        crossref、embed、llm_client、openalex、pdf_fetch、pdf_parse、query_expand、sciverse、semanticscholar、snowball、unpaywall、vectordb、wechat_seed、zotero_client
-tests/ （5 个脚本）
-    test_architecture.py、test_budget.py、test_llm_routing.py、test_no_undefined_names.py、test_principles.py
+    adapters/  ← 外接口：唯一允许联网/用第三方库的一环（15 块）
+        crossref、embed、llm_client、openalex、pdf_fetch、pdf_parse、query_expand、sciverse、semanticscholar、snowball、typesafe、unpaywall、vectordb、wechat_seed、zotero_client
+tests/ （6 个脚本）
+    test_architecture.py、test_budget.py、test_llm_routing.py、test_no_undefined_names.py、test_principles.py、test_types.py
 toolbox/ （0 个脚本）
 tools/  ← 工具包：一个工具 = 一个自包含的包（13 块）
     ask、askworld、curate、deepread、digitize、direction、discover、extract、getpdf、journalwatch、library、litsearch、paperdb
 
-根目录文件：AGENTS.md、BA_TRIS_DMAEMA_三元共聚20g小试实验指南.md、CLAUDE.md、LICENSE、README.md、REBUILD.md、conftest.py、pyproject.toml、requirements.txt、各部分的关系.md
+根目录文件：AGENTS.md、BA_TRIS_DMAEMA_三元共聚20g小试实验指南.md、CLAUDE.md、LICENSE、README.md、REBUILD.md、conftest.py、pyproject.toml、pyrightconfig.json、requirements.txt、各部分的关系.md
 
 （data/ 是数据目录（五层），3000+ 文件，**不要去 glob 它**）
 ```
 
-**可枚举的模块 37 个**（`tools/` 工具包 + `shared/` 共用件，每个都有 `__init__.py` 与 `selftest.py`）
+**可枚举的模块 38 个**（`tools/` 工具包 + `shared/` 共用件，每个都有 `__init__.py` 与 `selftest.py`）
 
 进度、健康状况、下一步做什么 → 见 `HANDOVER.md`
 

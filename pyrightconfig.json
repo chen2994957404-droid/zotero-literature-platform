@@ -1,0 +1,9 @@
+{
+  "//": "静态类型检查（pyright，basic 档）。基线与说明见 host/doctor/typecheck.py；跑：python host/doctor/typecheck.py",
+  "include": ["tools", "shared", "host"],
+  "exclude": ["**/__pycache__", "data", "outputs", "scratch", "build", "dist", "**/*.egg-info"],
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "warning",
+  "reportMissingModuleSource": "none"
+}

@@ -21,11 +21,9 @@ import os, re, json, urllib.request
 
 _DEFAULTS = {'OLLAMA_HOST': 'http://localhost:11434'}
 try:
-    import sys as _s2, os as _o2
-    _s2.path.insert(0, _o2.path.dirname(_o2.path.dirname(_o2.path.dirname(_o2.path.abspath(__file__)))))
     from shared.kernel.config import get_site as _cfg_site
 except Exception:                      # 模块要能被单独拷走用，取不到 config 就退回环境变量
-    _cfg_site = lambda n: __import__('os').environ.get(n) or _DEFAULTS.get(n, '')
+    _cfg_site = lambda n: os.environ.get(n) or _DEFAULTS.get(n, '')
 
 
 def _embed_url():

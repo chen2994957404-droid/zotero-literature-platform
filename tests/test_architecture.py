@@ -653,7 +653,9 @@ def test_不再有塞项目根到sys_path的补丁():
     残留的补丁会掩盖「其实没装好」的问题，让故障延后暴露、更难定位。
     """
     offenders = []
-    pat = re.compile(r'sys\.path\.insert\([^)]*\)')
+    # `import sys as _s` 之后写 `_s.path.insert(...)` 曾躲过这条守卫（llm_client，2026-09-19 由
+    # pyright 顺手揪出），所以模块名不认死 sys，凡 `<名>.path.insert(` 都看。
+    pat = re.compile(r'\w+\.path\.insert\([^)]*\)')
     for f in _py_files():
         rel = _rel(f)
         if rel.startswith('tests/'):

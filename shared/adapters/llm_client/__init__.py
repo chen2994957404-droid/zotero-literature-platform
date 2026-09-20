@@ -26,12 +26,10 @@
 """
 import os, json, re, urllib.request, urllib.error
 try:
-    import sys as _s, os as _o
-    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.dirname(_o.path.abspath(__file__)))))
     from shared.kernel.config import get_key as _cfg_get, get_site as _cfg_site
-except Exception:
-    _cfg_get = lambda n, **kw: _o.environ.get(n, '')
-    _cfg_site = lambda n: _o.environ.get(n, '')
+except Exception:                      # 模块要能被单独拷走用，取不到 config 就退回环境变量
+    _cfg_get = lambda n, **kw: os.environ.get(n, '')
+    _cfg_site = lambda n: os.environ.get(n, '')
 
 _OLLAMA_DEFAULT = 'http://localhost:11434'      # 只在 config 取不到时兜底
 
