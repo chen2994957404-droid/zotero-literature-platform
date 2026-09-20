@@ -25,6 +25,7 @@ from shared.kernel import prompts
 PROMPT_VER = 6      # v6 = 清单先行（材料里的数先列清单、漏了点名补，提示词文件没变）；v5 = fig/exp @v3；v4 = 四段 @v2；v3 = 分段 @v1；v2 = 一次调用
 PRODUCER = 'deepread_v4'
 MODE = 'sectioned'  # 'sectioned' 分段生成（默认）/ 'single' 老路一次调用（A/B 对比用）
+REVIEW = True       # 分段精读写完后跑审稿（tools/deepread/review.py）：不过就带着审稿意见回炉一次，再不过记 needs_human
 
 MIN_OK = 3000   # 精读正文低于这个字数就是废品，不许静默写盘
 
@@ -153,6 +154,38 @@ def render_html(content):
             + '\n'.join(out) + '</body></html>')
 
 
+def _reviewed(content, md, si_md, figs, meta, model, local, cache, paper_key, log, fig_map=None):
+    """审稿 → 不过就带意见回炉一次 → 复审 → 报告落盘。审稿自己出错不拖垮精读（照原稿交）。"""
+    from tools.deepread import review as _rev
+    from shared.adapters.llm_client import chat_json
+    from tools.deepread import sectioned
+    try:
+        rep = _rev.review(content, md, si_md, chat_json, meta, log=log, local=local, fig_map=fig_map)
+        rep['rounds'] = 1
+        if not rep['passed']:
+            notes = _rev.notes_for(rep)
+            if notes:
+                log('  审稿打回 %d 栏（%s），回炉' % (len(notes), '、'.join(notes)))
+                content, st = sectioned.compose(md, si_md, figs, meta, _chat, log=log, model=model,
+                                                local=local, cache=cache, notes=notes)
+                rep = _rev.review(content, md, si_md, chat_json, meta, log=log, local=local, points=rep['points'],
+                                  fig_map=st.get('numbered'))
+                rep['rounds'] = 2
+        rep['needs_human'] = not rep['passed']
+        if rep['needs_human']:
+            log('  审稿两轮仍不过 → 记 needs_human，进待人看清单')
+    except Exception as e:                       # 审稿是附加闸，坏了不许把精读一起带走
+        log(f'  审稿环节出错，按原稿交付：{e}')
+        rep = {'version': _rev.VERSION, 'error': str(e)[:200], 'passed': None, 'needs_human': False}
+    if paper_key:
+        from shared.kernel import paths as _paths
+        try:
+            json.dump(rep, open(_paths.review_report(paper_key), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+        except OSError as e:
+            log(f'  审稿报告没写成：{e}')
+    return content
+
+
 def read_main(parsed_dir, out_html, provider='deepseek', model=None,
               key='', log=print, title=None, doi=None, mode=None, si_md=None,
               paper_key=None, local=False):
@@ -196,10 +229,13 @@ def read_main(parsed_dir, out_html, provider='deepseek', model=None,
             journal, year = m.get('journal') or '', str(m.get('year') or '')
         meta = {'title': title_en, 'authors': authors, 'doi': doi, 'journal': journal, 'year': year}
         from shared.kernel import paths as _paths
+        cache = _paths.deepread_parts(paper_key) if paper_key else None
         content, st = sectioned.compose(md, si_md or '', figs, meta, _chat, log=log, model=model,
-                                        local=local,
-                                        cache=_paths.deepread_parts(paper_key) if paper_key else None)
+                                        local=local, cache=cache)
         log(f'LLM {round(time.time()-t0,1)}s 输出{len(content)}字（分段）')
+        if REVIEW and len(content) >= MIN_OK:
+            content = _reviewed(content, md, si_md or '', figs, meta, model, local, cache, paper_key, log,
+                                fig_map=st.get('numbered'))
         if len(content) < MIN_OK:
             raise DeepreadFailed(
                 f'分段精读拼出来只有 {len(content)} 字，判定失败，不写盘。请检查模型/额度。')

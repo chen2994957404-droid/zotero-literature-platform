@@ -363,6 +363,14 @@ def deepread_parts(key):
     return os.path.join(paper_dir(key), 'deepread_parts.json')
 
 
+def review_report(key):
+    """curated/<key>/review.json —— 审稿报告：精读写完后另一个模型对着原文逐句判的结果（可重建）。
+
+    过不了的会带 needs_human=True，面板/交接文件据此列「待人看」清单。
+    """
+    return os.path.join(paper_dir(key), 'review.json')
+
+
 def reference(key):
     """curated/<key>/reference.md —— **人写的**精读范文（高分子学人推送原文，纯文本 + 图链接）。
 
@@ -534,6 +542,11 @@ def evalset():
     住在 state 层但**必须进版本库** —— 这一层别的东西都是索引，只有它是真相。
     """
     return os.path.join(STATE, 'evalset.json')
+
+
+def review_calib_dir(tag):
+    """state/review_calib/<tag>/ —— 一轮审稿校准的产物（calib.json + report.md）。可重建。"""
+    return os.path.join(STATE, 'review_calib', re.sub(r'[^A-Za-z0-9._-]+', '-', str(tag)))
 
 
 def golden_eval_dir(tag, create=False):

@@ -31,6 +31,16 @@ python -m host.watcher.watchdog      看门狗，它真死了才重启它
 
 **已精读的部分不会重跑**：已有正文、后来补了 SI，就只补 SI 那段（省钱）。
 
+## 审稿（写完自动跑）
+
+精读写完，另一个模型对着原文逐句判：编造 / 曲解 / 漏重点。不过 → 带着意见把那几栏回炉一次 → 复审。
+两轮仍不过的标 `needs_human`，其余不经人手。报告：`data/curated/<KEY>/review.json`。
+
+```
+python -m tools.deepread KEY1 --审稿                审一篇已有的精读
+python -m tools.deepread --审稿校准 --篇数 10       拿范文校准审稿：干净范文误报率 + 故意塞错的查全率
+```
+
 ## 产物
 
 `data/raw/<KEY>/parsed/full.md`（解析全文）、`data/curated/<KEY>/`：

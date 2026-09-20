@@ -449,31 +449,42 @@ def _with_fix(chat, sysp, user, max_tokens, model, parse, ok, source, log, what,
 
 # ── 各栏 ─────────────────────────────────────────────────────────────
 
-def _lead(chat, md, outline, meta, review, gloss, source, model, log):
-    sysp = _sub(prompts.load('deepread', PROMPTS['lead']),
-                DOC_VERB='综述用"系统总结了 / 系统梳理了"' if review else '研究论文用"报道了 / 开发了 / 提出了"')
-    user = ('标题: %s\n作者: %s\n期刊: %s (%s)\nDOI: %s\n%s\n\n【摘要与引言】\n%s\n\n【结论】\n%s' % (
-        meta.get('title', ''), meta.get('authors', ''), meta.get('journal', ''),
-        meta.get('year', ''), meta.get('doi', ''), gloss,
+# ── 各栏依据的原文材料（写的人和审的人看同一份，审稿才公平）───────────
+
+def lead_material(md, outline):
+    """导读/引言栏依据的原文：摘要 + 引言 + 结论。"""
+    return ('【摘要与引言】\n%s\n\n【结论】\n%s' % (
         _by_kind(md, outline, (_ol.ABSTRACT, _ol.BACKGROUND), CAP_INTRO),
         _by_kind(md, outline, (_ol.CONCLUSION,), CAP_CONCL)))
-    d = _with_fix(chat, sysp, user, 3500, model, _parse_tagged,
-                  lambda d: bool(d.get('导读') and d.get('引言')), source, log, '导读/引言', intros=intro_pairs(md))
-    return normalize('lead', d.get('导读', '')), [normalize('intro', p) for p in _paras(d.get('引言', ''))]
 
 
-def _exp(chat, md, si_md, outline, review, gloss, source, model, log):
+_METHODS_RE = re.compile(r'(?i)\b(materials used|were purchased|was purchased|sigma|aldrich|synthesi[sz]ed|'
+                         r'were prepared|was prepared|cross-?linker|initiator|dissolved in|stirred|cured|'
+                         r'tensile tests?|measured (?:using|with|by)|rheomet|instron|mol ?%|wt ?%)\b')
+
+
+def _methods_paragraphs(md, cap=CAP_EXP, min_hits=2):
+    """全篇无标题时捞「像方法」的段落：一段里命中 ≥2 个方法关键词就要。凑不够 800 字再把主体开头补上。"""
+    body = _ol.scan.clean_body(md or '')
+    paras = [p.strip() for p in re.split(r'\n\s*\n', body) if p.strip()]
+    hit = [p for p in paras if len(_METHODS_RE.findall(p)) >= min_hits and not _ol._FIGCAP_RE.match(p)]
+    out = '\n\n'.join(hit)[:cap]
+    if len(out) < 800:
+        out = (out + '\n\n' + body)[:cap]
+    return out
+
+
+def exp_material(md, si_md, outline, review):
+    """实验/Q1 栏依据的原文：方法节（认不出来退到主体）+ 表 + SI 的实验细节。"""
     if review:
-        p1, p2, p3 = '本文涉及的主要材料体系包括：', '代表性制备/加工路线是：', '评价与表征方法包括：'
         mat = _by_kind(md, outline, (_ol.BODY, _ol.RESULTS, _ol.DISCUSSION, _ol.SYNTHESIS, _ol.METHODS), CAP_BODY)
     else:
-        p1, p2, p3 = '主要实验药品是：', '实验步骤是：', '测试表征方法包括：'
         mat = _by_kind(md, outline, (_ol.SYNTHESIS, _ol.METHODS), CAP_EXP)
         if len(mat) < 800:        # 方法节没认出来（Nature 式全描述性标题）：退到主体
             mat = _by_kind(md, outline, (_ol.SYNTHESIS, _ol.METHODS, _ol.BODY, _ol.RESULTS), CAP_EXP)
+        if not mat.strip():       # 连主体都没有（Nature 老版式：全篇无标题，骨架只有一节）：按关键词捞段落
+            mat = _methods_paragraphs(md)        # 2026-09-19 审稿在 IDY9U372 上抓到：实验栏材料只有 13 个字符
     tabs = _tables(md, outline, kinds=(_ol.SYNTHESIS, _ol.METHODS)) or _tables(md, outline, cap=3000)
-    q1 = _Q1_REVIEW if review else _Q1
-    sysp = _sub(prompts.load('deepread', PROMPTS['exp']), P1=p1, P2=p2, P3=p3, Q1=q1)
     si_part = ''
     if si_md:
         si_ol = outline.get('si') or _ol.build_outline(si_md)
@@ -482,8 +493,48 @@ def _exp(chat, md, si_md, outline, review, gloss, source, model, log):
             si_txt = _ol.scan.clean_body(si_md)[:CAP_SI]
         si_tabs = _tables(si_md, si_ol, cap=3000)
         si_part = '\n\n【补充材料 SI 的实验细节】\n' + si_txt + ('\n\n【SI 里的表】\n' + si_tabs if si_tabs else '')
-    user = gloss + '\n\n【正文的实验/方法部分】\n' + mat + ('\n\n【正文里的表】\n' + tabs if tabs else '') + si_part
-    must = _nums.must_numbers(mat + '\n' + tabs + '\n' + si_part, cap=MUST_CAP_EXP)
+    return '【正文的实验/方法部分】\n' + mat + ('\n\n【正文里的表】\n' + tabs if tabs else '') + si_part
+
+
+def fig_material(md, outline, num):
+    """讲第 num 张图依据的原文：图注 + 讨论它的段落 + 引到的表。"""
+    cap_txt, body, tabs = _fig_context(md, outline, num)
+    return ('【原文图注】\n%s\n\n【正文里讨论它的段落】\n%s%s' % (
+        cap_txt or '（未找到图注）',
+        body or '（正文没有单独讨论这张图的段落，按图注写）',
+        ('\n\n【这些段落引到的表】\n' + tabs) if tabs else ''))
+
+
+def wrap_material(md, outline):
+    """收尾四栏依据的原文：摘要 + 结论。"""
+    return '【摘要】\n%s\n\n【结论】\n%s' % (
+        _by_kind(md, outline, (_ol.ABSTRACT,), 3000),
+        _by_kind(md, outline, (_ol.CONCLUSION,), CAP_CONCL))
+
+
+def _lead(chat, md, outline, meta, review, gloss, source, model, log, note=''):
+    sysp = _sub(prompts.load('deepread', PROMPTS['lead']),
+                DOC_VERB='综述用"系统总结了 / 系统梳理了"' if review else '研究论文用"报道了 / 开发了 / 提出了"')
+    user = ('标题: %s\n作者: %s\n期刊: %s (%s)\nDOI: %s\n%s\n\n【摘要与引言】\n%s\n\n【结论】\n%s' % (
+        meta.get('title', ''), meta.get('authors', ''), meta.get('journal', ''),
+        meta.get('year', ''), meta.get('doi', ''), gloss,
+        _by_kind(md, outline, (_ol.ABSTRACT, _ol.BACKGROUND), CAP_INTRO),
+        _by_kind(md, outline, (_ol.CONCLUSION,), CAP_CONCL)))
+    d = _with_fix(chat, sysp, user + note, 3500, model, _parse_tagged,
+                  lambda d: bool(d.get('导读') and d.get('引言')), source, log, '导读/引言', intros=intro_pairs(md))
+    return normalize('lead', d.get('导读', '')), [normalize('intro', p) for p in _paras(d.get('引言', ''))]
+
+
+def _exp(chat, md, si_md, outline, review, gloss, source, model, log, note=''):
+    if review:
+        p1, p2, p3 = '本文涉及的主要材料体系包括：', '代表性制备/加工路线是：', '评价与表征方法包括：'
+    else:
+        p1, p2, p3 = '主要实验药品是：', '实验步骤是：', '测试表征方法包括：'
+    q1 = _Q1_REVIEW if review else _Q1
+    sysp = _sub(prompts.load('deepread', PROMPTS['exp']), P1=p1, P2=p2, P3=p3, Q1=q1)
+    material = exp_material(md, si_md, outline, review)
+    user = gloss + '\n\n' + material
+    must = _nums.must_numbers(material, cap=MUST_CAP_EXP)
     user += _nums.checklist_block(must)
 
     def parse(raw):
@@ -496,20 +547,17 @@ def _exp(chat, md, si_md, outline, review, gloss, source, model, log):
 
     def ok(d):
         return all(x in d['实验'] for x in ('（1）', '（2）', '（3）')) and bool(d.get('Q1'))
-    d = _with_fix(chat, sysp, user, 4500, model, parse, ok, source, log, '实验/Q1', must=must, intros=intro_pairs(md))
+    d = _with_fix(chat, sysp, user + note, 4500, model, parse, ok, source, log, '实验/Q1', must=must, intros=intro_pairs(md))
     return _paras(d.get('实验', '')), d.get('Q1', '')
 
 
-def _one_fig(chat, md, outline, num, n_figs, gloss, source, model, log):
-    cap_txt, body, tabs = _fig_context(md, outline, num)
+def _one_fig(chat, md, outline, num, n_figs, gloss, source, model, log, note=''):
     # 综述 20 多张图时按 DEEP_MIN 也要 4000+ 字（第四轮实测篇幅比 2.27）：图超过 12 张下限再降一档
     per = max(DEEP_MIN if n_figs <= 12 else 150, min(DEEP_MAX, DEEP_BUDGET // max(1, n_figs)))
     sysp = _sub(prompts.load('deepread', PROMPTS['fig']), DEEP_LEN='约 %d 字' % per)
-    user = ('这是图 %d（全文共 %d 张图）。\n%s\n\n【原文图注】\n%s\n\n【正文里讨论它的段落】\n%s%s'
-            % (num, n_figs, gloss, cap_txt or '（未找到图注）',
-               body or '（正文没有单独讨论这张图的段落，按图注写）',
-               ('\n\n【这些段落引到的表】\n' + tabs) if tabs else ''))
-    must = _nums.must_numbers(cap_txt + '\n' + body + '\n' + tabs, cap=MUST_CAP_FIG)
+    material = fig_material(md, outline, num)
+    user = '这是图 %d（全文共 %d 张图）。\n%s\n\n%s' % (num, n_figs, gloss, material)
+    must = _nums.must_numbers(material, cap=MUST_CAP_FIG)
     user += _nums.checklist_block(must)
 
     def parse(raw):
@@ -522,14 +570,14 @@ def _one_fig(chat, md, outline, num, n_figs, gloss, source, model, log):
         idx = re.split(r'\s*▲图', idx)[0].strip()
         return {'idx': idx, 'deep': deep, '_ps': ps}
 
-    d = _with_fix(chat, sysp, user, 1800, model, parse,
+    d = _with_fix(chat, sysp, user + note, 1800, model, parse,
                   lambda d: bool(d['idx'] and d['deep']), source, log, '图 %d ' % num, must=must)
     ps = d.get('_ps') or []
     # 三次都不合形：能拿到什么用什么，别让一张图拖死整篇
     return d['idx'] or (ps[0] if ps else ''), d['deep'] or (ps[1] if len(ps) > 1 else '')
 
 
-def _wrap(chat, md, outline, meta, deeps, review, gloss, source, model, log):
+def _wrap(chat, md, outline, meta, deeps, review, gloss, source, model, log, note=''):
     sysp = _sub(prompts.load('deepread', PROMPTS['wrap']),
                 Q2='<按这篇综述的中心问题拟一个问句，例如"为什么…性能差异如此巨大？">' if review else _Q2)
     user = ('标题: %s\n期刊: %s\n%s\n\n【摘要】\n%s\n\n【结论】\n%s\n\n【前面已写好的逐图深解】\n%s' % (
@@ -537,7 +585,7 @@ def _wrap(chat, md, outline, meta, deeps, review, gloss, source, model, log):
         _by_kind(md, outline, (_ol.ABSTRACT,), 3000),
         _by_kind(md, outline, (_ol.CONCLUSION,), CAP_CONCL),
         '\n\n'.join(deeps)[:20000]))
-    d = _with_fix(chat, sysp, user, 3500, model, _parse_tagged,
+    d = _with_fix(chat, sysp, user + note, 3500, model, _parse_tagged,
                   lambda d: bool(d.get('Q2') and d.get('总之')), source, log, '收尾')
     # 缺哪栏单补哪栏：小模型一次写四栏常漏一栏（4b 实测三次都没吐 Q2）。
     # 整段重来它照样漏；只要那一栏，成功率高得多，也便宜。
@@ -634,13 +682,16 @@ class _Cache:
             pass
 
 
-def compose(md, si_md, figs, meta, chat, log=print, model=None, local=False, cache=None):
+def compose(md, si_md, figs, meta, chat, log=print, model=None, local=False, cache=None, notes=None):
     """一篇 → (精读 markdown 内容, 统计)。`figs` 是裁图结果（只用它的张数与顺序），
     `meta` 是 title/authors/journal/year/doi，`chat` 是 llm_client.chat 或假替身。
     `local=True` 全部调用走本机 Ollama（温度 0，答案可复现），不花一分钱。
     `cache` 是分栏缓存文件路径：断了从断处接；改了哪栏的提示词只重跑哪栏。
+    `notes` 是审稿（review.notes_for）打回来的 {栏 key: 回炉提示}：那几栏作废缓存、
+    带着提示重写；key 里的 fig:<n> 用的是【图n】标记号，这里换成图号找缓存。
     """
     _LOCAL['on'] = bool(local)
+    notes = dict(notes or {})
     outline = _ol.build_outline(md, si_md=si_md)
     review = is_review_doc(meta.get('title', ''), outline, meta.get('journal', ''))
     gloss = glossary(md)
@@ -661,15 +712,15 @@ def compose(md, si_md, figs, meta, chat, log=print, model=None, local=False, cac
         '综述' if review else '研究论文', n_figs, len(outline.get('sections') or []),
         gloss.count(' = ') + gloss.count('、'), '；有缓存 %d 栏' % len(C.d) if C.d else ''))
 
-    part = C.get('lead')
+    part = None if notes.get('lead') else C.get('lead')
     if not part:
-        part = list(_lead(chat, md, outline, meta, review, gloss, source, model, log))
+        part = list(_lead(chat, md, outline, meta, review, gloss, source, model, log, note=notes.get('lead', '')))
         C.put('lead', part)
     lead, intro = part[0], part[1]
 
-    part = C.get('exp')
+    part = None if notes.get('exp') else C.get('exp')
     if not part:
-        part = list(_exp(chat, md, si_md, outline, review, gloss, source, model, log))
+        part = list(_exp(chat, md, si_md, outline, review, gloss, source, model, log, note=notes.get('exp', '')))
         C.put('exp', part)
     exp, q1 = part[0], part[1]
 
@@ -677,17 +728,18 @@ def compose(md, si_md, figs, meta, chat, log=print, model=None, local=False, cac
     log('  %d 块裁图里 %d 块定下了图号' % (n_figs, len(numbered)))
     fig_paras, deeps = [], []
     for i, num in numbered:
-        part = C.get('fig:%d' % num)
+        note = notes.get('fig:%d' % i, '')                  # 审稿按标记号（裁图序号）指认
+        part = None if note else C.get('fig:%d' % num)
         if not part:
-            part = list(_one_fig(chat, md, outline, num, len(numbered), gloss, source, model, log))
+            part = list(_one_fig(chat, md, outline, num, len(numbered), gloss, source, model, log, note=note))
             C.put('fig:%d' % num, part)
         fig_paras.append((i, part[0], part[1]))
         if part[1]:
             deeps.append(part[1])
 
-    tail = C.get('wrap')
+    tail = None if notes.get('wrap') else C.get('wrap')
     if not tail:
-        tail = _wrap(chat, md, outline, meta, deeps, review, gloss, source, model, log)
+        tail = _wrap(chat, md, outline, meta, deeps, review, gloss, source, model, log, note=notes.get('wrap', ''))
         C.put('wrap', tail)
 
     parts = []
@@ -717,7 +769,7 @@ def compose(md, si_md, figs, meta, chat, log=print, model=None, local=False, cac
     stats = {'review': review, 'n_figs': n_figs, 'n_numbered': len(numbered), 'chars': len(content),
              'figs_two_para': sum(1 for _, i, d in fig_paras if i and d),
              'has_plain': bool(tail.get('通俗理解')), 'has_title': bool(tail.get('标题')),
-             'n_unverified': len(bad), 'unverified': bad[:20]}
+             'n_unverified': len(bad), 'unverified': bad[:20], 'numbered': dict(numbered)}
     log('  精读 %d 字，%d/%d 张图两段齐全，原文查不到的数 %d 个%s' % (
         stats['chars'], stats['figs_two_para'], len(numbered), len(bad),
         ('：' + '、'.join(bad[:8])) if bad else ''))

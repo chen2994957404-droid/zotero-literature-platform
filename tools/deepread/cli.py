@@ -25,6 +25,11 @@
     --同批 v3_local 用上一轮那一批（候选池在长，同 seed 抽出来会变；跨轮对比必须同批）
     --seed 1 固定抽样；--model qwen3.5:4b 指定模型；--篇数 0 = 全部
 
+审稿（精读写完由另一个模型对着原文逐句判：编造 / 曲解 / 漏重点；正常精读里自动跑，这两条是手动用）：
+    python -m tools.deepread KEY1 --审稿                     审一篇已有的精读，报告写到 curated/<KEY>/review.json 并打印
+    python -m tools.deepread --审稿校准 --篇数 10 --tag v1   拿范文校准审稿：干净范文的误报率 + 故意塞错的查全率
+    --本地 走本机 Ollama（免费）；--seed 固定抽样
+
 ⚠ 除 --rerun-pro 列清单外，每一条都**花钱**（付费大模型 + MineRU 额度），
    并且会把结果写回 Zotero。只允许在主力机上跑（role.require_prod 会拦）。
 
@@ -58,6 +63,45 @@ def main():
     if flag('--建术语表'):
         from tools.deepread import glossary_build
         return glossary_build.main()
+
+    if flag('--审稿校准'):
+        from shared.kernel import role, paths
+        from shared.adapters.llm_client import chat_json
+        from tools.deepread import review as RV
+        from tools.deepread.evals import golden as GE
+        local = flag('--本地')
+        if not local:
+            role.require_prod('审稿校准（调用付费大模型逐句判十几篇范文）', force=force)
+        n, seed = int(opt('--篇数') or 10), int(opt('--seed') or 1)
+        keys = keys or (GE.candidates() if n == 0 else GE.sample(n, seed))
+        tag = opt('--tag') or ('v1_local' if local else 'v1')
+        agg = RV.calibrate(keys, chat_json, tag=tag, local=local, out_dir=paths.review_calib_dir(tag))
+        print('\n%d 篇 · 干净范文误报率 %.1f%% · 塞错查全率 %.0f%%\n报告 → %s' % (
+            agg['n'], agg['fp_rate'] * 100, agg['recall'] * 100, os.path.join(paths.review_calib_dir(tag), 'report.md')))
+        return 0
+
+    if flag('--审稿'):
+        import io as _io, json as _json
+        from shared.kernel import role, paths, catalog
+        from shared.adapters.llm_client import chat_json
+        from tools.deepread import review as RV
+        local = flag('--本地')
+        if not local:
+            role.require_prod('审稿（调用付费大模型逐句判一篇精读）', force=force)
+        for key in keys:
+            html_p, md_p = paths.summary(key), paths.fulltext(key)
+            if not (os.path.exists(html_p) and os.path.exists(md_p)):
+                print(key, '缺精读或全文，跳过'); continue
+            content = RV.html_to_content(_io.open(html_p, encoding='utf-8').read())
+            md = _io.open(md_p, encoding='utf-8').read()
+            sp = paths.si_fulltext(key)
+            si = _io.open(sp, encoding='utf-8').read() if os.path.exists(sp) else ''
+            m = catalog.read_meta(key)
+            rep = RV.review(content, md, si, chat_json, {'title': m.get('title', ''), 'journal': m.get('journal', '')}, local=local)
+            rep['needs_human'] = not rep['passed']
+            _json.dump(rep, _io.open(paths.review_report(key), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+            print(RV.to_markdown(rep, key))
+        return 0
 
     if flag('--金标评测') or flag('--金标重算'):
         from shared.kernel import role

@@ -268,6 +268,10 @@ def site_missing():
 # 默认值即项目架构准则的「两把尺子」：输出少的活上 pro（准），输出多的上 flash（省）
 MODEL_SETTINGS = {
     'DEEPREAD_MODEL':   ('精读',       'deepseek-v4-flash'),
+    # 审稿（2026-09-19）：精读写完让另一个模型对着原文逐句判。输出是小 JSON，按「输出少上 pro」。
+    # ⚠ DeepSeek 9 月 14 日起把 v4-pro 静默路由到 Flash —— 在只有 DeepSeek 一条通道时
+    #   「审的模型 ≠ 写的模型」做不到；要真正换个脑子，在面板把这个用途指到别的通道（如阿里云 qwen）。
+    'REVIEW_MODEL':     ('精读审稿',   'deepseek-v4-pro'),
     'EXTRACT_MODEL':    ('结构化抽取', 'deepseek-v4-pro'),
     'ASK_MODEL':        ('问答',       'deepseek-v4-flash'),
     'AUTOTAG_MODEL':    ('自动打标签', 'deepseek-v4-flash'),
