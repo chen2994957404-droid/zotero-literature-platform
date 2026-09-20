@@ -164,3 +164,12 @@ def test_to_markdown_不炸():
     rep = RV.review(CONTENT, MD, '', fake_json(calls), META, log=lambda *a: None)
     md = RV.to_markdown(rep, 'KEY')
     assert '不过' in md and 'unsupported' in md
+
+
+def test_材料超窗口时按句子挑段落而不是盲截():
+    filler = '\n\n'.join('Background paragraph number %d about nothing in particular.' % i for i in range(400))
+    target = 'The PBS-12 sample showed a modulus of 4.1 MPa at 180 °C.'
+    material = filler + '\n\n' + target            # 目标段在最后，盲截前 N 字符一定丢
+    out = RV._cap(material, ['PBS-12 样品在 180 °C 下模量为 4.1 MPa。'], cap=3000)
+    assert target in out and len(out) <= 3000
+    assert RV._cap('short', ['x'], cap=3000) == 'short'

@@ -268,10 +268,10 @@ def site_missing():
 # 默认值即项目架构准则的「两把尺子」：输出少的活上 pro（准），输出多的上 flash（省）
 MODEL_SETTINGS = {
     'DEEPREAD_MODEL':   ('精读',       'deepseek-v4-flash'),
-    # 审稿（2026-09-19）：精读写完让另一个模型对着原文逐句判。输出是小 JSON，按「输出少上 pro」。
-    # ⚠ DeepSeek 9 月 14 日起把 v4-pro 静默路由到 Flash —— 在只有 DeepSeek 一条通道时
-    #   「审的模型 ≠ 写的模型」做不到；要真正换个脑子，在面板把这个用途指到别的通道（如阿里云 qwen）。
-    'REVIEW_MODEL':     ('精读审稿',   'deepseek-v4-pro'),
+    # 审稿（2026-09-19）：精读写完让另一个模型对着原文逐句判。输出是小 JSON。
+    # 2026-09-20 用户定：这类按篇乘的活**不再用云端**（校准 5 篇花 1.5 元，上千篇负荷不起），默认本机 Ollama。
+    # 「审的模型 ≠ 写的模型」暂时做不到（精读也是 qwen3.5）；任务形状不同（判断题 vs 写作）先顶着，有第二个本地模型再换。
+    'REVIEW_MODEL':     ('精读审稿',   'qwen3.5:latest'),
     'EXTRACT_MODEL':    ('结构化抽取', 'deepseek-v4-pro'),
     'ASK_MODEL':        ('问答',       'deepseek-v4-flash'),
     'AUTOTAG_MODEL':    ('自动打标签', 'deepseek-v4-flash'),

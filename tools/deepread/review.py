@@ -48,7 +48,10 @@ PURPOSE = 'REVIEW'
 FLAG_TOL = 0.08        # 整篇标出率（distorted + unsupported / 已判句数）超过它不过关
 MISS_TOL = 2           # 漏掉的要点（missed，不含 partial）超过它不过关
 BATCH = 25             # 一次交给审稿模型的句数
-CAP_SOURCE = 60000     # 整篇复核时原文截到这么多字符
+CAP_SOURCE = 60000     # 整篇复核时原文截到这么多字符（云端）
+# 本地档（2026-09-20 起默认）：qwen3.5 9.7B 的窗口给 24k token，材料压到 20000 字符；
+# 「整篇复核」在本地退化成「前 20000 字符复核」—— 讨论段在后面的会漏，slice_miss 会偏少，校准时看这项。
+CAP_LOCAL, NUM_CTX_LOCAL = 20000, 24576
 CAP_CAPTIONS = 8000
 MIN_CLAIM = 10         # 比这短的句子不当断言
 VERDICTS = ('ok', 'distorted', 'unsupported', 'skip')
@@ -174,8 +177,36 @@ def _captions(md, outline, cap=CAP_CAPTIONS):
 
 def _ask(chat_json, sysp, user, local):
     if local:
-        return chat_json(sysp, user, provider='ollama', temperature=0.0) or {}
-    return chat_json(sysp, user, purpose=PURPOSE, temperature=0.1) or {}
+        return chat_json(sysp, user, provider='ollama', temperature=0.0, num_ctx=NUM_CTX_LOCAL) or {}
+    # 走路由（默认也是本机 Ollama，用户 2026-09-20 定）：窗口按本地档给，云端通道会忽略这个参数
+    return chat_json(sysp, user, purpose=PURPOSE, temperature=0.1, num_ctx=NUM_CTX_LOCAL) or {}
+
+
+_TOKEN = re.compile(r'\d+(?:\.\d+)?|[A-Za-z][A-Za-z0-9\-]{2,}')
+
+
+def _cap(material, claims, cap=CAP_LOCAL):
+    """材料压到本地窗口装得下：装得下原样给；装不下**按句子挑段落** —— 段落里和这批句子共享的
+    数字 / 英文词（样品编号、缩写、化学名）越多越靠前，按原文顺序拼到 cap。
+    比盲目截前 20000 字符强得多：范文整篇一栏、整篇复核，讨论段都在原文后半。
+    """
+    if len(material) <= cap:
+        return material
+    keys = {t.lower() for c in claims for t in _TOKEN.findall(c)}
+    paras = [p for p in re.split(r'\n\s*\n', material) if p.strip()]
+    scored = []
+    for i, p in enumerate(paras):
+        hits = len(keys & {t.lower() for t in _TOKEN.findall(p)})
+        scored.append((hits, i))
+    picked, used = set(), 0
+    for hits, i in sorted(scored, key=lambda x: (-x[0], x[1])):
+        if hits == 0 and used > cap // 2:
+            break
+        if used + len(paras[i]) > cap:
+            continue
+        picked.add(i)
+        used += len(paras[i]) + 2
+    return '\n\n'.join(paras[i][:6000] for i in sorted(picked))[:cap]
 
 
 def _judge(chat_json, claims, material, local, log, what):
@@ -184,7 +215,7 @@ def _judge(chat_json, claims, material, local, log, what):
     for start in range(0, len(claims), BATCH):
         batch = claims[start:start + BATCH]
         user = '【原文材料】\n%s\n\n【待审句子】\n%s' % (
-            material, '\n'.join('%d. %s' % (i + 1, c) for i, c in enumerate(batch)))
+            _cap(material, batch), '\n'.join('%d. %s' % (i + 1, c) for i, c in enumerate(batch)))
         try:
             d = _ask(chat_json, prompts.load('deepread', PROMPTS['claims']), user, local)
         except Exception as e:                 # 审稿失败不许拖垮精读：整批记 unjudged
@@ -208,7 +239,7 @@ def _recheck(chat_json, flagged, source, local, log):
     """被标的句子拿整篇原文再判一次。整篇里能找到依据的 → 切片漏了（slice_miss），不算编辑的错。"""
     if not flagged:
         return 0
-    verdicts = _judge(chat_json, [f['claim'] for f in flagged], source[:CAP_SOURCE], local, log, '整篇复核')
+    verdicts = _judge(chat_json, [f['claim'] for f in flagged], source[:CAP_SOURCE], local, log, '整篇复核')   # _judge 里再按本地窗口压
     fixed = 0
     for f, v in zip(flagged, verdicts):
         if v['v'] in ('ok', 'skip'):
