@@ -32,6 +32,8 @@
 
 单元拆解研究（把人写的范文拆成七类最小信息单元，量「基本单元长什么样」，产物 data/state/unit_study/<tag>/）：
     python -m tools.deepread --单元拆解 --篇数 20 --本地 --tag u1
+    python -m tools.deepread --原文单元 --篇数 10 --本地 --tag u1     第 2 步：从英文原文拆九类单元
+    python -m tools.deepread --单元覆盖 u1                             范文单元有几成能在原文单元里找到（bge-m3 配对）
 
 ⚠ 除 --rerun-pro 列清单外，每一条都**花钱**（付费大模型 + MineRU 额度），
    并且会把结果写回 Zotero。只允许在主力机上跑（role.require_prod 会拦）。
@@ -66,6 +68,25 @@ def main():
     if flag('--建术语表'):
         from tools.deepread import glossary_build
         return glossary_build.main()
+
+    if flag('--原文单元'):
+        from shared.kernel import role
+        from shared.adapters.llm_client import chat_json
+        from tools.deepread.evals import units_src as US, golden as GE
+        local = flag('--本地')
+        if not local:
+            role.require_prod('原文单元拆解（调用付费大模型拆十几篇原文）', force=force)
+        n, seed = int(opt('--篇数') or 10), int(opt('--seed') or 1)
+        keys = keys or (GE.candidates() if n == 0 else GE.sample(n, seed))
+        done = US.run(keys, chat_json, tag=opt('--tag') or 'u1', local=local)
+        print('\n拆完 %d 篇' % len(done))
+        return 0
+
+    if flag('--单元覆盖'):
+        from tools.deepread.evals import units_src as US
+        per_type, path = US.coverage(opt('--单元覆盖') or opt('--tag') or 'u1')
+        print('\n' + '\n'.join('%s %s' % (t, b['rate']) for t, b in per_type.items() if b['n']) + '\n报告 → ' + path)
+        return 0
 
     if flag('--单元重定位'):
         from tools.deepread.evals import units as U
