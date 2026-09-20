@@ -113,7 +113,7 @@ def test_逐句判_被标的句子落在对的栏_要点覆盖统计():
     assert rep['sections']['fig:1']['flags'][0]['v'] == 'unsupported'
     assert rep['sections']['fig:2']['flags'][0]['v'] == 'distorted'
     assert rep['n_flagged'] == 2 and rep['n_missed'] == 1 and rep['n_partial'] == 1
-    assert not rep['passed']                       # 2 / 十几句 > 5%
+    assert not rep['passed']                       # 2 / 十几句 > 8%
     # 图 1 那栏的材料是图 1 的图注 + 讨论段，不是整篇
     fig1 = next(c for c in calls if '3. ' in c['user'] and '图1' in c['user'])
     assert 'Figure 1. Mechanical' in fig1['user'] and 'Figure 2. Rheological' not in fig1['user']

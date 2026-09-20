@@ -43,7 +43,9 @@ PROMPTS = {'claims': 'review_claims@v1', 'keypoints': 'review_keypoints@v1', 'co
 VERSION = 1
 PURPOSE = 'REVIEW'
 
-FLAG_TOL = 0.05        # 整篇标出率（distorted + unsupported / 已判句数）超过它不过关
+# 2026-09-20 校准（5 篇人写范文，正文+SI 都给）：干净范文本身就有 1–8% 的句子被标 —— 抽样核对多数是范文真写错了
+# （热压条件数字不对、断裂功倍数写反、图 4a 的内容归到 4b）。线定在 8%：比人写的差才回炉、才进待人看。
+FLAG_TOL = 0.08        # 整篇标出率（distorted + unsupported / 已判句数）超过它不过关
 MISS_TOL = 2           # 漏掉的要点（missed，不含 partial）超过它不过关
 BATCH = 25             # 一次交给审稿模型的句数
 CAP_SOURCE = 60000     # 整篇复核时原文截到这么多字符
@@ -152,7 +154,8 @@ def _material(key, md, si_md, outline, review, fig_map=None):
         return _sec.fig_material(md, outline, (fig_map or {}).get(i, i))   # 标记号 → 图号
     if key == 'wrap':
         return _sec.wrap_material(md, outline)
-    return _ol.scan.clean_body(md or '')[:CAP_SOURCE]
+    # 范文整篇算一栏：正文 + SI 一起给（2026-09-20 校准：范文的实验细节多半来自 SI，只给正文会把它们全判成编造）
+    return (_ol.scan.clean_body(md or '') + '\n\n' + (si_md or ''))[:CAP_SOURCE]
 
 
 def _captions(md, outline, cap=CAP_CAPTIONS):
@@ -352,7 +355,8 @@ def corrupt(text, seed=1, n_num=4, n_flip=3, n_fake=3):
     def sentences(i):
         return [s for s in _SPLIT.split(paras[i]) if len(s.strip()) >= MIN_CLAIM]
 
-    idxs = [i for i, p in enumerate(paras) if p.strip() and not p.startswith('#') and not _FIGMARK.match(p)]
+    idxs = [i for i, p in enumerate(paras) if p.strip() and not p.startswith('#') and not _FIGMARK.match(p)
+            and '](' not in p and 'http' not in p]      # 图链接里的数字不是断言，塞进去审稿也抓不到（2026-09-20 校准）
     rnd.shuffle(idxs)
     done = 0
     for i in idxs:                                          # 改数
@@ -413,7 +417,7 @@ def calibrate(keys, chat_json, log=print, tag='v1', local=False, out_dir=None):
         si = io.open(sp, encoding='utf-8').read() if os.path.exists(sp) else ''
         log('%s 干净范文…' % k)
         clean = review(ref, md, si, chat_json, log=log, local=local, with_cover=False)
-        bad, injected = corrupt(ref, seed=hash(k) % 1000)
+        bad, injected = corrupt(ref, seed=sum(ord(c) for c in k) % 1000)   # 别用 hash()：每个进程随机，两轮塞的错不一样
         log('%s 塞错 %d 处…' % (k, len(injected)))
         dirty = review(bad, md, si, chat_json, log=log, local=local, with_cover=False)
         hits = _hit(dirty, injected)
