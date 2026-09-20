@@ -69,7 +69,7 @@ _PAPER_COLS = (['key', 'title', 'doi', 'zotero_key', 'tier', 'source', 'si_used'
 _SAMPLE_COLS = ['key', 'sample_id', 'composition', 'preparation', 'dynamic_bond',
                 'role', 'application']
 _MEAS_COLS = ['key', 'sample_id', 'name', 'raw_name', 'value', 'value_max', 'unit',
-              'cmp', 'condition', 'location', 'section', 'method', 'raw']
+              'cmp', 'condition', 'location', 'section', 'method', 'verified', 'raw']
 _CURVE_COLS = ['key', 'fig', 'series', 'chart_type', 'x_label', 'x_unit', 'y_label',
                'y_unit', 'n_points', 'confidence', 'caption', 'points']
 
@@ -114,6 +114,7 @@ CREATE TABLE IF NOT EXISTS measurements (
   location  TEXT,
   section   TEXT,
   method    TEXT,
+  verified  TEXT,
   raw       TEXT
 );
 CREATE TABLE IF NOT EXISTS curves (
@@ -248,7 +249,7 @@ def _records():
 
 
 _MEAS_COLS = ['key', 'sample_id', 'name', 'raw_name', 'value', 'value_max', 'unit',
-              'cmp', 'condition', 'location', 'section', 'method', 'raw']
+              'cmp', 'condition', 'location', 'section', 'method', 'verified', 'raw']
 
 
 def _journals():

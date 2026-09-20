@@ -775,6 +775,8 @@ def iter_measurements(record):
                 'location': clean_location(_flat_text(m.get('location'))),
                 'section': (_flat_text(m.get('section')) or 'main').lower(),
                 'method': _flat_text(m.get('method')) or METHOD_TEXT,
+                # 第二道数字闸的结论（tools/extract/verify）：yes / no / unfound；没核过是空串
+                'verified': _flat_text(m.get('verified')),
                 'raw': f'{name}: {text}'.strip(': '),
             })
         return out
@@ -785,7 +787,7 @@ def iter_measurements(record):
                     'unit': p['unit'], 'cmp': p['cmp'],
                     'condition': '', 'location': '',
                     'section': 'si' if record.get('si_used') else 'main',
-                    'method': METHOD_TEXT_V1, 'raw': p['raw']})
+                    'method': METHOD_TEXT_V1, 'verified': '', 'raw': p['raw']})
     return out
 
 

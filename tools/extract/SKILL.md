@@ -39,3 +39,9 @@ python -m tools.extract --parse            # 全库增量（更贵，只在主�
 命中率低的那几篇，它们的数值只能当线索。
 
 单篇：`python -m tools.extract.audit --key <KEY>`，会列出具体哪些数字找不到。
+
+**第二道闸（2026-09-20 加）**：`python -m tools.extract.verify --key <KEY>`（或 `--limit N` / `--all`）。
+第一道只查「数在原文出现过没」；这道问 Jev 判断模型「原文是不是**对那个样品、那个条件**这么说的」，
+一篇约 0.001 美元、几秒。结果写在每条 measurement 的 `verified`（yes / no / unfound），
+`paperdb` 的 measurements 表也有这一列 —— **给用户引数字，只引 `verified='yes'` 的**。
+抽完一篇会自动跑；主力机没配 `TYPESAFE_KEY` 就跳过。它不删不改数，只标。

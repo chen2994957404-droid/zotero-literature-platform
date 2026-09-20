@@ -16,6 +16,7 @@
 | `si_pending_keys()`         | 有 SI 却是「没读 SI 时」抽的（花钱前先看这个） |
 | `local_keys()`              | 本地模型抽的（值得花钱升级的清单） |
 | `si_text(key)` / `backup_records(keys)` | SI 全文 / 覆盖前备份 |
+| `verify.verify_one(key)`    | 第二道数字闸：每个数原文是不是**对那个样品**这么说的（Jev，抽完自动跑） |
 | `batch.extract_many / coarse_all / ensure_fullmd` | 批量三条线 |
 | `domain_filter.main`        | 从全库筛出本方向的干净子表 |
 | `compare_models.main`       | 本地 vs 云端 A/B（**只打印不写盘**） |
@@ -206,6 +207,13 @@ def run(key, force=False, log=print):
     except Exception as e:
         log(f'  [结构化抽取失败] {e}')
         return None
+    # 抽完顺手过第二道数字闸（Jev，一篇约 0.001 美元）。没密钥 / 挂了都只记一句，不影响抽取本身。
+    try:
+        from tools.extract.verify import verify_one
+        if verify_one(key, log=log) is not None:
+            rec = json.load(io.open(paths.structured(key), encoding='utf-8'))
+    except Exception as e:
+        log(f'  [数字核对跳过] {str(e)[:60]}')
     write_compare_table()
     log('  [结构化抽取完成] 已并入 structured/compare.md')
     return rec

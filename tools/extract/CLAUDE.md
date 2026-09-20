@@ -33,6 +33,7 @@ shared.kernel.paths（去哪读、往哪写） + shared.domain.schema（抽什�
 | `domain_filter.py` | 从全库筛出「本方向」的干净子表（剔除跑题与 N/A） |
 | `compare_models.py` | 本地 vs 云端 A/B 三指标对比，**只打印不写盘**（踩坑 #16） |
 | `wizard.py` | 给人双击的重抽向导（列清单 → 问模型 → 跑 → 报花了多少钱） |
+| `verify.py` | 第二道数字闸：每个数配原文段落问 Jev「对那个样品是不是这么说的」，标 `verified`；抽完自动跑 |
 | `selftest.py` | 离线自测（不调 LLM、不碰真实数据） |
 
 **两个档次，同一套字段**（对称于向量化的粗细两层）：
