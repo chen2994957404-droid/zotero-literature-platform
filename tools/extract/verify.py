@@ -13,7 +13,8 @@
 
 结果写回 `structured/<key>.json` 每条 measurement：
     verified      'yes'（原文这么说了）/ 'no'（原文有这个数但不是这么说的）/
-                  'unfound'（原文逐字找不到这个数：换算过、或从图上读的、或编的）
+                  'unfound'（原文逐字找不到这个数：换算过、或从图上读的、或编的）/
+                  'skipped'（个位数，没法定位，不下结论）
     verify_score  Jev 给的 0–1（unfound 时无）
 `paperdb` 把 `verified` 带进 measurements 表 —— 「哪些数字能直接写进论文」就是一句 SQL。
 
@@ -75,8 +76,13 @@ def claim_text(m):
 
 
 def number_of(m):
-    """主张里的主数值（逐字找原文用）。多个数（区间 / 前后对比）取第一个；没有数返回 ''。"""
-    nums = _NUM.findall(str(m.get('value_text') or m.get('value') or ''))
+    """主张里的主数值（逐字找原文用）。多个数（区间 / 前后对比）取第一个；没有数返回 ''。
+
+    个位数返回 ''（不核）：「Grade 1」的 1 会切到 DOI 尾巴上，「5 h」的 5 在任何长文里都有，
+    带着错段落去问只会得到「没说过」（2026-09-20 首批 30 篇抽检发现）。
+    """
+    nums = [n for n in _NUM.findall(str(m.get('value_text') or m.get('value') or ''))
+            if len(n.replace('.', '').replace(',', '')) >= 2]
     return nums[0] if nums else ''
 
 
@@ -116,6 +122,11 @@ def verify_record(record, source, ask=None, threshold=THRESHOLD):
             continue
         stat['n'] += 1
         num = number_of(m)
+        if not num:
+            m['verified'] = 'skipped'          # 个位数 / 没有数：没法逐字定位，不下结论
+            m.pop('verify_score', None)
+            stat['skipped'] = stat.get('skipped', 0) + 1
+            continue
         segs = windows(source, num, m.get('sample_id') or '')
         if not segs:
             m['verified'] = 'unfound'
@@ -169,7 +180,8 @@ def verify_one(key, write=True, log=print):
     record['verify_model'] = 'jev'
     if write:
         json.dump(record, io.open(p, 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
-    log(f'  [数字核对] {stat["n"]} 个数：原文这么说 {stat["yes"]} · 不是这么说 {stat["no"]} · 原文找不到 {stat["unfound"]}')
+    log(f'  [数字核对] {stat["n"]} 个数：原文这么说 {stat["yes"]} · 不是这么说 {stat["no"]} · 原文找不到 {stat["unfound"]}'
+        + (f' · 个位数不核 {stat["skipped"]}' if stat.get('skipped') else ''))
     return stat
 
 

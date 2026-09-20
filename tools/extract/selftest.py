@@ -262,16 +262,18 @@ def main():
     rec = {'measurements': [
         {'sample_id': 'H85', 'name': 'Mn', 'value_text': '16 kg/mol'},
         {'sample_id': 'H90', 'name': 'Mn', 'value_text': '22 kg/mol'},
-        {'sample_id': 'H85', 'name': 'Tg', 'value_text': '45 °C'}]}
+        {'sample_id': 'H85', 'name': 'Tg', 'value_text': '45 °C'},
+        {'sample_id': 'H85', 'name': 'cytotoxicity grade', 'value_text': 'Grade 1'}]}
     seen = []
     fake = lambda state, q: (seen.append(state['claim']) or
                              {'ok': {'value': 0.35 if 'H85' in state['claim'] else 0.05}})
     stat = V.verify_record(rec, src, ask=fake)
     ms = rec['measurements']
-    if (segs and 'H85' in segs[0] and stat == {'n': 3, 'yes': 1, 'no': 1, 'unfound': 1}
+    if (segs and 'H85' in segs[0] and stat == {'n': 4, 'yes': 1, 'no': 1, 'unfound': 1, 'skipped': 1}
             and ms[0]['verified'] == 'yes' and ms[1]['verified'] == 'no' and ms[2]['verified'] == 'unfound'
+            and ms[3]['verified'] == 'skipped'
             and ms[0]['value_text'] == '16 kg/mol' and len(seen) == 2 and 'Mn of sample H85 = 16 kg/mol' in seen):
-        print('  [PASS] 数字第二道闸：带样品号的段落优先、0.35 算真、原文没有的标 unfound、数不动'); ok += 1
+        print('  [PASS] 数字第二道闸：带样品号的段落优先、0.35 算真、原文没有的标 unfound、个位数不核、数不动'); ok += 1
     else:
         print(f'  [FAIL] 数字第二道闸不对：{stat} {[(m.get("verified"), m.get("verify_score")) for m in ms]} segs={len(segs)} seen={seen}')
 
