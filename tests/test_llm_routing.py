@@ -31,9 +31,12 @@ def 隔离的路由文件(tmp_path, monkeypatch):
 # ── ① 路由表 ─────────────────────────────────────────────────────────
 def test_没配路由时按前缀猜通道并标记inferred():
     p = routing.purposes()
-    assert p['DEEPREAD']['channel'] == 'deepseek-官方'
+    # 2026-09-20 起默认全部本地（qwen3.5:latest，带冒号 = Ollama 的 tag 语法）；只有看图暂留云端
+    assert p['DEEPREAD']['channel'] == 'ollama-本地'
     assert p['DEEPREAD']['inferred'] is True
-    assert p['DIRECTION_QUAD']['channel'] == 'aliyun-百炼'   # qwen 开头
+    assert p['DIRECTION_QUAD']['channel'] == 'ollama-本地'
+    assert p['DIGITIZE']['channel'] == 'deepseek-官方'
+    assert routing.guess_channel('qwen3.8-flash') == 'aliyun-百炼'   # 前缀猜通道的规则本身没变
 
 
 def test_明确指定的通道优先于猜(隔离的路由文件):
