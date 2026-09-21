@@ -98,17 +98,35 @@ def _highlight(md, c):
     return (md[a:start] + '<<' + c['raw'] + '>>' + md[end:b]).replace('\n', ' ')
 
 
+def _drop_nonbody(md):
+    """按骨架把参考文献 / 致谢 / 作者信息这些非正文区挖掉（保留位置不重要，候选只要文本）。"""
+    from shared.domain.schema import outline as _ol
+    o = _ol.build_outline(md)
+    spans = sorted((s['start'], s['end']) for s in o.get('sections') or [] if s['kind'] == _ol.NONBODY)
+    if not spans:
+        return md
+    out, pos = [], 0
+    for a, b in spans:
+        out.append(md[pos:a])
+        pos = max(pos, b)
+    out.append(md[pos:])
+    return ''.join(out)
+
+
 def extract_paper(md, chat, model, log=print, si_md=''):
     """一篇 → 数值事实列表 + 统计。每个候选两次封闭题。"""
-    text = scan.clean_body(md) if md else ''
-    samples = sample_list(md)
+    # 正文 + SI 一起扫（2026-09-21 中途实测：只扫正文时范文数命中 45%，9.7B 把 SI 切进去的一次拆 77% —— 差在找数的范围）
+    text = scan.clean_body(_drop_nonbody(md)) if md else ''       # 参考文献区不进候选：页码、年份全是数
+    si_text = scan.clean_body(_drop_nonbody(si_md)) if si_md else ''
+    samples = sample_list(md + '\n' + (si_md or ''))
     facts, stats = [], {'cands': 0, 'asked': 0, 'no_answer': 0, 'not_prop': 0, 'sample_unspec': 0, 'sample_bad': 0, 'secs': 0.0}
     t0 = time.time()
-    for c in scan.scan_numbers(text):
+    cands = [(text, c) for c in scan.scan_numbers(text)] + [(si_text, c) for c in scan.scan_numbers(si_text)]
+    for src_text, c in cands:
         if c['value'] is None or c.get('in_table'):
             continue                                   # 表格由 scan_tables 全脚本处理，这里只管正文
         stats['cands'] += 1
-        sent = _highlight(text, c)
+        sent = _highlight(src_text, c)
         # ④ 性质（先问：不是性质的直接扔，省一次样品题）
         guess = scan.guess_property(c['context']) or ''
         opts = PROPS
@@ -180,8 +198,10 @@ def run(tag, models, keys=None, log=print):
         rows = []
         for pid in pids:
             md = io.open(paths.fulltext(pid), encoding='utf-8').read()
+            sp = paths.si_fulltext(pid)
+            si = io.open(sp, encoding='utf-8').read() if os.path.exists(sp) else ''
             log('[%s] %s' % (model, pid))
-            facts, st = extract_paper(md, chat, model, log)
+            facts, st = extract_paper(md, chat, model, log, si_md=si)
             got = {f['norm'] for f in facts}
             ref, one = ref_numbers(pid, tag), src_numbers(pid, tag)
             table_nums = {_nums.norm(str(t['value'])) for t in scan.scan_tables(md) if t.get('value') is not None}
