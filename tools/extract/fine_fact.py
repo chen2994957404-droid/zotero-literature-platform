@@ -54,10 +54,11 @@ _FACT_ZONES = {'RESULT', 'FIGURE', 'CLAIM'}
 # 含糊单位：在方法/背景句里出现时当条件处理（软过滤只对这些生效）
 _AMBIG_UNITS = {'°c', '℃', 'k', '%', 'wt%', 'wt.%', 'vol%', 'mol%', 'mm', 'cm', 'm', 'µm', 'um', 'nm', 'rpm', 'v', 'hz', 'ms', 'times', '-fold', 'fold', '×', ''}
 
-SYS_SAMPLE = ('You answer with ONE integer only. A sentence from a materials paper is given, with one number '
-              'highlighted like <<12.5 MPa>>. Which listed sample does the marked number DESCRIBE? Choose the option index. '
-              'Answer 0 only if the marked number is not the value of any listed sample.')
-# ⚠ 别往上面加「对照样不算 / 基底不算」这类补充说明：2026-09-21 实测加了之后 4B 对所有带比较的句子一律答 0；短版本直接答对。
+SYS_SAMPLE = ('A sentence from a materials paper is given, with one number highlighted like <<12.5 MPa>>. '
+              'Which listed sample does the marked number DESCRIBE (whose value is it)? '
+              'Reply with that sample name copied exactly as written, or none.')
+# ⚠ 样品题**问名字不问序号**（2026-09-21 实测）：正确答案排在选项 1 时 4B 一律答 0，改成答名字就对；
+#   也别加「对照样不算 / 基底不算」这类说明，加了对所有带比较的句子一律答 none。
 SYS_PROP = ('You answer with ONE integer only. A sentence from a materials paper is given, with one number '
             'highlighted like <<12.5 MPa>>. Which material property does that number measure? Choose the option index. '
             'Answer 0 if it is not a measured property (an ingredient amount, a processing condition such as temperature '
@@ -101,6 +102,25 @@ def _ask_int(chat, sysp, user, model, n_opts, options=()):
     if low.startswith(('none', 'not', 'unknown', 'no ')):
         return 0
     return None
+
+
+def _ask_name(chat, sysp, user, model, options):
+    """答名字 → 选项序号（0 = none / 对不上）。名字按去空格、忽略大小写比；也认「包含」（模型常少写个空格或多写个 s）。"""
+    try:
+        raw = chat(sysp, user, provider='ollama', model=model, temperature=0.0, max_tokens=16, num_ctx=NUM_CTX, thinking=False)
+    except Exception:
+        return 0
+    ans = (raw or '').strip().strip('`"\'.').lower().replace(' ', '')
+    if not ans or ans in ('none', 'no', '0', 'unknown', 'notstated'):
+        return 0
+    for i, o in enumerate(options, 1):
+        if o.lower().replace(' ', '') == ans:
+            return i
+    for i, o in enumerate(options, 1):
+        ol = o.lower().replace(' ', '')
+        if len(ol) >= 3 and (ol in ans or ans in ol):
+            return i
+    return 0
 
 
 def _highlight(md, c):
@@ -273,9 +293,10 @@ def _answer_group(group, chat, model, samples, stats, sample_model=None):
         s_txt = '\n'.join('%d. %s' % (i + 1, x) for i, x in enumerate(samples))
         for k in ask:
             src_text, c = group[k]
-            u = 'Sentence: %s\n\nSamples mentioned:\n%s' % (_highlight_sentence(src_text, c), s_txt)
+            u = 'Sentence: %s\nSamples: %s\nReply with the sample name exactly as written, or none.' % (
+                _highlight_sentence(src_text, c), ', '.join(samples))
             stats['asked'] += 1
-            sids[k] = _ask_int(chat, SYS_SAMPLE, u, sample_model or model, len(samples), samples) or 0
+            sids[k] = _ask_name(chat, SYS_SAMPLE, u, sample_model or model, samples)
     return props, sids, samples, win
 
 
