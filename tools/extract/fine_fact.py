@@ -232,7 +232,7 @@ def _ask_names(chat, user, model, n_items, opts):
     return [got[k] for k in range(1, n_items + 1)]
 
 
-def _answer_group(group, chat, model, samples, stats):
+def _answer_group(group, chat, model, samples, stats, sample_model=None):
     """一组候选 → ([性质序号或 None], [样品序号])。"""
     n = len(group)
     win = _window(group)
@@ -276,7 +276,7 @@ def _answer_group(group, chat, model, samples, stats):
             src_text, c = group[k]
             u = 'Sentence: %s\n\nSamples mentioned:\n%s' % (_highlight(src_text, c), s_txt)
             stats['asked'] += 1
-            sids[k] = _ask_int(chat, SYS_SAMPLE, u, model, len(samples), samples) or 0
+            sids[k] = _ask_int(chat, SYS_SAMPLE, u, sample_model or model, len(samples), samples) or 0
     return props, sids, samples, win
 
 
@@ -338,7 +338,7 @@ def _zone_candidates(cands, chat, zone_model, stats):
     return zones
 
 
-def extract_paper(md, chat, model, log=print, si_md='', zone_model=None):
+def extract_paper(md, chat, model, log=print, si_md='', zone_model=None, sample_model=None):
     """一篇 → 数值事实列表 + 统计。每个候选：T0 预筛 → （可选）句子分区 → 两次封闭题。
 
     `zone_model` 给了就先分区：只对 RESULT / FIGURE / CLAIM 句里的数问「哪项性质」，
@@ -381,7 +381,7 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None):
     # 相邻的候选攒成一组（同一片窗口里最多 GROUP 个数），一次问「每个数各是哪项性质」，再一次问「各是哪个样品」。
     groups = _group(todo)
     with ThreadPoolExecutor(max_workers=PARALLEL) as pool:
-        results = list(pool.map(lambda g: _answer_group(g, chat, model, samples, stats), groups))
+        results = list(pool.map(lambda g: _answer_group(g, chat, model, samples, stats, sample_model), groups))
     for g, (props, sids, g_samples, g_win) in zip(groups, results):
         for (src_text, c), pi, si in zip(g, props, sids):
             if pi is None:
@@ -465,7 +465,7 @@ def src_numbers(pid, tag):
     return out
 
 
-def run(tag, models, keys=None, log=print, zone_model=None):
+def run(tag, models, keys=None, log=print, zone_model=None, sample_model=None):
     from shared.adapters.llm_client import chat
     d = paths.unit_study_dir(tag)
     pids = keys or sorted(f[:-9] for f in os.listdir(d) if f.endswith('.src.json'))
@@ -478,7 +478,7 @@ def run(tag, models, keys=None, log=print, zone_model=None):
             sp = paths.si_fulltext(pid)
             si = io.open(sp, encoding='utf-8').read() if os.path.exists(sp) else ''
             log('[%s] %s' % (model, pid))
-            facts, st = extract_paper(md, chat, model, log, si_md=si, zone_model=zm)
+            facts, st = extract_paper(md, chat, model, log, si_md=si, zone_model=zm, sample_model=sample_model)
             got = {f['norm'] for f in facts}
             reff = ref_facts(pid, tag)
             ref, one = set(reff), src_numbers(pid, tag)
@@ -539,7 +539,7 @@ def main():
     tag = opt('--tag') or 'u1'
     models = [m.strip() for m in (opt('--models') or opt('--model') or 'gemma3:1b').split(',') if m.strip()]
     zm = opt('--分区')
-    run(tag, models, keys=positionals() or None, zone_model=zm)
+    run(tag, models, keys=positionals() or None, zone_model=zm, sample_model=opt('--样品模型') or None)
     print('报告 →', os.path.join(paths.unit_study_dir(tag), 'fine_fact_report.md'))
     return 0
 
