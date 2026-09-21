@@ -48,6 +48,8 @@ WINDOW = 220            # 给模型看的上下文：数前后各这么多字符
 _COND_UNITS = {'h', 'hr', 'min', 's', 'ml', 'l', 'g', 'mg', 'kg', 'mol', 'mmol', 'μl', 'ul', 'rpm', 'day', 'days', 'week', 'weeks'}
 # 分区后只有这几种句子里的数才可能是性质
 _FACT_ZONES = {'RESULT', 'FIGURE', 'CLAIM'}
+# 含糊单位：在方法/背景句里出现时当条件处理（软过滤只对这些生效）
+_AMBIG_UNITS = {'°c', '℃', 'k', '%', 'wt%', 'wt.%', 'vol%', 'mol%', 'mm', 'cm', 'm', 'µm', 'um', 'nm', 'rpm', 'v', 'hz', 'ms', 'times', '-fold', 'fold', '×', ''}
 
 SYS_SAMPLE = ('You answer with ONE integer only. A sentence from a materials paper is given, with one number '
               'highlighted like <<12.5 MPa>>. Which sample does that number belong to? Choose the option index. '
@@ -280,7 +282,11 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None):
     # 分区筛
     todo = []
     for src_text, c in cands:
-        if zones and zones.get(_local_sentence(src_text, c), 'RESULT') not in _FACT_ZONES:
+        # 分区是软过滤（2026-09-21 实测：4B 把「glass transition occurred at 90°C」判成方法句）：
+        # 只有「句子是方法/背景」且「单位本身含糊」（温度、百分比、时间这类既可能是条件也可能是性质）才跳过；
+        # MPa / GPa / kJ/mol 这种一看就是性能的单位，不管在哪种句子里都问。
+        unit_l = (c.get('unit') or '').strip().lower().replace(' ', '')
+        if zones and zones.get(_local_sentence(src_text, c), 'RESULT') not in _FACT_ZONES and unit_l in _AMBIG_UNITS:
             stats['zoned_out'] += 1
             dropped.append({'norm': _nums.norm(str(c['value'])), 'why': 'zone:' + zones.get(_local_sentence(src_text, c), '?'),
                             'raw': c['raw'], 'ctx': c['context'][:120]})
