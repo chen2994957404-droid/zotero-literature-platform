@@ -266,15 +266,20 @@ def _answer_group(group, chat, model, samples, stats):
                 stats['asked'] += 1
                 ans[k] = _ask_int(chat, SYS_SAMPLE, u, model, len(samples), samples) or 0
         sids = ans
-    return props, sids, samples
+    return props, sids, samples, win
 
 
 USE_NER = True
 
 
+def _looks_like_sample(name):
+    """样品名总带点「编号味」：大写字母、数字、斜杠或连字符。全小写的普通名词（eutectogels、fibrous materials）不算。"""
+    return bool(re.search(r'[A-Z0-9/]', name)) and len(name) <= 40
+
+
 def _window_samples(win):
     try:
-        return _ner.sample_mentions(win)[:12]
+        return [x for x in _ner.sample_mentions(win) if _looks_like_sample(x)][:12]
     except Exception:
         return []
 
@@ -366,7 +371,7 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None):
     groups = _group(todo)
     with ThreadPoolExecutor(max_workers=PARALLEL) as pool:
         results = list(pool.map(lambda g: _answer_group(g, chat, model, samples, stats), groups))
-    for g, (props, sids, g_samples) in zip(groups, results):
+    for g, (props, sids, g_samples, g_win) in zip(groups, results):
         for (src_text, c), pi, si in zip(g, props, sids):
             if pi is None:
                 stats['no_answer'] += 1
@@ -384,7 +389,7 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None):
                 continue
             sent = _highlight(src_text, c)
             sample = g_samples[si - 1] if si and si <= len(g_samples) else ''
-            if sample and sample.lower() not in sent.lower():    # ⑤ 核对：样品名要在窗口里
+            if sample and sample.lower() not in g_win.lower():   # ⑤ 核对：样品名要在这组的窗口里
                 stats['sample_bad'] += 1
                 sample = ''
             if not sample:
