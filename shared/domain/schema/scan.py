@@ -33,16 +33,23 @@ from . import parse_property, normalize_property_name, PROPERTY_ALIASES
 # 顺序有讲究：长的在前，否则 'MPa' 会被 'Pa' 先吃掉。
 _UNITS = [
     'GPa', 'MPa', 'kPa', 'Pa·s', 'Pa s', 'Pa',
-    'kJ/m2', 'kJ/m\\^2', 'kJ m-2', 'J/m2', 'J m\\^-2', 'J/g', 'kJ/mol',
+    # 能量密度 / 韧性 / 断裂能（2026-09-21 补：范文里 44% 的数根本没进候选，MJ m-3、kJ/mol 这类全漏）
+    'MJ/m3', 'MJ m-3', 'MJ m^-3', 'MJ/m^3', 'kJ/m3', 'kJ m-3', 'J/m3', 'J m-3',
+    'kJ/m2', 'kJ/m^2', 'kJ m-2', 'J/m2', 'J m-2', 'J m^-2', 'J/g', 'kJ/mol', 'kJ mol-1', 'kcal/mol', 'kcal mol-1', 'J/mol',
     'g/mol', 'kg/mol', 'kDa', 'Da',
-    'S/cm', 'S/m', 'mS/cm', 'µS/cm', 'uS/cm',
+    'S/cm', 'S/m', 'mS/cm', 'µS/cm', 'uS/cm', 'mV/K', 'mV K-1', 'W/mK', 'W m-1 K-1', 'cd/m2', 'cd m-2', 'V/µm', 'V µm-1',
     'wt%', 'wt.%', 'wt %', 'vol%', 'mol%', '%',
-    '°C', '℃', 'K', 'h', 'min', 's-1', 's\\^-1', 'rad/s', 'Hz', 'rpm',
+    '°C', '℃', 'K', 'h', 'min', 's-1', 's^-1', 'rad/s', 'Hz', 'rpm', 'ms', 's',
     'mm/min', 'mm min-1', 'mm', 'µm', 'um', 'nm', 'cm', 'm',
     'mmol', 'mol/g', 'mol', 'mg', 'kg', 'g', 'mL', 'L',
-    'cm3/g', 'm2/g', 'g/cm3', 'g cm-3',
+    'cm3/g', 'm2/g', 'g/cm3', 'g cm-3', 'ton', 'tons', 'kg',
+    # 倍数与「-fold」：范文里「强度是对照的 5.1 倍」这类数很常见，之前一律漏
+    'times', '-fold', 'fold', '×',
+    'megapascals', 'gigapascals', 'kilopascals', 'megajoules per cubic meter',
 ]
-_UNIT_RE = '|'.join(re.escape(u).replace('\\\\', '\\') for u in _UNITS)
+_UNIT_RE = '|'.join(re.escape(u) for u in sorted(_UNITS, key=len, reverse=True))
+# 无量纲量：数前面有这些词就算候选（泊松比 0.028、R² 0.9998、取向因子 0.330 —— 全是范文会写的数）
+_DIMLESS_CUE = re.compile(r"(?i)\b(ratio|factor|coefficient|R\s*\^?2|R²|Poisson|index|efficiency|degree of|modulus ratio|m_?c|pr_?c|\bof\s+about)\s*(?:of|=|was|is|were|reached|rose to|to)?\s*$")
 
 # 数：支持 1.2e5 / 1.2×10^4 / 区间 / 前缀比较符
 _NUM = r'[-+]?\d+(?:[.,]\d+)?(?:\s*[eE][-+]?\d+|\s*[×xX]\s*10\s*\^?\s*[-+−]?\d+)?'
@@ -111,8 +118,10 @@ def scan_numbers(md, window=90, limit=4000):
         acc += len(ln)
 
     out = []
+    seen = set()
     for m in _VALUE_RE.finditer(md):
         pos = m.start()
+        seen.add(pos)
         ctx = md[max(0, pos - window):min(len(md), m.end() + 30)].replace('\n', ' ')
         parsed = parse_property('%s %s' % (m.group('num'), m.group('unit')))
         in_table = False
@@ -129,6 +138,25 @@ def scan_numbers(md, window=90, limit=4000):
         })
         if len(out) >= limit:
             break
+    # 无量纲候选：数前 40 字符里有 ratio / factor / coefficient / R² / Poisson 这类提示词
+    for m in re.finditer(r'(?<![\d.])(\d+\.\d+)(?![\d])', md):
+        pos = m.start()
+        if pos in seen or len(out) >= limit:
+            continue
+        before = md[max(0, pos - 40):pos]
+        # 「0.028 and 0.013」：第二个数前面只有 and / 逗号，看它前一个候选是不是无量纲数
+        chained = bool(re.search(r'(?<![\d.])\d+\.\d+\s*(?:,|and|to|、)\s*$', before)) and any(
+            o['unit'] == '' and pos - (o['pos'] + len(o['raw'])) < 12 for o in out[-2:])
+        if not chained and not _DIMLESS_CUE.search(before):
+            continue
+        ctx = md[max(0, pos - window):min(len(md), m.end() + 30)].replace('\n', ' ')
+        try:
+            val = float(m.group(1))
+        except ValueError:
+            continue
+        out.append({'value': val, 'value_max': None, 'unit': '', 'cmp': '', 'raw': m.group(1),
+                    'context': ctx.strip(), 'section': _section_at(sections, pos),
+                    'location': nearest_ref(md, pos), 'in_table': False, 'pos': pos})
     return out
 
 
@@ -251,6 +279,8 @@ def clean_body(md):
     if not t:
         return ''
     t = t.replace('$', ' ')
+    t = re.sub(r'\^\s*\{?\s*\\circ\s*\}?\s*(?:\\mathrm\{\s*C\s*\}|C)?', '°C', t)    # 90^{\circ}\mathrm{C} / 90^\circ C / 90^\circ → °C
+    t = re.sub(r'([A-Za-z])\s*\^\s*\{?\s*([-−]\s*\d)\s*\}?', lambda m: m.group(1) + m.group(2).replace('−', '-').replace(' ', ''), t)   # mol^{-1} → mol-1
     t = _SPACE_CMD.sub(' ', t)            # \; \, \! 这类排版空格，先去掉反斜杠
     t = _TEXT_CMD.sub(' ', t)
     # **指数要留住 `^`**：`10^{-10}` 塌成 `10-10` 就变成了一个「区间」，
