@@ -69,16 +69,24 @@ def sample_list(md, limit=30):
     return names[:limit]
 
 
-def _ask_int(chat, sysp, user, model, n_opts):
+def _ask_int(chat, sysp, user, model, n_opts, options=()):
+    """→ 选项序号或 None。小模型常不听「只答数字」而答选项原文（1B 实测），所以按文本也认。"""
     try:
-        raw = chat(sysp, user, provider='ollama', model=model, temperature=0.0, max_tokens=8, num_ctx=NUM_CTX, thinking=False)
+        raw = chat(sysp, user + '\n\nReply with the option number only.', provider='ollama', model=model,
+                   temperature=0.0, max_tokens=12, num_ctx=NUM_CTX, thinking=False)
     except Exception:
         return None
-    m = re.search(r'\d+', raw or '')
-    if not m:
-        return None
-    v = int(m.group(0))
-    return v if 0 <= v <= n_opts else None
+    raw = (raw or '').strip()
+    m = re.match(r'\s*\(?(\d+)[.)\s]?', raw)
+    if m and 0 <= int(m.group(1)) <= n_opts:
+        return int(m.group(1))
+    low = raw.lower()
+    for i, o in enumerate(options, 1):
+        if o.lower() == low or low.startswith(o.lower()):
+            return i
+    if low.startswith(('none', 'not', 'unknown', 'no ')):
+        return 0
+    return None
 
 
 def _highlight(md, c):
@@ -108,7 +116,7 @@ def extract_paper(md, chat, model, log=print, si_md=''):
         if guess:
             user += '\n(A script guessed "%s" from nearby words; confirm or correct.)' % guess
         stats['asked'] += 1
-        pi = _ask_int(chat, SYS_PROP, user, model, len(opts))
+        pi = _ask_int(chat, SYS_PROP, user, model, len(opts), opts)
         if pi is None:
             stats['no_answer'] += 1
             continue
@@ -120,7 +128,7 @@ def extract_paper(md, chat, model, log=print, si_md=''):
         if samples:
             user = 'Sentence: %s\n\nOptions (samples):\n%s' % (sent, '\n'.join('%d. %s' % (i + 1, s) for i, s in enumerate(samples)))
             stats['asked'] += 1
-            si = _ask_int(chat, SYS_SAMPLE, user, model, len(samples))
+            si = _ask_int(chat, SYS_SAMPLE, user, model, len(samples), samples)
             if si is None:
                 stats['no_answer'] += 1
                 si = 0
@@ -219,9 +227,10 @@ def main():
     if wants_help():
         print(__doc__)
         return 0
+    from shared.kernel.cli import positionals
     tag = opt('--tag') or 'u1'
     models = [m.strip() for m in (opt('--models') or opt('--model') or 'gemma3:1b').split(',') if m.strip()]
-    run(tag, models)
+    run(tag, models, keys=positionals() or None)
     print('报告 →', os.path.join(paths.unit_study_dir(tag), 'fine_fact_report.md'))
     return 0
 
