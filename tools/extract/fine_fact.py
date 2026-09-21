@@ -29,6 +29,7 @@ import io
 import json
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from shared.domain import numcheck as _nums
 from shared.domain.schema import PROPERTY_ALIASES
@@ -120,6 +121,103 @@ def _drop_nonbody(md):
     return ''.join(out)
 
 
+GROUP = 6               # 一次调用最多问几个数
+PARALLEL = 4            # 同时发几路请求（Ollama 侧要开 OLLAMA_NUM_PARALLEL 才真并行）
+
+
+def _group(todo):
+    """相邻候选攒组：同一来源文本、位置相近（窗口能装下）的最多 GROUP 个一组。"""
+    groups, cur = [], []
+    for item in todo:
+        if cur and (len(cur) >= GROUP or item[0] is not cur[-1][0] or item[1]['pos'] - cur[0][1]['pos'] > 2 * WINDOW):
+            groups.append(cur)
+            cur = []
+        cur.append(item)
+    if cur:
+        groups.append(cur)
+    return groups
+
+
+def _window(group):
+    """一组候选共用的窗口文本，每个数按 <<k: 12.5 MPa>> 标号高亮。"""
+    src_text = group[0][0]
+    starts = []
+    for _, c in group:
+        st = src_text.find(c['raw'], c['pos'], c['pos'] + len(c['raw']) + 4)
+        starts.append(st if st >= 0 else c['pos'])
+    a = max(0, starts[0] - WINDOW)
+    b = min(len(src_text), starts[-1] + len(group[-1][1]['raw']) + WINDOW)
+    out, pos = [], a
+    for k, ((_, c), st) in enumerate(zip(group, starts), 1):
+        if st < pos:
+            continue
+        out.append(src_text[pos:st])
+        out.append('<<%d: %s>>' % (k, c['raw']))
+        pos = st + len(c['raw'])
+    out.append(src_text[pos:b])
+    return ''.join(out).replace('\n', ' ')
+
+
+def _ask_list(chat, sysp, user, model, n_items, n_opts):
+    """一次答 n_items 个序号（每行 `k: 序号`）。答不齐 → None，调用方退回逐个问。"""
+    try:
+        raw = chat(sysp, user + '\n\nReply with one line per number, in the form `k: option`, nothing else.',
+                   provider='ollama', model=model, temperature=0.0, max_tokens=6 * n_items + 4, num_ctx=NUM_CTX, thinking=False)
+    except Exception:
+        return None
+    got = {}
+    for k, v in re.findall(r'(\d+)\s*[:：.)-]\s*(\d+)', raw or ''):
+        k, v = int(k), int(v)
+        if 1 <= k <= n_items and 0 <= v <= n_opts:
+            got[k] = v
+    if len(got) != n_items:
+        return None
+    return [got[k] for k in range(1, n_items + 1)]
+
+
+def _answer_group(group, chat, model, samples, stats):
+    """一组候选 → ([性质序号或 None], [样品序号])。"""
+    n = len(group)
+    win = _window(group)
+    opts_txt = '\n'.join('%d. %s' % (i + 1, p) for i, p in enumerate(PROPS))
+    guesses = [scan.guess_property(c['context']) or '' for _, c in group]
+    hint = ''.join('\n(script guess for %d: "%s")' % (k, g) for k, g in enumerate(guesses, 1) if g)
+    user = 'Passage (numbers marked <<k: value>>): %s\n\nOptions:\n%s%s' % (win, opts_txt, hint)
+    stats['asked'] += 1
+    props = _ask_list(chat, SYS_PROP_MULTI, user, model, n, len(PROPS))
+    if props is None:                                      # 退回逐个问
+        props = []
+        for src_text, c in group:
+            u = 'Sentence: %s\n\nOptions:\n%s' % (_highlight(src_text, c), opts_txt)
+            stats['asked'] += 1
+            props.append(_ask_int(chat, SYS_PROP, u, model, len(PROPS), PROPS))
+    sids = [0] * n
+    need = [k for k, p in enumerate(props) if p]
+    if samples and need:
+        s_txt = '\n'.join('%d. %s' % (i + 1, x) for i, x in enumerate(samples))
+        user = 'Passage (numbers marked <<k: value>>): %s\n\nOptions (samples):\n%s' % (win, s_txt)
+        stats['asked'] += 1
+        ans = _ask_list(chat, SYS_SAMPLE_MULTI, user, model, n, len(samples))
+        if ans is None:
+            ans = [0] * n
+            for k in need:
+                src_text, c = group[k]
+                u = 'Sentence: %s\n\nOptions (samples):\n%s' % (_highlight(src_text, c), s_txt)
+                stats['asked'] += 1
+                ans[k] = _ask_int(chat, SYS_SAMPLE, u, model, len(samples), samples) or 0
+        sids = ans
+    return props, sids
+
+
+SYS_PROP_MULTI = ('A passage from a materials paper is given. Several numbers are marked like <<1: 12.5 MPa>>, <<2: 850%>>. '
+                  'For EACH marked number, decide which material property it measures and answer the option index; '
+                  'answer 0 if it is not a measured property (ingredient amount, processing temperature or time, reference '
+                  'or page number, wavelength, instrument setting). Answer one line per number: `k: option`.')
+SYS_SAMPLE_MULTI = ('A passage from a materials paper is given. Several numbers are marked like <<1: 12.5 MPa>>. '
+                    'For EACH marked number, decide which listed sample it belongs to and answer the option index; '
+                    'answer 0 if the passage does not say. Answer one line per number: `k: option`.')
+
+
 def _local_sentence(text, c):
     """候选数所在的那句话（在 clean 文本里按句末标点往两边找）。"""
     start = text.find(c['raw'], c['pos'], c['pos'] + len(c['raw']) + 4)
@@ -178,45 +276,35 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None):
             kept.append((t, c))
     cands = kept
     zones = _zone_candidates(cands, chat, zone_model, stats) if zone_model else {}
+    # 分区筛
+    todo = []
     for src_text, c in cands:
-        if zones:
-            z = zones.get(_local_sentence(src_text, c), 'RESULT')
-            if z not in _FACT_ZONES:
-                stats['zoned_out'] += 1
-                continue
-        sent = _highlight(src_text, c)
-        # ④ 性质（先问：不是性质的直接扔，省一次样品题）
-        guess = scan.guess_property(c['context']) or ''
-        opts = PROPS
-        user = 'Sentence: %s\n\nOptions:\n%s' % (sent, '\n'.join('%d. %s' % (i + 1, p) for i, p in enumerate(opts)))
-        if guess:
-            user += '\n(A script guessed "%s" from nearby words; confirm or correct.)' % guess
-        stats['asked'] += 1
-        pi = _ask_int(chat, SYS_PROP, user, model, len(opts), opts)
-        if pi is None:
-            stats['no_answer'] += 1
+        if zones and zones.get(_local_sentence(src_text, c), 'RESULT') not in _FACT_ZONES:
+            stats['zoned_out'] += 1
             continue
-        if pi == 0:
-            stats['not_prop'] += 1
-            continue
-        # ③ 样品
-        si = 0
-        if samples:
-            user = 'Sentence: %s\n\nOptions (samples):\n%s' % (sent, '\n'.join('%d. %s' % (i + 1, s) for i, s in enumerate(samples)))
-            stats['asked'] += 1
-            si = _ask_int(chat, SYS_SAMPLE, user, model, len(samples), samples)
-            if si is None:
+        todo.append((src_text, c))
+    # 一次调用多道题（2026-09-21 实测：一次 1B 调用 2.07 s，模型只干 0.04 s，其余是固定开销 —— 请求数才是成本）：
+    # 相邻的候选攒成一组（同一片窗口里最多 GROUP 个数），一次问「每个数各是哪项性质」，再一次问「各是哪个样品」。
+    groups = _group(todo)
+    with ThreadPoolExecutor(max_workers=PARALLEL) as pool:
+        results = list(pool.map(lambda g: _answer_group(g, chat, model, samples, stats), groups))
+    for g, (props, sids) in zip(groups, results):
+        for (src_text, c), pi, si in zip(g, props, sids):
+            if pi is None:
                 stats['no_answer'] += 1
-                si = 0
-        sample = samples[si - 1] if si else ''
-        # ⑤ 核对：样品名要在窗口里
-        if sample and sample.lower() not in sent.lower():
-            stats['sample_bad'] += 1
-            sample = ''
-        if not sample:
-            stats['sample_unspec'] += 1
-        facts.append({'sample': sample, 'property': opts[pi - 1], 'value': c['raw'], 'unit': c['unit'],
-                      'norm': _nums.norm(str(c['value'])), 'location': c.get('location', ''), 'ctx': c['context'][:160]})
+                continue
+            if pi == 0:
+                stats['not_prop'] += 1
+                continue
+            sent = _highlight(src_text, c)
+            sample = samples[si - 1] if si else ''
+            if sample and sample.lower() not in sent.lower():    # ⑤ 核对：样品名要在窗口里
+                stats['sample_bad'] += 1
+                sample = ''
+            if not sample:
+                stats['sample_unspec'] += 1
+            facts.append({'sample': sample, 'property': PROPS[pi - 1], 'value': c['raw'], 'unit': c['unit'],
+                          'norm': _nums.norm(str(c['value'])), 'location': c.get('location', ''), 'ctx': c['context'][:160]})
     stats['secs'] = round(time.time() - t0, 1)
     return facts, stats
 
