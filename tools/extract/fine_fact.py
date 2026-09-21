@@ -253,19 +253,31 @@ def _answer_group(group, chat, model, samples, stats):
     # 窗口里通常只有 2–5 个，而且多词样品（PVA/CPO eutectogel）也认得出。窗口里一个都没有才退回全篇名单。
     local_samples = _window_samples(win) if USE_NER else []
     samples = local_samples or samples
-    if samples and need:
+    # T0 先判：这个数所在的那句话里只提到一个样品 → 直接归它，不问模型（模型在多数题里爱答「没说」，2026-09-21 实测 8/21 是它答 0 的）
+    ask = []
+    for k in need:
+        src_text, c = group[k]
+        sent_l = _local_sentence(src_text, c).lower()
+        here = [i + 1 for i, x in enumerate(samples) if x.lower() in sent_l]
+        if len(here) == 1:
+            sids[k] = here[0]
+            stats['sample_rule'] = stats.get('sample_rule', 0) + 1
+        else:
+            ask.append(k)
+    if samples and ask:
         s_txt = '\n'.join('%d. %s' % (i + 1, x) for i, x in enumerate(samples))
         user = 'Passage (numbers marked <<k: value>>): %s\n\nOptions (samples):\n%s' % (win, s_txt)
         stats['asked'] += 1
         ans = _ask_list(chat, SYS_SAMPLE_MULTI, user, model, n, len(samples))
         if ans is None:
             ans = [0] * n
-            for k in need:
+            for k in ask:
                 src_text, c = group[k]
                 u = 'Sentence: %s\n\nOptions (samples):\n%s' % (_highlight(src_text, c), s_txt)
                 stats['asked'] += 1
                 ans[k] = _ask_int(chat, SYS_SAMPLE, u, model, len(samples), samples) or 0
-        sids = ans
+        for k in ask:
+            sids[k] = ans[k]
     return props, sids, samples, win
 
 
