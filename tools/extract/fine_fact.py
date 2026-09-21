@@ -381,16 +381,43 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None):
     return facts, stats
 
 
-def ref_numbers(pid, tag):
-    """范文数值事实的数（norm）—— 标尺。"""
+def ref_facts(pid, tag):
+    """范文数值事实 → {norm: (性质正名, 样品)} —— 标尺；性质用中文别名归一（词表里有中文），样品原样。"""
     p = os.path.join(paths.unit_study_dir(tag), pid + '.json')
-    out = set()
+    out = {}
     for u in json.load(io.open(p, encoding='utf-8'))['units']:
         if u['type'] == 'fact' and _DIGIT.search(str(u.get('value', '')) + str(u.get('unit', ''))):
+            prop = normalize_property_name(str(u.get('property', '')))
             for x in re.findall(r'\d+(?:\.\d+)?', str(u.get('value', ''))):
                 if len(x) >= 2 and x not in ('10', '20', '100'):
-                    out.add(_nums.norm(x))
+                    out.setdefault(_nums.norm(x), (prop, str(u.get('sample', ''))))
     return out
+
+
+def ref_numbers(pid, tag):
+    return set(ref_facts(pid, tag))
+
+
+def agreement(facts, ref):
+    """命中的范文数里，性质对上几条、样品对上几条（自动准确率，不靠人抽样）。
+    性质：两边归一后相等，或一边包含另一边；样品：范文样品串里含我们的样品名（或反过来），范文没写样品的不算。"""
+    p_ok = p_n = s_ok = s_n = 0
+    seen = set()
+    for f in facts:
+        r = ref.get(f['norm'])
+        if not r or f['norm'] in seen:
+            continue
+        seen.add(f['norm'])
+        rp, rs = r
+        if rp and rp in PROPERTY_ALIASES:                 # 范文性质能归到正名才比（中文写法词表外的不算）
+            p_n += 1
+            mp = f['property']
+            p_ok += (mp == rp) or (mp in rp) or (rp in mp)
+        if rs and f['sample']:
+            s_n += 1
+            a, b = rs.lower().replace(' ', ''), f['sample'].lower().replace(' ', '')
+            s_ok += (b in a) or (a in b)
+    return {'prop_n': p_n, 'prop_ok': p_ok, 'sample_n': s_n, 'sample_ok': s_ok}
 
 
 def src_numbers(pid, tag):
@@ -422,7 +449,9 @@ def run(tag, models, keys=None, log=print, zone_model=None):
             log('[%s] %s' % (model, pid))
             facts, st = extract_paper(md, chat, model, log, si_md=si, zone_model=zm)
             got = {f['norm'] for f in facts}
-            ref, one = ref_numbers(pid, tag), src_numbers(pid, tag)
+            reff = ref_facts(pid, tag)
+            ref, one = set(reff), src_numbers(pid, tag)
+            agr = agreement(facts, reff)
             lost = {}
             dropped_all = st.pop('dropped', [])
             st['dim_reject_samples'] = [x for x in dropped_all if x['why'].startswith('dim_reject')][:20]   # 留着审：量纲否决有没有误伤
@@ -434,7 +463,7 @@ def run(tag, models, keys=None, log=print, zone_model=None):
             table_nums = {_nums.norm(str(t['value'])) for t in scan.scan_tables(md) if t.get('value') is not None}
             rows.append({'pid': pid, 'n_facts': len(facts), 'with_sample': sum(1 for f in facts if f['sample']),
                          'ref': len(ref), 'ref_hit': len(ref & (got | table_nums)), 'ref_hit_model_only': len(ref & got),
-                         'one_shot_hit': len(ref & one), **st})
+                         'one_shot_hit': len(ref & one), **agr, **st})
             log('   候选 %d（单位筛掉 %d、分区筛掉 %d、分区调用 %d）→ 事实 %d（带样品 %d）· 范文数 %d：拆分法命中 %d（含表 %d）· 一次拆命中 %d · %ss · 范文数丢在 %s' % (
                 st['cands'], st['cond_unit'], st['zoned_out'], st['zone_calls'], len(facts), rows[-1]['with_sample'], len(ref),
                 rows[-1]['ref_hit_model_only'], rows[-1]['ref_hit'], rows[-1]['one_shot_hit'], st['secs'], st['lost_ref']))
@@ -449,15 +478,16 @@ def run(tag, models, keys=None, log=print, zone_model=None):
 def _write(d, report):
     L = ['# 数值事实 · 字段级拆分抽取（%s）' % time.strftime('%Y-%m-%d %H:%M'), '',
          '标尺 = 范文里带数字的事实（按数值配）。「一次拆」= 第 2 步 9.7B 整段一次抽的 fact。', '',
-         '| 模型 | 篇 | 候选数 | 单位筛掉 | 分区筛掉 | 判非性质 | 抽出事实 | 带样品 | 范文数 | 拆分法命中(含表) | 仅模型 | 一次拆命中 | 秒/篇 |',
-         '|---|---|---|---|---|---|---|---|---|---|---|---|---|']
+         '| 模型 | 篇 | 候选数 | 单位筛掉 | 分区筛掉 | 判非性质 | 抽出事实 | 带样品 | 范文数 | 拆分法命中(含表) | 仅模型 | 一次拆命中 | 性质对上 | 样品对上 | 秒/篇 |',
+         '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|']
     for model, rows in report.items():
         tot = lambda k: sum(r[k] for r in rows)
-        L.append('| %s | %d | %d | %d | %d | %d | %d | %d | %d | **%d (%.0f%%)** | %d (%.0f%%) | %d (%.0f%%) | %.0f |' % (
+        L.append('| %s | %d | %d | %d | %d | %d | %d | %d | %d | **%d (%.0f%%)** | %d (%.0f%%) | %d (%.0f%%) | %d/%d | %d/%d | %.0f |' % (
             model, len(rows), tot('cands'), tot('cond_unit'), tot('zoned_out'), tot('not_prop'), tot('n_facts'), tot('with_sample'), tot('ref'),
             tot('ref_hit'), 100 * tot('ref_hit') / max(1, tot('ref')),
             tot('ref_hit_model_only'), 100 * tot('ref_hit_model_only') / max(1, tot('ref')),
             tot('one_shot_hit'), 100 * tot('one_shot_hit') / max(1, tot('ref')),
+            tot('prop_ok'), tot('prop_n'), tot('sample_ok'), tot('sample_n'),
             tot('secs') / max(1, len(rows))))
     L += ['', '逐篇：', '']
     for model, rows in report.items():
