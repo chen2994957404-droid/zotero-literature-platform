@@ -46,7 +46,7 @@ def entities(text, labels=SAMPLE_LABELS, threshold=0.3):
 _NOISE = re.compile(r'^(\d+(\.\d+)?%?|[a-z]{1,2}|inc\.?|ltd\.?|co\.?|sigma|aldrich|gelest|merck|tci|alfa aesar)$', re.I)
 
 
-_CODE = re.compile(r'\b[A-Z]{2,}[A-Za-z0-9]*(?:-[A-Za-z0-9]+){1,3}\b')     # FC-EtFe、P1-BF4、CAN-4-3-30 这类样品编号
+_CODE = re.compile(r'\b[A-Z][A-Za-z0-9]*(?:-[A-Za-z0-9]+){1,3}\b')     # FC-EtFe、P1-BF4、CAN-4-3-30 这类样品编号（P1-BF4 只有一个大写字母开头）
 
 
 def sample_mentions(text, threshold=0.3):
@@ -55,16 +55,16 @@ def sample_mentions(text, threshold=0.3):
     GLiNER 对短句里的编号（FC-Et）分数只有 0.4–0.5、偶尔漏 —— 所以跟样品编号正则取**并集**：
     正则兜住编号，GLiNER 兜住多词名（PVA/CPO eutectogel）。
     """
-    found = [(e['start'], e['text']) for e in entities(text, threshold=threshold)]
-    found += [(m.start(), m.group(0)) for m in _CODE.finditer(text or '')]
-    seen, out = set(), []
-    for _, t in sorted(found):
+    found = [(e['start'], e['text'], e['label'] == 'sample code') for e in entities(text, threshold=threshold)]
+    found += [(m.start(), m.group(0), True) for m in _CODE.finditer(text or '')]
+    seen, codes, others = set(), [], []
+    for _, t, is_code in sorted(found):
         t = t.strip(' ,;()')
         if len(t) < 2 or _NOISE.match(t) or t.lower() in seen:
             continue
         seen.add(t.lower())
-        out.append(t)
-    return out
+        (codes if is_code or _CODE.search(t) else others).append(t)
+    return codes + others                      # 编号样的排前面：它们才是「样品」，后面的多半是基底 / 试剂 / 材料类名
 
 
 def alive():

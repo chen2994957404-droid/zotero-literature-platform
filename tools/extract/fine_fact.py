@@ -41,7 +41,7 @@ from shared.kernel.cli import flag, opt, wants_help
 from tools.extract import zoning
 
 PROPS = list(PROPERTY_ALIASES.keys())
-_CODE = re.compile(r'\b[A-Z]{2,}[A-Za-z0-9]*(?:-[A-Za-z0-9]+){1,3}\b')
+_CODE = re.compile(r'\b[A-Z][A-Za-z0-9]*(?:-[A-Za-z0-9]+){1,3}\b')
 _DIGIT = re.compile(r'\d')
 NUM_CTX = 2048
 WINDOW = 220            # 给模型看的上下文：数前后各这么多字符
@@ -259,6 +259,9 @@ def _answer_group(group, chat, model, samples, stats):
         src_text, c = group[k]
         sent_l = _local_sentence(src_text, c).lower()
         here = [i + 1 for i, x in enumerate(samples) if x.lower() in sent_l]
+        codes_here = [i for i in here if _CODE.search(samples[i - 1])]
+        if len(codes_here) == 1:               # 句子里只有一个编号样的样品 → 就是它（基底 Al2O3 / 试剂不算样品）
+            here = codes_here
         if len(here) == 1:
             sids[k] = here[0]
             stats['sample_rule'] = stats.get('sample_rule', 0) + 1
