@@ -55,10 +55,9 @@ _FACT_ZONES = {'RESULT', 'FIGURE', 'CLAIM'}
 _AMBIG_UNITS = {'°c', '℃', 'k', '%', 'wt%', 'wt.%', 'vol%', 'mol%', 'mm', 'cm', 'm', 'µm', 'um', 'nm', 'rpm', 'v', 'hz', 'ms', 'times', '-fold', 'fold', '×', ''}
 
 SYS_SAMPLE = ('You answer with ONE integer only. A sentence from a materials paper is given, with one number '
-              'highlighted like <<12.5 MPa>>. Which listed sample does that number DESCRIBE? Choose the option index. '
-              'A sample that appears only as the comparison baseline ("compared with X", "N times that of X", "higher than X") '
-              'is NOT the answer unless the number is X\'s own value in parentheses. Substrates, solvents and reagents are not samples. '
-              'Answer 0 only if the highlighted number is not the value of any listed sample.')
+              'highlighted like <<12.5 MPa>>. Which listed sample does the marked number DESCRIBE? Choose the option index. '
+              'Answer 0 only if the marked number is not the value of any listed sample.')
+# ⚠ 别往上面加「对照样不算 / 基底不算」这类补充说明：2026-09-21 实测加了之后 4B 对所有带比较的句子一律答 0；短版本直接答对。
 SYS_PROP = ('You answer with ONE integer only. A sentence from a materials paper is given, with one number '
             'highlighted like <<12.5 MPa>>. Which material property does that number measure? Choose the option index. '
             'Answer 0 if it is not a measured property (an ingredient amount, a processing condition such as temperature '
