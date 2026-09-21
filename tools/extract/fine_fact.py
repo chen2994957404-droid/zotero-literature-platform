@@ -274,7 +274,7 @@ def _answer_group(group, chat, model, samples, stats, sample_model=None):
         s_txt = '\n'.join('%d. %s' % (i + 1, x) for i, x in enumerate(samples))
         for k in ask:
             src_text, c = group[k]
-            u = 'Sentence: %s\n\nSamples mentioned:\n%s' % (_highlight(src_text, c), s_txt)
+            u = 'Sentence: %s\n\nSamples mentioned:\n%s' % (_highlight_sentence(src_text, c), s_txt)
             stats['asked'] += 1
             sids[k] = _ask_int(chat, SYS_SAMPLE, u, sample_model or model, len(samples), samples) or 0
     return props, sids, samples, win
@@ -303,6 +303,12 @@ SYS_PROP_MULTI = ('A passage from a materials paper is given. Several numbers ar
 SYS_SAMPLE_MULTI = ('A passage from a materials paper is given. Several numbers are marked like <<1: 12.5 MPa>>. '
                     'For EACH marked number, decide which listed sample it belongs to and answer the option index; '
                     'answer 0 if the passage does not say. Answer one line per number: `k: option`.')
+
+
+def _highlight_sentence(text, c):
+    """只给那一句、数打上 <<>>（2026-09-21 实测：给 ±220 字符的窗口，4B/9.7B 都答「没说」；给单句就答对）。"""
+    sent = _local_sentence(text, c)
+    return sent.replace(c['raw'], '<<' + c['raw'] + '>>', 1) if c['raw'] in sent else sent
 
 
 def _local_sentence(text, c):
