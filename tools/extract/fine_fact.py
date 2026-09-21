@@ -32,7 +32,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from shared.domain import numcheck as _nums
-from shared.domain.schema import PROPERTY_ALIASES
+from shared.domain.schema import PROPERTY_ALIASES, _ALIAS_TO_CANON
 from shared.domain.schema import scan
 from shared.kernel import paths
 from shared.kernel.cli import flag, opt, wants_help
@@ -45,7 +45,8 @@ NUM_CTX = 2048
 WINDOW = 220            # 给模型看的上下文：数前后各这么多字符
 # T0 预筛（2026-09-21）：这些单位的数几乎总是投料量 / 时间 / 体积，不是性能 —— 直接判「条件」，不问模型。
 # 温度（°C）不在这里：Tg / Td 是性质，反应温度是条件，得看句子。
-_COND_UNITS = {'h', 'hr', 'min', 's', 'ml', 'l', 'g', 'mg', 'kg', 'mol', 'mmol', 'μl', 'ul', 'rpm', 'day', 'days', 'week', 'weeks'}
+_COND_UNITS = {'h', 'hr', 'min', 's', 'ml', 'l', 'g', 'mg', 'kg', 'mol', 'mmol', 'μl', 'ul', 'rpm', 'day', 'days', 'week', 'weeks',
+               'cm-1', 'cm^-1', 'ppm', 'nm', 'ev', 'mhz', 'khz'}   # 波数 / 化学位移 / 波长 / 能量 / 频率：仪器读数，不是性能
 # 分区后只有这几种句子里的数才可能是性质
 _FACT_ZONES = {'RESULT', 'FIGURE', 'CLAIM'}
 # 含糊单位：在方法/背景句里出现时当条件处理（软过滤只对这些生效）
@@ -127,6 +128,28 @@ GROUP = 6               # 一次调用最多问几个数
 PARALLEL = 4            # 同时发几路请求（Ollama 侧要开 OLLAMA_NUM_PARALLEL 才真并行）
 
 
+_OTHER = 'other measured property (not in this list)'
+
+
+def props_in_window(text):
+    """窗口文本里提到了词表中的哪些性质（按别名匹配，长别名优先）。→ [正名]，按出现位置排。"""
+    low = text.lower()
+    found = {}
+    for alias, canon in _ALIAS_TO_CANON:
+        if canon in found or len(alias) < 3:
+            continue
+        m = re.search(r'(^|[^a-z])' + re.escape(alias) + r'($|[^a-z])', low)
+        if m:
+            found[canon] = m.start()
+    return [c for c, _ in sorted(found.items(), key=lambda kv: kv[1])]
+
+
+def _options_for(win):
+    """一组候选的选项表：窗口里提到的性质（通常 1–5 个）+ 「其他性质」；提不到就退回全表。"""
+    opts = props_in_window(win)
+    return (opts + [_OTHER]) if opts else (PROPS + [_OTHER])
+
+
 def _group(todo):
     """相邻候选攒组：同一来源文本、位置相近（窗口能装下）的最多 GROUP 个一组。"""
     groups, cur = [], []
@@ -181,18 +204,18 @@ def _answer_group(group, chat, model, samples, stats):
     """一组候选 → ([性质序号或 None], [样品序号])。"""
     n = len(group)
     win = _window(group)
-    opts_txt = '\n'.join('%d. %s' % (i + 1, p) for i, p in enumerate(PROPS))
-    guesses = [scan.guess_property(c['context']) or '' for _, c in group]
-    hint = ''.join('\n(script guess for %d: "%s")' % (k, g) for k, g in enumerate(guesses, 1) if g)
-    user = 'Passage (numbers marked <<k: value>>): %s\n\nOptions:\n%s%s' % (win, opts_txt, hint)
+    opts = _options_for(win)                              # 只给窗口里提到的性质 + 其他 + 0（选项少，小模型才不乱选）
+    opts_txt = '\n'.join('%d. %s' % (i + 1, p) for i, p in enumerate(opts))
+    user = 'Passage (numbers marked <<k: value>>): %s\n\nOptions:\n%s' % (win, opts_txt)
     stats['asked'] += 1
-    props = _ask_list(chat, SYS_PROP_MULTI, user, model, n, len(PROPS))
+    props = _ask_list(chat, SYS_PROP_MULTI, user, model, n, len(opts))
     if props is None:                                      # 退回逐个问
         props = []
         for src_text, c in group:
             u = 'Sentence: %s\n\nOptions:\n%s' % (_highlight(src_text, c), opts_txt)
             stats['asked'] += 1
-            props.append(_ask_int(chat, SYS_PROP, u, model, len(PROPS), PROPS))
+            props.append(_ask_int(chat, SYS_PROP, u, model, len(opts), opts))
+    props = [(opts[p - 1] if p else 0) if p is not None else None for p in props]   # 序号 → 正名 / 0 / None
     sids = [0] * n
     need = [k for k, p in enumerate(props) if p]
     if samples and need:
@@ -307,6 +330,9 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None):
                 stats['not_prop'] += 1
                 dropped.append({'norm': _nums.norm(str(c['value'])), 'why': 'not_prop', 'raw': c['raw'], 'ctx': c['context'][:120]})
                 continue
+            if pi == _OTHER:
+                stats['other_prop'] = stats.get('other_prop', 0) + 1
+                pi = scan.guess_property(c['context']) or 'other'
             sent = _highlight(src_text, c)
             sample = samples[si - 1] if si else ''
             if sample and sample.lower() not in sent.lower():    # ⑤ 核对：样品名要在窗口里
@@ -314,7 +340,7 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None):
                 sample = ''
             if not sample:
                 stats['sample_unspec'] += 1
-            facts.append({'sample': sample, 'property': PROPS[pi - 1], 'value': c['raw'], 'unit': c['unit'],
+            facts.append({'sample': sample, 'property': pi, 'value': c['raw'], 'unit': c['unit'],
                           'norm': _nums.norm(str(c['value'])), 'location': c.get('location', ''), 'ctx': c['context'][:160]})
     stats['secs'] = round(time.time() - t0, 1)
     stats['dropped'] = dropped
