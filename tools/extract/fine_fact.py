@@ -341,13 +341,14 @@ def run(tag, models, keys=None, log=print, zone_model=None):
     pids = keys or sorted(f[:-9] for f in os.listdir(d) if f.endswith('.src.json'))
     report = {}
     for model in models:
+        zm = model if zone_model == 'same' else zone_model      # --分区 same：各模型自己分区
         rows = []
         for pid in pids:
             md = io.open(paths.fulltext(pid), encoding='utf-8').read()
             sp = paths.si_fulltext(pid)
             si = io.open(sp, encoding='utf-8').read() if os.path.exists(sp) else ''
             log('[%s] %s' % (model, pid))
-            facts, st = extract_paper(md, chat, model, log, si_md=si, zone_model=zone_model)
+            facts, st = extract_paper(md, chat, model, log, si_md=si, zone_model=zm)
             got = {f['norm'] for f in facts}
             ref, one = ref_numbers(pid, tag), src_numbers(pid, tag)
             table_nums = {_nums.norm(str(t['value'])) for t in scan.scan_tables(md) if t.get('value') is not None}
@@ -396,7 +397,8 @@ def main():
     from shared.kernel.cli import positionals
     tag = opt('--tag') or 'u1'
     models = [m.strip() for m in (opt('--models') or opt('--model') or 'gemma3:1b').split(',') if m.strip()]
-    run(tag, models, keys=positionals() or None, zone_model=opt('--分区') or None)
+    zm = opt('--分区')
+    run(tag, models, keys=positionals() or None, zone_model=zm)
     print('报告 →', os.path.join(paths.unit_study_dir(tag), 'fine_fact_report.md'))
     return 0
 
