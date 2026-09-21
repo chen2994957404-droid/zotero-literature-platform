@@ -40,7 +40,7 @@ _UNITS = [
     'S/cm', 'S/m', 'mS/cm', 'µS/cm', 'uS/cm', 'mV/K', 'mV K-1', 'W/mK', 'W m-1 K-1', 'cd/m2', 'cd m-2', 'V/µm', 'V µm-1',
     'wt%', 'wt.%', 'wt %', 'vol%', 'mol%', '%',
     '°C', '℃', 'K', 'h', 'min', 's-1', 's^-1', 'rad/s', 'Hz', 'rpm', 'ms', 's',
-    'mm/min', 'mm min-1', 'mm', 'µm', 'um', 'nm', 'cm', 'm',
+    'cm-1', 'cm^-1', 'ppm', 'eV', 'mm/min', 'mm min-1', 'mm', 'µm', 'um', 'nm', 'cm', 'm',
     'mmol', 'mol/g', 'mol', 'mg', 'kg', 'g', 'mL', 'L',
     'cm3/g', 'm2/g', 'g/cm3', 'g cm-3', 'ton', 'tons', 'kg',
     # 倍数与「-fold」：范文里「强度是对照的 5.1 倍」这类数很常见，之前一律漏
@@ -279,7 +279,8 @@ def clean_body(md):
     if not t:
         return ''
     t = t.replace('$', ' ')
-    t = re.sub(r'\^\s*\{?\s*\\circ\s*\}?\s*(?:\\mathrm\{\s*C\s*\}|C)?', '°C', t)    # 90^{\circ}\mathrm{C} / 90^\circ C / 90^\circ → °C
+    t = re.sub(r'\^\s*\{?\s*\\circ\s*\}?\s*(?:\\mathrm\{\s*C\s*\}|C)', '°C', t)     # 90^{\circ}\mathrm{C} / 90^\circ C → °C
+    t = re.sub(r'\^\s*\{?\s*\\circ\s*\}?', '°', t)                                       # 2θ = 25.9^\circ → 25.9°（不是温度）
     t = re.sub(r'([A-Za-z])\s*\^\s*\{?\s*([-−]\s*\d)\s*\}?', lambda m: m.group(1) + m.group(2).replace('−', '-').replace(' ', ''), t)   # mol^{-1} → mol-1
     t = _SPACE_CMD.sub(' ', t)            # \; \, \! 这类排版空格，先去掉反斜杠
     t = _TEXT_CMD.sub(' ', t)

@@ -32,7 +32,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from shared.domain import numcheck as _nums
-from shared.domain.schema import PROPERTY_ALIASES, _ALIAS_TO_CANON
+from shared.domain.schema import PROPERTY_ALIASES, _ALIAS_TO_CANON, normalize_property_name
 from shared.domain.schema import scan
 from shared.kernel import paths
 from shared.kernel.cli import flag, opt, wants_help
@@ -200,22 +200,51 @@ def _ask_list(chat, sysp, user, model, n_items, n_opts):
     return [got[k] for k in range(1, n_items + 1)]
 
 
+def _ask_names(chat, user, model, n_items, opts):
+    """性质题：每行 `k: <性质名或 0>`。名字优先对到 opts（序号或原文都认），对不上就归一后照收。答不齐 → None。"""
+    try:
+        raw = chat(SYS_PROP_MULTI, user + '\n\nReply with one line per number: `k: property name` (copy a listed name if it fits, '
+                   'otherwise write the property in 2-4 words), or `k: 0` if it is not a measured material property. Nothing else.',
+                   provider='ollama', model=model, temperature=0.0, max_tokens=14 * n_items + 6, num_ctx=NUM_CTX, thinking=False)
+    except Exception:
+        return None
+    got = {}
+    for line in (raw or '').splitlines():
+        m = re.match(r'\s*(\d+)\s*[:：.)-]\s*(.+?)\s*$', line)
+        if not m:
+            continue
+        k, v = int(m.group(1)), m.group(2).strip().strip('`"\'')
+        if not 1 <= k <= n_items:
+            continue
+        if v in ('0', 'none', 'None', 'no', 'not a property'):
+            got[k] = 0
+        elif v.isdigit() and 1 <= int(v) <= len(opts):
+            got[k] = opts[int(v) - 1]
+        else:
+            canon = normalize_property_name(v)
+            got[k] = canon if canon else 0
+    if len(got) != n_items:
+        return None
+    return [got[k] for k in range(1, n_items + 1)]
+
+
 def _answer_group(group, chat, model, samples, stats):
     """一组候选 → ([性质序号或 None], [样品序号])。"""
     n = len(group)
     win = _window(group)
-    opts = _options_for(win)                              # 只给窗口里提到的性质 + 其他 + 0（选项少，小模型才不乱选）
-    opts_txt = '\n'.join('%d. %s' % (i + 1, p) for i, p in enumerate(opts))
-    user = 'Passage (numbers marked <<k: value>>): %s\n\nOptions:\n%s' % (win, opts_txt)
+    opts = props_in_window(win)                           # 窗口里提到的性质名（通常 1–5 个）作提示；模型也可以自己写名字
+    opts_txt = '\n'.join('%d. %s' % (i + 1, p) for i, p in enumerate(opts)) if opts else '(none mentioned nearby)'
+    user = 'Passage (numbers marked <<k: value>>): %s\n\nProperty names mentioned nearby:\n%s' % (win, opts_txt)
     stats['asked'] += 1
-    props = _ask_list(chat, SYS_PROP_MULTI, user, model, n, len(opts))
-    if props is None:                                      # 退回逐个问
+    props = _ask_names(chat, user, model, n, opts)
+    if props is None:                                      # 退回逐个问（同一题型，一次一个数）
         props = []
         for src_text, c in group:
-            u = 'Sentence: %s\n\nOptions:\n%s' % (_highlight(src_text, c), opts_txt)
+            u = 'Passage (numbers marked <<k: value>>): %s\n\nProperty names mentioned nearby:\n%s' % (
+                _highlight(src_text, c).replace('<<', '<<1: '), opts_txt)
             stats['asked'] += 1
-            props.append(_ask_int(chat, SYS_PROP, u, model, len(opts), opts))
-    props = [(opts[p - 1] if p else 0) if p is not None else None for p in props]   # 序号 → 正名 / 0 / None
+            r = _ask_names(chat, u, model, 1, opts)
+            props.append(r[0] if r else None)
     sids = [0] * n
     need = [k for k, p in enumerate(props) if p]
     if samples and need:
@@ -235,9 +264,10 @@ def _answer_group(group, chat, model, samples, stats):
 
 
 SYS_PROP_MULTI = ('A passage from a materials paper is given. Several numbers are marked like <<1: 12.5 MPa>>, <<2: 850%>>. '
-                  'For EACH marked number, decide which material property it measures and answer the option index; '
-                  'answer 0 if it is not a measured property (ingredient amount, processing temperature or time, reference '
-                  'or page number, wavelength, instrument setting). Answer one line per number: `k: option`.')
+                  'For EACH marked number, name the MATERIAL PROPERTY it measures (tensile strength, toughness, glass transition '
+                  'temperature, crystallinity, ...). Answer 0 if it is NOT a measured property of a material: an ingredient amount, '
+                  'a sample dimension, a processing temperature / time / speed, a reference or page number, a wavenumber, wavelength, '
+                  'diffraction angle or other instrument reading. A ratio like "5.1 times the strength of X" IS a property (name the property).')
 SYS_SAMPLE_MULTI = ('A passage from a materials paper is given. Several numbers are marked like <<1: 12.5 MPa>>. '
                     'For EACH marked number, decide which listed sample it belongs to and answer the option index; '
                     'answer 0 if the passage does not say. Answer one line per number: `k: option`.')
@@ -330,9 +360,8 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None):
                 stats['not_prop'] += 1
                 dropped.append({'norm': _nums.norm(str(c['value'])), 'why': 'not_prop', 'raw': c['raw'], 'ctx': c['context'][:120]})
                 continue
-            if pi == _OTHER:
-                stats['other_prop'] = stats.get('other_prop', 0) + 1
-                pi = scan.guess_property(c['context']) or 'other'
+            if pi not in PROPERTY_ALIASES:
+                stats['free_name'] = stats.get('free_name', 0) + 1     # 模型自己起的名（词表外），照收，供词表下一轮扩
             sent = _highlight(src_text, c)
             sample = samples[si - 1] if si else ''
             if sample and sample.lower() not in sent.lower():    # ⑤ 核对：样品名要在窗口里
