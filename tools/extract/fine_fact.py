@@ -1,0 +1,230 @@
+# -*- coding: utf-8 -*-
+"""fine_fact · 数值事实的**字段级拆分抽取**（2026-09-21，本地化拆解的抽取试验）。
+
+**为什么**：一次调用让模型「找句子 → 判类型 → 填全部字段」，小模型扛不住（单元拆解第 2/3 步实测）。
+拆成字段级的封闭题，每一步要么脚本做、要么是选择题，1–4B 才有用武之地：
+
+    ① 脚本   `scan.scan_numbers` 找出每个「数 + 单位」和它的上下文（T0）
+    ② 脚本   样品名单：表格行首 + 样品编号正则（T0）
+    ③ 模型   「这个数是哪个样品的？」—— 从名单里选序号，0 = 没说（T1）
+    ④ 模型   「是哪项性质？」—— 从性质词表里选序号，0 = 不是性质（投料量 / 条件 / 引用号）（T1）
+    ⑤ 脚本   核对：选中的样品名必须出现在上下文窗口里，否则退回「没说」（T0）
+
+标尺：单元研究里范文的数值事实（`data/state/unit_study/<tag>/<pid>.json` 里 type=fact 且带数字）——
+覆盖率按数值 norm 相等算，跟第 2 步 9.7B 一次拆的 65% 直接可比。
+
+用法：python -m tools.extract.fine_fact --tag u1 --model gemma3:1b        单模型跑同批
+      python -m tools.extract.fine_fact --tag u1 --models gemma3:1b,qwen3.5:2b,qwen3.5:4b   多模型对照
+产物：data/state/unit_study/<tag>/fine_fact_<model>.json + fine_fact_report.md。只读，不写别处。
+"""
+import os, sys
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[attr-defined]
+except Exception:
+    pass
+
+import io
+import json
+import re
+import time
+
+from shared.domain import numcheck as _nums
+from shared.domain.schema import PROPERTY_ALIASES
+from shared.domain.schema import scan
+from shared.kernel import paths
+from shared.kernel.cli import flag, opt, wants_help
+
+PROPS = list(PROPERTY_ALIASES.keys())
+_CODE = re.compile(r'\b[A-Z]{2,}[A-Za-z0-9]*(?:-[A-Za-z0-9]+){1,3}\b')
+_DIGIT = re.compile(r'\d')
+NUM_CTX = 2048
+WINDOW = 220            # 给模型看的上下文：数前后各这么多字符
+
+SYS_SAMPLE = ('You answer with ONE integer only. A sentence from a materials paper is given, with one number '
+              'highlighted like <<12.5 MPa>>. Which sample does that number belong to? Choose the option index. '
+              'Answer 0 if the sentence does not say or the number is not about any listed sample.')
+SYS_PROP = ('You answer with ONE integer only. A sentence from a materials paper is given, with one number '
+            'highlighted like <<12.5 MPa>>. Which material property does that number measure? Choose the option index. '
+            'Answer 0 if it is not a measured property (an ingredient amount, a processing condition such as temperature '
+            'or time, a reference number, a page number, a wavelength, or an instrument setting).')
+
+
+def sample_list(md, limit=30):
+    """样品名单（T0）：表格行首 + 出现 ≥2 次的样品编号。"""
+    names = []
+    for t in scan.scan_tables(md):
+        s = (t.get('sample_id') or '').strip()
+        if s and s not in names and len(s) <= 40:
+            names.append(s)
+    counts = {}
+    for m in _CODE.finditer(md):
+        counts[m.group(0)] = counts.get(m.group(0), 0) + 1
+    for m in re.finditer(r'\b[A-Z]{2,6}\d{0,3}\b', md):             # 光杆缩写（PBS、PDMS、CAN30）出现 ≥3 次也算
+        counts[m.group(0)] = counts.get(m.group(0), 0) + 1
+    for c, n in sorted(counts.items(), key=lambda x: -x[1]):
+        need = 2 if '-' in c else 3
+        if n >= need and c not in names and not c.lower().startswith(('fig', 'tab', 'doi', 'http', 'si', 'iii')):
+            names.append(c)
+    return names[:limit]
+
+
+def _ask_int(chat, sysp, user, model, n_opts):
+    try:
+        raw = chat(sysp, user, provider='ollama', model=model, temperature=0.0, max_tokens=8, num_ctx=NUM_CTX, thinking=False)
+    except Exception:
+        return None
+    m = re.search(r'\d+', raw or '')
+    if not m:
+        return None
+    v = int(m.group(0))
+    return v if 0 <= v <= n_opts else None
+
+
+def _highlight(md, c):
+    start = md.find(c['raw'], c['pos'], c['pos'] + len(c['raw']) + 4)     # scan 的 pos 可能带着前导空格
+    if start < 0:
+        start = c['pos']
+    end = start + len(c['raw'])
+    a, b = max(0, start - WINDOW), min(len(md), end + WINDOW)
+    return (md[a:start] + '<<' + c['raw'] + '>>' + md[end:b]).replace('\n', ' ')
+
+
+def extract_paper(md, chat, model, log=print, si_md=''):
+    """一篇 → 数值事实列表 + 统计。每个候选两次封闭题。"""
+    text = scan.clean_body(md) if md else ''
+    samples = sample_list(md)
+    facts, stats = [], {'cands': 0, 'asked': 0, 'no_answer': 0, 'not_prop': 0, 'sample_unspec': 0, 'sample_bad': 0, 'secs': 0.0}
+    t0 = time.time()
+    for c in scan.scan_numbers(text):
+        if c['value'] is None or c.get('in_table'):
+            continue                                   # 表格由 scan_tables 全脚本处理，这里只管正文
+        stats['cands'] += 1
+        sent = _highlight(text, c)
+        # ④ 性质（先问：不是性质的直接扔，省一次样品题）
+        guess = scan.guess_property(c['context']) or ''
+        opts = PROPS
+        user = 'Sentence: %s\n\nOptions:\n%s' % (sent, '\n'.join('%d. %s' % (i + 1, p) for i, p in enumerate(opts)))
+        if guess:
+            user += '\n(A script guessed "%s" from nearby words; confirm or correct.)' % guess
+        stats['asked'] += 1
+        pi = _ask_int(chat, SYS_PROP, user, model, len(opts))
+        if pi is None:
+            stats['no_answer'] += 1
+            continue
+        if pi == 0:
+            stats['not_prop'] += 1
+            continue
+        # ③ 样品
+        si = 0
+        if samples:
+            user = 'Sentence: %s\n\nOptions (samples):\n%s' % (sent, '\n'.join('%d. %s' % (i + 1, s) for i, s in enumerate(samples)))
+            stats['asked'] += 1
+            si = _ask_int(chat, SYS_SAMPLE, user, model, len(samples))
+            if si is None:
+                stats['no_answer'] += 1
+                si = 0
+        sample = samples[si - 1] if si else ''
+        # ⑤ 核对：样品名要在窗口里
+        if sample and sample.lower() not in sent.lower():
+            stats['sample_bad'] += 1
+            sample = ''
+        if not sample:
+            stats['sample_unspec'] += 1
+        facts.append({'sample': sample, 'property': opts[pi - 1], 'value': c['raw'], 'unit': c['unit'],
+                      'norm': _nums.norm(str(c['value'])), 'location': c.get('location', ''), 'ctx': c['context'][:160]})
+    stats['secs'] = round(time.time() - t0, 1)
+    return facts, stats
+
+
+def ref_numbers(pid, tag):
+    """范文数值事实的数（norm）—— 标尺。"""
+    p = os.path.join(paths.unit_study_dir(tag), pid + '.json')
+    out = set()
+    for u in json.load(io.open(p, encoding='utf-8'))['units']:
+        if u['type'] == 'fact' and _DIGIT.search(str(u.get('value', '')) + str(u.get('unit', ''))):
+            for x in re.findall(r'\d+(?:\.\d+)?', str(u.get('value', ''))):
+                if len(x) >= 2 and x not in ('10', '20', '100'):
+                    out.add(_nums.norm(x))
+    return out
+
+
+def src_numbers(pid, tag):
+    """第 2 步 9.7B 一次拆出的数值事实（对照）。"""
+    p = os.path.join(paths.unit_study_dir(tag), pid + '.src.json')
+    out = set()
+    if not os.path.exists(p):
+        return out
+    for u in json.load(io.open(p, encoding='utf-8'))['units']:
+        if u['type'] == 'fact':
+            for x in re.findall(r'\d+(?:\.\d+)?', str(u.get('value', ''))):
+                if len(x) >= 2 and x not in ('10', '20', '100'):
+                    out.add(_nums.norm(x))
+    return out
+
+
+def run(tag, models, keys=None, log=print):
+    from shared.adapters.llm_client import chat
+    d = paths.unit_study_dir(tag)
+    pids = keys or sorted(f[:-9] for f in os.listdir(d) if f.endswith('.src.json'))
+    report = {}
+    for model in models:
+        rows = []
+        for pid in pids:
+            md = io.open(paths.fulltext(pid), encoding='utf-8').read()
+            log('[%s] %s' % (model, pid))
+            facts, st = extract_paper(md, chat, model, log)
+            got = {f['norm'] for f in facts}
+            ref, one = ref_numbers(pid, tag), src_numbers(pid, tag)
+            table_nums = {_nums.norm(str(t['value'])) for t in scan.scan_tables(md) if t.get('value') is not None}
+            rows.append({'pid': pid, 'n_facts': len(facts), 'with_sample': sum(1 for f in facts if f['sample']),
+                         'ref': len(ref), 'ref_hit': len(ref & (got | table_nums)), 'ref_hit_model_only': len(ref & got),
+                         'one_shot_hit': len(ref & one), **st})
+            log('   候选 %d → 事实 %d（带样品 %d）· 范文数 %d：拆分法命中 %d（含表 %d）· 一次拆命中 %d · %ss' % (
+                st['cands'], len(facts), rows[-1]['with_sample'], len(ref), rows[-1]['ref_hit_model_only'],
+                rows[-1]['ref_hit'], rows[-1]['one_shot_hit'], st['secs']))
+            json.dump({'model': model, 'pid': pid, 'facts': facts, 'stats': st},
+                      io.open(os.path.join(d, 'fine_fact_%s_%s.json' % (re.sub(r'[^A-Za-z0-9.-]+', '-', model), pid)), 'w', encoding='utf-8'),
+                      ensure_ascii=False, indent=1)
+        report[model] = rows
+    _write(d, report)
+    return report
+
+
+def _write(d, report):
+    L = ['# 数值事实 · 字段级拆分抽取（%s）' % time.strftime('%Y-%m-%d %H:%M'), '',
+         '标尺 = 范文里带数字的事实（按数值配）。「一次拆」= 第 2 步 9.7B 整段一次抽的 fact。', '',
+         '| 模型 | 篇 | 候选数 | 判非性质 | 抽出事实 | 带样品 | 范文数 | 拆分法命中(含表) | 仅模型 | 一次拆命中 | 秒/篇 |',
+         '|---|---|---|---|---|---|---|---|---|---|---|']
+    for model, rows in report.items():
+        tot = lambda k: sum(r[k] for r in rows)
+        L.append('| %s | %d | %d | %d | %d | %d | %d | **%d (%.0f%%)** | %d (%.0f%%) | %d (%.0f%%) | %.0f |' % (
+            model, len(rows), tot('cands'), tot('not_prop'), tot('n_facts'), tot('with_sample'), tot('ref'),
+            tot('ref_hit'), 100 * tot('ref_hit') / max(1, tot('ref')),
+            tot('ref_hit_model_only'), 100 * tot('ref_hit_model_only') / max(1, tot('ref')),
+            tot('one_shot_hit'), 100 * tot('one_shot_hit') / max(1, tot('ref')),
+            tot('secs') / max(1, len(rows))))
+    L += ['', '逐篇：', '']
+    for model, rows in report.items():
+        L.append('## %s' % model)
+        L.append('| 篇 | 候选 | 事实 | 带样品 | 范文数 | 命中(含表) | 仅模型 | 一次拆 | 秒 |')
+        L.append('|---|---|---|---|---|---|---|---|---|')
+        for r in rows:
+            L.append('| %s | %d | %d | %d | %d | %d | %d | %d | %s |' % (
+                r['pid'], r['cands'], r['n_facts'], r['with_sample'], r['ref'], r['ref_hit'], r['ref_hit_model_only'], r['one_shot_hit'], r['secs']))
+    io.open(os.path.join(d, 'fine_fact_report.md'), 'w', encoding='utf-8').write('\n'.join(L) + '\n')
+
+
+def main():
+    if wants_help():
+        print(__doc__)
+        return 0
+    tag = opt('--tag') or 'u1'
+    models = [m.strip() for m in (opt('--models') or opt('--model') or 'gemma3:1b').split(',') if m.strip()]
+    run(tag, models)
+    print('报告 →', os.path.join(paths.unit_study_dir(tag), 'fine_fact_report.md'))
+    return 0
+
+
+if __name__ == '__main__':
+    main()
