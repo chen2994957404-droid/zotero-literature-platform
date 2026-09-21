@@ -60,9 +60,18 @@ def dimension(text):
         return ''
     try:
         q = _reg().Quantity(1, t)
-        return str(q.dimensionality)
+        return canonical(q.dimensionality)
     except Exception:
         return ''
+
+
+def canonical(dims):
+    """量纲 → 规范字符串（按名字排序，'[length]**2 [mass] [substance]**-1 [time]**-2'）。
+    Pint 自己的 str() 顺序随写法变（kJ/mol 与 J mol-1 会排得不一样），比字符串前必须先规范。"""
+    items = sorted((str(k), float(v)) for k, v in dict(dims).items() if float(v) != 0)
+    if not items:
+        return 'dimensionless'
+    return ' '.join('%s%s' % (k, '' if v == 1 else '**%g' % v) for k, v in items)
 
 
 def same_dimension(a, b):

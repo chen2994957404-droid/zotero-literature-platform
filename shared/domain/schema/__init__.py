@@ -234,44 +234,50 @@ PROPERTY_ALIASES = {
 # ── 每个正名该有的量纲（2026-09-21）：抽取的第三道脚本把关 ────────────────────────────
 # 量纲用 Pint 的写法（shared.adapters.units.dimension 给的字符串）。写在 domain 里的是「事实」（拉伸强度就是压强），
 # 比对由 adapters 那边做。没列的正名不查（宁可放过，不误杀）。'dimensionless' 也是一种约束：泊松比配 MPa 就是错。
-_P = '[mass] / [length] / [time] ** 2'                 # 压强：强度 / 模量
-_E_VOL = '[mass] / [length] / [time] ** 2'             # 能量 / 体积 = 压强（MJ/m³ 与 MPa 同量纲）
-_E_AREA = '[mass] / [time] ** 2'                       # 能量 / 面积（J/m²）
+# 量纲写法 = shared.adapters.units.canonical 的规范形式：按名字排序、`**` 指数、空格分隔
+_P = '[length]**-1 [mass] [time]**-2'                  # 压强：强度 / 模量（MPa）；能量 / 体积（MJ/m³）同量纲
+_E_VOL = _P
+_E_AREA = '[mass] [time]**-2'                          # 能量 / 面积（J/m²）
+_E = '[length]**2 [mass] [time]**-2'                   # 能量（J）
+_E_MASS = '[length]**2 [time]**-2'                     # 能量 / 质量（J/g）
+_E_MOL = '[length]**2 [mass] [substance]**-1 [time]**-2'   # 能量 / 摩尔（kJ/mol）
 _TEMP = '[temperature]'
 _DIMLESS = 'dimensionless'
-_MASS_PER_MOL = '[mass] / [substance]'
+_MASS_PER_MOL = '[mass] [substance]**-1'
+_FORCE = '[length] [mass] [time]**-2'
+_COND = '[current]**2 [length]**-3 [mass]**-1 [time]**3'         # S/m
+_THERM_COND = '[length] [mass] [temperature]**-1 [time]**-3'      # W/(m K)
+_VISC = '[length]**-1 [mass] [time]**-1'                          # Pa s
+_K1C = '[length]**-0.5 [mass] [time]**-2'                         # MPa m^0.5
 PROPERTY_DIMENSION = {
     'tensile strength': (_P,), "young's modulus": (_P,), 'storage modulus': (_P,), 'loss modulus': (_P,),
     'plateau elastic modulus': (_P,), 'compressive strength': (_P,), 'compressive modulus': (_P,), 'flexural strength': (_P,),
     'flexural modulus': (_P,), 'shear strength': (_P,), 'shear modulus': (_P,), 'yield strength': (_P,), 'tensile modulus': (_P,),
-    'adhesion strength': (_P, '[mass] / [time] ** 2', '[length] * [mass] / [time] ** 2'),   # 粘接：MPa、或 N/m（剥离）、或 N
-    'hardness': (_P, _DIMLESS),
-    'toughness': (_E_VOL, _E_AREA), 'fracture energy': (_E_AREA, _E_VOL), 'fracture toughness': (_E_AREA, '[mass] / [length] ** 0.5 / [time] ** 2', _E_VOL),
-    'dissipated energy': (_E_VOL, _E_AREA, '[length] ** 2 * [mass] / [time] ** 2'), 'energy density': ('[length] ** 2 * [mass] / [time] ** 2 / [mass]', _E_VOL, '[length] ** 2 / [time] ** 2'),
-    'elongation at break': (_DIMLESS,), 'self-healing efficiency': (_DIMLESS,), 'crystallinity': (_DIMLESS,), "poisson's ratio": (_DIMLESS,),
-    'recovery ratio': (_DIMLESS,), 'shape fixity ratio': (_DIMLESS,), 'residual strain': (_DIMLESS,), 'porosity': (_DIMLESS,),
-    'water content': (_DIMLESS,), 'water absorption': (_DIMLESS,), 'swelling ratio': (_DIMLESS,), 'gel fraction': (_DIMLESS,),
-    'transmittance': (_DIMLESS,), 'reflectance': (_DIMLESS,), 'capacity retention': (_DIMLESS,), 'coulombic efficiency': (_DIMLESS,),
-    'conversion': (_DIMLESS,), 'degree of substitution': (_DIMLESS,), 'cell viability': (_DIMLESS,), 'volume fraction': (_DIMLESS,),
-    'mass fraction': (_DIMLESS,), 'retention': (_DIMLESS,), 'energy dissipation ratio': (_DIMLESS,), 'pdi': (_DIMLESS,), 'ceramic yield': (_DIMLESS,),
+    'adhesion strength': (_P, _E_AREA, _FORCE),        # MPa、N/m（剥离，与 J/m² 同量纲）、N
+    'hardness': (_P,),
+    'toughness': (_E_VOL, _E_AREA, _E), 'fracture energy': (_E_AREA, _E_VOL, _E), 'fracture toughness': (_E_AREA, _K1C, _E_VOL, _E),
+    'dissipated energy': (_E_VOL, _E_AREA, _E), 'energy density': (_E_MASS, _E_VOL, _E),
     'glass transition temperature': (_TEMP,), 'melting temperature': (_TEMP,), 'decomposition temperature': (_TEMP,), 'thermal stability': (_TEMP,),
-    'melting enthalpy': ('[length] ** 2 / [time] ** 2', '[length] ** 2 * [mass] / [substance] / [time] ** 2'),   # J/g 或 J/mol
-    'activation energy': ('[length] ** 2 * [mass] / [substance] / [time] ** 2', '[length] ** 2 * [mass] / [time] ** 2'),
+    'melting enthalpy': (_E_MASS, _E_MOL), 'activation energy': (_E_MOL, _E, _E_MASS),
     'mn': (_MASS_PER_MOL, '[mass]'), 'mw': (_MASS_PER_MOL, '[mass]'), 'molecular weight': (_MASS_PER_MOL, '[mass]'),
-    'conductivity': ('[current] ** 2 * [time] ** 3 / [mass] / [length] ** 3',), 'ionic conductivity': ('[current] ** 2 * [time] ** 3 / [mass] / [length] ** 3',),
-    'thermal conductivity': ('[length] * [mass] / [temperature] / [time] ** 3',),
-    'viscosity': ('[mass] / [length] / [time]',), 'relaxation time': ('[time]',), 'response time': ('[time]',), 'lifetime': ('[time]', _DIMLESS),
-    'contact angle': (_DIMLESS,), 'surface roughness': ('[length]',), 'correlation length': ('[length]',),
-    'detection limit': (None,),                       # 单位随被测物变，不查
+    'conductivity': (_COND,), 'ionic conductivity': (_COND,), 'thermal conductivity': (_THERM_COND,),
+    'viscosity': (_VISC,), 'relaxation time': ('[time]',), 'response time': ('[time]',), 'lifetime': ('[time]',),
+    'surface roughness': ('[length]',), 'correlation length': ('[length]',),
+    # 无量纲的性质：配上有量纲的单位就是错（泊松比 0.3 MPa、结晶度 40 mm）
+    'elongation at break': (), 'self-healing efficiency': (), 'crystallinity': (), "poisson's ratio": (), 'recovery ratio': (),
+    'shape fixity ratio': (), 'residual strain': (), 'porosity': (), 'water content': (), 'water absorption': (), 'swelling ratio': (),
+    'gel fraction': (), 'transmittance': (), 'reflectance': (), 'capacity retention': (), 'coulombic efficiency': (), 'conversion': (),
+    'degree of substitution': (), 'cell viability': (), 'volume fraction': (), 'mass fraction': (), 'retention': (),
+    'energy dissipation ratio': (), 'pdi': (), 'ceramic yield': (), 'contact angle': (),
 }
 
 
 def dimension_ok(property_name, unit_dimension):
     """这个性质允许这个量纲吗？没登记的性质、认不出的量纲 → True（不误杀）。倍数（'-fold'）对任何性质都放行。"""
     allowed = PROPERTY_DIMENSION.get(normalize_property_name(property_name))
-    if not allowed or None in allowed or not unit_dimension or unit_dimension == 'dimensionless':
-        return True                        # 无量纲（倍数 / 百分比 / 光杆数）对任何性质都可能是比值，放行
-    return unit_dimension in allowed
+    if allowed is None or not unit_dimension or unit_dimension == 'dimensionless':
+        return True                        # 没登记的性质不查；无量纲（倍数 / 百分比 / 光杆数）对任何性质都可能是比值，放行
+    return unit_dimension in allowed       # 登记为 () 的无量纲性质：任何有量纲的单位都不对
 
 
 # 反查表：别名 → 正名。长别名优先匹配（'ultimate tensile strength' 要盖过 'tensile strength'）

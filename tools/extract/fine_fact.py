@@ -424,7 +424,9 @@ def run(tag, models, keys=None, log=print, zone_model=None):
             got = {f['norm'] for f in facts}
             ref, one = ref_numbers(pid, tag), src_numbers(pid, tag)
             lost = {}
-            for dr in st.pop('dropped', []):
+            dropped_all = st.pop('dropped', [])
+            st['dim_reject_samples'] = [x for x in dropped_all if x['why'].startswith('dim_reject')][:20]   # 留着审：量纲否决有没有误伤
+            for dr in dropped_all:
                 if dr['norm'] in ref and dr['norm'] not in got:
                     lost.setdefault(dr['why'].split(':')[0], []).append(dr)
             st['lost_ref'] = {k: len(v) for k, v in lost.items()}
