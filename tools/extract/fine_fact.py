@@ -261,7 +261,7 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None):
     text = scan.clean_body(_drop_nonbody(md)) if md else ''       # 参考文献区不进候选：页码、年份全是数
     si_text = scan.clean_body(_drop_nonbody(si_md)) if si_md else ''
     samples = sample_list(md + '\n' + (si_md or ''))
-    facts, stats = [], {'cands': 0, 'asked': 0, 'no_answer': 0, 'not_prop': 0, 'sample_unspec': 0, 'sample_bad': 0,
+    facts, dropped, stats = [], [], {'cands': 0, 'asked': 0, 'no_answer': 0, 'not_prop': 0, 'sample_unspec': 0, 'sample_bad': 0,
                         'cond_unit': 0, 'zoned_out': 0, 'zone_calls': 0, 'secs': 0.0}
     t0 = time.time()
     cands = [(text, c) for c in scan.scan_numbers(text)] + [(si_text, c) for c in scan.scan_numbers(si_text)]
@@ -272,6 +272,7 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None):
     for t, c in cands:
         if (c.get('unit') or '').strip().lower().replace(' ', '') in _COND_UNITS:
             stats['cond_unit'] += 1
+            dropped.append({'norm': _nums.norm(str(c['value'])), 'why': 'cond_unit', 'raw': c['raw'], 'ctx': c['context'][:120]})
         else:
             kept.append((t, c))
     cands = kept
@@ -281,6 +282,8 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None):
     for src_text, c in cands:
         if zones and zones.get(_local_sentence(src_text, c), 'RESULT') not in _FACT_ZONES:
             stats['zoned_out'] += 1
+            dropped.append({'norm': _nums.norm(str(c['value'])), 'why': 'zone:' + zones.get(_local_sentence(src_text, c), '?'),
+                            'raw': c['raw'], 'ctx': c['context'][:120]})
             continue
         todo.append((src_text, c))
     # 一次调用多道题（2026-09-21 实测：一次 1B 调用 2.07 s，模型只干 0.04 s，其余是固定开销 —— 请求数才是成本）：
@@ -292,9 +295,11 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None):
         for (src_text, c), pi, si in zip(g, props, sids):
             if pi is None:
                 stats['no_answer'] += 1
+                dropped.append({'norm': _nums.norm(str(c['value'])), 'why': 'no_answer', 'raw': c['raw'], 'ctx': c['context'][:120]})
                 continue
             if pi == 0:
                 stats['not_prop'] += 1
+                dropped.append({'norm': _nums.norm(str(c['value'])), 'why': 'not_prop', 'raw': c['raw'], 'ctx': c['context'][:120]})
                 continue
             sent = _highlight(src_text, c)
             sample = samples[si - 1] if si else ''
@@ -306,6 +311,7 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None):
             facts.append({'sample': sample, 'property': PROPS[pi - 1], 'value': c['raw'], 'unit': c['unit'],
                           'norm': _nums.norm(str(c['value'])), 'location': c.get('location', ''), 'ctx': c['context'][:160]})
     stats['secs'] = round(time.time() - t0, 1)
+    stats['dropped'] = dropped
     return facts, stats
 
 
@@ -351,13 +357,19 @@ def run(tag, models, keys=None, log=print, zone_model=None):
             facts, st = extract_paper(md, chat, model, log, si_md=si, zone_model=zm)
             got = {f['norm'] for f in facts}
             ref, one = ref_numbers(pid, tag), src_numbers(pid, tag)
+            lost = {}
+            for dr in st.pop('dropped', []):
+                if dr['norm'] in ref and dr['norm'] not in got:
+                    lost.setdefault(dr['why'].split(':')[0], []).append(dr)
+            st['lost_ref'] = {k: len(v) for k, v in lost.items()}
+            st['lost_samples'] = [dict(x, why=k) for k, v in lost.items() for x in v[:3]]
             table_nums = {_nums.norm(str(t['value'])) for t in scan.scan_tables(md) if t.get('value') is not None}
             rows.append({'pid': pid, 'n_facts': len(facts), 'with_sample': sum(1 for f in facts if f['sample']),
                          'ref': len(ref), 'ref_hit': len(ref & (got | table_nums)), 'ref_hit_model_only': len(ref & got),
                          'one_shot_hit': len(ref & one), **st})
-            log('   候选 %d（单位筛掉 %d、分区筛掉 %d、分区调用 %d）→ 事实 %d（带样品 %d）· 范文数 %d：拆分法命中 %d（含表 %d）· 一次拆命中 %d · %ss' % (
+            log('   候选 %d（单位筛掉 %d、分区筛掉 %d、分区调用 %d）→ 事实 %d（带样品 %d）· 范文数 %d：拆分法命中 %d（含表 %d）· 一次拆命中 %d · %ss · 范文数丢在 %s' % (
                 st['cands'], st['cond_unit'], st['zoned_out'], st['zone_calls'], len(facts), rows[-1]['with_sample'], len(ref),
-                rows[-1]['ref_hit_model_only'], rows[-1]['ref_hit'], rows[-1]['one_shot_hit'], st['secs']))
+                rows[-1]['ref_hit_model_only'], rows[-1]['ref_hit'], rows[-1]['one_shot_hit'], st['secs'], st['lost_ref']))
             json.dump({'model': model, 'pid': pid, 'facts': facts, 'stats': st},
                       io.open(os.path.join(d, 'fine_fact_%s_%s.json' % (re.sub(r'[^A-Za-z0-9.-]+', '-', model), pid)), 'w', encoding='utf-8'),
                       ensure_ascii=False, indent=1)
