@@ -32,7 +32,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from shared.domain import numcheck as _nums
-from shared.domain.schema import PROPERTY_ALIASES, _ALIAS_TO_CANON, normalize_property_name
+from shared.domain.schema import PROPERTY_ALIASES, _ALIAS_TO_CANON, normalize_property_name, dimension_ok
+from shared.adapters.units import dimension as _dimension
 from shared.domain.schema import scan
 from shared.kernel import paths
 from shared.kernel.cli import flag, opt, wants_help
@@ -362,6 +363,10 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None):
                 continue
             if pi not in PROPERTY_ALIASES:
                 stats['free_name'] = stats.get('free_name', 0) + 1     # 模型自己起的名（词表外），照收，供词表下一轮扩
+            if not dimension_ok(pi, _dimension(c.get('unit') or '')):   # ⑥ 量纲把关：40 mm 不可能是断裂韧性
+                stats['dim_reject'] = stats.get('dim_reject', 0) + 1
+                dropped.append({'norm': _nums.norm(str(c['value'])), 'why': 'dim_reject:' + pi, 'raw': c['raw'], 'ctx': c['context'][:120]})
+                continue
             sent = _highlight(src_text, c)
             sample = samples[si - 1] if si else ''
             if sample and sample.lower() not in sent.lower():    # ⑤ 核对：样品名要在窗口里

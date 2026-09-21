@@ -231,6 +231,49 @@ PROPERTY_ALIASES = {
     'lifetime':              ('lifetime', 'service life', 'cycle life', 'cycling stability', '寿命', '循环寿命'),
 }
 
+# ── 每个正名该有的量纲（2026-09-21）：抽取的第三道脚本把关 ────────────────────────────
+# 量纲用 Pint 的写法（shared.adapters.units.dimension 给的字符串）。写在 domain 里的是「事实」（拉伸强度就是压强），
+# 比对由 adapters 那边做。没列的正名不查（宁可放过，不误杀）。'dimensionless' 也是一种约束：泊松比配 MPa 就是错。
+_P = '[mass] / [length] / [time] ** 2'                 # 压强：强度 / 模量
+_E_VOL = '[mass] / [length] / [time] ** 2'             # 能量 / 体积 = 压强（MJ/m³ 与 MPa 同量纲）
+_E_AREA = '[mass] / [time] ** 2'                       # 能量 / 面积（J/m²）
+_TEMP = '[temperature]'
+_DIMLESS = 'dimensionless'
+_MASS_PER_MOL = '[mass] / [substance]'
+PROPERTY_DIMENSION = {
+    'tensile strength': (_P,), "young's modulus": (_P,), 'storage modulus': (_P,), 'loss modulus': (_P,),
+    'plateau elastic modulus': (_P,), 'compressive strength': (_P,), 'compressive modulus': (_P,), 'flexural strength': (_P,),
+    'flexural modulus': (_P,), 'shear strength': (_P,), 'shear modulus': (_P,), 'yield strength': (_P,), 'tensile modulus': (_P,),
+    'adhesion strength': (_P, '[mass] / [time] ** 2', '[length] * [mass] / [time] ** 2'),   # 粘接：MPa、或 N/m（剥离）、或 N
+    'hardness': (_P, _DIMLESS),
+    'toughness': (_E_VOL, _E_AREA), 'fracture energy': (_E_AREA, _E_VOL), 'fracture toughness': (_E_AREA, '[mass] / [length] ** 0.5 / [time] ** 2', _E_VOL),
+    'dissipated energy': (_E_VOL, _E_AREA, '[length] ** 2 * [mass] / [time] ** 2'), 'energy density': ('[length] ** 2 * [mass] / [time] ** 2 / [mass]', _E_VOL, '[length] ** 2 / [time] ** 2'),
+    'elongation at break': (_DIMLESS,), 'self-healing efficiency': (_DIMLESS,), 'crystallinity': (_DIMLESS,), "poisson's ratio": (_DIMLESS,),
+    'recovery ratio': (_DIMLESS,), 'shape fixity ratio': (_DIMLESS,), 'residual strain': (_DIMLESS,), 'porosity': (_DIMLESS,),
+    'water content': (_DIMLESS,), 'water absorption': (_DIMLESS,), 'swelling ratio': (_DIMLESS,), 'gel fraction': (_DIMLESS,),
+    'transmittance': (_DIMLESS,), 'reflectance': (_DIMLESS,), 'capacity retention': (_DIMLESS,), 'coulombic efficiency': (_DIMLESS,),
+    'conversion': (_DIMLESS,), 'degree of substitution': (_DIMLESS,), 'cell viability': (_DIMLESS,), 'volume fraction': (_DIMLESS,),
+    'mass fraction': (_DIMLESS,), 'retention': (_DIMLESS,), 'energy dissipation ratio': (_DIMLESS,), 'pdi': (_DIMLESS,), 'ceramic yield': (_DIMLESS,),
+    'glass transition temperature': (_TEMP,), 'melting temperature': (_TEMP,), 'decomposition temperature': (_TEMP,), 'thermal stability': (_TEMP,),
+    'melting enthalpy': ('[length] ** 2 / [time] ** 2', '[length] ** 2 * [mass] / [substance] / [time] ** 2'),   # J/g 或 J/mol
+    'activation energy': ('[length] ** 2 * [mass] / [substance] / [time] ** 2', '[length] ** 2 * [mass] / [time] ** 2'),
+    'mn': (_MASS_PER_MOL, '[mass]'), 'mw': (_MASS_PER_MOL, '[mass]'), 'molecular weight': (_MASS_PER_MOL, '[mass]'),
+    'conductivity': ('[current] ** 2 * [time] ** 3 / [mass] / [length] ** 3',), 'ionic conductivity': ('[current] ** 2 * [time] ** 3 / [mass] / [length] ** 3',),
+    'thermal conductivity': ('[length] * [mass] / [temperature] / [time] ** 3',),
+    'viscosity': ('[mass] / [length] / [time]',), 'relaxation time': ('[time]',), 'response time': ('[time]',), 'lifetime': ('[time]', _DIMLESS),
+    'contact angle': (_DIMLESS,), 'surface roughness': ('[length]',), 'correlation length': ('[length]',),
+    'detection limit': (None,),                       # 单位随被测物变，不查
+}
+
+
+def dimension_ok(property_name, unit_dimension):
+    """这个性质允许这个量纲吗？没登记的性质、认不出的量纲 → True（不误杀）。倍数（'-fold'）对任何性质都放行。"""
+    allowed = PROPERTY_DIMENSION.get(normalize_property_name(property_name))
+    if not allowed or None in allowed or not unit_dimension or unit_dimension == 'dimensionless':
+        return True                        # 无量纲（倍数 / 百分比 / 光杆数）对任何性质都可能是比值，放行
+    return unit_dimension in allowed
+
+
 # 反查表：别名 → 正名。长别名优先匹配（'ultimate tensile strength' 要盖过 'tensile strength'）
 _ALIAS_TO_CANON = sorted(
     ((a, canon) for canon, alist in PROPERTY_ALIASES.items() for a in alist),

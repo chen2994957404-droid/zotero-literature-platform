@@ -28,6 +28,7 @@ dependencies = [
     "python-docx==1.2.0", # 读 .docx 格式的 SI
     "PyMuPDF==1.27.2",   # 从 PDF 按坐标裁图
     "keyring==25.7.0",   # 密钥存进系统凭据库
+    "pint==0.26.1",      # 单位解析与量纲（shared/adapters/units）
 ]
 
 [project.optional-dependencies]
