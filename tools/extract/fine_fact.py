@@ -14,6 +14,7 @@
 覆盖率按数值 norm 相等算，跟第 2 步 9.7B 一次拆的 65% 直接可比。
 
 用法：python -m tools.extract.fine_fact --tag u1 --model gemma3:1b        单模型跑同批
+      python -m tools.extract.fine_fact --tag u1 --model qwen3.5:4b --分区 qwen3.5:4b   先句子分区再问（第 0 步）
       python -m tools.extract.fine_fact --tag u1 --models gemma3:1b,qwen3.5:2b,qwen3.5:4b   多模型对照
 产物：data/state/unit_study/<tag>/fine_fact_<model>.json + fine_fact_report.md。只读，不写别处。
 """
@@ -34,12 +35,18 @@ from shared.domain.schema import PROPERTY_ALIASES
 from shared.domain.schema import scan
 from shared.kernel import paths
 from shared.kernel.cli import flag, opt, wants_help
+from tools.extract import zoning
 
 PROPS = list(PROPERTY_ALIASES.keys())
 _CODE = re.compile(r'\b[A-Z]{2,}[A-Za-z0-9]*(?:-[A-Za-z0-9]+){1,3}\b')
 _DIGIT = re.compile(r'\d')
 NUM_CTX = 2048
 WINDOW = 220            # 给模型看的上下文：数前后各这么多字符
+# T0 预筛（2026-09-21）：这些单位的数几乎总是投料量 / 时间 / 体积，不是性能 —— 直接判「条件」，不问模型。
+# 温度（°C）不在这里：Tg / Td 是性质，反应温度是条件，得看句子。
+_COND_UNITS = {'h', 'hr', 'min', 's', 'ml', 'l', 'g', 'mg', 'kg', 'mol', 'mmol', 'μl', 'ul', 'rpm', 'day', 'days', 'week', 'weeks'}
+# 分区后只有这几种句子里的数才可能是性质
+_FACT_ZONES = {'RESULT', 'FIGURE', 'CLAIM'}
 
 SYS_SAMPLE = ('You answer with ONE integer only. A sentence from a materials paper is given, with one number '
               'highlighted like <<12.5 MPa>>. Which sample does that number belong to? Choose the option index. '
@@ -113,19 +120,70 @@ def _drop_nonbody(md):
     return ''.join(out)
 
 
-def extract_paper(md, chat, model, log=print, si_md=''):
-    """一篇 → 数值事实列表 + 统计。每个候选两次封闭题。"""
+def _local_sentence(text, c):
+    """候选数所在的那句话（在 clean 文本里按句末标点往两边找）。"""
+    start = text.find(c['raw'], c['pos'], c['pos'] + len(c['raw']) + 4)
+    if start < 0:
+        start = c['pos']
+    a = max(text.rfind('. ', 0, start), text.rfind('\n', 0, start), -1) + 1
+    b_dot, b_nl = text.find('. ', start), text.find('\n', start)
+    b = min(x for x in (b_dot + 1 if b_dot >= 0 else len(text), b_nl if b_nl >= 0 else len(text)))
+    return ' '.join(text[a:b].split())
+
+
+def _zone_candidates(cands, chat, zone_model, stats):
+    """候选所在句子分区（去重后一次 8 句）→ {句: 区}。"""
+    sents = []
+    for src_text, c in cands:
+        sent = _local_sentence(src_text, c)
+        if sent and sent not in sents:
+            sents.append(sent)
+    zones = {}
+    for i in range(0, len(sents), zoning.BATCH):
+        batch = sents[i:i + zoning.BATCH]
+        zs = zoning._ask(chat, zone_model, batch)
+        stats['zone_calls'] += 1
+        if zs is None:
+            for x in batch:
+                z = zoning._ask(chat, zone_model, [x])
+                stats['zone_calls'] += 1
+                zones[x] = z[0] if z else 'RESULT'
+        else:
+            zones.update(zip(batch, zs))
+    return zones
+
+
+def extract_paper(md, chat, model, log=print, si_md='', zone_model=None):
+    """一篇 → 数值事实列表 + 统计。每个候选：T0 预筛 → （可选）句子分区 → 两次封闭题。
+
+    `zone_model` 给了就先分区：只对 RESULT / FIGURE / CLAIM 句里的数问「哪项性质」，
+    METHOD / BACKGROUND / OTHER 句里的数记成条件、不问。
+    """
     # 正文 + SI 一起扫（2026-09-21 中途实测：只扫正文时范文数命中 45%，9.7B 把 SI 切进去的一次拆 77% —— 差在找数的范围）
     text = scan.clean_body(_drop_nonbody(md)) if md else ''       # 参考文献区不进候选：页码、年份全是数
     si_text = scan.clean_body(_drop_nonbody(si_md)) if si_md else ''
     samples = sample_list(md + '\n' + (si_md or ''))
-    facts, stats = [], {'cands': 0, 'asked': 0, 'no_answer': 0, 'not_prop': 0, 'sample_unspec': 0, 'sample_bad': 0, 'secs': 0.0}
+    facts, stats = [], {'cands': 0, 'asked': 0, 'no_answer': 0, 'not_prop': 0, 'sample_unspec': 0, 'sample_bad': 0,
+                        'cond_unit': 0, 'zoned_out': 0, 'zone_calls': 0, 'secs': 0.0}
     t0 = time.time()
     cands = [(text, c) for c in scan.scan_numbers(text)] + [(si_text, c) for c in scan.scan_numbers(si_text)]
+    cands = [(t, c) for t, c in cands if c['value'] is not None and not c.get('in_table')]   # 表格由 scan_tables 全脚本处理
+    stats['cands'] = len(cands)
+    # T0 预筛：投料 / 时间 / 体积单位的数不是性质
+    kept = []
+    for t, c in cands:
+        if (c.get('unit') or '').strip().lower().replace(' ', '') in _COND_UNITS:
+            stats['cond_unit'] += 1
+        else:
+            kept.append((t, c))
+    cands = kept
+    zones = _zone_candidates(cands, chat, zone_model, stats) if zone_model else {}
     for src_text, c in cands:
-        if c['value'] is None or c.get('in_table'):
-            continue                                   # 表格由 scan_tables 全脚本处理，这里只管正文
-        stats['cands'] += 1
+        if zones:
+            z = zones.get(_local_sentence(src_text, c), 'RESULT')
+            if z not in _FACT_ZONES:
+                stats['zoned_out'] += 1
+                continue
         sent = _highlight(src_text, c)
         # ④ 性质（先问：不是性质的直接扔，省一次样品题）
         guess = scan.guess_property(c['context']) or ''
@@ -189,7 +247,7 @@ def src_numbers(pid, tag):
     return out
 
 
-def run(tag, models, keys=None, log=print):
+def run(tag, models, keys=None, log=print, zone_model=None):
     from shared.adapters.llm_client import chat
     d = paths.unit_study_dir(tag)
     pids = keys or sorted(f[:-9] for f in os.listdir(d) if f.endswith('.src.json'))
@@ -201,16 +259,16 @@ def run(tag, models, keys=None, log=print):
             sp = paths.si_fulltext(pid)
             si = io.open(sp, encoding='utf-8').read() if os.path.exists(sp) else ''
             log('[%s] %s' % (model, pid))
-            facts, st = extract_paper(md, chat, model, log, si_md=si)
+            facts, st = extract_paper(md, chat, model, log, si_md=si, zone_model=zone_model)
             got = {f['norm'] for f in facts}
             ref, one = ref_numbers(pid, tag), src_numbers(pid, tag)
             table_nums = {_nums.norm(str(t['value'])) for t in scan.scan_tables(md) if t.get('value') is not None}
             rows.append({'pid': pid, 'n_facts': len(facts), 'with_sample': sum(1 for f in facts if f['sample']),
                          'ref': len(ref), 'ref_hit': len(ref & (got | table_nums)), 'ref_hit_model_only': len(ref & got),
                          'one_shot_hit': len(ref & one), **st})
-            log('   候选 %d → 事实 %d（带样品 %d）· 范文数 %d：拆分法命中 %d（含表 %d）· 一次拆命中 %d · %ss' % (
-                st['cands'], len(facts), rows[-1]['with_sample'], len(ref), rows[-1]['ref_hit_model_only'],
-                rows[-1]['ref_hit'], rows[-1]['one_shot_hit'], st['secs']))
+            log('   候选 %d（单位筛掉 %d、分区筛掉 %d、分区调用 %d）→ 事实 %d（带样品 %d）· 范文数 %d：拆分法命中 %d（含表 %d）· 一次拆命中 %d · %ss' % (
+                st['cands'], st['cond_unit'], st['zoned_out'], st['zone_calls'], len(facts), rows[-1]['with_sample'], len(ref),
+                rows[-1]['ref_hit_model_only'], rows[-1]['ref_hit'], rows[-1]['one_shot_hit'], st['secs']))
             json.dump({'model': model, 'pid': pid, 'facts': facts, 'stats': st},
                       io.open(os.path.join(d, 'fine_fact_%s_%s.json' % (re.sub(r'[^A-Za-z0-9.-]+', '-', model), pid)), 'w', encoding='utf-8'),
                       ensure_ascii=False, indent=1)
@@ -222,12 +280,12 @@ def run(tag, models, keys=None, log=print):
 def _write(d, report):
     L = ['# 数值事实 · 字段级拆分抽取（%s）' % time.strftime('%Y-%m-%d %H:%M'), '',
          '标尺 = 范文里带数字的事实（按数值配）。「一次拆」= 第 2 步 9.7B 整段一次抽的 fact。', '',
-         '| 模型 | 篇 | 候选数 | 判非性质 | 抽出事实 | 带样品 | 范文数 | 拆分法命中(含表) | 仅模型 | 一次拆命中 | 秒/篇 |',
-         '|---|---|---|---|---|---|---|---|---|---|---|']
+         '| 模型 | 篇 | 候选数 | 单位筛掉 | 分区筛掉 | 判非性质 | 抽出事实 | 带样品 | 范文数 | 拆分法命中(含表) | 仅模型 | 一次拆命中 | 秒/篇 |',
+         '|---|---|---|---|---|---|---|---|---|---|---|---|---|']
     for model, rows in report.items():
         tot = lambda k: sum(r[k] for r in rows)
-        L.append('| %s | %d | %d | %d | %d | %d | %d | **%d (%.0f%%)** | %d (%.0f%%) | %d (%.0f%%) | %.0f |' % (
-            model, len(rows), tot('cands'), tot('not_prop'), tot('n_facts'), tot('with_sample'), tot('ref'),
+        L.append('| %s | %d | %d | %d | %d | %d | %d | %d | %d | **%d (%.0f%%)** | %d (%.0f%%) | %d (%.0f%%) | %.0f |' % (
+            model, len(rows), tot('cands'), tot('cond_unit'), tot('zoned_out'), tot('not_prop'), tot('n_facts'), tot('with_sample'), tot('ref'),
             tot('ref_hit'), 100 * tot('ref_hit') / max(1, tot('ref')),
             tot('ref_hit_model_only'), 100 * tot('ref_hit_model_only') / max(1, tot('ref')),
             tot('one_shot_hit'), 100 * tot('one_shot_hit') / max(1, tot('ref')),
@@ -250,7 +308,7 @@ def main():
     from shared.kernel.cli import positionals
     tag = opt('--tag') or 'u1'
     models = [m.strip() for m in (opt('--models') or opt('--model') or 'gemma3:1b').split(',') if m.strip()]
-    run(tag, models, keys=positionals() or None)
+    run(tag, models, keys=positionals() or None, zone_model=opt('--分区') or None)
     print('报告 →', os.path.join(paths.unit_study_dir(tag), 'fine_fact_report.md'))
     return 0
 
