@@ -470,7 +470,7 @@ def agreement(facts, ref):
             p_n += 1
             mp = f['property']
             p_ok += (mp == rp) or (mp in rp) or (rp in mp)
-        if rs and f['sample']:
+        if rs and f['sample'] and re.search(r'[A-Za-z0-9]', rs):     # 范文样品是编号 / 英文名才比（「水凝胶」「凝胶条」这种描述性中文名没法对）
             s_n += 1
             a, b = rs.lower().replace(' ', ''), f['sample'].lower().replace(' ', '')
             s_ok += (b in a) or (a in b)
