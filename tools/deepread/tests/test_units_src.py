@@ -33,3 +33,24 @@ def test_覆盖_四种配法():
     hows = [r['how'] for r in m]
     assert hows[0] == 'num' and hows[1] == 'none' and hows[2] == 'name' and hows[3] == 'panel'
     assert hows[4] == 'sim' and m[5]['type'] == 'method'
+
+
+def test_判同异_召回前三并按模型答案计覆盖(tmp_path, monkeypatch):
+    import json, io, os
+    from shared.kernel import paths
+    monkeypatch.setattr(paths, 'STATE', str(tmp_path))
+    d = paths.unit_study_dir('t'); os.makedirs(d)
+    ref = [{'type': 'claim', 'text': '动态交换耗散能量'}, {'type': 'role', 'component': 'PDMS', 'function': '骨架'}]
+    src = [{'type': 'claim', 'text': 'dynamic exchange dissipates energy'}, {'type': 'claim', 'text': 'unrelated'},
+           {'type': 'role', 'component': 'boric acid', 'function': 'crosslinker'}]
+    json.dump({'units': ref}, io.open(os.path.join(d, 'P.json'), 'w', encoding='utf-8'))
+    json.dump({'units': src}, io.open(os.path.join(d, 'P.src.json'), 'w', encoding='utf-8'))
+    vec = {'text: 动态交换耗散能量': [1, 0], 'text: dynamic exchange dissipates energy': [1, 0], 'text: unrelated': [0, 1],
+           'component: PDMS ; function: 骨架': [0, 1], 'component: boric acid ; function: crosslinker': [0.5, 0.5]}
+    def embed(texts):
+        return [vec.get(t, [0.2, 0.2]) for t in texts]
+    def chat_json(sysp, user, **kw):
+        return {'match': 1} if '耗散' in user else {'match': 0}
+    per_type, results = US.judge_coverage('t', chat_json, 'fake', embed=embed, log=lambda *a: None)
+    assert per_type['claim']['rate'] == 1.0 and per_type['role']['rate'] == 0.0
+    assert results[0]['picked'].startswith('text: dynamic') and os.path.exists(os.path.join(d, 'coverage_judged_fake.md'))

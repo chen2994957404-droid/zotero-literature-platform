@@ -34,6 +34,8 @@
     python -m tools.deepread --单元拆解 --篇数 20 --本地 --tag u1
     python -m tools.deepread --原文单元 --篇数 10 --本地 --tag u1     第 2 步：从英文原文拆九类单元
     python -m tools.deepread --单元覆盖 u1                             范文单元有几成能在原文单元里找到（bge-m3 配对）
+    python -m tools.deepread --单元判同 --model qwen3.5:4b            第 3 步：语义类召回 top-3 + 小模型判同异
+    python -m tools.deepread --单元判同 --model qwen3.5:4b --条数 60 --对照 qwen3.5:latest   同批 60 条两个模型对照
 
 ⚠ 除 --rerun-pro 列清单外，每一条都**花钱**（付费大模型 + MineRU 额度），
    并且会把结果写回 Zotero。只允许在主力机上跑（role.require_prod 会拦）。
@@ -80,6 +82,22 @@ def main():
         keys = keys or (GE.candidates() if n == 0 else GE.sample(n, seed))
         done = US.run(keys, chat_json, tag=opt('--tag') or 'u1', local=local)
         print('\n拆完 %d 篇' % len(done))
+        return 0
+
+    if flag('--单元判同'):
+        from shared.adapters.llm_client import chat_json
+        from tools.deepread.evals import units_src as US
+        tag = opt('--tag') or 'u1'
+        model = opt('--model') or 'qwen3.5:4b'
+        limit = int(opt('--条数') or 0) or None
+        seed = int(opt('--seed') or 1)
+        per_type, _ = US.judge_coverage(tag, chat_json, model, limit=limit, sample_seed=seed)
+        print('\n' + '\n'.join('%s %s' % (t, b['rate']) for t, b in per_type.items() if b['n']))
+        other = opt('--对照')
+        if other and limit:
+            US.judge_coverage(tag, chat_json, other, limit=limit, sample_seed=seed)
+            agree, n, path = US.compare_judges(tag, model, other, limit)
+            print('对照 %s：是/否一致 %d/%d → %s' % (other, agree, n, path))
         return 0
 
     if flag('--单元覆盖'):

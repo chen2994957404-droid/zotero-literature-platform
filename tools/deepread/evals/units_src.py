@@ -318,3 +318,139 @@ def coverage(tag, embed=None, log=print):
         L.append('| %s | %d | %d | %s |' % (r['pid'], r['ref'], r['src'], ', '.join('%s %s' % kv for kv in r['cover'].items())))
     io.open(os.path.join(out_dir, 'coverage.md'), 'w', encoding='utf-8').write('\n'.join(L) + '\n')
     return per_type, os.path.join(out_dir, 'coverage.md')
+
+
+# ── 第 3 步：召回 + 小模型判同异（2026-09-21）────────────────────────
+# 相似度阈值法在语义类上不可信（每类错配方向都不一样，见规划第八节）。Pyramid 的正规做法是：
+# 相似度只负责召回前几名，「是不是同一件事」交给一个判断模型。这也是小模型（4b）的第一次实测场。
+
+MATCH_PROMPT = 'units_match@v1'
+SEM_TYPES = ('attribute', 'action', 'method', 'claim', 'role', 'cause', 'entity')
+TOPK = 3
+
+
+def _top_candidates(t, v, by_type, vecs_by_type, k=TOPK):
+    """按相似度从近类里取前 k 条候选。entity 只在 entity 里找。"""
+    scored = []
+    for nt in (NEAR.get(t, (t,)) if t != 'entity' else ('entity',)):
+        for u, cv in zip(by_type.get(nt, []), vecs_by_type(nt)):
+            scored.append((_cos(v, cv), u))
+    scored.sort(key=lambda x: -x[0])
+    return scored[:k]
+
+
+def judge_one(chat_json, ref, cands, model, log=print):
+    """→ (match_index 0..k, 失败与否)。一次调用判一条范文单元。"""
+    sysp = prompts.load('deepread', MATCH_PROMPT)
+    user = 'A（精读单元，类型 %s）：%s\n\n候选：\n%s' % (
+        refine_ref(ref), text_of(ref), '\n'.join('%d. %s' % (i + 1, text_of(u)) for i, (_, u) in enumerate(cands)))
+    try:
+        d = chat_json(sysp, user, provider='ollama', model=model, temperature=0.0, num_ctx=4096) or {}
+        m = int(d.get('match', 0))
+        return (m if 0 <= m <= len(cands) else 0), False
+    except Exception as e:
+        log('  判同异失败：%s' % str(e)[:80])
+        return 0, True
+
+
+def _collect_items(tag, embed):
+    """所有语义类范文单元 + 各自的 top-k 候选（向量按篇按类只算一次）。"""
+    out_dir = paths.unit_study_dir(tag)
+    items = []
+    for f in sorted(os.listdir(out_dir)):
+        if not f.endswith('.src.json'):
+            continue
+        pid = f[:-len('.src.json')]
+        rf = os.path.join(out_dir, pid + '.json')
+        if not os.path.exists(rf):
+            continue
+        ref = json.load(io.open(rf, encoding='utf-8'))['units']
+        src = json.load(io.open(os.path.join(out_dir, f), encoding='utf-8'))['units']
+        by_type = {}
+        for s in src:
+            by_type.setdefault(s['type'], []).append(s)
+        cache = {}
+
+        def vecs_by_type(t, _c=cache, _b=by_type):
+            if t not in _c:
+                us = _b.get(t, [])
+                _c[t] = embed([text_of(u) for u in us]) if us else []
+            return _c[t]
+        sem = [(i, r, refine_ref(r)) for i, r in enumerate(ref) if refine_ref(r) in SEM_TYPES]
+        if not sem:
+            continue
+        rv = embed([text_of(r) for _, r, _ in sem])
+        for (i, r, t), v in zip(sem, rv):
+            items.append({'pid': pid, 'i': i, 'type': t, 'ref': r, 'cands': _top_candidates(t, v, by_type, vecs_by_type)})
+    return items
+
+
+def judge_coverage(tag, chat_json, model, embed=None, limit=None, sample_seed=1, log=print):
+    """语义类范文单元：召回 top-3 → 模型判同异 → 覆盖。结果落 judged_<model>[_nN].json + coverage_judged_<model>[_nN].md。
+
+    `limit`：只判随机抽出的 N 条（同一个 seed 抽同一批，给两个模型做对照用）。
+    """
+    import random
+    from shared.adapters.embed import embed as _embed
+    embed = _batched(embed or _embed)
+    out_dir = paths.unit_study_dir(tag)
+    items = _collect_items(tag, embed)
+    if limit:
+        rng = random.Random(sample_seed)
+        rng.shuffle(items)
+        items = sorted(items[:limit], key=lambda x: (x['pid'], x['i']))
+    per_type = {t: {'n': 0, 'covered': 0, 'yes_sims': []} for t in SEM_TYPES}
+    results = []
+    for n, it in enumerate(items, 1):
+        m, bad = judge_one(chat_json, it['ref'], it['cands'], model, log) if it['cands'] else (0, False)
+        rec = {'pid': it['pid'], 'i': it['i'], 'type': it['type'], 'match': m, 'failed': bad,
+               'top_sims': [round(s, 3) for s, _ in it['cands']],
+               'ref': text_of(it['ref'])[:200], 'picked': text_of(it['cands'][m - 1][1])[:200] if m else ''}
+        results.append(rec)
+        b = per_type[it['type']]
+        b['n'] += 1
+        b['covered'] += bool(m)
+        if m:
+            b['yes_sims'].append(rec['top_sims'][0])
+        if n % 25 == 0:
+            log('  判了 %d/%d' % (n, len(items)))
+    for t, b in per_type.items():
+        b['rate'] = round(b['covered'] / b['n'], 3) if b['n'] else None
+        ss = sorted(b['yes_sims'])
+        b['sim_when_yes_median'] = ss[len(ss) // 2] if ss else None
+        del b['yes_sims']
+    when = time.strftime('%Y-%m-%d %H:%M')
+    suffix = re.sub(r'[^A-Za-z0-9._-]+', '-', model) + ('_n%d' % limit if limit else '')
+    json.dump({'tag': tag, 'model': model, 'when': when, 'limit': limit, 'per_type': per_type, 'items': results},
+              io.open(os.path.join(out_dir, 'judged_%s.json' % suffix), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+    L = ['# 单元覆盖（召回 top-%d + %s 判同异）%s（%s）' % (TOPK, model, tag, when), '',
+         '| 类 | 条数 | 判为同一件事 | 覆盖率 | 判「是」时 top-1 相似度中位 |', '|---|---|---|---|---|']
+    for t in SEM_TYPES:
+        b = per_type[t]
+        if b['n']:
+            L.append('| %s | %d | %d | %s | %s |' % (t, b['n'], b['covered'], b['rate'], b['sim_when_yes_median']))
+    io.open(os.path.join(out_dir, 'coverage_judged_%s.md' % suffix), 'w', encoding='utf-8').write('\n'.join(L) + '\n')
+    return per_type, results
+
+
+def compare_judges(tag, model_a, model_b, limit):
+    """两个模型在同一批抽样上的判断一致率（`judge_coverage` 用同一个 seed 抽的那批）。"""
+    out_dir = paths.unit_study_dir(tag)
+
+    def load(m):
+        p = os.path.join(out_dir, 'judged_%s_n%d.json' % (re.sub(r'[^A-Za-z0-9._-]+', '-', m), limit))
+        return {(x['pid'], x['i']): x for x in json.load(io.open(p, encoding='utf-8'))['items']}
+    a, b = load(model_a), load(model_b)
+    keys = sorted(set(a) & set(b))
+    agree = sum(1 for k in keys if bool(a[k]['match']) == bool(b[k]['match']))
+    same_pick = sum(1 for k in keys if a[k]['match'] == b[k]['match'])
+    diff = [(k, a[k], b[k]) for k in keys if bool(a[k]['match']) != bool(b[k]['match'])]
+    L = ['# 判同异对照 %s vs %s（%d 条）' % (model_a, model_b, len(keys)), '',
+         '是/否一致 %d/%d（%.0f%%）；选中同一条 %d/%d' % (agree, len(keys), 100 * agree / max(1, len(keys)), same_pick, len(keys)),
+         '', '## 不一致的（前 30 条）', '']
+    for k, x, y in diff[:30]:
+        L.append('- [%s] %s\n  %s 选 %s：%s\n  %s 选 %s：%s' % (
+            x['type'], x['ref'][:100], model_a, x['match'], x['picked'][:90], model_b, y['match'], y['picked'][:90]))
+    p = os.path.join(out_dir, 'judge_compare.md')
+    io.open(p, 'w', encoding='utf-8').write('\n'.join(L) + '\n')
+    return agree, len(keys), p
