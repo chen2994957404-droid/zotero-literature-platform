@@ -32,8 +32,6 @@ from shared.domain.schema import outline as _ol
 ZONES = ('BACKGROUND', 'METHOD', 'RESULT', 'CLAIM', 'FIGURE', 'OTHER')
 BATCH = 8
 NUM_CTX = 3072
-_ABBR = re.compile(r'\b(?:Fig|Figs|Eq|Eqs|Ref|Refs|et al|vs|approx|ca|i\.e|e\.g|No|Dr|Prof|Tab|Sec|wt|vol|mol)\.$', re.I)
-_SPLIT = re.compile(r'(?<=[.!?])\s+(?=[A-Z(\[])')
 
 SYS = ('You classify sentences from a materials-science paper into exactly one zone each:\n'
        '1 BACKGROUND (motivation, prior work, general knowledge)\n'
@@ -49,22 +47,13 @@ _KIND_ZONE = {_ol.SYNTHESIS: 'METHOD', _ol.METHODS: 'METHOD', _ol.BACKGROUND: 'B
 
 
 def sentences(text):
-    """段落 → 句子。按句末标点 + 大写开头切；Fig. / et al. / e.g. 这类缩写不切。"""
+    """段落 → 句子（pySBD；Fig. / et al. / e.g. 这类缩写不切）。短于 15 字符的碎片丢掉。"""
+    from shared.adapters import sentences as _s
     out = []
     for para in re.split(r'\n\s*\n', text or ''):
         para = ' '.join(para.split())
-        if not para:
-            continue
-        buf = ''
-        for piece in _SPLIT.split(para):
-            if buf and _ABBR.search(buf):
-                buf += ' ' + piece
-                continue
-            if buf:
-                out.append(buf)
-            buf = piece
-        if buf:
-            out.append(buf)
+        if para:
+            out += [sent for _, _, sent in _s.split(para)]
     return [s for s in out if len(s) >= 15]
 
 

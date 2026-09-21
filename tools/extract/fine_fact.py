@@ -35,6 +35,7 @@ from shared.domain import numcheck as _nums
 from shared.domain.schema import PROPERTY_ALIASES, _ALIAS_TO_CANON, normalize_property_name, dimension_ok
 from shared.adapters.units import dimension as _dimension
 from shared.adapters import ner as _ner
+from shared.adapters import sentences as _sentences
 from shared.domain.schema import scan
 from shared.kernel import paths
 from shared.kernel.cli import flag, opt, wants_help
@@ -332,14 +333,9 @@ def _highlight_sentence(text, c):
 
 
 def _local_sentence(text, c):
-    """候选数所在的那句话（在 clean 文本里按句末标点往两边找）。"""
+    """候选数所在的那句话（pySBD 切，Fig. / ref. / et al. 不会被当句尾 —— 2026-09-21 换现成库）。"""
     start = text.find(c['raw'], c['pos'], c['pos'] + len(c['raw']) + 4)
-    if start < 0:
-        start = c['pos']
-    a = max(text.rfind('. ', 0, start), text.rfind('\n', 0, start), -1) + 1
-    b_dot, b_nl = text.find('. ', start), text.find('\n', start)
-    b = min(x for x in (b_dot + 1 if b_dot >= 0 else len(text), b_nl if b_nl >= 0 else len(text)))
-    return ' '.join(text[a:b].split())
+    return _sentences.sentence_at(text, start if start >= 0 else c['pos'])
 
 
 def _zone_candidates(cands, chat, zone_model, stats):

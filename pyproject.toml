@@ -29,6 +29,7 @@ dependencies = [
     "PyMuPDF==1.27.2",   # 从 PDF 按坐标裁图
     "keyring==25.7.0",   # 密钥存进系统凭据库
     "pint==0.26.1",      # 单位解析与量纲（shared/adapters/units）
+    "pysbd==0.3.4",      # 句子切分（shared/adapters/sentences）
     "gliner==0.2.29",    # 零样本 NER：样品 / 材料名（shared/adapters/ner）；会带上 torch(CPU)
 ]
 
