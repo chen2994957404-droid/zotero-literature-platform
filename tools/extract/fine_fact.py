@@ -55,8 +55,10 @@ _FACT_ZONES = {'RESULT', 'FIGURE', 'CLAIM'}
 _AMBIG_UNITS = {'°c', '℃', 'k', '%', 'wt%', 'wt.%', 'vol%', 'mol%', 'mm', 'cm', 'm', 'µm', 'um', 'nm', 'rpm', 'v', 'hz', 'ms', 'times', '-fold', 'fold', '×', ''}
 
 SYS_SAMPLE = ('You answer with ONE integer only. A sentence from a materials paper is given, with one number '
-              'highlighted like <<12.5 MPa>>. Which sample does that number belong to? Choose the option index. '
-              'Answer 0 if the sentence does not say or the number is not about any listed sample.')
+              'highlighted like <<12.5 MPa>>. Which listed sample does that number DESCRIBE? Choose the option index. '
+              'A sample that appears only as the comparison baseline ("compared with X", "N times that of X", "higher than X") '
+              'is NOT the answer unless the number is X\'s own value in parentheses. Substrates, solvents and reagents are not samples. '
+              'Answer 0 only if the highlighted number is not the value of any listed sample.')
 SYS_PROP = ('You answer with ONE integer only. A sentence from a materials paper is given, with one number '
             'highlighted like <<12.5 MPa>>. Which material property does that number measure? Choose the option index. '
             'Answer 0 if it is not a measured property (an ingredient amount, a processing condition such as temperature '
@@ -268,19 +270,13 @@ def _answer_group(group, chat, model, samples, stats):
         else:
             ask.append(k)
     if samples and ask:
+        # 多样品句一律逐个问、只给那一句（2026-09-21 实测：整段一次问多个，4B 动不动答「没说」）
         s_txt = '\n'.join('%d. %s' % (i + 1, x) for i, x in enumerate(samples))
-        user = 'Passage (numbers marked <<k: value>>): %s\n\nOptions (samples):\n%s' % (win, s_txt)
-        stats['asked'] += 1
-        ans = _ask_list(chat, SYS_SAMPLE_MULTI, user, model, n, len(samples))
-        if ans is None:
-            ans = [0] * n
-            for k in ask:
-                src_text, c = group[k]
-                u = 'Sentence: %s\n\nOptions (samples):\n%s' % (_highlight(src_text, c), s_txt)
-                stats['asked'] += 1
-                ans[k] = _ask_int(chat, SYS_SAMPLE, u, model, len(samples), samples) or 0
         for k in ask:
-            sids[k] = ans[k]
+            src_text, c = group[k]
+            u = 'Sentence: %s\n\nSamples mentioned:\n%s' % (_highlight(src_text, c), s_txt)
+            stats['asked'] += 1
+            sids[k] = _ask_int(chat, SYS_SAMPLE, u, model, len(samples), samples) or 0
     return props, sids, samples, win
 
 
