@@ -34,6 +34,7 @@ from concurrent.futures import ThreadPoolExecutor
 from shared.domain import numcheck as _nums
 from shared.domain.schema import PROPERTY_ALIASES, _ALIAS_TO_CANON, normalize_property_name, dimension_ok
 from shared.adapters.units import dimension as _dimension
+from shared.adapters import ner as _ner
 from shared.domain.schema import scan
 from shared.kernel import paths
 from shared.kernel.cli import flag, opt, wants_help
@@ -248,6 +249,10 @@ def _answer_group(group, chat, model, samples, stats):
             props.append(r[0] if r else None)
     sids = [0] * n
     need = [k for k, p in enumerate(props) if p]
+    # 样品名单改成**这段窗口里提到的**（GLiNER + 编号正则，2026-09-21）：全篇名单有 30 个，模型常挑错；
+    # 窗口里通常只有 2–5 个，而且多词样品（PVA/CPO eutectogel）也认得出。窗口里一个都没有才退回全篇名单。
+    local_samples = _window_samples(win) if USE_NER else []
+    samples = local_samples or samples
     if samples and need:
         s_txt = '\n'.join('%d. %s' % (i + 1, x) for i, x in enumerate(samples))
         user = 'Passage (numbers marked <<k: value>>): %s\n\nOptions (samples):\n%s' % (win, s_txt)
@@ -261,7 +266,17 @@ def _answer_group(group, chat, model, samples, stats):
                 stats['asked'] += 1
                 ans[k] = _ask_int(chat, SYS_SAMPLE, u, model, len(samples), samples) or 0
         sids = ans
-    return props, sids
+    return props, sids, samples
+
+
+USE_NER = True
+
+
+def _window_samples(win):
+    try:
+        return _ner.sample_mentions(win)[:12]
+    except Exception:
+        return []
 
 
 SYS_PROP_MULTI = ('A passage from a materials paper is given. Several numbers are marked like <<1: 12.5 MPa>>, <<2: 850%>>. '
@@ -351,7 +366,7 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None):
     groups = _group(todo)
     with ThreadPoolExecutor(max_workers=PARALLEL) as pool:
         results = list(pool.map(lambda g: _answer_group(g, chat, model, samples, stats), groups))
-    for g, (props, sids) in zip(groups, results):
+    for g, (props, sids, g_samples) in zip(groups, results):
         for (src_text, c), pi, si in zip(g, props, sids):
             if pi is None:
                 stats['no_answer'] += 1
@@ -368,7 +383,7 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None):
                 dropped.append({'norm': _nums.norm(str(c['value'])), 'why': 'dim_reject:' + pi, 'raw': c['raw'], 'ctx': c['context'][:120]})
                 continue
             sent = _highlight(src_text, c)
-            sample = samples[si - 1] if si else ''
+            sample = g_samples[si - 1] if si and si <= len(g_samples) else ''
             if sample and sample.lower() not in sent.lower():    # ⑤ 核对：样品名要在窗口里
                 stats['sample_bad'] += 1
                 sample = ''
