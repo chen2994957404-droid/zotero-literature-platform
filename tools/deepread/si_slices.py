@@ -41,9 +41,10 @@ _SKIP_HEAD = re.compile(r'^\s*(supporting information|supplementary (information
                         r'references?|supplementary references|bibliography|author\w*|acknowledg\w*|abstract|'
                         r'notes? and references)\s*:?\s*$', re.I)
 _SUPPLIER_RE = re.compile(r'\b(purchased|obtained|supplied|provided) (from|by)|sigma|aldrich|used (as received|without)|'
-                          r'\bMw\b|\bMn\b|molecular weight|purity|\d+\s*%\s*(purity)?', re.I)
+                          r'\bMw\b|\bMn\b|molecular weight|purity|\d+\s*%\s*purity', re.I)
 _ACTION_RE = re.compile(r'\b(was|were) (added|dissolved|stirred|mixed|heated|cooled|poured|cast|cured|dried|washed|'
                         r'precipitated|filtered|charged|degassed|reacted|placed|kept|allowed)\b|\bunder (nitrogen|argon|vacuum)\b', re.I)
+_SYN_VERB = re.compile(r'\b(was|were) (added|dissolved|stirred|mixed|poured|cast|precipitated|charged)\b', re.I)
 _PIPE_RE = re.compile(r'^\s*\|.*\|\s*$', re.M)
 
 
@@ -82,6 +83,8 @@ def body_kind(p):
         return 'figures'
     if _SUPPLIER_RE.search(p) and not _ACTION_RE.search(p):
         return 'materials'
+    if _INSTR_PAT.search(p) and not _SYN_VERB.search(p):     # 仪器段先于合成段判：「10 mg 样品以 10 °C/min 加热」是测试条件不是合成
+        return 'methods'
     if _QUANT_PAT.search(p) and _ACTION_RE.search(p):
         return 'synthesis'
     if _INSTR_PAT.search(p):
