@@ -233,9 +233,14 @@ def read_main(parsed_dir, out_html, provider='deepseek', model=None,
         units = []
         if paper_key:
             from shared.kernel import units_store
+            from tools.deepread import profile as _profile
             units = units_store.load(paper_key)                     # 单元库有事实就当清单（2026-09-22）
             if units:
                 log(f'  单元库：{units_store.stats(units)}')
+            prof = _profile.load(paper_key)                          # 类型画像有就听它的（综述与否不再硬猜）
+            if prof and prof.get('type'):
+                meta['paper_type'] = prof['type']
+                log(f'  类型画像：{_profile.ZH.get(prof["type"], prof["type"])}')
         content, st = sectioned.compose(md, si_md or '', figs, meta, _chat, log=log, model=model,
                                         local=local, cache=cache, units=units)
         log(f'LLM {round(time.time()-t0,1)}s 输出{len(content)}字（分段）')

@@ -125,16 +125,28 @@ def _unwrap(text):
     return re.sub(r'(?<!\n)\n(?!\n)', ' ', text)
 
 
-def candidates(md, si_md=''):
-    """[(where, 句序, 从句)]：正文方法节 + SI 全文里像步骤的句子，切从句，封顶 MAX_STEPS。"""
-    out = []
-    for where, text in (('main', _methods_text(md) if md else ''), ('si', _drop_nonbody(si_md) if si_md else '')):
+_CAPTION_RE = re.compile(r'(?m)^\s*(?:Figure|Fig\.?)\s*S?\d+[^\n]{20,600}')
+
+
+def _captions(md):
+    return '\n\n'.join(m.group(0) for m in _CAPTION_RE.finditer(md or ''))
+
+
+def candidates(md, si_md='', paper_type=None):
+    """[(where, 句序, 从句)]：正文方法节 + SI 全文里像步骤的句子，切从句，封顶 MAX_STEPS。
+    器件 / 机理类论文（类型画像）处理条件常写在图注里（「压 50/100/200 kPa 60 s」），图注也算候选。"""
+    out, seen = [], set()
+    srcs = [('main', _methods_text(md) if md else ''), ('si', _drop_nonbody(si_md) if si_md else '')]
+    if paper_type in ('device', 'mechanism'):
+        srcs.append(('caption', _captions(md) + '\n\n' + _captions(si_md)))
+    for where, text in srcs:
         text = _unwrap(scan.clean_body(text))
         for i, (_, _, s) in enumerate(_sentences.split(text)):
             s = ' '.join(s.split())
             if is_step(s):
                 for c in clauses(s):
-                    if _STEP_RE.search(c):
+                    if _STEP_RE.search(c) and c not in seen:      # 同一句可能既在正文又在图注来源里，只要一次
+                        seen.add(c)
                         out.append((where, i, c))
     return out[:MAX_STEPS]
 
@@ -187,10 +199,10 @@ def _ask(chat, sent, model):
     return _parse(raw)
 
 
-def extract_paper(md, chat, model, log=print, si_md=''):
+def extract_paper(md, chat, model, log=print, si_md='', paper_type=None):
     """一篇 → 动作列表 + 统计。"""
     t0 = time.time()
-    cands = candidates(md, si_md)
+    cands = candidates(md, si_md, paper_type=paper_type)
     stats = {'cands': len(cands), 'no_answer': 0, 'empty': 0, 'secs': 0.0}
     with ThreadPoolExecutor(max_workers=PARALLEL) as pool:
         answers = list(pool.map(lambda c: _ask(chat, c[2], model), cands))
@@ -206,6 +218,14 @@ def extract_paper(md, chat, model, log=print, si_md=''):
         steps.append({'where': where, 'order': len(steps) + 1, 'sent': sent, **v})
     stats['secs'] = round(time.time() - t0, 1)
     return steps, stats
+
+
+def _paper_type(pid):
+    """类型画像（curated/<id>/profile.json）里的 type；没有就 None。只读一个小 JSON，不依赖 deepread。"""
+    try:
+        return json.load(io.open(paths.profile(pid), encoding='utf-8')).get('type')
+    except Exception:
+        return None
 
 
 def to_units(steps, model):
@@ -229,7 +249,7 @@ def extract_to_store(pid, model, log=print):
     md = io.open(paths.fulltext(pid), encoding='utf-8').read()
     sp = paths.si_fulltext(pid)
     si = io.open(sp, encoding='utf-8').read() if os.path.exists(sp) else ''
-    steps, st = extract_paper(md, chat, model, log, si_md=si)
+    steps, st = extract_paper(md, chat, model, log, si_md=si, paper_type=_paper_type(pid))
     units = to_units(steps, model)
     merged = units_store.merge(pid, units, producer=PRODUCER)
     log('  %s：%d 条动作入库（库里现有 %s）· %ss' % (pid, len(units), units_store.stats(merged), st['secs']))

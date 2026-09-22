@@ -294,7 +294,7 @@ def review(content, md, si_md, chat_json, meta=None, log=print, local=False, poi
     `fig_map` 是 {【图i】标记号: 图号}（compose 统计里的 numbered），不给就当两者相同。"""
     meta = meta or {}
     outline = _ol.build_outline(md, si_md=si_md or '')
-    is_rev = _sec.is_review_doc(meta.get('title', ''), outline, meta.get('journal', ''))
+    is_rev = _sec.is_review_doc(meta.get('title', ''), outline, meta.get('journal', ''), paper_type=meta.get('paper_type'))
     source = (md or '') + '\n' + (si_md or '')
     secs = {}
     all_flagged = []

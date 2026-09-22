@@ -107,8 +107,10 @@ _REVIEW_JOURNALS = ('chem. rev', 'chemical review', 'chem. soc. rev', 'chemical 
                     'polym. rev', 'polymer reviews', 'macromol. rapid', 'chem soc rev', 'chem rev')
 
 
-def is_review_doc(title, outline, journal=''):
-    """按综述的写法来写吗：标题像综述、刊物只登综述、或者全篇没有合成/方法节。"""
+def is_review_doc(title, outline, journal='', paper_type=None):
+    """按综述的写法来写吗：有类型画像（profile.json，2026-09-22）就听它的；没有才硬猜：标题像综述、刊物只登综述、或者全篇没有合成/方法节。"""
+    if paper_type:
+        return paper_type == 'review'
     if is_review({'title': title or ''}):
         return True
     if any(j in (journal or '').lower() for j in _REVIEW_JOURNALS):
@@ -762,7 +764,7 @@ def compose(md, si_md, figs, meta, chat, log=print, model=None, local=False, cac
     _LOCAL['on'] = bool(local)
     notes = dict(notes or {})
     outline = _ol.build_outline(md, si_md=si_md)
-    review = is_review_doc(meta.get('title', ''), outline, meta.get('journal', ''))
+    review = is_review_doc(meta.get('title', ''), outline, meta.get('journal', ''), paper_type=meta.get('paper_type'))
     gloss = glossary(md)
     source = (md or '') + '\n' + (si_md or '')
     # 指纹里带上篇幅参数：2026-09-15 第二轮评测把深解预算收紧了，缓存却按旧参数原样复用，
