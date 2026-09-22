@@ -158,6 +158,12 @@ def _units(pid, say):
     try:
         with jobs.track(pid, 'units', producer='fine_fact', model=model):
             n, _ = fine_fact.extract_to_store(pid, model, log=lambda *a: None)
+            if n == 0:                          # 材料论文不可能一个数都没有：0 条 = 模型没答上（喂错模型 / Ollama 没起），当失败记，隔天再试
+                try:
+                    os.remove(up)               # 空库不能留：留着就永远「已做过」
+                except OSError:
+                    pass
+                raise RuntimeError('0 条数值事实，多半是模型没答（%s）' % model)
     except Exception as e:
         say(f'  × 单元库失败：{type(e).__name__}: {str(e)[:120]}')
         return f'fail:{type(e).__name__}'
