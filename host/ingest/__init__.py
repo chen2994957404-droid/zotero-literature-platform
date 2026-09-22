@@ -70,7 +70,8 @@ def backlog():
         need_si = r['si'] and not r['si_fulltext'] and not _failed_recently(pid, 'parse_si')
         need_outline = r['fulltext'] and not os.path.isfile(paths.outline(pid))
         need_units = r['fulltext'] and not os.path.isfile(paths.units(pid)) and not _failed_recently(pid, 'units')
-        if need_main or need_si or need_outline or need_units:
+        need_profile = r['fulltext'] and not os.path.isfile(paths.profile(pid)) and not _failed_recently(pid, 'profile')
+        if need_main or need_si or need_outline or need_units or need_profile:
             out.append(pid)
     return out
 
@@ -141,6 +142,24 @@ def _outline(pid, say):
         say(f'  ✓ 骨架 {len(d.get("sections") or [])} 节')
         return 'done'
     return 'fail:outline'
+
+
+def _profile(pid, say):
+    """论文类型画像（2026-09-22）：合成 / 器件 / 机理 / 综述，4B 一次四选一，几秒钟。有 full.md 且没有 profile.json 才做。"""
+    if not os.path.isfile(paths.fulltext(pid)) or os.path.isfile(paths.profile(pid)):
+        return 'skip'
+    from shared.kernel.config import get_model
+    from tools.deepread import profile
+    model = get_model('PROFILE_MODEL')
+    t0 = time.time()
+    try:
+        with jobs.track(pid, 'profile', producer=profile.PRODUCER, model=model):
+            r = profile.classify_to_store(pid, model, log=lambda *a: None)
+    except Exception as e:
+        say(f'  × 画像失败：{type(e).__name__}: {str(e)[:120]}')
+        return f'fail:{type(e).__name__}'
+    say(f'  ✓ 画像 {profile.ZH[r["type"]]}（{r["source"]}）{time.time() - t0:.0f}s')
+    return 'done'
 
 
 def _units(pid, say):
@@ -219,6 +238,7 @@ def ingest_one(pid, vectors=None, say=print, prefix=''):
     coll, have_main, have_si = vectors or (None, set(), set())
     out['vector'] = _vectorize(pid, coll, have_main, have_si, say)
     out['units'] = _units(pid, say)
+    out['profile'] = _profile(pid, say)
     return out
 
 
@@ -233,7 +253,7 @@ def run_backlog(limit=None, say=print, with_vectors=True):
     抢不到锁就返回全零，不排队不报错。
     """
     from shared.kernel.proc_lock import single_instance, release
-    counts = {'parsed': 0, 'si_parsed': 0, 'outlined': 0, 'vectorized': 0, 'units': 0, 'failed': 0}
+    counts = {'parsed': 0, 'si_parsed': 0, 'outlined': 0, 'vectorized': 0, 'units': 0, 'profile': 0, 'failed': 0}
     if not single_instance(LOCK):
         say('另一份落地流水线正在跑，这次让开')
         return counts
@@ -275,6 +295,7 @@ def _run_backlog(limit, say, with_vectors, counts):
         counts['outlined'] += r['outline'] == 'done'
         counts['vectorized'] += r['vector'] == 'done'
         counts['units'] += r.get('units') == 'done'
+        counts['profile'] += r.get('profile') == 'done'
         counts['failed'] += any(str(v).startswith('fail') for v in r.values())
     if todo:
         heartbeat.done('ingest')

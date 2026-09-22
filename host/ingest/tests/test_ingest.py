@@ -43,6 +43,12 @@ def env(tmp_path, monkeypatch):
 
     monkeypatch.setattr('tools.extract.fine_fact.extract_to_store', fake_units)
     monkeypatch.setattr('tools.extract.fine_action.extract_to_store', fake_units)
+
+    def fake_profile(pid, model, log=print):
+        io.open(paths.profile(pid), 'w', encoding='utf-8').write('{"type": "synthesis"}')
+        return {'type': 'synthesis', 'source': 'model'}
+
+    monkeypatch.setattr('tools.deepread.profile.classify_to_store', fake_profile)
     return calls
 
 
