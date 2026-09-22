@@ -369,6 +369,11 @@ def units(key):
     return os.path.join(paper_dir(key), 'units.json')
 
 
+def profile(key):
+    """curated/<key>/profile.json —— 论文类型画像（合成 / 器件 / 机理 / 综述），落地流水线用小模型判一次，谁都能读。"""
+    return os.path.join(paper_dir(key), 'profile.json')
+
+
 def review_report(key):
     """curated/<key>/review.json —— 审稿报告：精读写完后另一个模型对着原文逐句判的结果（可重建）。
 
