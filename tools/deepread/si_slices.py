@@ -68,14 +68,12 @@ def is_heading(p):
 
 
 def head_kind(h):
-    """标题属于哪一份材料。先问原料，再问合成，最后问表征；都不像 → ''。"""
+    """标题属于哪一份材料。恰好像一种才算；两可或都不像 → ''（按段落长相分）。"""
     h = h.lstrip('#').strip()
     if _SKIP_HEAD.match(h):
         return 'skip'
-    for kind in ('materials', 'synthesis', 'methods'):
-        if _KIND_RE[kind].search(h):
-            return kind
-    return ''
+    hits = [kind for kind in ('materials', 'synthesis', 'methods') if _KIND_RE[kind].search(h)]
+    return hits[0] if len(hits) == 1 else ''       # 「Materials and Methods」「Material Characterization」两可 → 逐段看长相
 
 
 def body_kind(p):
