@@ -186,7 +186,8 @@ def _call_llm(sysp, user, model, log=print, source='', what='SI'):
             continue
         out = re.sub(r'<think>[\s\S]*?</think>', '', out or '').strip()
         if len(out) < MIN_PART:
-            if '未给出' in out or '没有' in out:        # 这块材料本来就没东西（脚注 / 坐标轴标签之类切进来的），模型如实说了，不算失败
+            if '未给出' in out and i > 1:              # 连问两次都说「未给出」：这块材料本来就没东西（脚注 / 坐标轴标签之类切进来的），不算失败
+                log(f'  {what} 模型两次都说未给出：{out[:40]}')
                 return ''
             log(f'  {what} 第{i}次输出仅 {len(out)} 字，重试…')
             continue
