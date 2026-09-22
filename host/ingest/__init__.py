@@ -153,14 +153,15 @@ def _units(pid, say):
         return 'skip'
     from shared.kernel.config import get_model
     from tools.extract import fine_fact
+    model = get_model('UNITS_MODEL')            # ⚠ 别用 EXTRACT_MODEL：主力机 .env 里它还是老的云端名，喂给 Ollama 就是 404 → 0 条（2026-09-22 踩过）
     t0 = time.time()
     try:
-        with jobs.track(pid, 'units', producer='fine_fact'):
-            n, _ = fine_fact.extract_to_store(pid, get_model('EXTRACT_MODEL'), log=lambda *a: None)
+        with jobs.track(pid, 'units', producer='fine_fact', model=model):
+            n, _ = fine_fact.extract_to_store(pid, model, log=lambda *a: None)
     except Exception as e:
         say(f'  × 单元库失败：{type(e).__name__}: {str(e)[:120]}')
         return f'fail:{type(e).__name__}'
-    say(f'  ✓ 单元库 {n} 条数值事实 {time.time() - t0:.0f}s')
+    say(f'  ✓ 单元库 {n} 条数值事实 {time.time() - t0:.0f}s（{model}）')
     return 'done'
 
 
