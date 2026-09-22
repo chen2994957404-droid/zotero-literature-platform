@@ -512,6 +512,35 @@ def wrap_material(md, outline):
         _by_kind(md, outline, (_ol.CONCLUSION,), CAP_CONCL))
 
 
+def facts_for(units, material, location_hint=''):
+    """单元库里落在这份材料里的数值事实 → 清单项（「FC-EtFe 的 tensile strength = 7.11 MPa」）。
+
+    清单先行（2026-09-17）原来只列光杆的「数 + 单位」；单元库（2026-09-22）里的事实带样品和性质，
+    清单就能写成「谁的什么是多少」，模型漏得更少、也不会张冠李戴。判「落在这份材料里」：
+    引用片段在材料里出现，或 location 提到这张图。没有单元库 / 一条都对不上 → 调用方退回光杆清单。
+    """
+    if not units:
+        return []
+    mat = ' '.join((material or '').split()).lower()
+    out, seen = [], set()
+    for u in units:
+        if u.get('type') != 'fact':
+            continue
+        f, src = u.get('fields') or {}, u.get('src') or {}
+        quote = ' '.join(str(src.get('quote', '')).split()).lower()
+        # 引用片段的头 / 中 / 尾任一 35 字符落在材料里就算（清洗差异会让整段对不上）
+        probes = [quote[:35], quote[len(quote) // 2 - 17:len(quote) // 2 + 18], quote[-35:]] if len(quote) >= 35 else [quote]
+        hit = any(pr and pr in mat for pr in probes) or (location_hint and location_hint.lower() in str(src.get('location', '')).lower())
+        if not hit:
+            continue
+        item = '%s%s%s' % (('%s 的 ' % f['sample']) if f.get('sample') else '', f.get('property', ''),
+                           (' = %s' % f['value']) if f.get('value') else '')
+        if item and item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
 def _lead(chat, md, outline, meta, review, gloss, source, model, log, note=''):
     sysp = _sub(prompts.load('deepread', PROMPTS['lead']),
                 DOC_VERB='综述用"系统总结了 / 系统梳理了"' if review else '研究论文用"报道了 / 开发了 / 提出了"')
@@ -525,7 +554,7 @@ def _lead(chat, md, outline, meta, review, gloss, source, model, log, note=''):
     return normalize('lead', d.get('导读', '')), [normalize('intro', p) for p in _paras(d.get('引言', ''))]
 
 
-def _exp(chat, md, si_md, outline, review, gloss, source, model, log, note=''):
+def _exp(chat, md, si_md, outline, review, gloss, source, model, log, note='', units=None):
     if review:
         p1, p2, p3 = '本文涉及的主要材料体系包括：', '代表性制备/加工路线是：', '评价与表征方法包括：'
     else:
@@ -534,8 +563,8 @@ def _exp(chat, md, si_md, outline, review, gloss, source, model, log, note=''):
     sysp = _sub(prompts.load('deepread', PROMPTS['exp']), P1=p1, P2=p2, P3=p3, Q1=q1)
     material = exp_material(md, si_md, outline, review)
     user = gloss + '\n\n' + material
-    must = _nums.must_numbers(material, cap=MUST_CAP_EXP)
-    user += _nums.checklist_block(must)
+    must = facts_for(units, material) or _nums.must_numbers(material, cap=MUST_CAP_EXP)
+    user += _nums.checklist_block(must[:MUST_CAP_EXP])
 
     def parse(raw):
         d = _parse_tagged(raw)
@@ -551,14 +580,14 @@ def _exp(chat, md, si_md, outline, review, gloss, source, model, log, note=''):
     return _paras(d.get('实验', '')), d.get('Q1', '')
 
 
-def _one_fig(chat, md, outline, num, n_figs, gloss, source, model, log, note=''):
+def _one_fig(chat, md, outline, num, n_figs, gloss, source, model, log, note='', units=None):
     # 综述 20 多张图时按 DEEP_MIN 也要 4000+ 字（第四轮实测篇幅比 2.27）：图超过 12 张下限再降一档
     per = max(DEEP_MIN if n_figs <= 12 else 150, min(DEEP_MAX, DEEP_BUDGET // max(1, n_figs)))
     sysp = _sub(prompts.load('deepread', PROMPTS['fig']), DEEP_LEN='约 %d 字' % per)
     material = fig_material(md, outline, num)
     user = '这是图 %d（全文共 %d 张图）。\n%s\n\n%s' % (num, n_figs, gloss, material)
-    must = _nums.must_numbers(material, cap=MUST_CAP_FIG)
-    user += _nums.checklist_block(must)
+    must = facts_for(units, material, location_hint='Fig. %d' % num) or _nums.must_numbers(material, cap=MUST_CAP_FIG)
+    user += _nums.checklist_block(must[:MUST_CAP_FIG])
 
     def parse(raw):
         ps = [normalize('fig_idx', p) for p in _paras(re.sub(r'<think>[\s\S]*?</think>', '', raw or ''))]
@@ -682,13 +711,14 @@ class _Cache:
             pass
 
 
-def compose(md, si_md, figs, meta, chat, log=print, model=None, local=False, cache=None, notes=None):
+def compose(md, si_md, figs, meta, chat, log=print, model=None, local=False, cache=None, notes=None, units=None):
     """一篇 → (精读 markdown 内容, 统计)。`figs` 是裁图结果（只用它的张数与顺序），
     `meta` 是 title/authors/journal/year/doi，`chat` 是 llm_client.chat 或假替身。
     `local=True` 全部调用走本机 Ollama（温度 0，答案可复现），不花一分钱。
     `cache` 是分栏缓存文件路径：断了从断处接；改了哪栏的提示词只重跑哪栏。
     `notes` 是审稿（review.notes_for）打回来的 {栏 key: 回炉提示}：那几栏作废缓存、
     带着提示重写；key 里的 fig:<n> 用的是【图n】标记号，这里换成图号找缓存。
+    `units` 是这篇的单元库（shared.kernel.units_store.load）：有数值事实就拿它当各栏的清单（带样品与性质），没有退回光杆数字清单。
     """
     _LOCAL['on'] = bool(local)
     notes = dict(notes or {})
@@ -701,11 +731,11 @@ def compose(md, si_md, figs, meta, chat, log=print, model=None, local=False, cac
     # 指纹里也带上术语表的版本（建表时间 + 词数）：2026-09-18 金标 v7 十篇分数与 v6 一字不差 ——
     # 术语表塞进了提示词，缓存却按旧指纹原样复用，等于什么都没跑。
     gt = domain_glossary()
-    fp = '%s|%s|%s|deep=%d-%d-%d|must=%d-%d-%s|gloss=%s-%d' % ('|'.join('%s=%s' % kv for kv in sorted(PROMPTS.items())),
+    fp = '%s|%s|%s|deep=%d-%d-%d|must=%d-%d-%s|gloss=%s-%d|units=%d' % ('|'.join('%s=%s' % kv for kv in sorted(PROMPTS.items())),
                                      model or '', 'local' if local else 'route',
                                      DEEP_BUDGET, DEEP_MIN, DEEP_MAX,
                                      MUST_CAP_FIG, MUST_CAP_EXP, MISS_TOL,
-                                     gt.get('_built', ''), len(gt))
+                                     gt.get('_built', ''), len(gt), len(units or []))
     C = _Cache(cache, fp)
     n_figs = len(figs)
     log('  按%s写；%d 张图；骨架 %d 节；术语 %d 条%s' % (
@@ -720,7 +750,7 @@ def compose(md, si_md, figs, meta, chat, log=print, model=None, local=False, cac
 
     part = None if notes.get('exp') else C.get('exp')
     if not part:
-        part = list(_exp(chat, md, si_md, outline, review, gloss, source, model, log, note=notes.get('exp', '')))
+        part = list(_exp(chat, md, si_md, outline, review, gloss, source, model, log, note=notes.get('exp', ''), units=units))
         C.put('exp', part)
     exp, q1 = part[0], part[1]
 
@@ -731,7 +761,7 @@ def compose(md, si_md, figs, meta, chat, log=print, model=None, local=False, cac
         note = notes.get('fig:%d' % i, '')                  # 审稿按标记号（裁图序号）指认
         part = None if note else C.get('fig:%d' % num)
         if not part:
-            part = list(_one_fig(chat, md, outline, num, len(numbered), gloss, source, model, log, note=note))
+            part = list(_one_fig(chat, md, outline, num, len(numbered), gloss, source, model, log, note=note, units=units))
             C.put('fig:%d' % num, part)
         fig_paras.append((i, part[0], part[1]))
         if part[1]:

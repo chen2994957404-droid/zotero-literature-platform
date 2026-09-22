@@ -275,3 +275,20 @@ def test_术语表_注入与错译重写(monkeypatch):
     assert '公众号惯用的译名是' in calls[0]['user'] and 'PBS=聚硼硅氧烷' in calls[0]['user'] and 'PDMS=' in calls[0]['user']
     assert any('PBS 应为「聚硼硅氧烷」（你写成了「聚苯乙烯」）' in c['user'] for c in calls)
     assert '聚苯乙烯' not in content
+
+
+def test_有单元库时清单用带样品性质的事实_没有退回光杆数字():
+    from shared.kernel import units_store as U
+    units = [U.make_unit('fact', {'sample': 'PBS', 'property': 'tensile strength', 'value': '12.5 MPa', 'unit': 'MPa'},
+                         {'where': 'main', 'quote': 'PBS elastomer with tensile strength 12.5 MPa and 850% elongation'},
+                         {'producer': 'fine_fact', 'model': 'm', 'ver': 1})]
+    mat = 'We report a polyborosiloxane (PBS) elastomer with tensile strength 12.5 MPa and 850% elongation.'
+    assert sectioned.facts_for(units, mat) == ['PBS 的 tensile strength = 12.5 MPa']
+    assert sectioned.facts_for([], mat) == [] and sectioned.facts_for(units, 'nothing here') == []
+    assert sectioned.facts_for(units, 'nothing here', location_hint='Fig. 1') == []
+    fig_fact = U.make_unit('fact', {'sample': 'PBS', 'property': "young's modulus", 'value': '4.1 MPa', 'unit': 'MPa'},
+                           {'where': 'main', 'quote': 'The stress–strain curves (Figure 1) show a modulus of 4.1 MPa. Figure 1b compares three ratios.'},
+                           {'producer': 'fine_fact', 'model': 'm', 'ver': 1})
+    calls = []
+    sectioned.compose(MD, '', FIGS, META, fake_chat(calls), log=lambda *a: None, units=units + [fig_fact])
+    assert any("PBS 的 young's modulus = 4.1 MPa" in c['user'] for c in calls)      # 图 1 那栏的清单来自单元库

@@ -154,7 +154,7 @@ def render_html(content):
             + '\n'.join(out) + '</body></html>')
 
 
-def _reviewed(content, md, si_md, figs, meta, model, local, cache, paper_key, log, fig_map=None):
+def _reviewed(content, md, si_md, figs, meta, model, local, cache, paper_key, log, fig_map=None, units=None):
     """审稿 → 不过就带意见回炉一次 → 复审 → 报告落盘。审稿自己出错不拖垮精读（照原稿交）。"""
     from tools.deepread import review as _rev
     from shared.adapters.llm_client import chat_json
@@ -167,7 +167,7 @@ def _reviewed(content, md, si_md, figs, meta, model, local, cache, paper_key, lo
             if notes:
                 log('  审稿打回 %d 栏（%s），回炉' % (len(notes), '、'.join(notes)))
                 content, st = sectioned.compose(md, si_md, figs, meta, _chat, log=log, model=model,
-                                                local=local, cache=cache, notes=notes)
+                                                local=local, cache=cache, notes=notes, units=units)
                 rep = _rev.review(content, md, si_md, chat_json, meta, log=log, local=local, points=rep['points'],
                                   fig_map=st.get('numbered'))
                 rep['rounds'] = 2
@@ -230,12 +230,18 @@ def read_main(parsed_dir, out_html, provider='deepseek', model=None,
         meta = {'title': title_en, 'authors': authors, 'doi': doi, 'journal': journal, 'year': year}
         from shared.kernel import paths as _paths
         cache = _paths.deepread_parts(paper_key) if paper_key else None
+        units = []
+        if paper_key:
+            from shared.kernel import units_store
+            units = units_store.load(paper_key)                     # 单元库有事实就当清单（2026-09-22）
+            if units:
+                log(f'  单元库：{units_store.stats(units)}')
         content, st = sectioned.compose(md, si_md or '', figs, meta, _chat, log=log, model=model,
-                                        local=local, cache=cache)
+                                        local=local, cache=cache, units=units)
         log(f'LLM {round(time.time()-t0,1)}s 输出{len(content)}字（分段）')
         if REVIEW and len(content) >= MIN_OK:
             content = _reviewed(content, md, si_md or '', figs, meta, model, local, cache, paper_key, log,
-                                fig_map=st.get('numbered'))
+                                fig_map=st.get('numbered'), units=units)
         if len(content) < MIN_OK:
             raise DeepreadFailed(
                 f'分段精读拼出来只有 {len(content)} 字，判定失败，不写盘。请检查模型/额度。')

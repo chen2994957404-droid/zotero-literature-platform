@@ -69,7 +69,8 @@ def backlog():
         need_main = r['pdf'] and not r['fulltext'] and not _failed_recently(pid, 'parse')
         need_si = r['si'] and not r['si_fulltext'] and not _failed_recently(pid, 'parse_si')
         need_outline = r['fulltext'] and not os.path.isfile(paths.outline(pid))
-        if need_main or need_si or need_outline:
+        need_units = r['fulltext'] and not os.path.isfile(paths.units(pid)) and not _failed_recently(pid, 'units')
+        if need_main or need_si or need_outline or need_units:
             out.append(pid)
     return out
 
@@ -142,6 +143,27 @@ def _outline(pid, say):
     return 'fail:outline'
 
 
+def _units(pid, say):
+    """单元库（2026-09-22）：数值事实 → curated/<id>/units.json。本地 4B，一篇约一分钟，免费。
+    有 full.md 且没有 units.json（或 units.json 比 full.md 旧）才做；失败记进状态库，隔天再试。"""
+    if not os.path.isfile(paths.fulltext(pid)):
+        return 'skip'
+    up = paths.units(pid)
+    if os.path.isfile(up) and os.path.getmtime(up) >= os.path.getmtime(paths.fulltext(pid)):
+        return 'skip'
+    from shared.kernel.config import get_model
+    from tools.extract import fine_fact
+    t0 = time.time()
+    try:
+        with jobs.track(pid, 'units', producer='fine_fact'):
+            n, _ = fine_fact.extract_to_store(pid, get_model('EXTRACT_MODEL'), log=lambda *a: None)
+    except Exception as e:
+        say(f'  × 单元库失败：{type(e).__name__}: {str(e)[:120]}')
+        return f'fail:{type(e).__name__}'
+    say(f'  ✓ 单元库 {n} 条数值事实 {time.time() - t0:.0f}s')
+    return 'done'
+
+
 def _vectorize(pid, coll, have_main, have_si, say):
     """精层向量化（正文 + SI）。coll 为 None 时跳过（向量库没开）。"""
     if coll is None:
@@ -188,6 +210,7 @@ def ingest_one(pid, vectors=None, say=print, prefix=''):
     out['outline'] = _outline(pid, say)
     coll, have_main, have_si = vectors or (None, set(), set())
     out['vector'] = _vectorize(pid, coll, have_main, have_si, say)
+    out['units'] = _units(pid, say)
     return out
 
 
@@ -202,7 +225,7 @@ def run_backlog(limit=None, say=print, with_vectors=True):
     抢不到锁就返回全零，不排队不报错。
     """
     from shared.kernel.proc_lock import single_instance, release
-    counts = {'parsed': 0, 'si_parsed': 0, 'outlined': 0, 'vectorized': 0, 'failed': 0}
+    counts = {'parsed': 0, 'si_parsed': 0, 'outlined': 0, 'vectorized': 0, 'units': 0, 'failed': 0}
     if not single_instance(LOCK):
         say('另一份落地流水线正在跑，这次让开')
         return counts
@@ -243,6 +266,7 @@ def _run_backlog(limit, say, with_vectors, counts):
         counts['si_parsed'] += r['si'] == 'done'
         counts['outlined'] += r['outline'] == 'done'
         counts['vectorized'] += r['vector'] == 'done'
+        counts['units'] += r.get('units') == 'done'
         counts['failed'] += any(str(v).startswith('fail') for v in r.values())
     if todo:
         heartbeat.done('ingest')

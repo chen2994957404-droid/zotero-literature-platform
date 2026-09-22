@@ -24,7 +24,7 @@ BACKOFF = 600            # 一轮全失败（服务没起来）时退避多久
 
 def _report(c, say=print):
     say(f'做完：解析 {c["parsed"]} 篇 · SI {c["si_parsed"]} 篇 · 骨架 {c["outlined"]} 篇 · '
-          f'向量化 {c["vectorized"]} 篇 · 失败 {c["failed"]} 篇')
+          f'向量化 {c["vectorized"]} 篇 · 单元库 {c.get("units", 0)} 篇 · 失败 {c["failed"]} 篇')
     bad = ingest.failures()
     if bad:
         say('等重试的（一天后再试）：')
