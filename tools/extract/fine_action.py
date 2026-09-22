@@ -48,7 +48,9 @@ _VERB = (r'add(?:ed)?|dissolv(?:ed|e)|stir(?:red)?|mix(?:ed)?|heat(?:ed)?|cool(?
          r'suspend(?:ed)?|swell(?:ed)?|swollen|extrud(?:ed|e)|lyophili[sz](?:ed|e)|extract(?:ed)?|neutrali[sz](?:ed|e)|'
          r'incubat(?:ed|e)|seal(?:ed)?|kept|maintain(?:ed)?|allow(?:ed)? to|left to|obtain(?:ed)?|yield(?:ed|ing)?|afford(?:ed)?')
 _STEP_RE = re.compile(r'\b(?:was|were|is|are|then|and|subsequently|finally|first)\s+(?:%s)\b|\b(?:%s)\s+(?:in|into|with|at|for|under|to)\b' % (_VERB, _VERB), re.I)
-_INSTR_RE = re.compile(r'\b(spectra|spectrum|spectrometer|diffractometer|microscop|rheometer|analyzer|instrument|were (?:recorded|measured|characterized|performed|conducted|carried out|collected) (?:on|with|using|by)|tensile test|DSC|TGA|DMA|SEM|TEM|XRD|FTIR|FT-IR|NMR|GPC)\b', re.I)
+_INSTR_RE = re.compile(r'\b(spectra|spectrum|spectromet\w*|diffractomet\w*|microscop\w*|rheomet\w*|analy[sz]er|instrument\w*|'
+                       r'(?:were|was) (?:recorded|measured|characterized|performed|conducted|carried out|collected|obtained|acquired|imaged) (?:on|with|using|by)|'
+                       r'tensile test\w*|DSC|TGA|DMA|SEM|TEM|AFM|XRD|FTIR|FT-IR|NMR|GPC|UV-vis)\b', re.I)
 _QTY_RE = re.compile(r'\d+(?:\.\d+)?\s*(?:g|mg|kg|mL|ml|L|μL|µL|uL|mmol|mol|M|wt|vol|mol ?%|%|°C|℃|K|h|hr|hours?|min|s|rpm|MPa|kPa|bar|Pa|nm|μm|mm|cm|W|V|eq|equiv)\b')
 _SPLIT_RE = re.compile(r',\s*(?=(?:and|then|followed by|after which|before)\s+\w)|;\s+|\.\s+(?=Then\b|Subsequently\b|Afterwards\b|Finally\b)', re.I)
 _NUM_RE = re.compile(r'\d+(?:\.\d+)?')
@@ -116,11 +118,18 @@ def clauses(sent):
     return out
 
 
+def _unwrap(text):
+    """MineRU 的硬换行会把「12\nh」「Temperatu\nre」切开，pySBD 又在换行处断句 → 条件丢单位、句子只剩半截。
+    段内单个换行：两边都是小写字母就是词被切开（直接接上），否则当空格。"""
+    text = re.sub(r'(?<=[a-z])\n(?=[a-z])', '', text)
+    return re.sub(r'(?<!\n)\n(?!\n)', ' ', text)
+
+
 def candidates(md, si_md=''):
     """[(where, 句序, 从句)]：正文方法节 + SI 全文里像步骤的句子，切从句，封顶 MAX_STEPS。"""
     out = []
     for where, text in (('main', _methods_text(md) if md else ''), ('si', _drop_nonbody(si_md) if si_md else '')):
-        text = scan.clean_body(text)
+        text = _unwrap(scan.clean_body(text))
         for i, (_, _, s) in enumerate(_sentences.split(text)):
             s = ' '.join(s.split())
             if is_step(s):
@@ -152,14 +161,14 @@ def verify(sent, d):
         m = _STEP_RE.search(sent)
         out['action'] = m.group(0).strip() if m else ''
     for k in ('amounts', 'conditions'):
-        for item in re.split(r',\s*(?![^()]*\))', d.get(k, '')):
+        for item in re.split(r',\s+(?![^()]*\))', d.get(k, '')):
             item = item.strip()
             if not item:
                 continue
             nums = _NUM_RE.findall(item)
             if nums and all(n in sl for n in nums) or (not nums and _in(sent, item)):
                 out[k].append(item)
-    for m_ in re.split(r',\s*(?![^()]*\))', d.get('materials', '')):
+    for m_ in re.split(r',\s+(?![^()]*\))', d.get('materials', '')):
         m_ = m_.strip()
         if m_ and _in(sent, m_) and len(m_) <= 80:
             out['materials'].append(m_)
