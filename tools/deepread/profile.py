@@ -78,6 +78,9 @@ def fallback(meta, outline):
 def classify(md, meta, chat, model):
     """→ {'type', 'raw', 'source': 'model'|'fallback', 'features'}。"""
     text, feats, o = material(md, meta)
+    from tools.deepread.sectioned import _REVIEW_JOURNALS
+    if any(j in (meta.get('journal') or '').lower() for j in _REVIEW_JOURNALS):   # 只登综述的刊物：不用问（40 篇实测 4B 把 Acc. Chem. Res. 判成合成）
+        return {'type': 'review', 'raw': '', 'source': 'journal', 'features': feats}
     raw = ''
     try:
         raw = (chat(SYS, text, provider='ollama', model=model, temperature=0.0, max_tokens=8, num_ctx=NUM_CTX, thinking=False) or '').strip()
