@@ -29,7 +29,7 @@ from shared.domain import numcheck
 PROMPT_VER = 4
 PRODUCER = 'si_deepread'
 
-PROMPTS = {'materials': 'si_materials@v1', 'synthesis': 'si_synthesis@v1', 'methods': 'si_methods@v1', 'figures': 'si_figures@v1'}
+PROMPTS = {'materials': 'si_materials@v2', 'synthesis': 'si_synthesis@v2', 'methods': 'si_methods@v2', 'figures': 'si_figures@v2'}   # v2：明写「整段用中文」—— v1 试跑三栏整段照抄英文原句
 TITLES = {'materials': '【原料与规格】', 'synthesis': '【合成步骤】', 'methods': '【表征与测试条件】', 'figures': '【补充图表要点】'}
 EMPTY = {'materials': 'SI 未给出原料规格。', 'synthesis': 'SI 未给出合成细节。', 'methods': 'SI 未给出测试条件。', 'figures': 'SI 没有图表说明。'}
 
@@ -151,6 +151,13 @@ def problems(text, source):
 
 
 MIN_PART = 40       # 一块材料的产出低于这个字数当没写
+_CJK = re.compile(r'[一-鿿]')
+
+
+def _mostly_english(text):
+    """汉字占字母数不到 1/4 = 整段照抄了英文（v1 试跑三栏都这样）。门槛比正文栏（1/2）松：原料栏满是化学品名，本来就一半拉丁字母。"""
+    letters = re.sub(r'[\s\d\W]', '', text or '')
+    return len(letters) > 40 and len(_CJK.findall(letters)) / len(letters) < 0.25
 
 
 def _call_llm(sysp, user, model, log=print, source='', what='SI'):
@@ -171,9 +178,13 @@ def _call_llm(sysp, user, model, log=print, source='', what='SI'):
             continue
         out = re.sub(r'<think>[\s\S]*?</think>', '', out or '').strip()
         if len(out) < MIN_PART:
+            if '未给出' in out or '没有' in out:        # 这块材料本来就没东西（脚注 / 坐标轴标签之类切进来的），模型如实说了，不算失败
+                return ''
             log(f'  {what} 第{i}次输出仅 {len(out)} 字，重试…')
             continue
         probs = problems(out, source)
+        if _mostly_english(out):
+            probs.insert(0, '整段是英文 —— 全部用中文重写，只保留化学品名 / 缩写 / 仪器型号的英文')
         miss = numcheck.missing_numbers(out, must) if must else []
         if len(miss) > 0.25 * len(must):
             probs.append('漏了材料里的这些数：%s，把它们写进对应的句子里（带单位、带对象）' % '、'.join(miss[:12]))
