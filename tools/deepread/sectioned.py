@@ -541,6 +541,42 @@ def facts_for(units, material, location_hint=''):
     return out
 
 
+def _in_material(src, mat, location_hint=''):
+    quote = ' '.join(str(src.get('quote', '')).split()).lower()
+    probes = [quote[:35], quote[len(quote) // 2 - 17:len(quote) // 2 + 18], quote[-35:]] if len(quote) >= 35 else [quote]
+    return any(pr and pr in mat for pr in probes) or bool(location_hint and location_hint.lower() in str(src.get('location', '')).lower())
+
+
+def steps_for(units, material):
+    """单元库里的合成动作（fine_action，2026-09-22）→ 实验栏的步骤清单 + 这些步骤里的数。
+
+    返回 (步骤行列表, 数值清单)。步骤行形如「3. were dissolved：3,5-Bis(...) isocyanate、compound 4（5.0 g、19.6 mmol）@ 50 mL acetonitrile → 1」。
+    只取引用句落在这份材料里的；没有动作单元 → ([], [])。
+    """
+    if not units:
+        return [], []
+    mat = ' '.join((material or '').split()).lower()
+    acts = [u for u in units if u.get('type') == 'action' and _in_material(u.get('src') or {}, mat)]
+    acts.sort(key=lambda u: int((u.get('fields') or {}).get('order') or 0))
+    lines, nums = [], []
+    for i, u in enumerate(acts, 1):
+        f = u.get('fields') or {}
+        mats = f.get('materials') or []
+        line = '%d. %s' % (i, f.get('action', ''))
+        if mats:
+            line += '：' + '、'.join(mats if isinstance(mats, list) else [str(mats)])
+        if f.get('amounts'):
+            line += '（%s）' % f['amounts']
+        if f.get('conditions'):
+            line += ' @ ' + f['conditions']
+        if f.get('product'):
+            line += ' → ' + f['product']
+        lines.append(line)
+        for part in (f.get('amounts', ''), f.get('conditions', '')):
+            nums.extend(x.strip() for x in str(part).split(',') if re.search(r'\d', x))
+    return lines, nums
+
+
 def _lead(chat, md, outline, meta, review, gloss, source, model, log, note=''):
     sysp = _sub(prompts.load('deepread', PROMPTS['lead']),
                 DOC_VERB='综述用"系统总结了 / 系统梳理了"' if review else '研究论文用"报道了 / 开发了 / 提出了"')
@@ -563,8 +599,11 @@ def _exp(chat, md, si_md, outline, review, gloss, source, model, log, note='', u
     sysp = _sub(prompts.load('deepread', PROMPTS['exp']), P1=p1, P2=p2, P3=p3, Q1=q1)
     material = exp_material(md, si_md, outline, review)
     user = gloss + '\n\n' + material
-    must = facts_for(units, material) or _nums.must_numbers(material, cap=MUST_CAP_EXP)
-    user += _nums.checklist_block(must[:MUST_CAP_EXP])
+    steps, step_nums = steps_for(units, material)
+    if steps:                                        # 单元库有制备步骤：先给步骤清单（按原文顺序），（2）那段照它写
+        user += '\n\n【原文里的制备步骤清单】（按这个顺序写（2），每步带上它的量与条件）\n' + '\n'.join(steps[:40])
+    must = (facts_for(units, material) + step_nums) or _nums.must_numbers(material, cap=MUST_CAP_EXP)
+    user += _nums.checklist_block(list(dict.fromkeys(must))[:MUST_CAP_EXP])
 
     def parse(raw):
         d = _parse_tagged(raw)
