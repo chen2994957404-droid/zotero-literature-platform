@@ -20,3 +20,4 @@ playwright==1.62.0
 pint==0.26.1
 gliner==0.2.29
 pysbd==0.3.4
+json-repair==0.63.4

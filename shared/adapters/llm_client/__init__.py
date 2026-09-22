@@ -537,10 +537,23 @@ def _parse_json_lenient(txt):
     try:
         return json.loads(txt)
     except Exception:
-        m = re.search(r'\{.*\}', txt, re.S)
-        if m:
-            return json.loads(m.group(0))
-        raise LLMError('LLM 输出无法解析为 JSON')
+        pass
+    m = re.search(r'\{.*\}', txt, re.S)
+    body = m.group(0) if m else txt
+    try:
+        return json.loads(body)
+    except Exception:
+        pass
+    # 本地模型常在字符串值里塞没转义的引号（「原文说 "12.5 MPa"」）—— 2026-09-22 审稿校准一轮 31 批整批作废。
+    # 交给 json_repair（现成库）修：它按 JSON 语法容错重扫，比自己写补丁靠谱。
+    try:
+        import json_repair
+        d = json_repair.loads(body)
+        if isinstance(d, dict) and d:
+            return d
+    except Exception:
+        pass
+    raise LLMError('LLM 输出无法解析为 JSON')
 
 
 def chat_json(system, user, provider=None, model=None, key=None,
