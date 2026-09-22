@@ -186,6 +186,7 @@ def _ask(chat_json, sysp, user, local):
 
 
 _TOKEN = re.compile(r'\d+(?:\.\d+)?|[A-Za-z][A-Za-z0-9\-]{2,}')
+_NUM_TOKEN = re.compile(r'\d+(?:\.\d+)?')
 _EMB_CACHE = {}        # 材料 hash → (段落列表, 向量列表)：同一栏的几批句子共用一次段落向量化
 TOP_K = 3              # 每句取最像的几段
 
@@ -216,7 +217,7 @@ def _para_vectors(material):
 
 
 def _cap_lexical(material, claims, cap):
-    keys = {t.lower() for c in claims for t in _TOKEN.findall(c)}
+    keys = {t.lower() for c in claims for t in _TOKEN.findall(c)}      # 数也在 keys 里，词面这条路本来就锚着数
     paras = [p for p in re.split(r'\n\s*\n', material) if p.strip()]
     scored = [(len(keys & {t.lower() for t in _TOKEN.findall(p)}), i) for i, p in enumerate(paras)]
     picked, used = set(), 0
@@ -254,9 +255,19 @@ def _cap(material, claims, cap=CAP_LOCAL):
         sims = sorted(((cosine(c, v), i) for i, v in enumerate(pv)), reverse=True)[:TOP_K]
         for s, i in sims:
             best[i] = max(best.get(i, 0.0), s)
+    # 数字锚定（2026-09-22）：待审句里的数所在的段**必须**进窗口。语义检索挑不到它 ——
+    #「浸泡一个月仍保持 2.79 MPa」这句的依据段在原文别处，挑不到就判成编造（第四轮剩下的误报多半是这种）。
+    nums = {n for c in claims for n in _NUM_TOKEN.findall(c) if len(n) >= 3}
     picked, used = set(), 0
+    if nums:
+        for i, p in enumerate(paras):
+            if used + len(p) > cap // 2:
+                break
+            if any(n in p for n in nums):
+                picked.add(i)
+                used += len(p) + 2
     for i, s in sorted(best.items(), key=lambda x: -x[1]):
-        if used + len(paras[i]) > cap:
+        if i in picked or used + len(paras[i]) > cap:
             continue
         picked.add(i)
         used += len(paras[i]) + 2
