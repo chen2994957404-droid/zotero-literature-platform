@@ -154,10 +154,18 @@ MIN_PART = 40       # 一块材料的产出低于这个字数当没写
 _CJK = re.compile(r'[一-鿿]')
 
 
+_EN_FUNC = re.compile(r'\b(the|was|were|and|of|with|to|at|for|in|is|are|by|from|using|into|under|after|as|on|or|that|then)\b', re.I)
+
+
 def _mostly_english(text):
-    """汉字占字母数不到 1/4 = 整段照抄了英文（v1 试跑三栏都这样）。门槛比正文栏（1/2）松：原料栏满是化学品名，本来就一半拉丁字母。"""
+    """整段照抄了英文（v1 试跑三栏都这样）：英文虚词密度高 + 汉字少。
+    不能只看汉字比例 —— 原料栏满是化学品名，中文写法也一半拉丁字母；虚词（the / was / were）才是「英文句子」的标志。"""
     letters = re.sub(r'[\s\d\W]', '', text or '')
-    return len(letters) > 40 and len(_CJK.findall(letters)) / len(letters) < 0.25
+    if len(letters) <= 40:
+        return False
+    cjk = len(_CJK.findall(letters)) / len(letters)
+    func = len(_EN_FUNC.findall(text)) / max(1, len(text) / 100)      # 每百字符的英文虚词数
+    return cjk < 0.5 and func >= 2
 
 
 def _call_llm(sysp, user, model, log=print, source='', what='SI'):
