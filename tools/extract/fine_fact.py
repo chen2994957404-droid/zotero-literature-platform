@@ -16,6 +16,7 @@
 用法：python -m tools.extract.fine_fact --tag u1 --model gemma3:1b        单模型跑同批
       python -m tools.extract.fine_fact --tag u1 --model qwen3.5:4b --分区 qwen3.5:4b   先句子分区再问（第 0 步）
       python -m tools.extract.fine_fact --tag u1 --models gemma3:1b,qwen3.5:2b,qwen3.5:4b   多模型对照
+      python -m tools.extract.fine_fact KEY1 KEY2 --落库 --model qwen3.5:4b   正式入口：数值事实 → curated/<id>/units.json
 产物：data/state/unit_study/<tag>/fine_fact_<model>.json + fine_fact_report.md。只读，不写别处。
 """
 import os, sys
@@ -428,7 +429,9 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None, sample_
             if not sample:
                 stats['sample_unspec'] += 1
             facts.append({'sample': sample, 'property': pi, 'value': c['raw'], 'unit': c['unit'],
-                          'norm': _nums.norm(str(c['value'])), 'location': c.get('location', ''), 'ctx': c['context'][:160]})
+                          'norm': _nums.norm(str(c['value'])), 'location': c.get('location', ''), 'ctx': c['context'][:160],
+                          'where': 'si' if src_text is si_text else 'main', 'pos': round(c['pos'] / max(1, len(src_text)), 3),
+                          'sample_in_window': bool(sample), 'dimension_ok': True})
     stats['secs'] = round(time.time() - t0, 1)
     stats['dropped'] = dropped
     return facts, stats
@@ -553,11 +556,50 @@ def _write(d, report):
     io.open(os.path.join(d, 'fine_fact_report.md'), 'w', encoding='utf-8').write('\n'.join(L) + '\n')
 
 
+PRODUCER, VER = 'fine_fact', 1
+
+
+def to_units(facts, model):
+    """抽出来的事实 → 单元库里的 fact 单元（形状见 shared.domain.schema.units）。"""
+    from shared.kernel import units_store as _u
+    by = {'producer': PRODUCER, 'model': model, 'ver': VER, 'when': time.strftime('%Y-%m-%d')}
+    out = []
+    for f in facts:
+        try:
+            out.append(_u.make_unit('fact', {'sample': f['sample'], 'property': f['property'], 'value': f['value'],
+                                             'unit': f['unit'], 'condition': ''},
+                                    {'where': f.get('where', 'main'), 'quote': f['ctx'], 'pos': f.get('pos'), 'location': f.get('location', '')},
+                                    by, {'dimension_ok': f.get('dimension_ok', True), 'sample_in_window': f.get('sample_in_window', False)}))
+        except ValueError:
+            continue
+    return out
+
+
+def extract_to_store(pid, model, log=print, sample_model=None):
+    """正式入口：一篇 → 数值事实单元 → 并进 `curated/<id>/units.json`（本生产者的旧单元先清掉）。返回 (单元数, 路径)。"""
+    from shared.adapters.llm_client import chat
+    from shared.kernel import units_store
+    md = io.open(paths.fulltext(pid), encoding='utf-8').read()
+    sp = paths.si_fulltext(pid)
+    si = io.open(sp, encoding='utf-8').read() if os.path.exists(sp) else ''
+    facts, st = extract_paper(md, chat, model, log, si_md=si, sample_model=sample_model)
+    units = to_units(facts, model)
+    merged = units_store.merge(pid, units, producer=PRODUCER)
+    log('  %s：%d 条数值事实入库（库里现有 %s）· %ss' % (pid, len(units), units_store.stats(merged), st['secs']))
+    return len(units), paths.units(pid)
+
+
 def main():
     if wants_help():
         print(__doc__)
         return 0
     from shared.kernel.cli import positionals
+    if flag('--落库'):
+        model = opt('--model') or 'qwen3.5:4b'
+        for pid in positionals():
+            n, path = extract_to_store(pid, model, sample_model=opt('--样品模型') or None)
+            print('%s → %d 条 → %s' % (pid, n, path))
+        return 0
     tag = opt('--tag') or 'u1'
     models = [m.strip() for m in (opt('--models') or opt('--model') or 'gemma3:1b').split(',') if m.strip()]
     zm = opt('--分区')

@@ -295,6 +295,27 @@ def fulltext(key, max_chars=MAX_CHARS):
             'truncated': truncated, 'why_empty': ''}
 
 
+def units(key, type_=None, limit=200):
+    """这篇的**单元库**（2026-09-22）：拆出来的最小信息单元（数值事实 / 实体 / 主张…），每条带原文引用与生产者。
+
+    抽取 / 精读 / 审稿都往里写，这里只读。`type_` 限定一类；没有文件返回空。
+    """
+    from shared.kernel import units_store
+    rows = units_store.load(key)
+    if type_:
+        rows = [u for u in rows if u.get('type') == type_]
+    return {'key': key, 'stats': units_store.stats(units_store.load(key)), 'units': rows[:limit], 'total': len(rows)}
+
+
+def render_units(d):
+    L = ['%s 的单元库：%s（共 %d 条）' % (d['key'], d['stats'] or '空', d['total'])]
+    for u in d['units']:
+        f = u.get('fields') or {}
+        body = ' · '.join('%s=%s' % (k, v) for k, v in f.items() if v)
+        L.append('- [%s] %s  ←「%s」' % (u['type'], body[:120], (u.get('src') or {}).get('quote', '')[:60]))
+    return '\n'.join(L)
+
+
 def outline(key, refresh=False):
     """这篇的**骨架**：每节的地址、类别、字数、含多少数字/表/图。
 

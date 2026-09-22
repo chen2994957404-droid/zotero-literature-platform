@@ -98,6 +98,14 @@ def main():
         print(library.render_item(library.item(key)))
         return 0
 
+    if action in ('units', '单元'):
+        key = pos(1)
+        if not key:
+            print('用法：python -m tools.library 单元 <文献id> [--type fact]')
+            return 2
+        print(library.render_units(library.units(key, type_=opt('--type'))))
+        return 0
+
     if action == 'pdf':
         key = pos(1)
         if not key:

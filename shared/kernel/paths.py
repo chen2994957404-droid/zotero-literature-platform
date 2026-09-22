@@ -363,6 +363,12 @@ def deepread_parts(key):
     return os.path.join(paper_dir(key), 'deepread_parts.json')
 
 
+def units(key):
+    """curated/<key>/units.json —— **单元库**：这篇拆出来的最小信息单元（实体 / 数值事实 / 动作 / 图面板 / 主张…），
+    每条带原文引用与生产者。精读、抽取、审稿、问答都读它（2026-09-22 立，形状见 shared.domain.schema.units）。可重建。"""
+    return os.path.join(paper_dir(key), 'units.json')
+
+
 def review_report(key):
     """curated/<key>/review.json —— 审稿报告：精读写完后另一个模型对着原文逐句判的结果（可重建）。
 
