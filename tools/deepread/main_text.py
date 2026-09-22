@@ -155,12 +155,13 @@ def render_html(content):
 
 
 def _reviewed(content, md, si_md, figs, meta, model, local, cache, paper_key, log, fig_map=None, units=None):
+    # units 一路传到审稿：实验栏的材料要附上制备步骤原句（2026-09-22）
     """审稿 → 不过就带意见回炉一次 → 复审 → 报告落盘。审稿自己出错不拖垮精读（照原稿交）。"""
     from tools.deepread import review as _rev
     from shared.adapters.llm_client import chat_json
     from tools.deepread import sectioned
     try:
-        rep = _rev.review(content, md, si_md, chat_json, meta, log=log, local=local, fig_map=fig_map)
+        rep = _rev.review(content, md, si_md, chat_json, meta, log=log, local=local, fig_map=fig_map, units=units)
         rep['rounds'] = 1
         if not rep['passed']:
             notes = _rev.notes_for(rep)
@@ -169,7 +170,7 @@ def _reviewed(content, md, si_md, figs, meta, model, local, cache, paper_key, lo
                 content, st = sectioned.compose(md, si_md, figs, meta, _chat, log=log, model=model,
                                                 local=local, cache=cache, notes=notes, units=units)
                 rep = _rev.review(content, md, si_md, chat_json, meta, log=log, local=local, points=rep['points'],
-                                  fig_map=st.get('numbered'))
+                                  fig_map=st.get('numbered'), units=units)
                 rep['rounds'] = 2
         rep['needs_human'] = not rep['passed']
         if rep['needs_human']:

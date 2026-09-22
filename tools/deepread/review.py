@@ -151,17 +151,16 @@ def html_to_content(html):
 
 # ── 材料 ─────────────────────────────────────────────────────────────
 
-def _material(key, md, si_md, outline, review, fig_map=None):
+def _material(key, md, si_md, outline, review, fig_map=None, units=None):
     if key == 'lead':
         return _sec.lead_material(md, outline)
     if key == 'exp':
-        return _sec.exp_material(md, si_md, outline, review)
+        return _sec.exp_material(md, si_md, outline, review, units=units)
     if key.startswith('fig:'):
         i = int(key[4:])
         return _sec.fig_material(md, outline, (fig_map or {}).get(i, i))   # 标记号 → 图号
     if key == 'wrap':
         return _sec.wrap_material(md, outline)
-    # 范文整篇算一栏：正文 + SI 一起给（2026-09-20 校准：范文的实验细节多半来自 SI，只给正文会把它们全判成编造）
     return (_ol.scan.clean_body(md or '') + '\n\n' + (si_md or ''))[:CAP_SOURCE]
 
 
@@ -350,9 +349,10 @@ def coverage(chat_json, points, content, local=False, log=print):
 
 # ── 主入口 ───────────────────────────────────────────────────────────
 
-def review(content, md, si_md, chat_json, meta=None, log=print, local=False, points=None, with_cover=True, fig_map=None):
+def review(content, md, si_md, chat_json, meta=None, log=print, local=False, points=None, with_cover=True, fig_map=None, units=None):
     """一篇精读 → 审稿报告。`points` 传上一轮抽好的要点清单就不再抽（回炉后复审省一次调用）。
-    `fig_map` 是 {【图i】标记号: 图号}（compose 统计里的 numbered），不给就当两者相同。"""
+    `fig_map` 是 {【图i】标记号: 图号}（compose 统计里的 numbered），不给就当两者相同。
+    `units` 是这篇的单元库：实验栏的材料会附上制备步骤的原句（2026-09-22，见 sectioned.exp_material）。"""
     meta = meta or {}
     outline = _ol.build_outline(md, si_md=si_md or '')
     is_rev = _sec.is_review_doc(meta.get('title', ''), outline, meta.get('journal', ''), paper_type=meta.get('paper_type'))
@@ -363,7 +363,7 @@ def review(content, md, si_md, chat_json, meta=None, log=print, local=False, poi
         claims = split_claims(text)
         if not claims:
             continue
-        verdicts = _judge(chat_json, claims, _material(key, md, si_md, outline, is_rev, fig_map), local, log, name)
+        verdicts = _judge(chat_json, claims, _material(key, md, si_md, outline, is_rev, fig_map, units), local, log, name)
         flagged = [v for v in verdicts if v['v'] in BAD]
         all_flagged += flagged
         secs[key] = {'name': name, 'n': len(claims), 'verdicts': verdicts,
@@ -496,7 +496,7 @@ def _hit(report, injected):
 
 def calibrate(keys, chat_json, log=print, tag='v1', local=False, out_dir=None):
     """拿范文量审稿：干净范文的误报率 + 塞错范文的查全率。`out_dir` 不给就只返回不落盘。"""
-    from shared.kernel import paths
+    from shared.kernel import paths, units_store
     rows = []
     for k in keys:
         rp, fp = paths.reference(k), paths.fulltext(k)
@@ -507,11 +507,12 @@ def calibrate(keys, chat_json, log=print, tag='v1', local=False, out_dir=None):
         md = io.open(fp, encoding='utf-8').read()
         sp = paths.si_fulltext(k)
         si = io.open(sp, encoding='utf-8').read() if os.path.exists(sp) else ''
-        log('%s 干净范文…' % k)
-        clean = review(ref, md, si, chat_json, log=log, local=local, with_cover=False)
+        units = units_store.load(k)
+        log('%s 干净范文…（单元库 %s）' % (k, units_store.stats(units) if units else '无'))
+        clean = review(ref, md, si, chat_json, log=log, local=local, with_cover=False, units=units)
         bad, injected = corrupt(ref, seed=sum(ord(c) for c in k) % 1000)   # 别用 hash()：每个进程随机，两轮塞的错不一样
         log('%s 塞错 %d 处…' % (k, len(injected)))
-        dirty = review(bad, md, si, chat_json, log=log, local=local, with_cover=False)
+        dirty = review(bad, md, si, chat_json, log=log, local=local, with_cover=False, units=units)
         hits = _hit(dirty, injected)
         rows.append({'key': k, 'clean_claims': clean['n_judged'], 'clean_flags': clean['n_flagged'],
                      'clean_rate': clean['flag_rate'], 'clean_slice_miss': clean['n_slice_miss'],

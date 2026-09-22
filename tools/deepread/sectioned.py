@@ -476,8 +476,13 @@ def _methods_paragraphs(md, cap=CAP_EXP, min_hits=2):
     return out
 
 
-def exp_material(md, si_md, outline, review):
-    """实验/Q1 栏依据的原文：方法节（认不出来退到主体）+ 表 + SI 的实验细节。"""
+def exp_material(md, si_md, outline, review, units=None):
+    """实验/Q1 栏依据的原文：方法节（认不出来退到主体）+ 表 + SI 的实验细节 + **单元库里制备步骤的原句**。
+
+    最后那一块是 2026-09-22 审稿校准第三轮加的：长 SI 的合成节靠后，按 CAP_SI 截一刀就没了，
+    于是范文里「化合物 1：5.0 g / 50 mL / 80 ℃ 12 h」被判成编造（12.2% 误报里的大头）。
+    动作单元（fine_action）已经把这些步骤连原句一起抽出来了，直接附上去 —— 附的是**原文句子**，不是我们的加工，审稿据此判是公平的。
+    """
     if review:
         mat = _by_kind(md, outline, (_ol.BODY, _ol.RESULTS, _ol.DISCUSSION, _ol.SYNTHESIS, _ol.METHODS), CAP_BODY)
     else:
@@ -495,7 +500,27 @@ def exp_material(md, si_md, outline, review):
             si_txt = _ol.scan.clean_body(si_md)[:CAP_SI]
         si_tabs = _tables(si_md, si_ol, cap=3000)
         si_part = '\n\n【补充材料 SI 的实验细节】\n' + si_txt + ('\n\n【SI 里的表】\n' + si_tabs if si_tabs else '')
-    return '【正文的实验/方法部分】\n' + mat + ('\n\n【正文里的表】\n' + tabs if tabs else '') + si_part
+    steps = step_quotes(units)
+    step_part = ('\n\n【原文里的制备步骤原句（单元库）】\n' + steps) if steps else ''
+    return '【正文的实验/方法部分】\n' + mat + ('\n\n【正文里的表】\n' + tabs if tabs else '') + si_part + step_part
+
+
+def step_quotes(units, cap=CAP_SI):
+    """单元库里全部动作单元的原句，按顺序去重拼起来（不判它落在哪份材料里 —— 这是给审稿兜底用的）。"""
+    if not units:
+        return ''
+    out, seen, used = [], set(), 0
+    acts = [u for u in units if u.get('type') == 'action']
+    acts.sort(key=lambda u: int((u.get('fields') or {}).get('order') or 0))
+    for u in acts:
+        q = ' '.join(str((u.get('src') or {}).get('quote', '')).split())
+        k = q.lower()[:60]
+        if not q or k in seen or used + len(q) > cap:
+            continue
+        seen.add(k)
+        out.append(q)
+        used += len(q) + 1
+    return '\n'.join(out)
 
 
 def fig_material(md, outline, num):
