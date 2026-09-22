@@ -95,9 +95,12 @@ def test_拆句_剥前缀_丢问句与短句():
     assert cs == ['PDMS 提供柔性骨架结构。']
 
 
-def test_范文没有标题时整个算一栏():
-    secs = RV.sections_of('近期，某某报道了一种材料。\n\n它的强度是 10 MPa。')
-    assert [k for k, _, _ in secs] == ['all']
+def test_范文没有标题时按范式起笔分栏():
+    ref = ('近期，某某报道了一种材料。\n\n它的强度是 10 MPa。\n\n（1）主要实验药品：A、B。\n\n图1 拉伸曲线。\n\n'
+           '图2 回弹。\n\nQuestion 2：为什么性能优异？\n\n总之，很好。\n\n通俗理解：像橡皮筋。')
+    secs = RV.sections_of(ref)
+    assert [k for k, _, _ in secs] == ['lead', 'exp', 'fig:1', 'fig:2', 'wrap'], secs
+    assert '橡皮筋' not in ' '.join(t for _, _, t in secs)          # 通俗理解不审
 
 
 def test_html_还原成同形_markdown():

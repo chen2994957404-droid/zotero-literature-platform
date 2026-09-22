@@ -251,21 +251,9 @@ def match_paper(ref_units, src_units, embed):
 
 
 def _batched(embed, size=48, max_chars=1200):
-    """Ollama 的 /api/embed 一次塞几百条会 400（2026-09-21 实测）：分批、截长；单批再失败就逐条。"""
-    def run(texts):
-        out = []
-        for i in range(0, len(texts), size):
-            batch = [t[:max_chars] for t in texts[i:i + size]]
-            try:
-                out += embed(batch)
-            except Exception:
-                for t in batch:
-                    try:
-                        out += embed([t])
-                    except Exception:
-                        out.append([0.0])
-        return out
-    return run
+    """分批 embed 已下沉到 shared.adapters.embed.embed_batched（review 也用）；这里留个同形状的壳。"""
+    from shared.adapters.embed import embed_batched
+    return lambda texts: embed_batched(texts, size=size, max_chars=max_chars)
 
 
 def coverage(tag, embed=None, log=print):

@@ -33,26 +33,7 @@ _LATIN = re.compile(r'[A-Za-z][A-Za-z0-9\-]{2,}')
 
 # ── 范文分栏（人写的，靠标记词）─────────────────────────────────────
 
-def column_of(para, prev):
-    """范文段落 → 栏名。靠范式里的固定起笔：近期(导读) / (1)主要实验药品(实验) / Question(Q1/Q2) / 图N(图) / 总之 / 通俗理解。"""
-    p = para.strip()
-    if p.startswith('近期') or '报道了' in p[:60] or '系统总结了' in p[:60]:
-        return '导读'
-    if re.match(r'^[（(]?1[）)]?\s*主要实验药品|^[（(]1[）)]', p) or p.startswith('主要实验药品'):
-        return '实验'
-    if p.startswith('Question') or p.startswith('问题'):
-        return 'Q2' if '性能' in p[:40] and '优异' in p[:60] else 'Q1'
-    if re.match(r'^[▲▼]?\s*图\s*\d', p) or re.match(r'^\[?Fig', p, re.I):
-        return '图'
-    if p.startswith('总之'):
-        return '总之'
-    if p.startswith('通俗理解'):
-        return '通俗理解'
-    if p.startswith('文献信息') or p.startswith('DOI') or p.startswith('原文链接'):
-        return '文献信息'
-    if prev in ('导读',) and len(p) > 60:
-        return '引言'
-    return prev if prev and prev != '文献信息' else '引言'      # 文献信息不粘：老版式头部就有 DOI 行，粘上整篇就没了
+from tools.deepread.columns import column_of      # 范文分栏搬到 columns.py（2026-09-22，审稿也要按栏审范文）
 
 
 def paragraphs(ref_text):

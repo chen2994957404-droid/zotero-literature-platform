@@ -83,6 +83,31 @@ def embed(texts):
     return [d['embedding'] for d in rows]
 
 
+def embed_batched(texts, size=48, max_chars=1200):
+    """分批、截长的 embed：Ollama 的 /api/embed 一次塞几百条会 400（2026-09-21 实测）；单批再失败就逐条，逐条也失败给 [0.0] 占位。"""
+    out = []
+    for i in range(0, len(texts), size):
+        batch = [t[:max_chars] for t in texts[i:i + size]]
+        try:
+            out += embed(batch)
+        except Exception:
+            for t in batch:
+                try:
+                    out += embed([t])
+                except Exception:
+                    out.append([0.0])
+    return out
+
+
+def cosine(a, b):
+    if len(a) != len(b) or len(a) < 2:
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    na = sum(x * x for x in a) ** 0.5
+    nb = sum(y * y for y in b) ** 0.5
+    return dot / (na * nb) if na and nb else 0.0
+
+
 def strip_references(text):
     """截掉参考文献及之后部分（References/Bibliography/参考文献/Supporting Information），
     只留正文，让检索聚焦研究内容。截得太狠（正文<20%）则退回原文（防误截）。"""

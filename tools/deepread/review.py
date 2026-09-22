@@ -47,7 +47,8 @@ PURPOSE = 'REVIEW'
 # （热压条件数字不对、断裂功倍数写反、图 4a 的内容归到 4b）。线定在 8%：比人写的差才回炉、才进待人看。
 FLAG_TOL = 0.08        # 整篇标出率（distorted + unsupported / 已判句数）超过它不过关
 MISS_TOL = 2           # 漏掉的要点（missed，不含 partial）超过它不过关
-BATCH = 25             # 一次交给审稿模型的句数
+BATCH = 25             # 一次交给审稿模型的句数（云端）
+BATCH_LOCAL = 10       # 本地一批 10 句：25 句时 9.7B 后半批不答（2026-09-20 校准：99 句漏判 23）
 CAP_SOURCE = 60000     # 整篇复核时原文截到这么多字符（云端）
 # 本地档（2026-09-20 起默认）：qwen3.5 9.7B 的窗口给 24k token，材料压到 20000 字符；
 # 「整篇复核」在本地退化成「前 20000 字符复核」—— 讨论段在后面的会漏，slice_miss 会偏少，校准时看这项。
@@ -73,7 +74,10 @@ def sections_of(content):
     """
     paras = [p.strip() for p in content.split('\n') if p.strip()]
     if not any(_H2.match(p) for p in paras):
-        return [('all', '全文', '\n'.join(p for p in paras if not p.startswith('# ')))]
+        # 人写的范文：按范式起笔分栏（2026-09-22，校准第一轮误报大头之一是「整篇一栏」——引言常识没有宽容规则、材料也挑不准）
+        from tools.deepread.columns import reference_sections
+        secs = reference_sections(content)
+        return secs or [('all', '全文', '\n'.join(p for p in paras if not p.startswith('# ')))]
     out, cur, buf = [], None, []
 
     def flush():
@@ -183,21 +187,39 @@ def _ask(chat_json, sysp, user, local):
 
 
 _TOKEN = re.compile(r'\d+(?:\.\d+)?|[A-Za-z][A-Za-z0-9\-]{2,}')
+_EMB_CACHE = {}        # 材料 hash → (段落列表, 向量列表)：同一栏的几批句子共用一次段落向量化
+TOP_K = 3              # 每句取最像的几段
 
 
-def _cap(material, claims, cap=CAP_LOCAL):
-    """材料压到本地窗口装得下：装得下原样给；装不下**按句子挑段落** —— 段落里和这批句子共享的
-    数字 / 英文词（样品编号、缩写、化学名）越多越靠前，按原文顺序拼到 cap。
-    比盲目截前 20000 字符强得多：范文整篇一栏、整篇复核，讨论段都在原文后半。
-    """
-    if len(material) <= cap:
-        return material
+_EMB_OK: dict = {'v': None}
+
+
+def _embed_ok():
+    """向量服务在不在，每个进程只探一次（编程端 / 测试没有 Ollama：不能每段都去等 300 s 超时）。"""
+    if _EMB_OK['v'] is None:
+        try:
+            from shared.adapters import embed as _e
+            _EMB_OK['v'] = bool(_e.alive(timeout=3))
+        except Exception:
+            _EMB_OK['v'] = False
+    return _EMB_OK['v']
+
+
+def _para_vectors(material):
+    from shared.adapters.embed import embed_batched
+    h = hash(material)
+    if h not in _EMB_CACHE:
+        if len(_EMB_CACHE) > 8:
+            _EMB_CACHE.clear()
+        paras = [p for p in re.split(r'\n\s*\n', material) if p.strip()]
+        _EMB_CACHE[h] = (paras, embed_batched(paras))
+    return _EMB_CACHE[h]
+
+
+def _cap_lexical(material, claims, cap):
     keys = {t.lower() for c in claims for t in _TOKEN.findall(c)}
     paras = [p for p in re.split(r'\n\s*\n', material) if p.strip()]
-    scored = []
-    for i, p in enumerate(paras):
-        hits = len(keys & {t.lower() for t in _TOKEN.findall(p)})
-        scored.append((hits, i))
+    scored = [(len(keys & {t.lower() for t in _TOKEN.findall(p)}), i) for i, p in enumerate(paras)]
     picked, used = set(), 0
     for hits, i in sorted(scored, key=lambda x: (-x[0], x[1])):
         if hits == 0 and used > cap // 2:
@@ -209,11 +231,50 @@ def _cap(material, claims, cap=CAP_LOCAL):
     return '\n\n'.join(paras[i][:6000] for i in sorted(picked))[:cap]
 
 
+def _cap(material, claims, cap=CAP_LOCAL):
+    """材料压到本地窗口装得下：装得下原样给；装不下**按句子挑段落**。
+
+    2026-09-22 起用 bge-m3 语义检索（本地、跨语言）：每句取最像的 TOP_K 段，按相似度合并、按原文顺序拼到 cap。
+    第一轮校准的误报大头就是「中文句子一个英文词都没有 → 词面重合挑不到段 → 判成编造」；语义检索没有这个问题。
+    向量服务不在（编程端 / 测试）就退回词面重合那版。
+    """
+    if len(material) <= cap:
+        return material
+    if not _embed_ok():
+        return _cap_lexical(material, claims, cap)
+    try:
+        from shared.adapters.embed import embed_batched, cosine
+        paras, pv = _para_vectors(material)
+        cv = embed_batched(list(claims))
+        if not paras or not any(len(v) > 1 for v in pv) or not any(len(v) > 1 for v in cv):
+            raise RuntimeError('no vectors')
+    except Exception:
+        return _cap_lexical(material, claims, cap)
+    best = {}
+    for c in cv:
+        sims = sorted(((cosine(c, v), i) for i, v in enumerate(pv)), reverse=True)[:TOP_K]
+        for s, i in sims:
+            best[i] = max(best.get(i, 0.0), s)
+    picked, used = set(), 0
+    for i, s in sorted(best.items(), key=lambda x: -x[1]):
+        if used + len(paras[i]) > cap:
+            continue
+        picked.add(i)
+        used += len(paras[i]) + 2
+    for i in range(len(paras)):                       # 还有余量就按顺序补没挑到的段（讨论段常紧挨着）
+        if i in picked or used + len(paras[i]) > cap:
+            continue
+        picked.add(i)
+        used += len(paras[i]) + 2
+    return '\n\n'.join(paras[i][:6000] for i in sorted(picked))[:cap]
+
+
 def _judge(chat_json, claims, material, local, log, what):
     """一批句子 + 材料 → [{'claim','v','why'}]。模型漏判的句子记 v='unjudged'。"""
     out = []
-    for start in range(0, len(claims), BATCH):
-        batch = claims[start:start + BATCH]
+    size = BATCH_LOCAL if local else BATCH
+    for start in range(0, len(claims), size):
+        batch = claims[start:start + size]
         user = '【原文材料】\n%s\n\n【待审句子】\n%s' % (
             _cap(material, batch), '\n'.join('%d. %s' % (i + 1, c) for i, c in enumerate(batch)))
         try:
