@@ -35,6 +35,13 @@ def env(tmp_path, monkeypatch):
         io.open(os.path.join(out_dir, 'layout.json'), 'w').write('{}')
 
     monkeypatch.setattr('shared.adapters.pdf_parse.parse_pdf', fake_parse)
+
+    def fake_units(pid, model, log=print, sample_model=None):     # 单元库那步要本地大模型；编程端没有 → 0 条会被当失败，这里装作抽到了
+        calls['units'] = calls.get('units', 0) + 1
+        io.open(paths.units(pid), 'w', encoding='utf-8').write('{"units": [1]}')
+        return 1, paths.units(pid)
+
+    monkeypatch.setattr('tools.extract.fine_fact.extract_to_store', fake_units)
     return calls
 
 
