@@ -20,14 +20,18 @@ from shared.adapters.zotero_client import find_si
 from shared.kernel import paths, prompts
 from shared.kernel.config import get_key
 from shared.domain.figure_crop import crop_figures
-from tools.deepread.si_filter import filtered_text
+from tools.deepread import si_slices
 from shared.domain import numcheck
 
-# 提示词版本：改范式 = 新建 prompts/si_v<N+1>.txt，再把这里 +1（提示词只增不改）。
-PROMPT_VER = 3      # v3（2026-09-18）：缩写保持缩写、原文给了全称才带、不强行中文（用户定）；v2：只许照搬、禁推断，配合脚本的搪塞词与数字回查；v1 的「复现指南」让本地模型编出整套通用流程
+# 提示词版本：改范式 = 新建 prompts/si_<栏>_v<N+1>.txt，再把这里 +1（提示词只增不改）。
+# v4（2026-09-22）：拆成四栏各调一次（原料 / 逐流程合成 / 表征 / 图表），每次只喂那一栏的材料（≤ 6000 字符）——
+#   3 万字符一口气是本地模型做不好的形状，而且 80k 的 SI 直接被截。v3：缩写保持缩写；v2：只许照搬、禁推断；v1 的「复现指南」让本地模型编出整套通用流程
+PROMPT_VER = 4
 PRODUCER = 'si_deepread'
 
-SYS = prompts.load('deepread', f'si@v{PROMPT_VER}')
+PROMPTS = {'materials': 'si_materials@v1', 'synthesis': 'si_synthesis@v1', 'methods': 'si_methods@v1', 'figures': 'si_figures@v1'}
+TITLES = {'materials': '【原料与规格】', 'synthesis': '【合成步骤】', 'methods': '【表征与测试条件】', 'figures': '【补充图表要点】'}
+EMPTY = {'materials': 'SI 未给出原料规格。', 'synthesis': 'SI 未给出合成细节。', 'methods': 'SI 未给出测试条件。', 'figures': 'SI 没有图表说明。'}
 
 
 class SIFailed(Exception):
@@ -146,33 +150,71 @@ def problems(text, source):
     return out
 
 
-def _call_llm(user, model, log=print, source=''):
-    """调模型 → 查（字数 / 搪塞词 / 编数）→ 不合格带着原因重来，最多三次。三次都不干净就判失败，不写废品上盘。
+MIN_PART = 40       # 一块材料的产出低于这个字数当没写
+
+
+def _call_llm(sysp, user, model, log=print, source='', what='SI'):
+    """调一块 → 查（字数 / 搪塞词 / 编数 / 漏数）→ 不合格带着原因重来，最多三次。三次都不干净就交最后一稿（调用方统计）。
 
     与正文分栏同一套纪律（`sectioned._with_fix`）。SI 段以前只查字数，本地模型写出整段「通用复现流程」照样过关。
     """
+    must = numcheck.must_numbers(source, cap=40)
     note, last = '', ''
     for i in range(1, 4):
         budget = _BUDGETS[min(i, len(_BUDGETS)) - 1]
         try:
-            # num_ctx 只对本地 Ollama 起作用：输入截到 30000 字符（约 1 万 token）+ 几千字输出，
-            # 默认 16k 装得下但紧（踩坑 #43 那次 0 字输出就是被挤没的），给到 24k。
-            out = chat(SYS, user + note, purpose='DEEPREAD', model=model,
-                       temperature=0.3, max_tokens=budget, num_ctx=24576)
+            # num_ctx 只对本地 Ollama 起作用：一块 ≤ 6000 字符 + 几千字输出，16k 够，给 24k 留余量（踩坑 #43）。
+            out = chat(sysp, user + note, purpose='DEEPREAD', model=model,
+                       temperature=0.3, max_tokens=budget, num_ctx=24576, thinking=False)
         except Exception as e:
-            log(f'  第{i}次调用失败（额度 {budget}）：{str(e)[:120]}')
+            log(f'  {what} 第{i}次调用失败（额度 {budget}）：{str(e)[:120]}')
             continue
         out = re.sub(r'<think>[\s\S]*?</think>', '', out or '').strip()
-        if len(out) < MIN_OK:
-            log(f'  第{i}次输出仅 {len(out)} 字（<{MIN_OK}），重试…')
+        if len(out) < MIN_PART:
+            log(f'  {what} 第{i}次输出仅 {len(out)} 字，重试…')
             continue
         probs = problems(out, source)
+        miss = numcheck.missing_numbers(out, must) if must else []
+        if len(miss) > 0.25 * len(must):
+            probs.append('漏了材料里的这些数：%s，把它们写进对应的句子里（带单位、带对象）' % '、'.join(miss[:12]))
         if not probs:
             return out
         last = out
-        log(f'  第{i}次 SI 段不合格：{probs[0][:60]}…，带着原因重写')
+        log(f'  {what} 第{i}次不合格：{probs[0][:60]}…，带着原因重写')
         note = '\n\n⚠ 上一稿的问题：' + '；'.join(probs) + '。其余保持不变，按同样格式重写。'
-    raise SIFailed('SI 段三次都没通过校验（搪塞词 / 编数），不写盘 —— 宁可没有 SI 段也不要编的')
+    return last
+
+
+def compose(body, model, log=print, n_figs=0):
+    """SI 全文 → 四栏（原料 / 合成 / 表征 / 图表）。每栏按 si_slices 切出的块逐块调模型，块与块的产出拼起来。
+
+    返回 (四栏拼成的正文, 统计)。四栏全空（连图表都没有）才算失败。
+    """
+    parts = si_slices.slice(body)
+    out, st = [], {'calls': 0, 'empty': [], 'failed': []}
+    for kind in ('materials', 'synthesis', 'methods', 'figures'):
+        blocks = parts.get(kind) or []
+        if kind == 'figures' and parts.get('other'):
+            blocks = blocks + [('补充讨论', t) for _, t in parts['other']]
+        sysp = prompts.load('deepread', PROMPTS[kind])
+        texts = []
+        for j, (h, t) in enumerate(blocks, 1):
+            user = ('SI 这部分文字（%s%s）：\n\n%s' % (TITLES[kind], ('，' + h) if h else '', t))
+            if kind == 'figures' and n_figs:
+                user = f'补充材料共有 {n_figs} 张图。\n\n' + user
+            st['calls'] += 1
+            got = _call_llm(sysp, user, model, log, source=t, what='%s %d/%d' % (TITLES[kind], j, len(blocks)))
+            if got:
+                texts.append(got)
+            else:
+                st['failed'].append('%s#%d' % (kind, j))
+        if not texts:
+            st['empty'].append(kind)
+        out.append(TITLES[kind] + '\n' + ('\n\n'.join(texts) if texts else EMPTY[kind]))
+        log('  %s：%d 块 → %d 字' % (TITLES[kind], len(blocks), sum(len(x) for x in texts)))
+    if len(st['empty']) == 4:
+        raise SIFailed('SI 四栏全空（切不出材料或模型三次都没通过校验），不写盘')
+    return '\n\n'.join(out), st
 
 
 def read_si(key, out_html=None, model=None, log=print):
@@ -207,12 +249,9 @@ def read_si(key, out_html=None, model=None, log=print):
         figs = extract_docx_images(si_file, log=log)
         log(f'  docx 读出 {len(raw)} 字符（含表格），取出内嵌图 {len(figs)} 张')
 
-    body = filtered_text(raw)          # 过滤噪声（作者/单位/目录/参考文献）
-    log(f'  过滤后 {len(body)} 字符（原 {len(raw)}），补充图 {len(figs)} 张')
-
-    user = (f'补充材料共有 {len(figs)} 张图。\n\n正文:\n{body[:30000]}'
-            + numcheck.checklist_block(numcheck.must_numbers(body[:30000], cap=40)))
-    content = _call_llm(user, model, log, source=body)
+    log(f'  SI 原文 {len(raw)} 字符，补充图 {len(figs)} 张')
+    content, st = compose(raw, model, log, n_figs=len(figs))
+    log('  SI 四栏共调用 %d 次%s' % (st['calls'], ('，没写出来的块：' + '、'.join(st['failed'])) if st['failed'] else ''))
     os.makedirs(os.path.dirname(out_html), exist_ok=True)
     io.open(out_html, 'w', encoding='utf-8').write(render_html(content, figs))
     log(f'  [完成] {out_html}  {round(os.path.getsize(out_html)/1024)} KB')

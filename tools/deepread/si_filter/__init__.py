@@ -33,7 +33,7 @@ _AFFIL_PAT = re.compile(
     r'^\$?\^?\{?\d+\}?\$?\s*\.\s*(College|Institute|University|Laboratory|Department|'
     r'Academy|School|Center|Centre)\s+of', re.I)
 # 参考文献区
-_REF_PAT = re.compile(r'^\s*#{0,4}\s*(references?|bibliography)\s*$', re.I)
+_REF_PAT = re.compile(r'^\s*#{0,4}\s*(?:supplementary\s+|supporting\s+)?(references?(?: and notes)?|bibliography|notes and references)\s*$', re.I)
 # 仪器方法段
 _INSTR_PAT = re.compile(
     r'(spectra were|were (measured|recorded|performed|conducted|carried out) (on|with|using)|'
@@ -51,6 +51,14 @@ _PROTECT_PAT = re.compile(
     r'\d+\s*(\.\d+)?\s*(g|mg|mL|mmol|mol)\b|Δ?E\s*\(|=\s*\\frac)', re.I)
 
 
+_REF_ENTRY = re.compile(r'\b(19|20)\d{2}\b')
+
+
+def _looks_ref(p):
+    """像文献条目：带年份、够长、不是标题。"""
+    return len(p) > 40 and bool(_REF_ENTRY.search(p)) and not p.startswith('#')
+
+
 def classify(text):
     """把 SI 文本按段落分档。返回 [(kind, para), ...]，kind ∈ drop/core/brief/keep。
 
@@ -59,8 +67,10 @@ def classify(text):
     paras = [p.strip() for p in re.split(r'\n\s*\n', text) if p.strip()]
     out = []
     in_refs = False
-    for p in paras:
-        if _REF_PAT.match(p):
+    for i, p in enumerate(paras):
+        # 「References」只有后面真跟着文献条目才算参考文献区开始 —— 目录里的「References」一行
+        # 曾把整篇 SI 从第 10 段起全丢掉（775SQETG，2026-09-22 发现：SI 精读一直在读空气）
+        if _REF_PAT.match(p) and i + 1 < len(paras) and _looks_ref(paras[i + 1]):
             in_refs = True
         if in_refs:
             out.append(('drop', p)); continue
