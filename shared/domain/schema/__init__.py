@@ -1014,18 +1014,22 @@ def curves_measurements(curves_by_fig):
 # ── 动态键家族（2026-09-23 从 tools/paperdb 下沉：概念矩阵 + 抽取的整篇卡片两个使用者）──
 # 名字是给人看的中文家族名；正则认英文写法。概念矩阵拿它归并 dynamic_bond_type，
 # 整篇卡片拿它做「模型选的家族，原文里得有对应词」的脚本核对。
+_D = r'[\s\-–—─‒]*'      # 横线的几种写法：B-O / B–O / B—O / B─O（老记录里都出现过）
 BOND_FAMILIES = (
-    ('氢键', r'hydrogen[\s-]*bond|h[\s-]*bond|urea|urethane|amide'),
-    ('B–O 硼氧', r'boroxine|b[\s–-]*o[\s–-]*b|borate|boron[\s-]*oxygen|b–o|b-o\b|siloxane[\s-]*boron|borosiloxane|dative'),
-    ('硼酸酯', r'boronic|boronate|dioxaborolane|boron ester'),
-    ('金属配位', r'metal|coordinat|zn|fe\b|cu\b|ni\b|zr|ligand|catechol'),
-    ('二硫键', r'disulfide|disulphide|s[\s–-]*s bond'),
-    ('亚胺/席夫碱', r'imine|schiff'),
-    ('Diels–Alder', r'diels|furan|maleimide'),
-    ('离子/静电', r'ionic|electrostatic|ion[\s-]*dipole|zwitterion'),
-    ('π–π/主客体', r'π|pi[\s-]*pi|host[\s-]*guest|cyclodextrin|stacking'),
-    ('酯/氨酯交换', r'transesterif|vitrimer|carbamate exchange|urethane exchange'),
-    ('相分离/结晶', r'phase[\s-]*separat|crystall|nanodomain|hard segment'),
+    # 2026-09-23 加中文关键词：老的整篇抽取有不少记录把动态键写成中文（「氢键」「硼氧键B-O-B」），
+    # 此前词表只认英文，这些文献在概念矩阵里全落进「其它」
+    ('氢键', r'hydrogen[\s-]*bond|h[\s-]*bond|urea|urethane|amide|氢键'),
+    ('B–O 硼氧', r'boroxine|b' + _D + r'o' + _D + r'b|si' + _D + r'o' + _D + r'b|borate|boron[\s-]*oxygen|b' + _D + r'o\b'
+                  r'|siloxane[\s-]*boron|borosiloxane|dative|硼氧|硼硅氧|硼酸盐|配位键'),
+    ('硼酸酯', r'boronic|boronate|dioxaborolane|boron ester|硼酸酯'),
+    ('金属配位', r'metal|coordinat|zn|fe\b|cu\b|ni\b|zr|ligand|catechol|金属配位|金属[-–]配体|邻苯二酚'),
+    ('二硫键', r'disulfide|disulphide|s' + _D + r's bond|二硫'),
+    ('亚胺/席夫碱', r'imine|schiff|亚胺|席夫碱'),
+    ('Diels–Alder', r'diels|furan|maleimide|呋喃|马来酰亚胺'),
+    ('离子/静电', r'ionic|electrostatic|ion[\s-]*dipole|zwitterion|离子键|离子相互作用|离子交联|静电|两性离子'),
+    ('π–π/主客体', r'π|pi[\s-]*pi|host[\s-]*guest|cyclodextrin|stacking|主客体|环糊精|堆积'),
+    ('酯/氨酯交换', r'transesterif|vitrimer|carbamate exchange|urethane exchange|酯交换|类玻璃高分子'),
+    ('相分离/结晶', r'phase[\s-]*separat|crystall|nanodomain|hard segment|相分离|结晶|微相|硬段'),
 )
 
 

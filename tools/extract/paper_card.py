@@ -35,15 +35,17 @@ from shared.domain.schema import outline as _ol
 from shared.kernel import catalog, paths
 from shared.kernel.cli import flag, opt, positionals, wants_help
 
-PRODUCER, VER = 'paper_card', 1
+PRODUCER, VER = 'paper_card', 2
 NUM_CTX = 4096
 CAP = 1500
 
 # 家族名（中文，与 schema.BOND_FAMILIES 同序）→ 给模型看的英文名。英文名自己必须被该家族的正则认出（selftest 查）
 BOND_EN = {
     '氢键': 'hydrogen bond',
-    'B–O 硼氧': 'boroxine or borate B-O bond',
-    '硼酸酯': 'boronic ester',
+    # 这两个要分清（用户的 PBS 方向核心区分）：聚硼硅氧烷的 B–O–B / 硼酸盐 / B←O 配位 ≠ 有机硼酸 + 二醇的硼酸酯。
+    # v1 只写「borate B-O」「boronic ester」，4B 把 PBS 判成 boronic ester（20 篇对照 3 篇）
+    'B–O 硼氧': 'B-O-B, borate or dative B-O bond (e.g. polyborosiloxane)',
+    '硼酸酯': 'boronic ester (from a boronic acid and a diol)',
     '金属配位': 'metal coordination',
     '二硫键': 'disulfide',
     '亚胺/席夫碱': 'imine',
@@ -86,8 +88,8 @@ def material(md, meta=None):
 
 def pick_bonds(answer, text):
     """模型答的家族名 → 家族列表，只留材料里有对应关键词的。返回 (留下的, 被脚本拿掉的)。"""
-    ans = (answer or '').lower()
-    chosen = [zh for zh, en in BOND_EN.items() if en.lower() in ans or zh.lower() in ans]
+    # 用家族正则认模型的回答（小模型常把长名字抄短），不要求逐字照抄
+    chosen = [] if (answer or '').strip().lower().startswith(('none', 'err:')) else schema.bond_families(answer)
     evidence = set(schema.bond_families(text))
     return [b for b in chosen if b in evidence], [b for b in chosen if b not in evidence]
 
