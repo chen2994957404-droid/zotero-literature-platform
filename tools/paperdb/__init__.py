@@ -347,6 +347,42 @@ def _chunk_measurements():
     return out
 
 
+def _unit_measurements():
+    """读回单元库里的数值事实：`{key: [测量, ...]}`。
+
+    真相是 `curated/<key>/units.json`（`shared.kernel.units_store`，由落地流水线的本地小模型写，
+    2026-09-22 起）。与拆段抽取同一个待遇，`method='units'`：数字逐字出自原文那句话、
+    量纲过了脚本闸、样品在窗口名单里。**这是抽取收成一条线的第一步**（规划 §十五 第 3 步）：
+    新数据只从这里来，老的整篇抽取（structured/*.json）留作存量、不再新增。
+    """
+    from shared.kernel import units_store
+    out = {}
+    for key in paths.all_keys():
+        try:
+            units = units_store.load(key)
+        except Exception:
+            continue
+        rows = []
+        for u in units or []:
+            if u.get('type') != 'fact' or (u.get('checks') or {}).get('dimension_ok') is False:
+                continue
+            f, src = u.get('fields') or {}, u.get('src') or {}
+            prop, val = _flat(f.get('property')), _flat(f.get('value'))
+            if not (prop and val):
+                continue
+            parsed = schema.parse_property(f'{prop}: {val}')
+            rows.append({'sample_id': _flat(f.get('sample')) or 'main',
+                         'name': schema.normalize_property_name(prop), 'raw_name': prop,
+                         'value': parsed['value'], 'value_max': parsed['value_max'],
+                         'unit': _flat(f.get('unit')) or parsed['unit'], 'cmp': parsed['cmp'],
+                         'condition': _flat(f.get('condition')),
+                         'location': _flat(src.get('location')), 'section': _flat(src.get('where')) or 'main',
+                         'method': 'units', 'verified': '', 'raw': f'{prop}: {val}'})
+        if rows:
+            out[key] = rows
+    return out
+
+
 def _table_measurements(keys):
     """全文里的表格 → (测量, 投料量)，都按 key 分组。**现扫现用，不落第三份 JSON**。
 
@@ -437,8 +473,10 @@ def rebuild(records=None, log=print):
     # 脚本从全文表格里现扫的测量与投料量（不落盘，见 `_table_measurements`）
     t_meas, t_comp = _table_measurements({(r.get('key') or '') for r in records})
     c_meas = _chunk_measurements()          # 拆段抽正文的产物（已过脚本校验）
+    u_meas = _unit_measurements()           # 单元库的数值事实（本地小模型 + 脚本逐字核对，2026-09-22 起的主线）
     n_script = sum(len(v) for v in t_meas.values())
     n_chunk = sum(len(v) for v in c_meas.values())
+    n_units = sum(len(v) for v in u_meas.values())
     with conn:
         conn.execute('DELETE FROM papers')
         conn.execute('DELETE FROM samples')
@@ -463,6 +501,7 @@ def rebuild(records=None, log=print):
             # 把挂在不存在样品上的数值接回去（同一个列表对象，两边才一致）
             meas = _merge_script(schema.iter_measurements(r), t_meas.get(key) or [])
             meas = _merge_script(meas, c_meas.get(key) or [])
+            meas = _merge_script(meas, u_meas.get(key) or [])
             comp = _composition_text(t_comp.get(key) or [])
             for s in schema.samples_of(r, meas):
                 extra = comp.get(s['sample_id'])
@@ -480,6 +519,7 @@ def rebuild(records=None, log=print):
         + (f'（其中 {n_cm} 条抠自 {n_curve} 条曲线）' if n_curve else '')
         + (f'（其中 {n_script} 条由脚本从表格直扫，全部带出处）' if n_script else '')
         + (f'（其中 {n_chunk} 条拆段抽自正文，已过脚本校验）' if n_chunk else '')
+        + (f'（单元库并入 {n_units} 条，重复的以单元库为准）' if n_units else '')
         + f' → {db_path()}')
     return len(records), n_samp, n_meas
 
