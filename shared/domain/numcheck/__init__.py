@@ -20,6 +20,8 @@
 | `missing_numbers(text, must)` | 清单里哪些数在产出里没出现（只比数值） |
 | `checklist_block(must)` | 塞进提示词末尾的那段话 |
 | `unverified_numbers(content, source)` | 产出里出现、来源里找不到的数（别编） |
+| `data_numbers(text)` | 一段话里「算数据」的数（滤掉图号 / 年份 / 单个位数） |
+| `grounded_together(text, source, window)` | 这句的 ≥2 个数在来源里**挨在一起**出现（审稿用来否决「原文没有」的误判） |
 """
 import re
 
@@ -78,22 +80,49 @@ def checklist_block(must):
 _ANY_NUM = re.compile(r'(?<![\d.])(\d+(?:\.\d+)?)(?!\d)')
 
 
+def data_numbers(text):
+    """一段话里「算数据」的数，按出现顺序去重。
+
+    过滤掉不是"数据"的数：图号/表号/第几/年份/单个位数（"3 种方法"这种）、后面紧跟小写字母的（"4a" 是子图）。
+    """
+    text = text or ''
+    out = []
+    for m in _ANY_NUM.finditer(text):
+        s = m.group(1)
+        pre = text[max(0, m.start() - 2):m.start()]
+        if s in out or re.search(r'[图表第（(]$', pre) or re.search(r'^[a-z]', text[m.end():m.end() + 1]):
+            continue
+        if '.' not in s and (len(s) < 2 or (len(s) == 4 and s.startswith(('19', '20')))):
+            continue
+        out.append(s)
+    return out
+
+
 def unverified_numbers(content, source):
     """产出里出现、来源（原文 / 检索片段）里找不到的数。**只报不改**：给重写提示和评测用。
 
-    过滤掉不是"数据"的数：图号/表号/第几/年份/单个位数（"3 种方法"这种）。
     来源去掉空格与千分位逗号再比 —— MineRU 常把 `1 000` 拆开。
     """
     src = re.sub(r'[\s,]', '', source or '')
-    out, seen = [], set()
-    for m in _ANY_NUM.finditer(content or ''):
-        s = m.group(1)
-        pre = content[max(0, m.start() - 2):m.start()]
-        if s in seen or re.search(r'[图表第（(]$', pre) or re.search(r'^[a-z]', content[m.end():m.end() + 1]):
-            continue
-        if ('.' not in s and (len(s) < 2 or (len(s) == 4 and s.startswith(('19', '20'))))):
-            continue
-        seen.add(s)
-        if s not in src and s.rstrip('0').rstrip('.') not in src:
-            out.append(s)
-    return out
+    return [s for s in data_numbers(content)
+            if s not in src and s.rstrip('0').rstrip('.') not in src]
+
+
+def grounded_together(text, source, window=600):
+    """这句话里的数（至少两个）在来源里能不能在**同一处**（前后 `window` 字符内）全部找到。
+
+    审稿用（2026-09-22）：本地模型会对「证据就在材料里」的句子判「原文没有」（规划 §十四补）。
+    两个以上的数在原文同一处凑齐，偶然撞上的可能很小 —— 这时「原文没有」一定是误判。
+    只有一个数的句子不下这个结论（常见数到处都有）。数的前后不许紧挨数字，免得 12 撞进 2012 或 12.5。
+    """
+    nums = data_numbers(text)
+    if len(nums) < 2:
+        return False
+    src = re.sub(r'[\s,]', '', source or '')
+    hits = []
+    for n in nums:
+        pos = [m.start() for m in re.finditer(r'(?<![\d.])%s(?!\.?\d)' % re.escape(n), src)]
+        if not pos:
+            return False
+        hits.append(pos)
+    return any(all(any(abs(q - p) <= window for q in other) for other in hits[1:]) for p in hits[0])

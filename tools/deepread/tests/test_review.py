@@ -176,3 +176,50 @@ def test_材料超窗口时按句子挑段落而不是盲截():
     out = RV._cap(material, ['PBS-12 样品在 180 °C 下模量为 4.1 MPa。'], cap=3000)
     assert target in out and len(out) <= 3000
     assert RV._cap('short', ['x'], cap=3000) == 'short'
+
+
+# ── 2026-09-22：数字闸（脚本）与漏判补问 ─────────────────────────────
+
+SRC = 'The PBS film reached 12.5 MPa with 860 % elongation after healing at 80 °C.'
+
+
+def _always(verdict, calls=None):
+    def chat_json(system, user, **kw):
+        if calls is not None:
+            calls.append(user)
+        body = user.split('【待审句子】', 1)[1]
+        return {'verdicts': [{'i': int(m.group(1)), 'v': verdict, 'why': '假'}
+                             for m in re.finditer(r'^(\d+)\. ', body, re.M)]}
+    return chat_json
+
+
+def test_原文没有的数_脚本直接判_不问模型():
+    calls = []
+    out = RV._judge_with_numbers(_always('ok', calls), ['薄膜强度达到 13.7 MPa，远超同类。'], SRC, SRC,
+                                 True, lambda *a: None, 't')
+    assert out[0]['v'] == 'unsupported' and out[0]['by'] == 'script' and '13.7' in out[0]['why']
+    assert calls == [], '脚本判定的句子不该再花一次模型调用'
+
+
+def test_两个数在原文同一处凑齐_否决模型的原文没有():
+    out = RV._judge_with_numbers(_always('unsupported'), ['强度 12.5 MPa，伸长率 860%，性能优异。'], SRC, SRC,
+                                 True, lambda *a: None, 't')
+    assert out[0]['v'] == 'ok' and out[0].get('num_ok')
+    # 只有一个数的句子不下这个结论，模型的判定保留
+    out = RV._judge_with_numbers(_always('unsupported'), ['强度达到了 12.5 MPa 这么高的水平。'], SRC, SRC,
+                                 True, lambda *a: None, 't')
+    assert out[0]['v'] == 'unsupported'
+
+
+def test_漏判的句子缩小批量补问一次():
+    seen = []
+
+    def lazy(system, user, **kw):                 # 一批超过 3 句就只答第 1 句（模拟本地模型后半批不答）
+        seen.append(user)
+        body = user.split('【待审句子】', 1)[1]
+        idx = [int(m.group(1)) for m in re.finditer(r'^(\d+)\. ', body, re.M)]
+        return {'verdicts': [{'i': i, 'v': 'ok'} for i in (idx if len(idx) <= 3 else idx[:1])]}
+    claims = ['第 %d 句是一个足够长的断言句子。' % i for i in range(1, 11)]
+    out = RV._judge(lazy, claims, 'material', True, lambda *a: None, 't')
+    assert all(v['v'] == 'ok' for v in out)
+    assert sum(1 for v in out if v.get('retried')) == 9

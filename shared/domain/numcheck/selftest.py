@@ -13,7 +13,7 @@ try:
 except Exception:
     pass
 
-from shared.domain.numcheck import checklist_block, missing_numbers, must_numbers, unverified_numbers
+from shared.domain.numcheck import checklist_block, missing_numbers, must_numbers, unverified_numbers, grounded_together
 
 _fail = []
 
@@ -35,7 +35,12 @@ def main():
     bad = unverified_numbers('图3 显示 12.5 MPa，1000 次循环，2020 年，第 5 组，3 种方法，缺 88.8 MPa',
                              'strength 12.5 MPa, 1 000 cycles, 2020 paper, Figure 3')
     check('查来源', bad == ['88.8'], str(bad))
-    print('\n%d/%d 通过' % (5 - len(_fail), 5))
+    src = 'strength 12.5 MPa and strain 860 % after 24 h. In 2012 ' + 'x' * 2000 + ' retained 93 %'
+    check('挨在一起', grounded_together('强度 12.5 MPa，应变 860%', src)
+          and not grounded_together('12.5 MPa 保持 93%', src)          # 两个数隔得太远
+          and not grounded_together('只有 12.5 MPa', src)             # 一个数不下结论
+          and not grounded_together('强度 12 MPa，应变 860%', src))    # 12 不许撞进 2012 / 12.5
+    print('\n%d/%d 通过' % (6 - len(_fail), 6))
     return 0 if not _fail else 1
 
 

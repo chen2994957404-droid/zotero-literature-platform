@@ -9,6 +9,9 @@
 三项检查，全部对着原文，全部机器判：
     编造 / 曲解   把一栏拆成句子，连同**写这栏时用的同一份原文材料**交给审稿模型，
                   逐句判 ok / distorted / unsupported / skip（`sectioned.*_material` 保证两边看的一样）
+    数字闸（脚本）  带数的句子先让脚本核（2026-09-22）：句中有原文里找不到的数 → 直接判 unsupported，
+                  不问模型；模型判「原文没有」但句中 ≥2 个数在原文同一处凑齐 → 否决成 ok。
+                  换什么模型都成立的那部分活，不交给模型（规划 §十五）
     切片误判复核   被标的句子再拿**整篇原文**复核一次 —— 材料切片漏了段落不是编辑的错，
                   复核过的记成 slice_miss，那是切片器的账
     漏重点        先从摘要 + 结论 + 全部图注抽要点清单，再查精读覆盖了几条
@@ -36,6 +39,7 @@ import re
 import time
 
 from shared.kernel import prompts
+from shared.domain import numcheck as _nums
 from shared.domain.schema import outline as _ol
 from tools.deepread import sectioned as _sec
 
@@ -186,7 +190,6 @@ def _ask(chat_json, sysp, user, local):
 
 
 _TOKEN = re.compile(r'\d+(?:\.\d+)?|[A-Za-z][A-Za-z0-9\-]{2,}')
-_NUM_TOKEN = re.compile(r'\d+(?:\.\d+)?')
 _EMB_CACHE = {}        # 材料 hash → (段落列表, 向量列表)：同一栏的几批句子共用一次段落向量化
 TOP_K = 3              # 每句取最像的几段
 
@@ -255,17 +258,9 @@ def _cap(material, claims, cap=CAP_LOCAL):
         sims = sorted(((cosine(c, v), i) for i, v in enumerate(pv)), reverse=True)[:TOP_K]
         for s, i in sims:
             best[i] = max(best.get(i, 0.0), s)
-    # 数字锚定（2026-09-22）：待审句里的数所在的段**必须**进窗口。语义检索挑不到它 ——
-    #「浸泡一个月仍保持 2.79 MPa」这句的依据段在原文别处，挑不到就判成编造（第四轮剩下的误报多半是这种）。
-    nums = {n for c in claims for n in _NUM_TOKEN.findall(c) if len(n) >= 3}
+    # 数字锚定（第五轮加过：待审句里的数所在的段必进窗口）已撤：实测净负（误报 12.0% → 13.7%），
+    # 带数的段把语义相关段挤出去。数字改由 review() 里的脚本数字闸管（规划 §十四补、§十五）。
     picked, used = set(), 0
-    if nums:
-        for i, p in enumerate(paras):
-            if used + len(p) > cap // 2:
-                break
-            if any(n in p for n in nums):
-                picked.add(i)
-                used += len(p) + 2
     for i, s in sorted(best.items(), key=lambda x: -x[1]):
         if i in picked or used + len(paras[i]) > cap:
             continue
@@ -279,10 +274,31 @@ def _cap(material, claims, cap=CAP_LOCAL):
     return '\n\n'.join(paras[i][:6000] for i in sorted(picked))[:cap]
 
 
-def _judge(chat_json, claims, material, local, log, what):
-    """一批句子 + 材料 → [{'claim','v','why'}]。模型漏判的句子记 v='unjudged'。"""
+RETRY_BATCH = 3        # 漏判的句子补问时一批几句
+
+
+def _judge(chat_json, claims, material, local, log, what, retry=True):
+    """一批句子 + 材料 → [{'claim','v','why'}]。
+
+    模型漏判的句子**缩小批量补问一次**（2026-09-22）：同一篇两次跑「判了几句」差很多（46 句里 33 到 46），
+    分母在晃，误报率就一直在 12–14% 晃（规划 §十四补）。补问后还不答的才记 v='unjudged'。
+    """
+    out = _judge_once(chat_json, claims, material, local, log, what, BATCH_LOCAL if local else BATCH)
+    if not retry:
+        return out
+    miss = [i for i, v in enumerate(out) if v['v'] == 'unjudged']
+    if miss:
+        again = _judge_once(chat_json, [out[i]['claim'] for i in miss], material, local, log,
+                            what + '·补问', RETRY_BATCH)
+        for i, v in zip(miss, again):
+            if v['v'] != 'unjudged':
+                v['retried'] = True
+                out[i] = v
+    return out
+
+
+def _judge_once(chat_json, claims, material, local, log, what, size):
     out = []
-    size = BATCH_LOCAL if local else BATCH
     for start in range(0, len(claims), size):
         batch = claims[start:start + size]
         user = '【原文材料】\n%s\n\n【待审句子】\n%s' % (
@@ -358,6 +374,30 @@ def coverage(chat_json, points, content, local=False, log=print):
             for i, p in enumerate(points, 1)]
 
 
+def _judge_with_numbers(chat_json, claims, source, material, local, log, what):
+    """数字闸（脚本）+ 模型。换什么模型都成立的那一半不交给模型。
+
+    - 句中有原文（正文 + SI）里找不到的数 → 脚本直接判 unsupported，不问模型
+    - 其余交给模型；模型判「原文没有」而句中 ≥2 个数在原文同一处凑齐 → 否决成 ok（`num_ok`）。
+      「证据就在材料里、模型仍说原文没有」是第四、五轮查实的本地模型误报（规划 §十四补）
+    """
+    pre = {}
+    for i, c in enumerate(claims):
+        miss = _nums.unverified_numbers(c, source)
+        if miss:
+            pre[i] = {'claim': c, 'v': 'unsupported', 'by': 'script',
+                      'why': '数字 %s 在原文（含 SI）里找不到（脚本核）' % '、'.join(miss[:3])}
+    ask = [c for i, c in enumerate(claims) if i not in pre]
+    judged = iter(_judge(chat_json, ask, material, local, log, what) if ask else [])
+    out = []
+    for i, c in enumerate(claims):
+        v = pre.get(i) or next(judged)
+        if v['v'] == 'unsupported' and v.get('by') != 'script' and _nums.grounded_together(c, source):
+            v = dict(v, v='ok', num_ok=True)
+        out.append(v)
+    return out
+
+
 # ── 主入口 ───────────────────────────────────────────────────────────
 
 def review(content, md, si_md, chat_json, meta=None, log=print, local=False, points=None, with_cover=True, fig_map=None, units=None):
@@ -374,12 +414,14 @@ def review(content, md, si_md, chat_json, meta=None, log=print, local=False, poi
         claims = split_claims(text)
         if not claims:
             continue
-        verdicts = _judge(chat_json, claims, _material(key, md, si_md, outline, is_rev, fig_map, units), local, log, name)
+        verdicts = _judge_with_numbers(chat_json, claims, source,
+                                       _material(key, md, si_md, outline, is_rev, fig_map, units), local, log, name)
         flagged = [v for v in verdicts if v['v'] in BAD]
         all_flagged += flagged
         secs[key] = {'name': name, 'n': len(claims), 'verdicts': verdicts,
                      'n_unjudged': sum(1 for v in verdicts if v['v'] == 'unjudged')}
-    slice_miss = _recheck(chat_json, all_flagged, source, local, log) if all_flagged else 0
+    model_flagged = [f for f in all_flagged if f.get('by') != 'script']     # 脚本判的是确定的，不复核
+    slice_miss = _recheck(chat_json, model_flagged, source, local, log) if model_flagged else 0
     for s in secs.values():
         s['flags'] = [v for v in s['verdicts'] if v['v'] in BAD]
     n_judged = sum(s['n'] - s['n_unjudged'] for s in secs.values())
@@ -390,6 +432,9 @@ def review(content, md, si_md, chat_json, meta=None, log=print, local=False, poi
            'n_claims': sum(s['n'] for s in secs.values()), 'n_judged': n_judged, 'n_flagged': n_flag,
            'flag_rate': round(n_flag / n_judged, 4) if n_judged else 0.0,
            'n_slice_miss': slice_miss,
+           'n_script_flag': sum(1 for s in secs.values() for v in s['verdicts'] if v.get('by') == 'script' and v['v'] in BAD),
+           'n_num_override': sum(1 for s in secs.values() for v in s['verdicts'] if v.get('num_ok')),
+           'n_retried': sum(1 for s in secs.values() for v in s['verdicts'] if v.get('retried')),
            'sections': {k: {'name': s['name'], 'n': s['n'], 'n_unjudged': s['n_unjudged'], 'flags': s['flags'],
                             'slice_miss': [v['claim'][:80] for v in s['verdicts'] if v.get('slice_miss')][:10]}
                         for k, s in secs.items()},
@@ -397,8 +442,9 @@ def review(content, md, si_md, chat_json, meta=None, log=print, local=False, poi
            'n_missed': sum(1 for c in cover if c['v'] == 'missed'),
            'n_partial': sum(1 for c in cover if c['v'] == 'partial')}
     rep['passed'] = passed(rep)
-    log('  审稿：%d 句判了 %d，标出 %d（%.1f%%，切片漏判另 %d）；要点 %d 条漏 %d 半 %d → %s' % (
-        rep['n_claims'], n_judged, n_flag, rep['flag_rate'] * 100, slice_miss,
+    log('  审稿：%d 句判了 %d（补问救回 %d），标出 %d（%.1f%%，其中脚本核数 %d；数字否决误判 %d；切片漏判另 %d）；要点 %d 条漏 %d 半 %d → %s' % (
+        rep['n_claims'], n_judged, rep['n_retried'], n_flag, rep['flag_rate'] * 100,
+        rep['n_script_flag'], rep['n_num_override'], slice_miss,
         len(pts), rep['n_missed'], rep['n_partial'], '过' if rep['passed'] else '不过'))
     return rep
 
@@ -533,19 +579,25 @@ def calibrate(keys, chat_json, log=print, tag='v1', local=False, out_dir=None):
     agg = {'tag': tag, 'when': time.strftime('%Y-%m-%d %H:%M'), 'n': len(rows),
            'fp_rate': round(sum(r['clean_flags'] for r in rows) / max(1, sum(r['clean_claims'] for r in rows)), 4),
            'recall': round(sum(r['hits'] for r in rows) / max(1, sum(r['injected'] for r in rows)), 3),
+           'judged_rate': round(sum(r['clean_claims'] for r in rows) / max(1, sum(r['clean_report']['n_claims'] for r in rows)), 3),
+           'clean_script_flags': sum(r['clean_report'].get('n_script_flag', 0) for r in rows),
+           'clean_num_override': sum(r['clean_report'].get('n_num_override', 0) for r in rows),
            'rows': rows}
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
         json.dump(agg, io.open(os.path.join(out_dir, 'calib.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
         L = ['# 审稿校准 %s（%s）' % (tag, agg['when']), '',
-             '%d 篇范文 · 干净范文误报率 **%.1f%%** · 塞错查全率 **%.0f%%**' % (agg['n'], agg['fp_rate'] * 100, agg['recall'] * 100), '',
+             '%d 篇范文 · 干净范文误报率 **%.1f%%** · 塞错查全率 **%.0f%%** · 句子判定率 %.0f%%' % (
+                 agg['n'], agg['fp_rate'] * 100, agg['recall'] * 100, agg['judged_rate'] * 100), '',
+             '干净范文里：脚本核数标出 %d 句 · 数字否决模型误判 %d 句' % (agg['clean_script_flags'], agg['clean_num_override']), '',
              '| 篇 | 干净：句/标出 | 塞错：塞/抓到 |', '|---|---|---|']
         L += ['| %s | %d/%d | %d/%d |' % (r['key'], r['clean_claims'], r['clean_flags'], r['injected'], r['hits']) for r in rows]
         L += ['', '## 干净范文里被标出的句子（误报样本，看审稿哪里太严）', '']
         for r in rows:
             for s in r['clean_report']['sections'].values():
                 for f in s['flags'][:5]:
-                    L.append('- %s [%s] %s —— %s' % (r['key'], f['v'], f['claim'][:80], f['why']))
+                    L.append('- %s [%s%s] %s —— %s' % (r['key'], f['v'], '·脚本' if f.get('by') == 'script' else '',
+                                                       f['claim'][:80], f['why']))
         L += ['', '## 塞进去却没抓到的（漏报样本）', '']
         for r in rows:
             flagged = [f['claim'] for s in r['dirty_report']['sections'].values() for f in s['flags']]
