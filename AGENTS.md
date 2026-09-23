@@ -16,8 +16,8 @@
 > 下面这棵树就是全部结构，不必再去扫。
 
 ```
-docs/  ← 跨工具的档案（另有 3 份日志直接躺在下面）
-    explain/（7）、howto/（3）、reference/（10）、incidents/（2）  ← 为什么 / 怎么做 / 事实 / 坑
+docs/  ← 跨工具的档案（另有 4 份日志直接躺在下面）
+    explain/（8）、howto/（3）、reference/（12）、incidents/（2）  ← 为什么 / 怎么做 / 事实 / 坑
 host/  ← 平台自身：让平台活着的东西（没人 import 它）（10 块）
     autosync、codegen、daily、deploy、doctor、ingest、mcp、panel、watcher、wechat_import
 launch/  ← 给人双击的入口（常用 5 个；不常用/ 里 7 个备用与开发用）
@@ -26,12 +26,12 @@ launch/  ← 给人双击的入口（常用 5 个；不常用/ 里 7 个备用�
 outputs/  ← 外部 agent 的产物 / 草稿，不进版本库
 scratch/  ← 外部 agent 的产物 / 草稿，不进版本库
 shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
-    kernel/  ← 基础设施：谁都依赖它，它不依赖任何人（14 块）
-        cli、config、proc_lock、prompts、subproc、budget.py、catalog.py、errors.py、heartbeat.py、jobs.py、log.py、mcp_prompt.py、paths.py、role.py
+    kernel/  ← 基础设施：谁都依赖它，它不依赖任何人（15 块）
+        cli、config、proc_lock、prompts、subproc、budget.py、catalog.py、errors.py、heartbeat.py、jobs.py、log.py、mcp_prompt.py、paths.py、role.py、units_store.py
     domain/  ← 纯逻辑：不联网、不知道文件放在哪（5 块）
         figure_crop、glossary、libmatch、numcheck、schema
-    adapters/  ← 外接口：唯一允许联网/用第三方库的一环（15 块）
-        crossref、embed、llm_client、openalex、pdf_fetch、pdf_parse、query_expand、sciverse、semanticscholar、snowball、typesafe、unpaywall、vectordb、wechat_seed、zotero_client
+    adapters/  ← 外接口：唯一允许联网/用第三方库的一环（18 块）
+        crossref、embed、llm_client、ner、openalex、pdf_fetch、pdf_parse、query_expand、sciverse、semanticscholar、sentences、snowball、typesafe、units、unpaywall、vectordb、wechat_seed、zotero_client
 tests/ （6 个脚本）
     test_architecture.py、test_budget.py、test_llm_routing.py、test_no_undefined_names.py、test_principles.py、test_types.py
 toolbox/ （0 个脚本）
@@ -43,7 +43,7 @@ tools/  ← 工具包：一个工具 = 一个自包含的包（13 块）
 （data/ 是数据目录（五层），3000+ 文件，**不要去 glob 它**）
 ```
 
-**可枚举的模块 38 个**（`tools/` 工具包 + `shared/` 共用件，每个都有 `__init__.py` 与 `selftest.py`）
+**可枚举的模块 41 个**（`tools/` 工具包 + `shared/` 共用件，每个都有 `__init__.py` 与 `selftest.py`）
 
 进度、健康状况、下一步做什么 → 见 `HANDOVER.md`
 

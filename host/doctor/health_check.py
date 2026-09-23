@@ -504,8 +504,12 @@ def c_routing():
 
 def c_progress():
     """常驻服务与批量作业有没有卡住（`heartbeat.overview`）。做完的、在跑的都算好。"""
-    from shared.kernel import heartbeat
+    from shared.kernel import heartbeat, role
     rows = heartbeat.overview()
+    if not role.is_prod():
+        # 常驻服务只在主力机跑；编程端/测试端留下的报活文件是手动试跑的残留，
+        # 过期不是故障（2026-09-22：交接文件曾因此报「卡住 4233 分钟」，主力机上其实在跑）
+        rows = [o for o in rows if o.get('alive_age') is None]
     bad = [f"{o['name']}：{o['note']}" for o in rows if o['state'] in ('stuck', 'dead')]
     if bad:
         return FAIL, '卡住了：' + '；'.join(bad)
