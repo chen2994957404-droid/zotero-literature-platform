@@ -226,3 +226,12 @@ def test_漏判的句子缩小批量补问一次():
     out = RV._judge(lazy, claims, 'material', True, lambda *a: None, 't')
     assert all(v['v'] == 'ok' for v in out)
     assert sum(1 for v in out if v.get('retried')) == 9
+
+
+def test_被标句子按类分_装饰标题不当断言():
+    assert RV.flag_kind('exp', '借助扫描电镜观察形貌。') == 'exp'
+    assert RV.flag_kind('fig:1', 'I、L小图为对应加热过程的同步图；') == 'fig'
+    assert RV.flag_kind('fig:1', '该图验证热压界面的离子屏蔽能力。') == 'fig'
+    assert RV.flag_kind('wrap', '二是动态共价键与氢键的协同作用。') == 'infer'
+    assert RV.flag_kind('lead', '材料的拉伸强度很高而且很稳定。') == 'other'
+    assert RV.split_claims('⃣  体外和体内的抗菌性能  ▼') == []

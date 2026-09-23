@@ -129,9 +129,29 @@ def split_claims(text):
             s = s.strip(' 🌿🍁☘️\t')
             s = re.sub(r'^Question[：:]\s*', '', s)
             s = re.sub(r'^(?:第[一二三四五六七八九十]+|[（(]?\d+[）)]?)[，,、]\s*', '', s)
-            if len(s) >= MIN_CLAIM and _CJK.search(s) and not s.endswith(('？', '?')):
+            if len(s) >= MIN_CLAIM and _CJK.search(s) and not s.endswith(('？', '?')) and not _DECOR.search(s):
                 out.append(s)
     return out
+
+
+# 公众号的小标题装饰（「⃣ 体外和体内的抗菌性能 ▼」）不是断言（2026-09-22 第六轮误报里有）
+_DECOR = re.compile(r'[▼▲⃣]')
+
+# 被标句子的四类（2026-09-22 第六轮逐条归类得出）：校准报告按类分开计，才看得出误报出在哪
+_FIG_SENT = re.compile(r'^\s*(?:[A-Za-z](?:[、,，\s–-]*[A-Za-z])*\s*小?图|小图|该图|此图|图\s*\d|[（(]?[a-zA-Z][）)]\s*)')
+_INFER = ('提供', '思路', '意义', '潜力', '瓶颈', '其一', '其二', '其三', '其四', '其五', '一是', '二是', '三是', '四是', '五是',
+          '主要原因', '揭示', '得益于', '协同', '有望', '拓展')
+
+
+def flag_kind(section_key, claim):
+    """被标句子 → 'exp' 实验清单 / 'fig' 图注描述 / 'infer' 归纳引申机理 / 'other'。规则判，不问模型。"""
+    if section_key == 'exp':
+        return 'exp'
+    if _FIG_SENT.match(claim or ''):
+        return 'fig'
+    if any(w in (claim or '') for w in _INFER):
+        return 'infer'
+    return 'other'
 
 
 def html_to_content(html):
@@ -551,6 +571,19 @@ def _hit(report, injected):
     return hits
 
 
+_KIND_NAME = {'exp': '实验清单', 'fig': '图注描述', 'infer': '归纳引申', 'other': '其他', 'script': '脚本核数'}
+
+
+def _count_kinds(reports):
+    out = {}
+    for rep in reports:
+        for key, s in (rep.get('sections') or {}).items():
+            for f in s.get('flags') or []:
+                k = 'script' if f.get('by') == 'script' else flag_kind(key, f.get('claim', ''))
+                out[k] = out.get(k, 0) + 1
+    return out
+
+
 def calibrate(keys, chat_json, log=print, tag='v1', local=False, out_dir=None):
     """拿范文量审稿：干净范文的误报率 + 塞错范文的查全率。`out_dir` 不给就只返回不落盘。"""
     from shared.kernel import paths, units_store
@@ -582,6 +615,7 @@ def calibrate(keys, chat_json, log=print, tag='v1', local=False, out_dir=None):
            'judged_rate': round(sum(r['clean_claims'] for r in rows) / max(1, sum(r['clean_report']['n_claims'] for r in rows)), 3),
            'clean_script_flags': sum(r['clean_report'].get('n_script_flag', 0) for r in rows),
            'clean_num_override': sum(r['clean_report'].get('n_num_override', 0) for r in rows),
+           'clean_flag_kinds': _count_kinds(r['clean_report'] for r in rows),
            'rows': rows}
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
@@ -590,6 +624,7 @@ def calibrate(keys, chat_json, log=print, tag='v1', local=False, out_dir=None):
              '%d 篇范文 · 干净范文误报率 **%.1f%%** · 塞错查全率 **%.0f%%** · 句子判定率 %.0f%%' % (
                  agg['n'], agg['fp_rate'] * 100, agg['recall'] * 100, agg['judged_rate'] * 100), '',
              '干净范文里：脚本核数标出 %d 句 · 数字否决模型误判 %d 句' % (agg['clean_script_flags'], agg['clean_num_override']), '',
+             '干净范文被标句子按类：' + ' · '.join('%s %d' % (_KIND_NAME.get(k, k), n) for k, n in sorted(agg['clean_flag_kinds'].items(), key=lambda x: -x[1])), '',
              '| 篇 | 干净：句/标出 | 塞错：塞/抓到 |', '|---|---|---|']
         L += ['| %s | %d/%d | %d/%d |' % (r['key'], r['clean_claims'], r['clean_flags'], r['injected'], r['hits']) for r in rows]
         L += ['', '## 干净范文里被标出的句子（误报样本，看审稿哪里太严）', '']
