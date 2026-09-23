@@ -32,3 +32,8 @@
 
 `docs/incidents/README.md` 是由各工具的本文件汇总生成的
 （`python host/codegen/incidents.py`），别手改那一份。
+
+## 审稿整篇复核先截到前 6 万字，正文后半与 SI 进不了复核（踩坑 #186，2026-09-23）
+
+`review._recheck` 传 `source[:CAP_SOURCE]`，本地模式下 `_judge` 还会再按句挑段压到 2 万字 —— 先截再挑，一半以上原文不在候选里。
+改成整篇交给 `_cap` 挑：误报 10.0% → 8.1%，查全 84% → 83%。改窗口策略后要回头找旧的截断点。
