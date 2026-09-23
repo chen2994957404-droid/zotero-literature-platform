@@ -384,9 +384,12 @@ def fill_abstracts(max_calls=400, log=None, batch=50):
         for i in range(0, len(todo), batch):
             chunk = todo[i:i + batch]
             try:
-                got = openalex.works_by_dois(chunk, allow_partial=True)
+                # allow_partial=False：这一批退避完还拿不到就抛出来、整轮停下（2026-09-24）。
+                # 以前是 True —— 没配 OPENALEX_KEY 时日额度（$0.10）一用完，每批都「等 → 重试 → 记失败 → 下一批」，
+                # 400 批在主力机上空转了一个多小时，体检报 daily 卡住。额度用完就是用完了，明天再补
+                got = openalex.works_by_dois(chunk, allow_partial=False)
             except Exception as e:
-                log('  OpenAlex 补摘要中断：%s' % str(e)[:80])
+                log('  OpenAlex 补摘要停下（多半是今天额度用完了，明天接着补）：%s' % str(e)[:80])
                 break
             have = {}
             for w in got.values():
