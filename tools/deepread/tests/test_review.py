@@ -235,3 +235,25 @@ def test_被标句子按类分_装饰标题不当断言():
     assert RV.flag_kind('wrap', '二是动态共价键与氢键的协同作用。') == 'infer'
     assert RV.flag_kind('lead', '材料的拉伸强度很高而且很稳定。') == 'other'
     assert RV.split_claims('⃣  体外和体内的抗菌性能  ▼') == []
+
+
+def test_校准断点续跑_审完的篇读回不重审(tmp_path, monkeypatch):
+    from shared.kernel import paths
+    import os
+    key = 'ABCD1234'
+    ref, full = tmp_path / 'ref.md', tmp_path / 'full.md'
+    ref.write_text(CONTENT, encoding='utf-8')
+    full.write_text(MD, encoding='utf-8')
+    monkeypatch.setattr(paths, 'reference', lambda k: str(ref))
+    monkeypatch.setattr(paths, 'fulltext', lambda k: str(full))
+    monkeypatch.setattr(paths, 'si_fulltext', lambda k: str(tmp_path / 'none.md'))
+    from shared.kernel import units_store
+    monkeypatch.setattr(units_store, 'load', lambda k: [])
+    calls = []
+    out = tmp_path / 'calib'
+    a = RV.calibrate([key], fake_json(calls), log=lambda *a: None, out_dir=str(out))
+    n = len(calls)
+    assert n > 0 and os.path.exists(out / 'rows' / (key + '.json'))
+    b = RV.calibrate([key], fake_json(calls), log=lambda *a: None, out_dir=str(out))
+    assert len(calls) == n, '审完的篇不该再调模型'
+    assert b['fp_rate'] == a['fp_rate'] and b['recall'] == a['recall']

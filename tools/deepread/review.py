@@ -588,7 +588,17 @@ def calibrate(keys, chat_json, log=print, tag='v1', local=False, out_dir=None):
     """拿范文量审稿：干净范文的误报率 + 塞错范文的查全率。`out_dir` 不给就只返回不落盘。"""
     from shared.kernel import paths, units_store
     rows = []
+    done_dir = os.path.join(out_dir, 'rows') if out_dir else None
     for k in keys:
+        # 断点续跑（2026-09-23：主力机中途重启，第七轮 4 小时一篇没留下）：每篇审完先落盘，重跑同一个 tag 时直接读回
+        done = os.path.join(done_dir, re.sub(r'[^\w.-]', '_', k) + '.json') if done_dir else None
+        if done and os.path.exists(done):
+            try:
+                rows.append(json.load(io.open(done, encoding='utf-8')))
+                log('%s 上次已审完，读回' % k)
+                continue
+            except Exception:
+                pass
         rp, fp = paths.reference(k), paths.fulltext(k)
         if not (os.path.exists(rp) and os.path.exists(fp)):
             log('%s 缺范文或全文，跳过' % k)
@@ -609,6 +619,9 @@ def calibrate(keys, chat_json, log=print, tag='v1', local=False, out_dir=None):
                      'injected': len(injected), 'hits': hits,
                      'recall': round(hits / len(injected), 3) if injected else None,
                      'clean_report': clean, 'dirty_report': dirty, 'injected_list': injected})
+        if done:
+            os.makedirs(done_dir, exist_ok=True)
+            json.dump(rows[-1], io.open(done, 'w', encoding='utf-8'), ensure_ascii=False)
     agg = {'tag': tag, 'when': time.strftime('%Y-%m-%d %H:%M'), 'n': len(rows),
            'fp_rate': round(sum(r['clean_flags'] for r in rows) / max(1, sum(r['clean_claims'] for r in rows)), 4),
            'recall': round(sum(r['hits'] for r in rows) / max(1, sum(r['injected'] for r in rows)), 3),
