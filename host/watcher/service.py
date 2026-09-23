@@ -160,14 +160,10 @@ def process_item(item):
 
     out_html = r.final_html
     state_tag = STATE_TAG[r.state]      # 事实 → 标签，映射只此一处
-    # 2.5 结构化抽取（粗层）：把这篇抽成对齐字段，自动并入 structured/ 对比表
-    # 它自己会记账并跳过已抽过的，失败也只返回 None，不会拖垮回写。
-    #
-    # 这一步是「串起两个工具」——**正因为它，本服务才必须住在 host/ 而不是
-    # tools/deepread/**（硬规则 2：tools 不许 import tools；硬规则 4：host 可以
-    # import 一切）。R7 窗的判定与理由写在 host/watcher/__init__.py。
-    from tools import extract
-    extract.run(pid, log=print)
+    # 2.5 老的整篇结构化抽取（extract.run）2026-09-23 起不再跑：抽取收成一条线 ——
+    # 数值归单元库（落地流水线的 fine_fact / fine_action），整篇级字段归整篇卡片（paper_card），
+    # 两者都由 host/ingest 在正本落地时自动做，paperdb 重建时并进来。老记录（structured/*.json）留作存量。
+    # 依据：规划 §十五 第 3 步；20 篇对照卡片 vs 老抽取见 docs/变更记录.md 2026-09-23。
     # 3. 回写 Zotero：**复用已有 summary 附件、只更新文件内容**（不删条目）
     #    踩坑：原先"先删旧附件再传新的"，删除动作进入同步链 → Zotero 每篇都弹"冲突解决"框。
     #    改为复用同一附件条目，只覆盖本地 storage 文件，避免产生删除记录。

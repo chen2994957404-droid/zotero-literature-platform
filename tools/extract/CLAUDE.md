@@ -2,6 +2,13 @@
 
 > 你可能是被单独选中这个文件夹打开的。本文件是你的全部上下文。
 
+## ⚠ 2026-09-23 起：抽取收成一条线
+
+新文献**不再走**下面说的「整篇一次抽」（`extract.run`）：数值归单元库（`fine_fact` / `fine_action`），
+整篇级字段归整篇卡片（`paper_card`），都由 `host/ingest` 在正本落地时自动做，paperdb 重建时并进来。
+`structured/*.json` 的老记录留作存量（多是云端抽的），paperdb 里老记录有值的字段不被卡片覆盖。
+下面关于整篇抽取的说明留作存量数据的说明。
+
 ## 这块是什么
 
 **一篇文献的正文 `parsed/full.md` **加上** SI `si_parsed/full.md`
@@ -34,6 +41,8 @@ shared.kernel.paths（去哪读、往哪写） + shared.domain.schema（抽什�
 | `compare_models.py` | 本地 vs 云端 A/B 三指标对比，**只打印不写盘**（踩坑 #16） |
 | `wizard.py` | 给人双击的重抽向导（列清单 → 问模型 → 跑 → 报花了多少钱） |
 | `verify.py` | 第二道数字闸：每个数配原文段落问 Jev「对那个样品是不是这么说的」，标 `verified`；抽完自动跑 |
+| `fine_fact.py` · `fine_action.py` | **主线（2026-09-22 起）**：数值事实 / 合成动作的字段级拆分抽取 → 单元库 `curated/<id>/units.json`，落地流水线自动跑 |
+| `paper_card.py` | **主线（2026-09-23 起）**：整篇卡片 —— 材料体系 / 动态键家族 / 自修复 / 核心发现 / 局限，小模型读标题 + 摘要 + 结论、脚本核对 → `curated/<id>/card.json`，落地流水线自动跑 |
 | `selftest.py` | 离线自测（不调 LLM、不碰真实数据） |
 
 **两个档次，同一套字段**（对称于向量化的粗细两层）：

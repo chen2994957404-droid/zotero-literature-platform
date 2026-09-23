@@ -245,7 +245,40 @@ def _records():
     这种最有价值的问题没人答得了。现在它只是一句 SQL：
     `tier='摘要'` 的那些数值里挑高的，就是**该去取全文的清单**。
     """
-    return _read_dir(paths.STRUCTURED) + _read_dir(paths.ABSTRACTS)
+    return _with_cards(_read_dir(paths.STRUCTURED)) + _read_dir(paths.ABSTRACTS)
+
+
+_CARD_FIELDS = ('material_system', 'dynamic_bond_type', 'self_healing', 'key_finding', 'limitation', 'doc_type')
+
+
+def _with_cards(records):
+    """整篇卡片（`curated/<id>/card.json`，`tools.extract.paper_card` 写的）补整篇级字段（2026-09-23）。
+
+    抽取收成一条线之后，新文献不再走老的整篇抽取，只有单元库（数值）+ 卡片（整篇级字段）。
+    - 有老记录的：老记录空着的字段用卡片补（老记录有值的不动 —— 那多是云端大模型抽的）
+    - 没有老记录的：用卡片新建一条（`source='local'`：MineRU 全文 + 本地模型），数值由单元库并进来
+    """
+    from shared.kernel import catalog
+    by_key = {r.get('key'): r for r in records if r.get('key')}
+    for key in paths.all_keys():
+        p = paths.card(key)
+        if not os.path.isfile(p):
+            continue
+        try:
+            c = json.load(io.open(p, encoding='utf-8'))
+        except Exception:
+            continue
+        r = by_key.get(key)
+        if r is None:
+            meta = catalog.read_meta(key)
+            r = {'key': key, 'title': meta.get('title') or '', 'doi': catalog.doi_of(meta),
+                 'source': schema.SOURCE_LOCAL, 'si_used': os.path.isfile(paths.si_fulltext(key)), 'model': 'paper_card'}
+            records.append(r)
+            by_key[key] = r
+        for f in _CARD_FIELDS:
+            if not schema.has_value(r.get(f)) and schema.has_value(c.get(f)):
+                r[f] = c[f]
+    return records
 
 
 _MEAS_COLS = ['key', 'sample_id', 'name', 'raw_name', 'value', 'value_max', 'unit',

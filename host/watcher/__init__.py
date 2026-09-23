@@ -19,7 +19,7 @@ REBUILD.md 第一节对 host 的定义本身：**host 不是能力，是让平�
 | 模块 | 是什么 | 怎么起 |
 |---|---|---|
 | `watchdog.py` | 看门狗：下面三个真死了才重启，**绝不打断正在干活的** | `python -m host.watcher.watchdog` |
-| `service.py`  | 精读监听：发现标签 → 精读 → 抽取 → 回写 Zotero → 改标签（**只做这一件**） | `python -m host.watcher.service` |
+| `service.py`  | 精读监听：发现标签 → 精读 → 回写 Zotero → 改标签（**只做这一件**；2026-09-23 起不再顺手跑老的整篇抽取，数值与整篇字段归落地流水线） | `python -m host.watcher.service` |
 | `host.ingest --loop` | 落地流水线常驻（另一个包） | 看门狗拉 |
 | `host.daily` | 每日作业：盯新刊 + 补摘要 + 升 1 级取件（另一个包，一天一次） | 看门狗拉 |
 

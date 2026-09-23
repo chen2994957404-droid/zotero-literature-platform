@@ -278,6 +278,7 @@ MODEL_SETTINGS = {
     'REVIEW_MODEL':     ('精读审稿',   LOCAL_DEFAULT),     # 「审≠写」暂时做不到；任务形状不同先顶着
     'EXTRACT_MODEL':    ('结构化抽取', LOCAL_DEFAULT),     # ⚠ 2026-08-28 实测本地只抽到云端 1/4 的数字 —— 待拆解优化（chunk_pass 那条路）
     'PROFILE_MODEL':    ('论文类型画像', 'qwen3.5:4b'),     # 合成 / 器件 / 机理 / 综述 四选一（2026-09-22）
+    'CARD_MODEL':       ('整篇卡片', 'qwen3.5:4b'),        # 材料体系 / 动态键家族 / 自修复 / 核心发现（2026-09-23，20 篇对照老整篇抽取 15 篇一致、3 篇补上老的空缺）
     'UNITS_MODEL':      ('单元库抽取', 'qwen3.5:4b'),     # 数值事实字段级拆分抽取（fine_fact），10 篇实测 4B 准确率最好、71 s/篇（2026-09-21）
     'ASK_MODEL':        ('问答',       LOCAL_DEFAULT),
     'AUTOTAG_MODEL':    ('自动打标签', LOCAL_DEFAULT),
