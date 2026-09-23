@@ -42,6 +42,15 @@ budget.today()                      # {'date','calls','prompt','completion','lim
 |---|---|---|
 | `DAILY_LLM_CALLS` | 一天最多多少次付费调用 | 0＝不限 |
 | `DAILY_LLM_TOKENS` | 一天最多多少产出 token（精读这类长文的主要成本） | 0＝不限 |
+| `DAILY_LLM_YUAN` | 一天最多花多少元（按 `PRICE_YUAN_PER_M` 折算，宁高勿低） | 0＝不限 |
+
+## 按元折算（2026-09-22 加，用户要「两块钱限额」）
+
+次数和 token 都不是用户心里的那把尺子，他看的是余额掉了几块钱。
+单价表 `PRICE_YUAN_PER_M` 是**外部事实**，会变：来源与查证日期写在表旁边，
+用的是**高峰价、缓存未命中价**（官方非高峰半价、缓存命中更便宜）——
+算高不算低，宁可早拦。表里没有的付费模型按表里最贵的算。
+Jev（typesafe 通道）按美元计、有自己的月度额度，不从 DeepSeek 余额里扣，折算时记 0。
 """
 import io
 import json
@@ -51,7 +60,17 @@ import time
 from shared.kernel import paths
 from shared.kernel.errors import PlatformError
 
-LEDGER = 'llm_budget.json'          # 落在 logs/ 下，跟心跳、锁同处，便于一并清理
+LEDGER = 'llm_budget.json'
+
+# 每百万 token 的（输入, 输出）元价。**高峰价 + 缓存未命中价**，宁高勿低。
+# 来源：https://api-docs.deepseek.com/zh-cn/quick_start/pricing ，2026-09-22 查证。
+# 按模型名前缀匹配，先长后短；没列的付费模型按最贵一行算。
+PRICE_YUAN_PER_M = (
+    ('deepseek-v4-pro', 9.0, 27.0),
+    ('deepseek-v4-flash', 2.0, 8.0),       # 旧名，官方转发到 deepseek-flash
+    ('deepseek-flash', 2.0, 8.0),
+)
+FREE_CHANNELS = ('typesafe',)              # 另有月度额度、不扣 DeepSeek 余额          # 落在 logs/ 下，跟心跳、锁同处，便于一并清理
 
 
 class BudgetExceeded(PlatformError):
@@ -66,17 +85,30 @@ def _limits():
     """从配置读限额。读不到或读到垃圾一律当 0（不限）—— 配置错不该变成拦路虎。"""
     from shared.kernel.config import get_key
     out = {}
-    for name, key in (('calls', 'DAILY_LLM_CALLS'), ('tokens', 'DAILY_LLM_TOKENS')):
+    for name, key in (('calls', 'DAILY_LLM_CALLS'), ('tokens', 'DAILY_LLM_TOKENS'),
+                      ('yuan', 'DAILY_LLM_YUAN')):
         try:
-            out[name] = max(0, int(str(get_key(key, default='') or '0').strip() or 0))
+            v = max(0.0, float(str(get_key(key, default='') or '0').strip() or 0))
+            out[name] = v if name == 'yuan' else int(v)
         except (TypeError, ValueError):
             out[name] = 0
     return out
 
 
+def cost_yuan(model, prompt=0, completion=0, channel=''):
+    """这次调用折成多少元。宁高勿低：没列的模型按最贵一行算。"""
+    if channel in FREE_CHANNELS:
+        return 0.0
+    name = (model or '').lower()
+    row = next((r for r in PRICE_YUAN_PER_M if name.startswith(r[0])), None)
+    if row is None:
+        row = max(PRICE_YUAN_PER_M, key=lambda r: r[2])
+    return (int(prompt or 0) * row[1] + int(completion or 0) * row[2]) / 1e6
+
+
 def _load():
     """读今天的账。**换了一天就自动从零开始**，不必有人来清。"""
-    blank = {'date': _today(), 'calls': 0, 'prompt': 0, 'completion': 0,
+    blank = {'date': _today(), 'calls': 0, 'prompt': 0, 'completion': 0, 'yuan': 0.0,
              'models': {}, 'by_purpose': {}}
     try:
         d = json.load(io.open(paths.runtime(LEDGER), encoding='utf-8'))
@@ -112,6 +144,8 @@ def today():
     lim = _limits()
     d['limit_calls'] = lim['calls']
     d['limit_tokens'] = lim['tokens']
+    d['limit_yuan'] = lim.get('yuan', 0)
+    d.setdefault('yuan', 0.0)
     return d
 
 
@@ -121,7 +155,7 @@ def check(what='调用大模型'):
     `what` 会原样出现在给用户的话里，写人话（「精读一篇」而不是「chat()」）。
     """
     lim = _limits()
-    if not lim['calls'] and not lim['tokens']:
+    if not lim['calls'] and not lim['tokens'] and not lim.get('yuan'):
         return                                # 没设限额 = 只记账不拦
     d = _load()
     if lim['calls'] and d['calls'] >= lim['calls']:
@@ -133,6 +167,11 @@ def check(what='调用大模型'):
         raise BudgetExceeded(
             f'今天的产出额度用完了（{d["completion"]}/{lim["tokens"]} token），'
             f'所以没有执行「{what}」。要继续就去控制面板把 DAILY_LLM_TOKENS 调大，'
+            f'或者等明天自动清零。')
+    if lim.get('yuan') and d.get('yuan', 0.0) >= lim['yuan']:
+        raise BudgetExceeded(
+            f'今天的花费到上限了（约 {d.get("yuan", 0.0):.2f}/{lim["yuan"]:g} 元，按高峰价估，实际只会更少），'
+            f'所以没有执行「{what}」。要继续就去控制面板把 DAILY_LLM_YUAN 调大，'
             f'或者等明天自动清零。')
 
 
@@ -149,6 +188,7 @@ def record(prompt=0, completion=0, model='', purpose='', channel=''):
         d['calls'] += 1
         d['prompt'] += int(prompt or 0)
         d['completion'] += int(completion or 0)
+        d['yuan'] = round(d.get('yuan', 0.0) + cost_yuan(model, prompt, completion, channel), 6)
         if model:
             m = d['models'].setdefault(model, {'calls': 0, 'completion': 0})
             m['calls'] += 1

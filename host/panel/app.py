@@ -1278,8 +1278,8 @@ function renderRouting(r, b){
     + (rows.length ? `<table><tr><th>用途</th><th>通道/模型</th><th>次数</th><th>产出 token</th></tr>`
         + rows.sort((a,b2)=>b2.completion-a.completion).map(x=>`<tr><td>${esc((RT.purposes[x.pid]||{}).label||x.pid)}</td><td>${esc(x.k)}</td><td>${x.calls}</td><td>${x.completion}</td></tr>`).join('') + `</table>`
       : `<div class="hint">今天还没有调用</div>`)
-    + (b && (b.limit_calls||b.limit_tokens) ? `<div class="hint">上限：${b.limit_calls?`次数 ${b.calls}/${b.limit_calls}`:''} ${b.limit_tokens?`产出 ${b.completion}/${b.limit_tokens}`:''}</div>`
-      : `<div class="msg bad">⚠ 没设当日上限 —— 外部 agent 可以无人确认地花钱。在上面「本机设置」里填 DAILY_LLM_TOKENS</div>`);
+    + (b && (b.limit_calls||b.limit_tokens||b.limit_yuan) ? `<div class="hint">上限：${b.limit_calls?`次数 ${b.calls}/${b.limit_calls}`:''} ${b.limit_tokens?`产出 ${b.completion}/${b.limit_tokens}`:''} ${b.limit_yuan?`花费 ${(b.yuan||0).toFixed(2)}/${b.limit_yuan} 元（按高峰价估）`:''}</div>`
+      : `<div class="msg bad">⚠ 没设当日上限 —— 外部 agent 可以无人确认地花钱。在上面「本机设置」里填 DAILY_LLM_YUAN（元）</div>`);
   return h;
 }
 // 模型名不用手敲：每条通道问一次 GET /models（不花钱），灌进 <datalist>，

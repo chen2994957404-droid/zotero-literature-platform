@@ -24,12 +24,12 @@ def 干净的账本(tmp_path, monkeypatch):
     """每条用例一份独立账本 + 默认不限额，互不干扰。"""
     ledger = tmp_path / 'llm_budget.json'
     monkeypatch.setattr(budget.paths, 'runtime', lambda name: str(ledger))
-    monkeypatch.setattr(budget, '_limits', lambda: {'calls': 0, 'tokens': 0})
+    monkeypatch.setattr(budget, '_limits', lambda: {'calls': 0, 'tokens': 0, 'yuan': 0})
     return ledger
 
 
-def _限额(monkeypatch, calls=0, tokens=0):
-    monkeypatch.setattr(budget, '_limits', lambda: {'calls': calls, 'tokens': tokens})
+def _限额(monkeypatch, calls=0, tokens=0, yuan=0):
+    monkeypatch.setattr(budget, '_limits', lambda: {'calls': calls, 'tokens': tokens, 'yuan': yuan})
 
 
 def test_没设限额时永远放行():
@@ -98,7 +98,7 @@ def test_限额配错了当成不限(monkeypatch):
     from shared.kernel import config
     monkeypatch.setattr(config, 'get_key',
                         lambda name, default='', **kw: '不是数字' if 'DAILY' in name else default)
-    assert budget._limits() == {'calls': 0, 'tokens': 0}
+    assert budget._limits() == {'calls': 0, 'tokens': 0, 'yuan': 0}
 
 
 def test_分模型记账(monkeypatch):
@@ -109,3 +109,21 @@ def test_分模型记账(monkeypatch):
     m = budget.today()['models']
     assert m['deepseek-v4-flash'] == {'calls': 2, 'completion': 130}
     assert m['deepseek-v4-pro'] == {'calls': 1, 'completion': 50}
+
+
+def test_超了元就拦下(monkeypatch):
+    """用户心里的尺子是「余额掉了几块钱」（2026-09-22 要的两块钱限额）。"""
+    _限额(monkeypatch, yuan=2)
+    # flash 高峰价：输入 2 元 / 百万、输出 8 元 / 百万 → 这笔 = 0.2 + 0.8 = 1 元
+    budget.record(prompt=100_000, completion=100_000, model='deepseek-flash', channel='deepseek-官方')
+    budget.check('审稿一篇')          # 1/2 元，放行
+    budget.record(prompt=100_000, completion=100_000, model='deepseek-flash', channel='deepseek-官方')
+    with pytest.raises(budget.BudgetExceeded) as e:
+        budget.check('审稿一篇')
+    assert 'DAILY_LLM_YUAN' in str(e.value)
+
+
+def test_折算宁高勿低():
+    """没列价的付费模型按最贵一行算；Jev 走自己的月度额度，不扣 DeepSeek 余额。"""
+    assert budget.cost_yuan('some-new-model', 1_000_000, 0) >= budget.cost_yuan('deepseek-flash', 1_000_000, 0)
+    assert budget.cost_yuan('whatever', 1_000_000, 1_000_000, channel='typesafe') == 0

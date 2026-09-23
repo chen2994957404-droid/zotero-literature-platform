@@ -182,6 +182,9 @@ SITE_SETTINGS = [
     ('DAILY_LLM_TOKENS', '每天最多产出多少 token', '0',
      '0 = 不限。精读这类长文的成本主要在产出侧，所以卡产出比卡次数更准。'
      '一篇带 SI 的精读大约一万到两万 token'),
+    ('DAILY_LLM_YUAN', '每天最多花多少元', '0',
+     '0 = 不限。按 DeepSeek 高峰价折算（宁高勿低，实际花得只会更少）；'
+     'Jev 有自己的月度额度，不算在里面。本地模型免费，不算'),
     ('ZOTERO_USER_ID', 'Zotero 用户 ID（本地 API）', '',
      'Zotero 本地 API 用；本机开着 Zotero 时填 0 也行'),
     ('ZOTERO_WEB_USER_ID', 'Zotero 用户 ID（写回用）', '',

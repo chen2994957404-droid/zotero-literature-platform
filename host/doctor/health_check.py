@@ -442,18 +442,20 @@ def c_budget():
     """
     from shared.kernel import budget
     d = budget.today()
-    used = f"今天 {d['calls']} 次调用 / 产出 {d['completion']} token"
+    used = f"今天 {d['calls']} 次调用 / 产出 {d['completion']} token / 约 {d.get('yuan', 0):.2f} 元"
     if d['models']:
         top = sorted(d['models'].items(), key=lambda kv: -kv[1]['completion'])[:2]
         used += '（' + '、'.join(f"{m}×{v['calls']}" for m, v in top) + '）'
-    if not d['limit_calls'] and not d['limit_tokens']:
+    if not d['limit_calls'] and not d['limit_tokens'] and not d.get('limit_yuan'):
         return WARN, (used + '；**没设当日上限** —— 外部 agent 可以无人确认地花钱。'
-                      '去控制面板设 DAILY_LLM_CALLS 或 DAILY_LLM_TOKENS')
+                      '去控制面板设 DAILY_LLM_YUAN（元）')
     lim = []
     if d['limit_calls']:
         lim.append(f"次数 {d['calls']}/{d['limit_calls']}")
     if d['limit_tokens']:
         lim.append(f"产出 {d['completion']}/{d['limit_tokens']}")
+    if d.get('limit_yuan'):
+        lim.append(f"花费 {d.get('yuan', 0):.2f}/{d['limit_yuan']:g} 元")
     return OK, used + '；上限 ' + '、'.join(lim)
 
 
