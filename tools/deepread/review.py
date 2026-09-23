@@ -346,7 +346,9 @@ def _recheck(chat_json, flagged, source, local, log):
     """被标的句子拿整篇原文再判一次。整篇里能找到依据的 → 切片漏了（slice_miss），不算编辑的错。"""
     if not flagged:
         return 0
-    verdicts = _judge(chat_json, [f['claim'] for f in flagged], source[:CAP_SOURCE], local, log, '整篇复核')   # _judge 里再按本地窗口压
+    # 整篇原文原样交给 _judge，由 _cap 按句子挑段落。2026-09-23 前这里先截到前 CAP_SOURCE（6 万字）再挑 ——
+    # 正文后半与 SI 根本进不了挑选范围，导读栏概括正文结果的句子复核也救不回来（第七轮逐条核对查出）
+    verdicts = _judge(chat_json, [f['claim'] for f in flagged], source, local, log, '整篇复核')
     fixed = 0
     for f, v in zip(flagged, verdicts):
         if v['v'] in ('ok', 'skip'):
