@@ -798,19 +798,8 @@ def journals(tier=None, limit=200):
 # （concept-centric），空格一眼就是空白。两张表同一份数据，只是转置 + 归类。
 
 # 动态键的家族：按关键词把五花八门的写法归到十来类。认不出的归「其它」，不猜。
-BOND_FAMILIES = (
-    ('氢键', r'hydrogen[\s-]*bond|h[\s-]*bond|urea|urethane|amide'),
-    ('B–O 硼氧', r'boroxine|b[\s–-]*o[\s–-]*b|borate|boron[\s-]*oxygen|b–o|b-o\b|siloxane[\s-]*boron|borosiloxane|dative'),
-    ('硼酸酯', r'boronic|boronate|dioxaborolane|boron ester'),
-    ('金属配位', r'metal|coordinat|zn|fe\b|cu\b|ni\b|zr|ligand|catechol'),
-    ('二硫键', r'disulfide|disulphide|s[\s–-]*s bond'),
-    ('亚胺/席夫碱', r'imine|schiff'),
-    ('Diels–Alder', r'diels|furan|maleimide'),
-    ('离子/静电', r'ionic|electrostatic|ion[\s-]*dipole|zwitterion'),
-    ('π–π/主客体', r'π|pi[\s-]*pi|host[\s-]*guest|cyclodextrin|stacking'),
-    ('酯/氨酯交换', r'transesterif|vitrimer|carbamate exchange|urethane exchange'),
-    ('相分离/结晶', r'phase[\s-]*separat|crystall|nanodomain|hard segment'),
-)
+# 动态键家族词表 2026-09-23 下沉到 shared.domain.schema（抽取的整篇卡片也用它，两个使用者）
+BOND_FAMILIES = schema.BOND_FAMILIES
 
 # 性能的家族：列名太多（几百种写法），只挑最常问的几类；其余不上矩阵
 PROPERTY_FAMILIES = (

@@ -374,6 +374,12 @@ def profile(key):
     return os.path.join(paper_dir(key), 'profile.json')
 
 
+def card(key):
+    """curated/<key>/card.json —— 整篇卡片：材料体系 / 动态键家族 / 自修复 / 核心发现 / 局限（2026-09-23 立）。
+    本地小模型从标题 + 摘要 + 结论判出、脚本核过；接替老的整篇抽取里那几个整篇级字段。可重建。"""
+    return os.path.join(paper_dir(key), 'card.json')
+
+
 def review_report(key):
     """curated/<key>/review.json —— 审稿报告：精读写完后另一个模型对着原文逐句判的结果（可重建）。
 
