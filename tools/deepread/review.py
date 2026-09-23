@@ -619,7 +619,7 @@ def calibrate(keys, chat_json, log=print, tag='v1', local=False, out_dir=None):
                      'injected': len(injected), 'hits': hits,
                      'recall': round(hits / len(injected), 3) if injected else None,
                      'clean_report': clean, 'dirty_report': dirty, 'injected_list': injected})
-        if done:
+        if done and done_dir:
             os.makedirs(done_dir, exist_ok=True)
             json.dump(rows[-1], io.open(done, 'w', encoding='utf-8'), ensure_ascii=False)
     agg = {'tag': tag, 'when': time.strftime('%Y-%m-%d %H:%M'), 'n': len(rows),
