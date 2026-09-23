@@ -13,7 +13,7 @@ try:
 except Exception:
     pass
 
-from shared.domain.numcheck import checklist_block, missing_numbers, must_numbers, unverified_numbers, grounded_together
+from shared.domain.numcheck import checklist_block, missing_numbers, must_numbers, unverified_numbers, grounded_together, ungrounded_numbers
 
 _fail = []
 
@@ -40,7 +40,12 @@ def main():
           and not grounded_together('12.5 MPa 保持 93%', src)          # 两个数隔得太远
           and not grounded_together('只有 12.5 MPa', src)             # 一个数不下结论
           and not grounded_together('强度 12 MPa，应变 860%', src))    # 12 不许撞进 2012 / 12.5
-    print('\n%d/%d 通过' % (6 - len(_fail), 6))
+    tex = r'heated at $150~^{\circ}\mathrm{C}$ for 12 h, a 10\mu m film, 10 000 cycles, retained 93 % of 2017 value'
+    check('严格比数', ungrounded_numbers('150 ℃ 加热 12 小时，10 μm 薄膜，10,000 次循环', tex) == []
+          and ungrounded_numbers('保持 17%', tex) == ['17']                 # 17 不算在 2017 里
+          and ungrounded_numbers('150 ℃ 下保持 93 h', tex) == ['93'],      # 93 在，93 h 不在
+          str(ungrounded_numbers('150 ℃ 加热 12 小时，10 μm 薄膜，10,000 次循环', tex)))
+    print('\n%d/%d 通过' % (7 - len(_fail), 7))
     return 0 if not _fail else 1
 
 

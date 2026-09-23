@@ -15,6 +15,7 @@
 
 - `tools/deepread`（精读）：每栏生成前列清单塞提示词，生成后查覆盖与来源；评测器的「数字覆盖」也用同一把正则
 - `tools/ask`（问答）：答案里的数必须来自检索片段
+- `tools/deepread/review`（审稿）：脚本数字闸
 
 ## 对外接口
 
@@ -24,6 +25,9 @@
 | `missing_numbers(text, must)` | 清单里哪些数没出现在产出里（只比数值，单位常被译成中文） |
 | `checklist_block(must)` | 拼进提示词末尾的那段话 |
 | `unverified_numbers(content, source)` | 产出里出现、来源里找不到的数（图号/年份/单个位数不算） |
+| `ungrounded_numbers(claim, source)` | 审稿的脚本数字闸：完整数字比、带单位的连单位一起比（2026-09-22） |
+| `grounded_together(text, source, window)` | 句中 ≥2 个数在原文同一处凑齐（否决模型的「原文没有」） |
+| `data_numbers` / `norm_source` | 「算数据的数」与原文去 LaTeX / 统一单位写法 |
 | `NUM_UNIT` / `norm` | 正则与归一化，给评测器共用 —— **两边认的「数」必须是同一批** |
 
 ## 它不做什么

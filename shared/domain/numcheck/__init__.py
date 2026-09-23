@@ -21,6 +21,8 @@
 | `checklist_block(must)` | 塞进提示词末尾的那段话 |
 | `unverified_numbers(content, source)` | 产出里出现、来源里找不到的数（别编） |
 | `data_numbers(text)` | 一段话里「算数据」的数（滤掉图号 / 年份 / 单个位数） |
+| `ungrounded_numbers(claim, source)` | 比上一条严：完整数字比、带单位的连单位一起比（审稿的脚本数字闸） |
+| `norm_source(text)` | 原文去 LaTeX 排版符号、统一 μ / ℃ 写法，给上面两条比数用 |
 | `grounded_together(text, source, window)` | 这句的 ≥2 个数在来源里**挨在一起**出现（审稿用来否决「原文没有」的误判） |
 """
 import re
@@ -108,6 +110,54 @@ def unverified_numbers(content, source):
             if s not in src and s.rstrip('0').rstrip('.') not in src]
 
 
+def norm_source(text):
+    """原文 → 便于比数的一串：去空白 / 千分位 / LaTeX 排版符号，μ 与 ℃ 统一写法。
+
+    MineRU 出的全文里数和单位常是公式：`$20~^{\\circ}\\mathrm{C}$`、`10\\mu m`；µ（U+00B5）和 μ 是两个字。
+    不统一的话「数字 + 单位」一比就大面积误伤（2026-09-22 主力机 10 篇实测：误伤 4.0% → 统一后 0.9%）。
+    """
+    t = (text or '').replace('µ', 'μ').replace(r'\mu', 'μ').replace(r'^{\circ}', '°')
+    t = t.replace(r'\circ', '°').replace(r'\%', '%')
+    t = re.sub(r'\\(mathrm|mathbf|text|rm)\s*', '', t)
+    t = re.sub(r'[\s,~${}\\]', '', t)
+    return t.replace('℃', '°C')
+
+
+_UNIT_AFTER = re.compile(r'\s*(wt%|vol%|mol%|%|℃|°C|kPa|MPa|GPa|Pa|nm|μm|µm|mm|cm|kJ|J|mol|Hz|min|h|s|kDa|mg|g|mL|L|V|W|K|'
+                         r'小时|分钟|秒|天)')
+_UNIT_ALIAS = {'℃': '°C', 'µm': 'μm', '小时': 'h', '分钟': 'min', '秒': 's', '天': 'd'}
+
+
+def ungrounded_numbers(claim, source):
+    """一句话里、原文（含 SI）里找不到的数 —— 比 `unverified_numbers` 严，给审稿的脚本数字闸用（2026-09-22）。
+
+    两处更严，都是主力机 10 篇范文实测定的（干净句 865、塞错 80 处）：
+      · 数按**完整数字**比：17 不算出现在 2017 / 170 / 17.5 里（改数抓到 16 → 25 / 50）
+      · 句里的数后面紧跟单位时，原文里要有**同一个数紧跟同一个单位**（单位写法先统一）
+        —— 编造句「150 °C 老化 72 h 保持 93%」里的每个数单拎出来原文多半都有，连着单位就没有了
+        （改数 25 → 34 / 50，编造句 11 → 25 / 30；干净范文误伤 0.9%，逐条看多是范文自己换算的数）
+    """
+    c = re.sub(r'(?<=\d),(?=\d{3}(?!\d))', '', claim or '').replace('µ', 'μ')     # 10,000 是一个数
+    src = norm_source(source)
+    nums = data_numbers(c)
+    out = []
+    for n in nums:
+        alts = {n, n.rstrip('0').rstrip('.') if '.' in n else n}
+        if not any(re.search(r'(?<![\d.])%s(?!\.?\d)' % re.escape(a), src) for a in alts):
+            out.append(n)
+    for m in _ANY_NUM.finditer(c):
+        n = m.group(1)
+        if n in out or n not in nums:
+            continue
+        um = _UNIT_AFTER.match(c, m.end())
+        if not um:
+            continue
+        u = _UNIT_ALIAS.get(um.group(1), um.group(1))
+        if not re.search(r'(?<![\d.])%s(?!\.?\d)%s' % (re.escape(n), re.escape(u)), src):
+            out.append(n)
+    return out
+
+
 def grounded_together(text, source, window=600):
     """这句话里的数（至少两个）在来源里能不能在**同一处**（前后 `window` 字符内）全部找到。
 
@@ -118,7 +168,7 @@ def grounded_together(text, source, window=600):
     nums = data_numbers(text)
     if len(nums) < 2:
         return False
-    src = re.sub(r'[\s,]', '', source or '')
+    src = norm_source(source)
     hits = []
     for n in nums:
         pos = [m.start() for m in re.finditer(r'(?<![\d.])%s(?!\.?\d)' % re.escape(n), src)]

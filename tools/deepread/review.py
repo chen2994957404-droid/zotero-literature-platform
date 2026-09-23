@@ -377,13 +377,13 @@ def coverage(chat_json, points, content, local=False, log=print):
 def _judge_with_numbers(chat_json, claims, source, material, local, log, what):
     """数字闸（脚本）+ 模型。换什么模型都成立的那一半不交给模型。
 
-    - 句中有原文（正文 + SI）里找不到的数 → 脚本直接判 unsupported，不问模型
+    - 句中有原文（正文 + SI）里找不到的数（按完整数字、带单位的连单位比）→ 脚本直接判 unsupported，不问模型
     - 其余交给模型；模型判「原文没有」而句中 ≥2 个数在原文同一处凑齐 → 否决成 ok（`num_ok`）。
       「证据就在材料里、模型仍说原文没有」是第四、五轮查实的本地模型误报（规划 §十四补）
     """
     pre = {}
     for i, c in enumerate(claims):
-        miss = _nums.unverified_numbers(c, source)
+        miss = _nums.ungrounded_numbers(c, source)       # 完整数字 + 连单位比（实测见 numcheck）
         if miss:
             pre[i] = {'claim': c, 'v': 'unsupported', 'by': 'script',
                       'why': '数字 %s 在原文（含 SI）里找不到（脚本核）' % '、'.join(miss[:3])}

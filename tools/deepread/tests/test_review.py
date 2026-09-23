@@ -114,7 +114,9 @@ def test_逐句判_被标的句子落在对的栏_要点覆盖统计():
     calls = []
     rep = RV.review(CONTENT, MD, '', fake_json(calls), META, log=lambda *a: None)
     assert rep['sections']['fig:1']['flags'][0]['v'] == 'unsupported'
-    assert rep['sections']['fig:2']['flags'][0]['v'] == 'distorted'
+    # 「错数 30 rad/s」原文没有 → 2026-09-22 起脚本数字闸直接判，不经模型
+    f2 = rep['sections']['fig:2']['flags'][0]
+    assert f2['v'] == 'unsupported' and f2['by'] == 'script' and '30' in f2['why']
     assert rep['n_flagged'] == 2 and rep['n_missed'] == 1 and rep['n_partial'] == 1
     assert not rep['passed']                       # 2 / 十几句 > 8%
     # 图 1 那栏的材料是图 1 的图注 + 讨论段，不是整篇
@@ -126,8 +128,9 @@ def test_逐句判_被标的句子落在对的栏_要点覆盖统计():
 def test_整篇复核能洗白切片漏判():
     calls = []
     rep = RV.review(CONTENT, MD, '', fake_json(calls, whole_ok=True), META, log=lambda *a: None, with_cover=False)
-    # 假模型：材料一长（整篇）就全判 ok → 两处被标的都算切片漏了
-    assert rep['n_flagged'] == 0 and rep['n_slice_miss'] == 2 and rep['passed']
+    # 假模型：材料一长（整篇）就全判 ok → 模型标的那处算切片漏了；
+    # 脚本数字闸标的（错数 30 rad/s）是确定的，不进整篇复核、洗不白
+    assert rep['n_flagged'] == 1 and rep['n_slice_miss'] == 1 and rep['n_script_flag'] == 1
 
 
 def test_回炉提示只给有问题的栏_漏要点挂收尾栏():
