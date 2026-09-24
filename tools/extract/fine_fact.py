@@ -361,6 +361,61 @@ def _zone_candidates(cands, chat, zone_model, stats):
     return zones
 
 
+# ── 单位表外的写法交给 Pint 认（2026-09-24）─────────────────────────
+# 用户定的规矩（2026-09-21）：单位别靠手写表碰到一个补一个。scan 的单位表认得常见写法；
+# 表外的（MJ m-2、μg/mm^2、cd m-2、V μm-1 …）把数后面那一小段交给 Pint —— 它认得出是个有量纲的单位就算候选。
+_NUM_ANY = re.compile(r'(?<![\d.\w^])(\d+(?:\.\d+)?)(?![\d.])')
+_UNIT_TOK = re.compile(r'\s*(/|\^?[-−]?\d(?![\d.])|[A-Za-zμµ°Ω%][A-Za-zμµ°Ω%·]*)')
+# Pint 认得、但在正文里几乎总是英文词的：in=英寸、a=年、as=阿秒、at=工程大气压…
+_NOT_UNIT = {'in', 'a', 'as', 'at', 'are', 'and', 'or', 'to', 'of', 'for', 'by', 'the', 'an', 'with', 'from', 'on', 'is',
+             'was', 'were', 'be', 'it', 'this', 'that', 'which', 'per', 'pi', 'than', 'then', 'after', 'before', 'under',
+             'over', 'up', 'down', 'each', 'all', 'no'}
+# 单个大写字母太容易是子图号 / 选项（「Fig. 4 C」会被读成 4 库仑）；只认几个真常见的
+_ONE_LETTER_OK = set('KVNWgmshL')
+_REF_BEFORE = re.compile(r'(?i)(fig(?:ure)?s?\.?|tables?|schemes?|eqs?\.?|equations?|refs?\.?|sections?|[(\[,–-])\s*$')
+
+
+def pint_candidates(src, found):
+    """单位表没认出、但后面跟着 Pint 认得的有量纲单位的数 → 候选（带 `by_pint`）。"""
+    taken = set()
+    for c in found:
+        taken.update(range(c['pos'], c['pos'] + len(c.get('raw') or '') + 1))
+    out = []
+    for m in _NUM_ANY.finditer(src):
+        pos = m.start()
+        if pos in taken or _REF_BEFORE.search(src[max(0, pos - 12):pos]):
+            continue
+        line_start = src.rfind(chr(10), 0, pos) + 1
+        if src[line_start:line_start + 2].lstrip().startswith('|'):
+            continue                                    # 表格行：scan_tables 管
+        toks, end = [], m.end()
+        while len(toks) < 5:
+            t = _UNIT_TOK.match(src, end)
+            if not t:
+                break
+            toks.append(t.group(1))
+            end = t.end()
+        if not toks or not re.match(r'[A-Za-zμµ°Ω%]', toks[0]) or toks[0].lower() in _NOT_UNIT:
+            continue
+        if len(toks[0]) == 1 and toks[0] not in _ONE_LETTER_OK:
+            continue
+        unit = ''
+        for k in range(len(toks), 0, -1):
+            cand = ' '.join(toks[:k]).replace(' / ', '/').replace('/ ', '/').replace(' /', '/')
+            if toks[k - 1] == '/' or any(x.lower() in _NOT_UNIT for x in toks[:k] if x != '/'):
+                continue
+            dim = _dimension(cand)
+            if dim and dim != 'dimensionless':
+                unit = cand
+                break
+        if not unit:
+            continue
+        out.append({'value': float(m.group(1)), 'value_max': None, 'unit': unit, 'cmp': '',
+                    'raw': '%s %s' % (m.group(1), unit), 'context': src[max(0, pos - 90):min(len(src), end + 30)].replace('\n', ' ').strip(),
+                    'section': '', 'location': scan.nearest_ref(src, pos), 'in_table': False, 'pos': pos, 'by_pint': True})
+    return out
+
+
 def extract_paper(md, chat, model, log=print, si_md='', zone_model=None, sample_model=None):
     """一篇 → 数值事实列表 + 统计。每个候选：T0 预筛 → （可选）句子分区 → 两次封闭题。
 
@@ -374,8 +429,12 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None, sample_
     facts, dropped, stats = [], [], {'cands': 0, 'asked': 0, 'no_answer': 0, 'not_prop': 0, 'sample_unspec': 0, 'sample_bad': 0,
                         'cond_unit': 0, 'zoned_out': 0, 'zone_calls': 0, 'secs': 0.0}
     t0 = time.time()
-    cands = [(text, c) for c in scan.scan_numbers(text)] + [(si_text, c) for c in scan.scan_numbers(si_text)]
+    cands = []
+    for src in (text, si_text):
+        found = scan.scan_numbers(src)
+        cands += [(src, c) for c in found] + [(src, c) for c in pint_candidates(src, found)]
     cands = [(t, c) for t, c in cands if c['value'] is not None and not c.get('in_table')]   # 表格由 scan_tables 全脚本处理
+    stats['pint_cands'] = sum(1 for _, c in cands if c.get('by_pint'))
     stats['cands'] = len(cands)
     # T0 预筛：投料 / 时间 / 体积单位的数不是性质
     kept = []

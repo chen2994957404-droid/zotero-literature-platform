@@ -47,9 +47,12 @@ _UNITS = [
     'times', '-fold', 'fold', '×',
     'megapascals', 'gigapascals', 'kilopascals', 'megajoules per cubic meter',
 ]
+# µ（U+00B5 微符号）与 μ（U+03BC 希腊字母）长得一样、不是一个字。上表写的是 µ，而 clean_body 把 `\mu` 洗成 μ ——
+# 于是公式里来的 μm / μg / μL 从来没被认出过（2026-09-24 查出）。两种写法都收。
+_UNITS += [u.replace('µ', 'μ') for u in _UNITS if 'µ' in u]
 _UNIT_RE = '|'.join(re.escape(u) for u in sorted(_UNITS, key=len, reverse=True))
 # 无量纲量：数前面有这些词就算候选（泊松比 0.028、R² 0.9998、取向因子 0.330 —— 全是范文会写的数）
-_DIMLESS_CUE = re.compile(r"(?i)\b(ratio|factor|coefficient|R\s*\^?2|R²|Poisson|index|efficiency|degree of|modulus ratio|m_?c|pr_?c|\bof\s+about)\s*(?:of|=|was|is|were|reached|rose to|to)?\s*$")
+_DIMLESS_CUE = re.compile(r"(?i)\b(ratio|factor|coefficient|R\s*\^?2|R²|Poisson|index|efficiency|degree of|modulus ratio|m_?c|pr_?c|\bof\s+about)\s*(?:of|=|was|is|were|reached|rose to|to|rose from|increased from|decreased from|from|up to)?\s*$")
 
 # 数：支持 1.2e5 / 1.2×10^4 / 区间 / 前缀比较符
 _NUM = r'[-+]?\d+(?:[.,]\d+)?(?:\s*[eE][-+]?\d+|\s*[×xX]\s*10\s*\^?\s*[-+−]?\d+)?'
@@ -138,6 +141,28 @@ def scan_numbers(md, window=90, limit=4000):
         })
         if len(out) >= limit:
             break
+    # 并列同单位（2026-09-24）：「110.7 and 103.3 kJ mol-1」「75° and 90°C」「14.8 and 423.7 times」——
+    # 单位只写在最后一个数后面，前面的数原来一律漏掉（主力机 10 篇范文实测，漏掉的范文数里约四分之一是这种）
+    _chain = re.compile(r'(?<![\d.])(\d+(?:\.\d+)?)\s*°?\s*(?:,\s*(?:and|or)?|and|or|to|vs\.?|、)\s*$')
+    for o in list(out):
+        if not o['unit'] or o['in_table']:
+            continue
+        end = o['pos']
+        for _ in range(3):
+            base = max(0, end - 40)
+            cm = _chain.search(md[base:end])
+            if not cm:
+                break
+            pos = base + cm.start(1)
+            if pos in seen:
+                break
+            seen.add(pos)
+            ctx = md[max(0, pos - window):min(len(md), o['pos'] + len(o['raw']) + 30)].replace('\n', ' ')
+            out.append({'value': float(cm.group(1)), 'value_max': None, 'unit': o['unit'], 'cmp': '',
+                        'raw': '%s %s' % (cm.group(1), o['unit']), 'context': ctx.strip(),
+                        'section': o['section'], 'location': o['location'], 'in_table': False, 'pos': pos,
+                        'shared_unit': True})
+            end = pos
     # 无量纲候选：数前 40 字符里有 ratio / factor / coefficient / R² / Poisson 这类提示词
     for m in re.finditer(r'(?<![\d.])(\d+\.\d+)(?![\d])', md):
         pos = m.start()
@@ -278,10 +303,13 @@ def clean_body(md):
     t = str(md or '')
     if not t:
         return ''
+    # 公式里的 `~` 是排版空格（`876~\mu m`），不是「约」—— 不洗的话 Pint 会把 `~μ m` 读成「原子质量 × 米」（2026-09-24）
+    t = re.sub(r'\$[^$\n]*\$', lambda m: m.group(0).replace('~', ' '), t)
     t = t.replace('$', ' ')
     t = re.sub(r'\^\s*\{?\s*\\circ\s*\}?\s*(?:\\mathrm\{\s*C\s*\}|C)', '°C', t)     # 90^{\circ}\mathrm{C} / 90^\circ C → °C
     t = re.sub(r'\^\s*\{?\s*\\circ\s*\}?', '°', t)                                       # 2θ = 25.9^\circ → 25.9°（不是温度）
     t = re.sub(r'([A-Za-z])\s*\^\s*\{?\s*([-−]\s*\d)\s*\}?', lambda m: m.group(1) + m.group(2).replace('−', '-').replace(' ', ''), t)   # mol^{-1} → mol-1
+    t = re.sub(r'(?<![A-Za-z])([A-Za-z]{1,2})\s*\^\s*\{?\s*(\d)\s*\}?(?![\d.])', r'\1\2', t)   # MJ/m ^{3} → MJ/m3（单位上的正幂次；10^{3} 前面是数字，不走这条）
     t = _SPACE_CMD.sub(' ', t)            # \; \, \! 这类排版空格，先去掉反斜杠
     t = _TEXT_CMD.sub(' ', t)
     # **指数要留住 `^`**：`10^{-10}` 塌成 `10-10` 就变成了一个「区间」，
@@ -301,6 +329,7 @@ def clean_body(md):
     # 误差棒剥掉：`9.8 ± 0.3 MPa` 不剥会被读成 0.3（±0.3 才是被当成值的那个）
     t = re.sub(r'\s*[±]\s*\d+(?:\.\d+)?', '', t)
     t = re.sub(r'(?<=\d)[  ](?=\d{3}(?!\d))', '', t)
+    t = re.sub(r'([μµ])\s+(?=(?:m|g|L|l|s|M|V|mol)\b)', r'\1', t)     # \mu m 洗完是「μ m」→ μm
     return re.sub(r'[ 	]+', ' ', t)
 
 
