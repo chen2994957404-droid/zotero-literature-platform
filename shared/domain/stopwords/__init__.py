@@ -8,8 +8,18 @@
 **为什么不自己写**：用户定的规矩（2026-09-21）—— 词表找现成资源，别碰到一个补一个。
 2026-09-24 实测：手写的「Pint 会误认成单位的英文词」清单漏了 am / de / has / he / me / re。
 
-用途：`fine_fact.pint_candidates` —— 数后面跟的词若是停用词（in=英寸、a=年、as=阿秒…）就不当单位。
+使用者（≥2，所以住 shared/domain）：
+  · `tools/extract/fine_fact.pint_candidates` —— 数后面跟的词若是停用词（in=英寸、a=年、as=阿秒…）就不当单位
+  · `tools/litsearch/session.mine_terms` —— 挖新检索词时，词组首尾不许是停用词
+
+纯数据，不联网、不读盘。
 """
+import os, sys
+# 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[attr-defined]
+except Exception:
+    pass
 
 ENGLISH_STOP_WORDS = frozenset((
     'a', 'about', 'above', 'across', 'after', 'afterwards', 'again', 'against', 'all', 'almost', 'alone', 'along',
