@@ -45,6 +45,8 @@ _UNITS = [
     'cm3/g', 'm2/g', 'g/cm3', 'g cm-3', 'ton', 'tons', 'kg',
     # 倍数与「-fold」：范文里「强度是对照的 5.1 倍」这类数很常见，之前一律漏
     'times', '-fold', 'fold', '×',
+    # 摩尔浓度与电压（2026-09-24 练习金标：检出限「1×10^-10 M」、斜率「-23 mV」此前都没进候选）
+    'mM', 'µM', 'nM', 'pM', 'M', 'mV', 'V',
     'megapascals', 'gigapascals', 'kilopascals', 'megajoules per cubic meter',
 ]
 # µ（U+00B5 微符号）与 μ（U+03BC 希腊字母）长得一样、不是一个字。上表写的是 µ，而 clean_body 把 `\mu` 洗成 μ ——
@@ -60,7 +62,7 @@ _NUM = r'[-+]?\d+(?:[.,]\d+)?(?:\s*[eE][-+]?\d+|\s*[×xX]\s*10\s*\^?\s*[-+−]?\
 _VALUE_RE = re.compile(
     r'(?P<cmp>[~≈><≥≤]|\bup to\b|\babout\b|\bover\b)?\s*'
     r'(?P<num>' + _NUM + r'(?:\s*[–—~-]\s*' + _NUM + r')?)\s*'
-    r'(?P<unit>' + _UNIT_RE + r')(?![A-Za-z])')
+    r'(?P<unit>' + _UNIT_RE + r')(?![A-Za-z])(?!\s*10\s*\^)')     # 「1×10^-10」不许在 × 处截成「1×」
 
 _REF_RE = re.compile(r'(?i)\b(table|tab\.|figure|fig\.|fig|scheme)\s*([SIVX]?\d+[a-z]?)')
 _HEAD_RE = re.compile(r'(?m)^(#{1,4})\s+(.+)$')
@@ -149,7 +151,7 @@ def scan_numbers(md, window=90, limit=4000):
         if not o['unit'] or o['in_table']:
             continue
         end = o['pos']
-        for _ in range(3):
+        for _ in range(10):          # 「243, 129, 73, 71, 91, and 112 kPa」这种罗列一口气能有六七个
             base = max(0, end - 40)
             cm = _chain.search(md[base:end])
             if not cm:
@@ -164,6 +166,7 @@ def scan_numbers(md, window=90, limit=4000):
                         'section': o['section'], 'location': o['location'], 'in_table': False, 'pos': pos,
                         'shared_unit': True})
             end = pos
+    _respectively(md, out)
     # 无量纲候选：数前 40 字符里有 ratio / factor / coefficient / R² / Poisson 这类提示词
     for m in re.finditer(r'(?<![\d.])(\d+\.\d+)(?![\d])', md):
         pos = m.start()
@@ -184,6 +187,45 @@ def scan_numbers(md, window=90, limit=4000):
                     'context': ctx.strip(), 'section': _section_at(sections, pos),
                     'location': nearest_ref(md, pos), 'in_table': False, 'pos': pos})
     return out
+
+
+_RANGE_NAMES = re.compile(r'\b([A-Za-z][A-Za-z\-]*?)(\d+)\s*(?:to|–|—|-|~)\s*\1(\d+)\b')
+_NAME_TOK = r'[A-Z][\w\-/()]*'
+_NAME_LIST = re.compile(r'(%s(?:\s*,\s*(?:and\s+)?%s|\s+and\s+%s)+)' % (_NAME_TOK, _NAME_TOK, _NAME_TOK))
+
+
+def _respectively(md, cands):
+    """「分别为」按顺序对上样品（2026-09-24）：写 `sample_hint`，不问模型。
+
+    「The Ge,exp values for PBS1 to PBS6 are 243, 129, 73, 71, 91, and 112 kPa, respectively.」——
+    样品是一个范围（PBS1 to PBS6）或一串名字（A, B and C），数是一串同单位的数，两边个数相等就一一对上。
+    个数对不上就不动（宁可交给后面判，也不乱配）。
+    """
+    for m in re.finditer(r'\brespectively\b', md):
+        start = max(md.rfind('. ', 0, m.start()), md.rfind('\n', 0, m.start())) + 1
+        sent = md[start:m.end()]
+        names = []
+        r = _RANGE_NAMES.search(sent)
+        if r and 1 <= int(r.group(3)) - int(r.group(2)) <= 20:
+            names = ['%s%d' % (r.group(1), i) for i in range(int(r.group(2)), int(r.group(3)) + 1)]
+        else:
+            lm = _NAME_LIST.search(sent)
+            if lm:
+                names = [x.strip() for x in re.split(r'\s*,\s*(?:and\s+)?|\s+and\s+', lm.group(1)) if x.strip()]
+        if len(names) < 2:
+            continue
+        inside = sorted((c for c in cands if start <= c['pos'] < m.end() and not c.get('in_table')), key=lambda c: c['pos'])
+        # 取句中最长的一串同单位的数
+        best, cur = [], []
+        for c in inside:
+            if cur and c['unit'] != cur[-1]['unit']:
+                cur = []
+            cur.append(c)
+            if len(cur) > len(best):
+                best = list(cur)
+        if len(best) == len(names):
+            for c, n in zip(best, names):
+                c['sample_hint'] = n
 
 
 def guess_property(context):
@@ -264,7 +306,8 @@ _SPACE_CMD = re.compile(_BS_RE + r'[;,:!> ]')
 # `10^{-10}` / `10 ^ -10` 里的幂次：**这个 `^` 必须留住**
 _EXP_RE = re.compile(r'(?<=\d)\s*\^\s*\{?\s*([-+−]?\d+)\s*\}?')
 # 光杆的 `10^-10`（前面没有「A ×」）
-_BARE_POW_RE = re.compile(r'(?<![\d.×xX*])\s*\b10\^([-+]?\d+)')
+# 「1 × 10^-10」（× 两边带空格）也不是光杆幂次 —— 第二个后顾就是为它（2026-09-24，原来会补成「1 × 1×10^-10」）
+_BARE_POW_RE = re.compile(r'(?<![\d.×xX*])(?<![×xX*]\s)\s*\b10\^([-+]?\d+)')
 
 
 def clean_label(text):

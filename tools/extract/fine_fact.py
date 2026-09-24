@@ -134,19 +134,66 @@ def _highlight(md, c):
     return (md[a:start] + '<<' + c['raw'] + '>>' + md[end:b]).replace('\n', ' ')
 
 
-def _drop_nonbody(md):
-    """按骨架把参考文献 / 致谢 / 作者信息这些非正文区挖掉（保留位置不重要，候选只要文本）。"""
+def _drop_nonbody(md, body_only=False):
+    """按骨架把参考文献 / 致谢 / 作者信息这些非正文区挖掉（保留位置不重要，候选只要文本）。
+
+    `body_only=True`（正文用，2026-09-24）另外：
+      · 挖掉「合成 / 方法」节 —— 试剂纯度、原料分子量、干燥温度、仪器参数都在这里，不是本文材料的性能
+      · 引言（背景）里**带引用标记或比较词、又不是「我们」说的**句子挖掉 —— 那是别人文献的数
+    SI 不用：SI 常整篇都被认成方法节，里面的性能表会被一起挖掉。
+    """
     from shared.domain.schema import outline as _ol
     o = _ol.build_outline(md)
-    spans = sorted((s['start'], s['end']) for s in o.get('sections') or [] if s['kind'] == _ol.NONBODY)
-    if not spans:
-        return md
+    drop = {_ol.NONBODY} | ({_ol.SYNTHESIS, _ol.METHODS} if body_only else set())
+    secs = o.get('sections') or []
+    spans = sorted((s['start'], s['end']) for s in secs if s['kind'] in drop)
     out, pos = [], 0
     for a, b in spans:
         out.append(md[pos:a])
         pos = max(pos, b)
     out.append(md[pos:])
-    return ''.join(out)
+    text = ''.join(out)
+    if body_only:
+        for s in secs:
+            if s['kind'] != _ol.BACKGROUND:
+                continue
+            seg = md[s['start']:s['end']]
+            kept = ' '.join(x for x in re.split(r'(?<=[.;])\s+', seg) if not _others_work(x))
+            text = text.replace(seg, kept, 1)
+    return text
+
+
+_CITE = re.compile(r'\[\s*\d+(?:\s*[,–-]\s*\d+)*\s*\]|\^\s*\{?\s*\d+(?:\s*[,–-]\s*\d+)*\s*\}?|\(\s*\d+(?:\s*[,–-]\s*\d+)+\s*\)')
+_OTHERS = re.compile(r'(?i)\b(reported|previous(?:ly)?|literature|state[- ]of[- ]the[- ]art|conventional|commercial|typically|'
+                     r'et al|others?|existing|prior)\b')
+_OURS = re.compile(r'(?i)\b(we|our|herein|this work|this study|the present)\b')
+
+
+def _others_work(sentence):
+    """引言里的一句是不是在说别人的工作：带引用标记或比较词，而且不是「我们 / 本文」说的。"""
+    return bool(_CITE.search(sentence) or _OTHERS.search(sentence)) and not _OURS.search(sentence)
+
+
+# 化学式下标被解析成「SiO 2」「TiO 2」：接回去，样品名才不会被截成「D-SiO」（2026-09-24 练习金标）
+_FORMULA_SUB = re.compile(r'\b((?:[A-Z][a-z]?){2,})\s+(\d)(?![\d.])')
+
+
+def _in_html_table(text, pos):
+    """这个位置是不是在 HTML 表格里（MineRU 有时把表格输出成 <table>，scan 只认 markdown 表格行）。"""
+    a = text.rfind('<table', 0, pos)
+    return a >= 0 and text.find('</table>', a) > pos
+
+
+def _join_formula(text):
+    return _FORMULA_SUB.sub(r'\1\2', text or '')
+
+
+# 样品名不能是单位符号本身（「MJ」「kPa」）或带负指数的单位碎片（「mV K-1」里的「K-1」）。
+# 不用 Pint 判：它会把 EN / PVA / PU / S1 这些真样品名也读成单位
+_UNIT_LIKE = re.compile(r'^(?:[kMGmμµn]?(?:J|Pa|W|V|A|K|g|L|m|s|Hz|N|C|eV|mol))(?:-\d)?$')
+# 模型答出来的「性质」其实是条件（练习金标：干燥温度、测试频率、试剂纯度被标成性质）
+_CONDITION_NAMES = {'temperature', 'processing temperature', 'test temperature', 'frequency', 'strain rate', 'strain', 'purity',
+                    'time', 'pressure', 'concentration', 'heating rate', 'extension rate', 'speed', 'loading rate', 'duration'}
 
 
 GROUP = 6               # 一次调用最多问几个数
@@ -323,7 +370,8 @@ _NOT_SAMPLE_WORDS = re.compile(r'(?i)relaxation|test|spectr|microscop|analysis|c
 def _looks_like_sample(name):
     """样品名总带点「编号味」：大写字母、数字、斜杠或连字符。全小写的普通名词（eutectogels、fibrous materials）不算；
     测试手段 / 性质名（Stress-relaxation、DMA）也不算（2026-09-24）。"""
-    return bool(re.search(r'[A-Z0-9/]', name)) and len(name) <= 40 and not _NOT_SAMPLE_WORDS.search(name)
+    return (bool(re.search(r'[A-Z0-9/]', name)) and len(name) <= 40 and not _NOT_SAMPLE_WORDS.search(name)
+            and not _UNIT_LIKE.match(name.strip()))
 
 
 def _window_samples(win):
@@ -462,9 +510,9 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None, sample_
     METHOD / BACKGROUND / OTHER 句里的数记成条件、不问。
     """
     # 正文 + SI 一起扫（2026-09-21 中途实测：只扫正文时范文数命中 45%，9.7B 把 SI 切进去的一次拆 77% —— 差在找数的范围）
-    text = scan.clean_body(_drop_nonbody(md)) if md else ''       # 参考文献区不进候选：页码、年份全是数
-    si_text = scan.clean_body(_drop_nonbody(si_md)) if si_md else ''
-    samples = sample_list(md + '\n' + (si_md or ''))
+    text = _join_formula(scan.clean_body(_drop_nonbody(md, body_only=True))) if md else ''   # 非正文、方法节、引言里别人的数不进候选       # 参考文献区不进候选：页码、年份全是数
+    si_text = _join_formula(scan.clean_body(_drop_nonbody(si_md))) if si_md else ''
+    samples = [x for x in sample_list(md + '\n' + (si_md or '')) if _looks_like_sample(x)]
     facts, dropped, stats = [], [], {'cands': 0, 'asked': 0, 'no_answer': 0, 'not_prop': 0, 'sample_unspec': 0, 'sample_bad': 0,
                         'cond_unit': 0, 'zoned_out': 0, 'zone_calls': 0, 'secs': 0.0}
     t0 = time.time()
@@ -472,7 +520,8 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None, sample_
     for src in (text, si_text):
         found = scan.scan_numbers(src)
         cands += [(src, c) for c in found] + [(src, c) for c in pint_candidates(src, found)]
-    cands = [(t, c) for t, c in cands if c['value'] is not None and not c.get('in_table')]   # 表格由 scan_tables 全脚本处理
+    cands = [(t, c) for t, c in cands if c['value'] is not None and not c.get('in_table')
+             and not _in_html_table(t, c['pos'])]   # 表格由 scan_tables 全脚本处理（MineRU 有时输出 HTML 表格）
     stats['pint_cands'] = sum(1 for _, c in cands if c.get('by_pint'))
     stats['cands'] = len(cands)
     # T0 预筛：投料 / 时间 / 体积单位的数不是性质
@@ -515,12 +564,19 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None, sample_
                 continue
             if pi not in PROPERTY_ALIASES:
                 stats['free_name'] = stats.get('free_name', 0) + 1     # 模型自己起的名（词表外），照收，供词表下一轮扩
+            if normalize_property_name(pi) in _CONDITION_NAMES:      # 模型把条件当成了性质
+                stats['cond_name'] = stats.get('cond_name', 0) + 1
+                dropped.append({'norm': _nums.norm(str(c['value'])), 'why': 'cond_name:' + pi, 'raw': c['raw'], 'ctx': c['context'][:120]})
+                continue
             if not dimension_ok(pi, _dimension(c.get('unit') or '')):   # ⑥ 量纲把关：40 mm 不可能是断裂韧性
                 stats['dim_reject'] = stats.get('dim_reject', 0) + 1
                 dropped.append({'norm': _nums.norm(str(c['value'])), 'why': 'dim_reject:' + pi, 'raw': c['raw'], 'ctx': c['context'][:120]})
                 continue
             sent = _highlight(src_text, c)
             sample = g_samples[si - 1] if si and si <= len(g_samples) else ''
+            if c.get('sample_hint'):                               # 「分别为」脚本已按顺序配好样品，不听模型的
+                sample = c['sample_hint']
+                stats['sample_respectively'] = stats.get('sample_respectively', 0) + 1
             if sample and sample.lower() not in g_win.lower():   # ⑤ 核对：样品名要在这组的窗口里
                 stats['sample_bad'] += 1
                 sample = ''
