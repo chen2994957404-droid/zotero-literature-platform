@@ -134,3 +134,13 @@ def test_召回修正三条():
     assert F._prefer_longest(['D-SiO2', 'SPU'], win) == ['SPU/10D-SiO2', 'SPU']
     from tools.extract.evals.scorers.measurements import _same_sample
     assert _same_sample('polymer 1', '1') and not _same_sample('polymer 2', '1')
+
+
+def test_证据够就收_与完整名字():
+    for t, raw, want in [('In the S1 sample, the energy dissipation ratio of 88% is achieved', '88%', 'energy dissipation ratio'),
+                         ('The tensile strength of SPU is 9.8 MPa and elongation at break of 3052%.', '3052%', 'elongation at break'),
+                         ('The samples were stirred for 12 h at 80 °C before testing the tensile strength.', '80 °C', None)]:
+        c = next(c for c in scan.scan_numbers(t) if c['raw'] == raw)
+        got = F.evidence_property(t, c)
+        assert (got == want) if want is None else (got and want in got), (t, got)
+    assert F._mentions('strength of spu/10d-sio2 rises', 'spu/10d-sio2') and not F._mentions('strength of spu/10d-sio2 rises', 'spu')

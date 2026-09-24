@@ -328,7 +328,8 @@ def _answer_group(group, chat, model, samples, stats, sample_model=None):
     for k in need:
         src_text, c = group[k]
         sent_l = _local_sentence(src_text, c).lower()
-        here = [i + 1 for i, x in enumerate(samples) if x.lower() in sent_l]
+        # 按完整名字认（2026-09-24）：子串会把「SPU/10D-SiO2」一句算成同时提到 SPU、D-SiO2、SPU/10D-SiO2 三个样品
+        here = [i + 1 for i, x in enumerate(samples) if _mentions(sent_l, x.lower())]
         codes_here = [i for i in here if _CODE.search(samples[i - 1])]
         if len(codes_here) == 1:               # 句子里只有一个编号样的样品 → 就是它（基底 Al2O3 / 试剂不算样品）
             here = codes_here
@@ -406,6 +407,53 @@ def _prefer_longest(names, win):
             seen.add(x)
             uniq.append(x)
     return uniq
+
+
+def _mentions(text, name):
+    """name 在 text 里**作为完整名字**出现（前后不紧挨字母数字、横线、斜杠）。"""
+    return bool(name) and re.search(r'(?<![\w\-/])' + re.escape(name) + r'(?![\w\-/])', text) is not None
+
+
+_PREV_NUM = re.compile(r'(?<![A-Za-z])[-+]?\d+(?:\.\d+)?(?:\s*[^\s,;]+)?')
+
+
+def evidence_property(src_text, c):
+    """「证据够就收」（2026-09-24，规划 §十六补二第 2 步）：数前面**同一句里、上一个数之后**写着词表里的性能名，
+    而且单位量纲对得上 → 这个性能名，不用模型点头。
+
+    为什么：小模型对「the energy dissipation ratio of 88%」「sensitive toward fluoride ions (1×10^-10 M)」这类
+    明明写着名字的数也会答「不是性质」（练习金标上是召回的第二大漏洞）。默认方向从「模型点头才收」改成「证据够就收」。
+    量纲：性能登记了量纲的必须对上；登记为无量纲的只收 % / 倍数 / 光杆数；没登记的只收有量纲单位以外的也放行（名字本身就是证据）。
+    """
+    pos = c['pos']
+    left = src_text[max(0, pos - 90):pos]
+    cut = max(left.rfind('. '), left.rfind('\n'), left.rfind('; '))
+    if cut >= 0:
+        left = left[cut + 1:]
+    last = None
+    for m in _PREV_NUM.finditer(left):
+        last = m
+    if last:
+        left = left[last.end():]
+    low = left.lower()
+    best = None                                     # (结束位置, 别名长度, 正名)：离这个数最近的、同位置取最长的
+    for alias, canon in _ALIAS_TO_CANON:
+        if len(alias) < 3 or canon in _CONDITION_NAMES:
+            continue
+        for m in re.finditer(r'(?:^|[^a-z])(' + re.escape(alias) + r')(?=$|[^a-z])', low):
+            key = (m.end(1), len(alias), canon)
+            if best is None or key[:2] > best[:2]:
+                best = key
+    if best is None:
+        return None
+    p = best[2]
+    dim = _dimension(c.get('unit') or '')
+    allowed = PROPERTY_DIMENSION.get(p)
+    if allowed is None:
+        return p
+    if allowed == ():
+        return p if dim in ('', 'dimensionless') else None
+    return p if dim in allowed else None
 
 
 def _names_property(c):
@@ -590,6 +638,11 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None, sample_
         results = list(pool.map(lambda g: _answer_group(g, chat, model, samples, stats, sample_model), groups))
     for g, (props, sids, g_samples, g_win) in zip(groups, results):
         for (src_text, c), pi, si in zip(g, props, sids):
+            if not pi:
+                ev = evidence_property(src_text, c)             # 证据够就收：数前面紧挨着写了性能名、量纲对得上
+                if ev:
+                    pi = ev
+                    stats['evidence_accept'] = stats.get('evidence_accept', 0) + 1
             if pi is None:
                 stats['no_answer'] += 1
                 dropped.append({'norm': _nums.norm(str(c['value'])), 'why': 'no_answer', 'raw': c['raw'], 'ctx': c['context'][:120]})
