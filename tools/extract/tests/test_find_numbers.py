@@ -51,3 +51,25 @@ def test_编号与英文小词不当单位():
     assert raws == [], raws
     _, _, raws = _found('| PBS-1 | 3 in |')
     assert raws == [], '表格行归 scan_tables 管'
+
+
+# ── 样品归属的三类错（2026-09-24）────────────────────────────────
+
+def test_对照样_数在比较词前面就不归它():
+    s = 'The FC-EtFe reached a toughness of 58.9 MJ/m3, which was 14.8 and 423.7 times that of FC-Et and FC-1T.'
+    cands = ['FC-EtFe', 'FC-Et', 'FC-1T']
+    assert F.fix_comparator(s, '423.7 times', 'FC-1T', cands) == 'FC-EtFe'
+    assert F.fix_comparator(s, '14.8 times', 'FC-Et', cands) == 'FC-EtFe'
+    assert F.fix_comparator(s, '58.9 MJ/m3', 'FC-EtFe', cands) == 'FC-EtFe', '主语样品原样不动'
+
+
+def test_对照样_数在对照样后面说的就是它():
+    s = 'Compared with FC-1T, FC-Et showed 3.2 MPa and FC-1T only 0.5 MPa.'
+    assert F.fix_comparator(s, '0.5 MPa', 'FC-1T', ['FC-1T', 'FC-Et']) == 'FC-1T'
+
+
+def test_测试手段与性质名不当样品():
+    for bad in ('Stress-relaxation', 'DMA', 'SEM', 'Tensile strength'):
+        assert not F._looks_like_sample(bad), bad
+    for ok in ('PBS-1', 'FC-EtFe', 'PVA/CPO', 'CAN-4-3-30'):
+        assert F._looks_like_sample(ok), ok

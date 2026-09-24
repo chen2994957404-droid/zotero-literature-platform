@@ -299,22 +299,62 @@ def _answer_group(group, chat, model, samples, stats, sample_model=None):
                 _highlight_sentence(src_text, c), ', '.join(samples))
             stats['asked'] += 1
             sids[k] = _ask_name(chat, SYS_SAMPLE, u, sample_model or model, samples)
+    # 对照样纠正（脚本，规则判的和模型答的都过一遍）
+    for k in need:
+        if not sids[k]:
+            continue
+        src_text, c = group[k]
+        chosen = samples[sids[k] - 1]
+        fixed = fix_comparator(_local_sentence(src_text, c), c['raw'], chosen, samples)
+        if fixed != chosen:
+            stats['sample_comparator'] = stats.get('sample_comparator', 0) + 1
+            sids[k] = samples.index(fixed) + 1 if fixed else 0
     return props, sids, samples, win
 
 
 USE_NER = True
 
 
+# 识别器常把测试手段 / 性质名当成样品（「Stress-relaxation」「DMA」），2026-09-21 样品题复核里的一类错
+_NOT_SAMPLE_WORDS = re.compile(r'(?i)relaxation|test|spectr|microscop|analysis|curve|figure|table|scheme|diffraction|'
+                               r'calorimetr|rheolog|modulus|strength|toughness|elongation|temperature|\b(?:DMA|DSC|TGA|XRD|XPS|FTIR|SEM|TEM|NMR|GPC|SAXS|WAXS|AFM|DFT)\b')
+
+
 def _looks_like_sample(name):
-    """样品名总带点「编号味」：大写字母、数字、斜杠或连字符。全小写的普通名词（eutectogels、fibrous materials）不算。"""
-    return bool(re.search(r'[A-Z0-9/]', name)) and len(name) <= 40
+    """样品名总带点「编号味」：大写字母、数字、斜杠或连字符。全小写的普通名词（eutectogels、fibrous materials）不算；
+    测试手段 / 性质名（Stress-relaxation、DMA）也不算（2026-09-24）。"""
+    return bool(re.search(r'[A-Z0-9/]', name)) and len(name) <= 40 and not _NOT_SAMPLE_WORDS.search(name)
 
 
 def _window_samples(win):
     try:
-        return [x for x in _ner.sample_mentions(win) if _looks_like_sample(x)][:12]
+        names = [x for x in _ner.sample_mentions(win) if _looks_like_sample(x)]
     except Exception:
         return []
+    # 基底 / 衬底不是样品：窗口里写成「X substrate」「on X」的（Al2O3、glass、SS…），2026-09-21 复核里的一类错
+    return [x for x in names if not re.search(re.escape(x) + r'\s+(?:substrates?|plates?|sheets?|surfaces?)\b', win, re.I)][:12]
+
+
+# 对照样（2026-09-24）：「58.9 MJ/m3, which was 14.8 and 423.7 times that of FC-Et and FC-1T」——
+# 数说的是主语样品，FC-Et / FC-1T 是拿来比的。样品跟在比较词后面、数在比较词前面 → 它是对照，不是这个数的主人
+_COMPARE = r'(?:than|that of|those of|compared (?:to|with)|relative to|versus|vs\.?|over)\s+(?:the\s+|pure\s+|neat\s+|pristine\s+)?'
+
+
+def fix_comparator(sentence, raw, chosen, candidates):
+    """模型 / 规则选的样品若是这句里的对照样 → 换成句中唯一的非对照样品；换不了返回 ''。不是对照原样返回。"""
+    if not chosen:
+        return chosen
+    s = sentence or ''
+    num_at = s.find(raw.split()[0]) if raw else -1
+    comps = set()
+    for x in candidates:
+        m = re.search(_COMPARE + r'(?:[A-Za-z0-9/\-]+\s+and\s+)?' + re.escape(x) + r'(?![A-Za-z0-9])', s, re.I)
+        if m and (num_at < 0 or num_at < m.start()):
+            comps.add(x)
+    if chosen not in comps:
+        return chosen
+    others = [x for x in candidates if x not in comps and x.lower() in s.lower()]
+    return others[0] if len(others) == 1 else ''
 
 
 SYS_PROP_MULTI = ('A passage from a materials paper is given. Several numbers are marked like <<1: 12.5 MPa>>, <<2: 850%>>. '
