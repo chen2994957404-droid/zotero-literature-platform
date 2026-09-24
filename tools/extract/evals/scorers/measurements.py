@@ -42,6 +42,9 @@ _GENERIC_HEAD = re.compile(r'\s+(?:gels?|ionogels?|hydrogels?|samples?|films?|co
                            r'materials?|specimens?|membranes?|coatings?)$')
 
 
+_GENERIC_LEAD = re.compile(r'^(?:polymers?|samples?|compounds?|the)\s+')
+
+
 def _same_sample(a, b, single=False):
     """样品名对得上吗。**只做大小写与空白归一**，不做模糊匹配 ——
     模糊匹配会把 `SPU` 和 `SPU/10D-SiO2` 算成一个，那正是最该抓的错。
@@ -55,6 +58,7 @@ def _same_sample(a, b, single=False):
     if single:
         return True
     x, y = _GENERIC_HEAD.sub('', _norm(a)), _GENERIC_HEAD.sub('', _norm(b))
+    x, y = _GENERIC_LEAD.sub('', x), _GENERIC_LEAD.sub('', y)       # 「polymer 1」与「1」是同一个
     if x == y and x:
         return True
     # `1` vs `Polymer 1`、`PBS` vs `PBS 1` 不算 —— 后者是不同样品。

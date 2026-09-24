@@ -124,3 +124,13 @@ def test_样品名_单位碎片与化学式下标():
     for ok in ('EN', 'PVA', 'PU', 'S1', 'A1', 'PBS1'):
         assert F._looks_like_sample(ok), ok
     assert F._join_formula('SPU/10D-SiO 2 reaches 19.5 MPa; Figure 2 shows') == 'SPU/10D-SiO2 reaches 19.5 MPa; Figure 2 shows'
+
+
+def test_召回修正三条():
+    assert F._names_property({'unit': 's', 'context': 'the relaxation time of PBS1 is 1.08 s'})
+    assert F._names_property({'unit': 's', 'context': 'no name here', 'sample_hint': 'PBS1'})
+    assert not F._names_property({'unit': 'h', 'context': 'stirred at 80 C for 12 h, tensile strength'})
+    win = 'The tensile strength for SPU/10D-SiO2 reaches 19.5 MPa, 2 times higher than SPU.'
+    assert F._prefer_longest(['D-SiO2', 'SPU'], win) == ['SPU/10D-SiO2', 'SPU']
+    from tools.extract.evals.scorers.measurements import _same_sample
+    assert _same_sample('polymer 1', '1') and not _same_sample('polymer 2', '1')

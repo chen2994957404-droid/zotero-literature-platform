@@ -33,7 +33,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from shared.domain import numcheck as _nums
-from shared.domain.schema import PROPERTY_ALIASES, _ALIAS_TO_CANON, normalize_property_name, dimension_ok
+from shared.domain.schema import PROPERTY_ALIASES, PROPERTY_DIMENSION, _ALIAS_TO_CANON, normalize_property_name, dimension_ok
 from shared.adapters.units import dimension as _dimension
 from shared.adapters import ner as _ner
 from shared.adapters import sentences as _sentences
@@ -380,7 +380,43 @@ def _window_samples(win):
     except Exception:
         return []
     # 基底 / 衬底不是样品：窗口里写成「X substrate」「on X」的（Al2O3、glass、SS…），2026-09-21 复核里的一类错
-    return [x for x in names if not re.search(re.escape(x) + r'\s+(?:substrates?|plates?|sheets?|surfaces?)\b', win, re.I)][:12]
+    names = [x for x in names if not re.search(re.escape(x) + r'\s+(?:substrates?|plates?|sheets?|surfaces?)\b', win, re.I)]
+    return _prefer_longest(names, win)[:12]
+
+
+def _prefer_longest(names, win):
+    """识别器常把长样品名截断（SPU/10D-SiO2 → D-SiO2）：短名在窗口里**只作为某个长名的一部分出现**时，换成长名。
+    短名自己也单独出现（SPU 与 SPU/10D-SiO2 都是样品）就两个都留。2026-09-24 练习金标。"""
+    longer = set(names)
+    for m in re.finditer(r'[A-Za-z0-9][\w\-/()]*[\w)]', win):         # 窗口里所有「像名字」的整串
+        tok = m.group(0)
+        if any(x != tok and x in tok for x in names) and _looks_like_sample(tok):
+            longer.add(tok)
+    out = []
+    for x in names:
+        standalone = re.search(r'(?<![\w\-/])' + re.escape(x) + r'(?![\w\-/])', win)
+        if standalone:
+            out.append(x)
+        else:
+            full = max((t for t in longer if x in t and t != x), key=len, default=None)
+            out.append(full or x)
+    seen, uniq = set(), []
+    for x in out:
+        if x not in seen:
+            seen.add(x)
+            uniq.append(x)
+    return uniq
+
+
+def _names_property(c):
+    """条件单位（s / h / min / g …）的数，上下文里提到了**量纲对得上**的性质名（relaxation time / response time …）
+    或者「分别为」已经配好样品 → 不当条件预筛掉（2026-09-24：松弛时间 1.08 s 被当成时间条件筛了）。"""
+    if c.get('sample_hint'):
+        return True
+    dim = _dimension(c.get('unit') or '')
+    ctx = c.get('context') or ''
+    # 要求性质**登记了**这个量纲（dimension_ok 对没登记的性质一律放行，这里不能用它，否则附近随便有个性质名就都留下）
+    return bool(dim) and any(dim in (PROPERTY_DIMENSION.get(p) or ()) and p not in _CONDITION_NAMES for p in props_in_window(ctx))
 
 
 # 对照样（2026-09-24）：「58.9 MJ/m3, which was 14.8 and 423.7 times that of FC-Et and FC-1T」——
@@ -527,7 +563,7 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None, sample_
     # T0 预筛：投料 / 时间 / 体积单位的数不是性质
     kept = []
     for t, c in cands:
-        if (c.get('unit') or '').strip().lower().replace(' ', '') in _COND_UNITS:
+        if (c.get('unit') or '').strip().lower().replace(' ', '') in _COND_UNITS and not _names_property(c):
             stats['cond_unit'] += 1
             dropped.append({'norm': _nums.norm(str(c['value'])), 'why': 'cond_unit', 'raw': c['raw'], 'ctx': c['context'][:120]})
         else:
@@ -577,7 +613,7 @@ def extract_paper(md, chat, model, log=print, si_md='', zone_model=None, sample_
             if c.get('sample_hint'):                               # 「分别为」脚本已按顺序配好样品，不听模型的
                 sample = c['sample_hint']
                 stats['sample_respectively'] = stats.get('sample_respectively', 0) + 1
-            if sample and sample.lower() not in g_win.lower():   # ⑤ 核对：样品名要在这组的窗口里
+            if sample and not c.get('sample_hint') and sample.lower() not in g_win.lower():   # ⑤ 核对：样品名要在这组的窗口里（「分别为」的范围 PBS1 to PBS6 里 PBS2–5 不逐字出现，不查）
                 stats['sample_bad'] += 1
                 sample = ''
             if not sample:
@@ -679,7 +715,7 @@ def run(tag, models, keys=None, log=print, zone_model=None, sample_model=None):
             log('   候选 %d（单位筛掉 %d、分区筛掉 %d、分区调用 %d）→ 事实 %d（带样品 %d）· 范文数 %d：拆分法命中 %d（含表 %d）· 一次拆命中 %d · %ss · 范文数丢在 %s' % (
                 st['cands'], st['cond_unit'], st['zoned_out'], st['zone_calls'], len(facts), rows[-1]['with_sample'], len(ref),
                 rows[-1]['ref_hit_model_only'], rows[-1]['ref_hit'], rows[-1]['one_shot_hit'], st['secs'], st['lost_ref']))
-            json.dump({'model': model, 'pid': pid, 'facts': facts, 'stats': st},
+            json.dump({'model': model, 'pid': pid, 'facts': facts, 'stats': st, 'dropped': dropped_all},   # 丢在哪一步留着，诊断用
                       io.open(os.path.join(d, 'fine_fact_%s_%s.json' % (re.sub(r'[^A-Za-z0-9.-]+', '-', model), pid)), 'w', encoding='utf-8'),
                       ensure_ascii=False, indent=1)
         report[model] = rows
