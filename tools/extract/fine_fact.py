@@ -539,6 +539,8 @@ def ref_facts(pid, tag):
     """范文数值事实 → {norm: (性质正名, 样品)} —— 标尺；性质用中文别名归一（词表里有中文），样品原样。"""
     p = os.path.join(paths.unit_study_dir(tag), pid + '.json')
     out = {}
+    if not os.path.exists(p):          # 没有范文的篇（金标那几篇）照样能跑，只是没有范文口径的数
+        return out
     for u in json.load(io.open(p, encoding='utf-8'))['units']:
         if u['type'] == 'fact' and _DIGIT.search(str(u.get('value', '')) + str(u.get('unit', ''))):
             prop = normalize_property_name(str(u.get('property', '')))

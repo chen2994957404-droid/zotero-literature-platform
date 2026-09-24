@@ -12,7 +12,7 @@
 
 **只算正文**：金标只覆盖 `parsed/full.md` 正文（不含表格与 SI），所以只拿 `where == 'main'` 的抽取结果来比。
 
-用法：python -m tools.extract.evals.holdout [--tag u1] [--model qwen3.5:4b]
+用法：python -m tools.extract.evals.holdout [--tag u1] [--model qwen3.5:4b] [--gold holdout|dev]
      读 data/state/unit_study/<tag>/fine_fact_<model>_<篇>.json（fine_fact 跑考卷时写的），不调模型、不花钱。
 """
 import os, sys
@@ -30,11 +30,14 @@ from shared.kernel import paths
 from shared.kernel.cli import opt, wants_help
 from tools.extract.evals.scorers.measurements import score_paper
 
-GOLD = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'golden', 'measurements_holdout.json')
+_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'golden')
+GOLDS = {'holdout': os.path.join(_DIR, 'measurements_holdout.json'),   # 考卷：只报数
+         'dev': os.path.join(_DIR, 'measurements.json')}               # 练习集：调规则时看错例
+GOLD = GOLDS['holdout']
 
 
-def load_gold():
-    return json.load(io.open(GOLD, encoding='utf-8'))['papers']
+def load_gold(which='holdout'):
+    return json.load(io.open(GOLDS[which], encoding='utf-8'))['papers']
 
 
 def rows_from_facts(facts):
@@ -69,9 +72,9 @@ def summarize(scores):
             'mislabeled': mis, 'hard_errors': hard}
 
 
-def run(tag='u1', model='qwen3.5:4b', log=print):
+def run(tag='u1', model='qwen3.5:4b', log=print, which='holdout'):
     scores = []
-    for g in load_gold():
+    for g in load_gold(which):
         p = facts_file(tag, model, g['key'])
         if not os.path.exists(p):
             log('%s：没有抽取结果（%s）' % (g['key'], p))
@@ -95,7 +98,7 @@ def main():
     if wants_help():
         print(__doc__)
         return 0
-    run(opt('--tag') or 'u1', opt('--model') or 'qwen3.5:4b')
+    run(opt('--tag') or 'u1', opt('--model') or 'qwen3.5:4b', which=opt('--gold') or 'holdout')
     return 0
 
 
