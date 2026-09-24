@@ -1,0 +1,2271 @@
+{
+ "_about": "考卷金标（2026-09-24 起）：抽取规则调参时从未看过的论文，由 Claude 通读正文逐句标注，标注时没有看任何模型对这几篇的抽取结果。范围与三档（core / edge / negative）同 measurements_README.md：只收正文、本文材料、可测性能；表格不收（另评）。练习集是 measurements.json 与单元研究 u1 的另 10 篇。一旦对着这里的错例改规则，这份就降为练习集，换新考卷。",
+ "_built": "2026-09-24",
+ "papers": [
+  {
+   "key": "ZD6PB4MT",
+   "title": "Reprogramming Multi-Dimensional Material Properties of Cured Thermosets by Hot-Pressing",
+   "samples": [
+    "h-LCN",
+    "h-LCN-140",
+    "s-LCN",
+    "s-LCN-140",
+    "EN",
+    "EN-120",
+    "EN-140",
+    "PDMS",
+    "PDMS-140"
+   ],
+   "core": [
+    {
+     "sample_id": "h-LCN",
+     "name": "decomposition temperature",
+     "value": 259,
+     "unit": "°C",
+     "quote": "The high decomposition temperature (T_d,95) of these thermosets (h-LCN: 259°C, s-LCN: 255°C, EN: 226°C)"
+    },
+    {
+     "sample_id": "s-LCN",
+     "name": "decomposition temperature",
+     "value": 255,
+     "unit": "°C",
+     "quote": "(h-LCN: 259°C, s-LCN: 255°C, EN: 226°C)"
+    },
+    {
+     "sample_id": "EN",
+     "name": "decomposition temperature",
+     "value": 226,
+     "unit": "°C",
+     "quote": "(h-LCN: 259°C, s-LCN: 255°C, EN: 226°C)"
+    },
+    {
+     "sample_id": "h-LCN",
+     "name": "gel content",
+     "value": 99.4,
+     "unit": "%",
+     "quote": "h-LCN: from 99.40% to 79.19%"
+    },
+    {
+     "sample_id": "h-LCN-140",
+     "name": "gel content",
+     "value": 79.19,
+     "unit": "%",
+     "quote": "h-LCN: from 99.40% to 79.19%"
+    },
+    {
+     "sample_id": "s-LCN",
+     "name": "gel content",
+     "value": 99.52,
+     "unit": "%",
+     "quote": "s-LCN: from 99.52% to 69.51%"
+    },
+    {
+     "sample_id": "s-LCN-140",
+     "name": "gel content",
+     "value": 69.51,
+     "unit": "%",
+     "quote": "s-LCN: from 99.52% to 69.51%"
+    },
+    {
+     "sample_id": "EN",
+     "name": "gel content",
+     "value": 98.83,
+     "unit": "%",
+     "quote": "EN: from 98.83% to 54.42%"
+    },
+    {
+     "sample_id": "EN-140",
+     "name": "gel content",
+     "value": 54.42,
+     "unit": "%",
+     "quote": "EN: from 98.83% to 54.42%"
+    },
+    {
+     "sample_id": "s-LCN",
+     "name": "swelling ratio",
+     "value": 233.1,
+     "unit": "%",
+     "quote": "The swelling ratio of s-LCN samples is 233.1 %"
+    },
+    {
+     "sample_id": "s-LCN-140",
+     "name": "swelling ratio",
+     "value": 507.4,
+     "unit": "%",
+     "quote": "while that of s-LCN-140 increases significantly to 507.4 %"
+    },
+    {
+     "sample_id": "EN",
+     "name": "glass transition temperature",
+     "value": 15.98,
+     "unit": "°C",
+     "quote": "a decrease in glass transition temperature (T_g) after hot-pressing (from 15.98°C to 7.24°C, Figure 2D)"
+    },
+    {
+     "sample_id": "EN-140",
+     "name": "glass transition temperature",
+     "value": 7.24,
+     "unit": "°C",
+     "quote": "(from 15.98°C to 7.24°C, Figure 2D)"
+    },
+    {
+     "sample_id": "EN",
+     "name": "adhesive strength",
+     "value": 7.73,
+     "unit": "MPa",
+     "quote": "The adhesive strength of EN ( 7.73 MPa)"
+    },
+    {
+     "sample_id": "EN",
+     "name": "adhesive strength",
+     "value": 7.69,
+     "unit": "MPa",
+     "quote": "a debondable epoxy adhesive with high adhesive strength ( 7.69 MPa)"
+    },
+    {
+     "sample_id": "EN",
+     "name": "Young's modulus",
+     "value": 199.0,
+     "unit": "MPa",
+     "quote": "stiff EN samples (Young's modulus E = 199.00 MPa)"
+    },
+    {
+     "sample_id": "EN-140",
+     "name": "Young's modulus",
+     "value": 11.57,
+     "unit": "MPa",
+     "quote": "(EN-140, E = 11.57 MPa)"
+    },
+    {
+     "sample_id": "EN-120",
+     "name": "Young's modulus",
+     "value": 27.54,
+     "unit": "MPa",
+     "quote": "become soft and stretchable after hot-pressing at 120°C (E = 27.54 MPa)"
+    },
+    {
+     "sample_id": "PDMS",
+     "name": "Young's modulus",
+     "value": 0.55,
+     "unit": "MPa",
+     "quote": "Soft PDMS samples (E = 0.55 MPa)"
+    },
+    {
+     "sample_id": "PDMS-140",
+     "name": "Young's modulus",
+     "value": 0.11,
+     "unit": "MPa",
+     "quote": "(PDMS-140, E = 0.11 MPa)"
+    },
+    {
+     "sample_id": "h-LCN",
+     "name": "Young's modulus",
+     "value": 241.07,
+     "unit": "MPa",
+     "quote": "stiff h-LCN (E = 241.07 MPa)"
+    },
+    {
+     "sample_id": "h-LCN-140",
+     "name": "Young's modulus",
+     "value": 49.92,
+     "unit": "MPa",
+     "quote": "(h-LCN-140, E = 49.92 MPa)"
+    },
+    {
+     "sample_id": "h-LCN",
+     "name": "Young's modulus",
+     "value": 41.28,
+     "unit": "MPa",
+     "quote": "h-LCN samples hot-pressed at 140°C for 2 h exhibited a lower Young's modulus (41.28 MPa)"
+    },
+    {
+     "sample_id": "h-LCN-140",
+     "name": "fatigue threshold",
+     "value": 53.42,
+     "unit": "J/m2",
+     "quote": "the fatigue threshold of h-LCN-140 samples (53.42 J/m2"
+    },
+    {
+     "sample_id": "s-LCN",
+     "name": "crosslink density",
+     "value": 0.000279,
+     "unit": "mol/cm3",
+     "quote": "crosslink density of s-LCN, s-LCN-140 ... ( 2.79 × 10^-4 , 3.78 × 10^-5 , 2.43 × 10^-5 , and 2.43 × 10^-5 mol/cm3"
+    },
+    {
+     "sample_id": "s-LCN-140",
+     "name": "crosslink density",
+     "value": 3.78e-05,
+     "unit": "mol/cm3",
+     "quote": "3.78 × 10^-5 ... mol/cm3"
+    },
+    {
+     "sample_id": "h-LCN-140",
+     "name": "energy absorption density",
+     "value": 216,
+     "unit": "MJ/m3",
+     "quote": "h-LCN-140 samples showed higher energy absorption density ( 216 MJ / m^3 ) than untreated h-LCN samples ( 126 MJ / m^3 )"
+    },
+    {
+     "sample_id": "h-LCN",
+     "name": "energy absorption density",
+     "value": 126,
+     "unit": "MJ/m3",
+     "quote": "untreated h-LCN samples ( 126 MJ / m^3 )"
+    },
+    {
+     "sample_id": "h-LCN-140",
+     "name": "energy absorption density",
+     "value": 377,
+     "unit": "MJ/m3",
+     "quote": "h-LCN-140 samples exhibited the highest energy absorption density ( 377 MJ/m3 at 8000 /s, 508 MJ/m3 at 10000 /s"
+    },
+    {
+     "sample_id": "h-LCN-140",
+     "name": "energy absorption density",
+     "value": 508,
+     "unit": "MJ/m3",
+     "quote": "508 MJ/m3 at 10000 /s"
+    },
+    {
+     "sample_id": "h-LCN-140",
+     "name": "energy absorption density",
+     "value": 348.73,
+     "unit": "MJ/m3",
+     "quote": "hot-pressed LCNs exhibit an exceptional high-strain-rate energy absorption of 348.73 MJ/m3 at 8000 s-1"
+    },
+    {
+     "sample_id": "h-LCN-140",
+     "name": "energy absorption density",
+     "value": 380,
+     "unit": "MJ/m3",
+     "quote": "impact-resistant materials with ultrahigh-speed impact absorption ( 380 MJ/m3 at 8000 s-1 )"
+    },
+    {
+     "sample_id": "h-LCN-140",
+     "name": "loss factor",
+     "value": 1.42,
+     "unit": "",
+     "quote": "a superior loss factor (maximum tan δ 1.42 )"
+    },
+    {
+     "sample_id": "EN",
+     "name": "dielectric constant",
+     "value": 7.58,
+     "unit": "",
+     "quote": "permittivity (EN:7.58; EN-140:28.07@50 Hz, 20°C)"
+    },
+    {
+     "sample_id": "EN-140",
+     "name": "dielectric constant",
+     "value": 28.07,
+     "unit": "",
+     "quote": "EN-140:28.07@50 Hz, 20°C"
+    },
+    {
+     "sample_id": "EN",
+     "name": "breakdown strength",
+     "value": 22.0,
+     "unit": "kV/mm",
+     "quote": "breakdown voltage Eb (EN:22.00 kV/mm; EN-140:32.54 kV/mm"
+    },
+    {
+     "sample_id": "EN-140",
+     "name": "breakdown strength",
+     "value": 32.54,
+     "unit": "kV/mm",
+     "quote": "EN-140:32.54 kV/mm@50 Hz, 20°C"
+    },
+    {
+     "sample_id": "EN",
+     "name": "energy storage density",
+     "value": 0.36,
+     "unit": "J/cm3",
+     "quote": "energy storage density Ue (EN:0.36 J/cm³; EN-140:4.38 J/cm³"
+    },
+    {
+     "sample_id": "EN-140",
+     "name": "energy storage density",
+     "value": 4.38,
+     "unit": "J/cm3",
+     "quote": "EN-140:4.38 J/cm³@50 Hz, 20°C"
+    },
+    {
+     "sample_id": "PDMS",
+     "name": "dielectric constant",
+     "value": 13.67,
+     "unit": "",
+     "quote": "permittivity ε_r (PDMS: 13.67; PDMS-140: 24.07@1kHz, 20°C )"
+    },
+    {
+     "sample_id": "PDMS-140",
+     "name": "dielectric constant",
+     "value": 24.07,
+     "unit": "",
+     "quote": "PDMS-140: 24.07@1kHz, 20°C"
+    },
+    {
+     "sample_id": "PDMS",
+     "name": "electromechanical sensitivity",
+     "value": 23.57,
+     "unit": "MPa-1",
+     "quote": "their actuation sensitivity leaped from 23.57 MPa-1 (PDMS) to 300.88 MPa-1 (PDMS-140)"
+    },
+    {
+     "sample_id": "PDMS-140",
+     "name": "electromechanical sensitivity",
+     "value": 300.88,
+     "unit": "MPa-1",
+     "quote": "to 300.88 MPa-1 (PDMS-140)"
+    },
+    {
+     "sample_id": "h-LCN",
+     "name": "glass transition temperature",
+     "value": 18.61,
+     "unit": "°C",
+     "quote": "T_g of h-LCN decreased from 18.61°C to 15.85°C"
+    },
+    {
+     "sample_id": "h-LCN-140",
+     "name": "glass transition temperature",
+     "value": 15.85,
+     "unit": "°C",
+     "quote": "T_g of h-LCN decreased from 18.61°C to 15.85°C"
+    },
+    {
+     "sample_id": "h-LCN-140",
+     "name": "LC-isotropic transition temperature",
+     "value": 5.5,
+     "unit": "°C",
+     "quote": "the LC-isotropic phase transition temperature of h-LCN-140 was observed around 5.50°C"
+    },
+    {
+     "sample_id": "s-LCN-140",
+     "name": "actuation strain",
+     "value": 41.2,
+     "unit": "%",
+     "quote": "actuation strain of original samples: 41.20 %"
+    },
+    {
+     "sample_id": "s-LCN-140",
+     "name": "actuation strain",
+     "value": 37.55,
+     "unit": "%",
+     "quote": "after rapid heating-cooling cycles on a hot plate for 10000 cycles, the actuation strain of the LCN actuator remained almost unchanged ( 37.55 %"
+    },
+    {
+     "sample_id": "s-LCN-140",
+     "name": "actuation strain",
+     "value": 36.59,
+     "unit": "%",
+     "quote": "Its actuation performance showed only slight deterioration ( 36.59 % , Figure 5L) even after repeated actuation for 30000 cycles"
+    }
+   ],
+   "edge": [
+    {
+     "sample_id": "EN-140",
+     "name": "number-average molecular weight",
+     "value": 3700,
+     "unit": "g/mol",
+     "quote": "the linear polymers obtained from EN-140 had a number-average molecular weight ( Mn ) of 3700 g mol-1",
+     "why": "解交联得到的线性产物的分子量，不是材料本身性能"
+    },
+    {
+     "sample_id": "EN-140",
+     "name": "polydispersity index",
+     "value": 1.02,
+     "unit": "",
+     "quote": "a polymer dispersity index (PDI) of 1.02",
+     "why": "同上"
+    },
+    {
+     "sample_id": "EN",
+     "name": "number-average molecular weight",
+     "value": 3710,
+     "unit": "g/mol",
+     "quote": "the EN sample was melted ( Mn = 3710 g mol-1 , PDI = 1.03)",
+     "why": "同上"
+    },
+    {
+     "sample_id": "EN",
+     "name": "polydispersity index",
+     "value": 1.03,
+     "unit": "",
+     "quote": "PDI = 1.03",
+     "why": "同上"
+    },
+    {
+     "sample_id": "",
+     "name": "relaxation time",
+     "value": 4000,
+     "unit": "min",
+     "quote": "their relaxation time τ* exceeded 4000 min at 80°C",
+     "why": "下限值（exceeded），样品泛指"
+    },
+    {
+     "sample_id": "s-LCN-140",
+     "name": "crosslink density",
+     "value": 2.43e-05,
+     "unit": "mol/cm3",
+     "quote": "s-LCN-140 recycled once and s-LCN-140 recycled 5 times ( ... 2.43 × 10^-5 , and 2.43 × 10^-5 mol/cm3",
+     "why": "回收后的样品，样品名在原文里没有编号"
+    },
+    {
+     "sample_id": "h-LCN",
+     "name": "loss factor",
+     "value": 1.09,
+     "unit": "",
+     "quote": "an enhanced loss factor (h-LCN-140: 1.09, h-LCN-140: 1.51)",
+     "why": "原文两处都写 h-LCN-140，归属不清"
+    },
+    {
+     "sample_id": "h-LCN-140",
+     "name": "loss factor",
+     "value": 1.51,
+     "unit": "",
+     "quote": "(h-LCN-140: 1.09, h-LCN-140: 1.51)",
+     "why": "同上"
+    },
+    {
+     "sample_id": "",
+     "name": "gel content",
+     "value": 98,
+     "unit": "%",
+     "quote": "the gel contents of h-LCN, s-LCN, and EN samples were above 98%",
+     "why": "下限值，三个样品合写"
+    },
+    {
+     "sample_id": "",
+     "name": "dissociation temperature",
+     "value": 150,
+     "unit": "°C",
+     "quote": "at approximately 150°C, the storage modulus (G') and loss modulus (G'') decrease sharply",
+     "why": "流变转变点，近似值"
+    },
+    {
+     "sample_id": "LCN",
+     "name": "Young's modulus",
+     "value": 1700,
+     "unit": "%",
+     "quote": "1700% variation in Young's modulus",
+     "why": "相对变化幅度"
+    },
+    {
+     "sample_id": "EN",
+     "name": "dielectric constant",
+     "value": 300,
+     "unit": "%",
+     "quote": "300% increase in dielectric constant",
+     "why": "相对变化幅度"
+    },
+    {
+     "sample_id": "PDMS",
+     "name": "electromechanical sensitivity",
+     "value": 1280,
+     "unit": "%",
+     "quote": "1280% enhancement in actuation sensitivity",
+     "why": "相对变化幅度"
+    },
+    {
+     "sample_id": "EN",
+     "name": "energy storage density",
+     "value": 1200,
+     "unit": "%",
+     "quote": "a 1200% improvement in energy storage density Ue",
+     "why": "相对变化幅度"
+    },
+    {
+     "sample_id": "LCN",
+     "name": "loss factor",
+     "value": 50,
+     "unit": "%",
+     "quote": "a 50% increase in loss factor tanδ",
+     "why": "相对变化幅度"
+    }
+   ],
+   "negative": [
+    {
+     "value": 20,
+     "unit": "%",
+     "why": "引言里的产业统计（热固性占聚合物产量 20%）",
+     "quote": "Thermosets constitute approximately 20% of global polymer production"
+    },
+    {
+     "value": 150,
+     "unit": "MJ/m3",
+     "why": "别人文献的对比值",
+     "quote": "surpassing state-of-the-art elastomers ( <150 MJ/m3 even at 12000 s-1 )"
+    },
+    {
+     "value": 300,
+     "unit": "MJ/m3",
+     "why": "别人的材料（Ti6Al4V 合金）",
+     "quote": "even exceeding Ti6Al4V alloys ( 300 MJ/m3 at 8000 s-1 [25])"
+    },
+    {
+     "value": 150,
+     "unit": "MPa-1",
+     "why": "别人文献的对比值",
+     "quote": "most reported dielectric elastomers (typically <150 MPa-1 )"
+    },
+    {
+     "value": 1636,
+     "unit": "cm-1",
+     "why": "谱峰位置",
+     "quote": "the C=C stretching band at 1636 cm-1"
+    },
+    {
+     "value": 0.3,
+     "unit": "",
+     "why": "判据阈值（tan δ > 0.3），不是测量值",
+     "quote": "effective damping temperature range (tan δ > 0.3 [44])"
+    },
+    {
+     "value": 10,
+     "unit": "MPa",
+     "why": "判据阈值",
+     "quote": "LCNs combining high mechanical performance (E > 10 MPa)"
+    },
+    {
+     "value": 6,
+     "unit": "MPa",
+     "why": "热压压力（条件）",
+     "quote": "clamped in an electric heater at a pressure of about 6 MPa"
+    },
+    {
+     "value": 8000,
+     "unit": "s-1",
+     "why": "应变率（测试条件）",
+     "quote": "377 MJ/m3 at 8000 /s"
+    },
+    {
+     "value": 4000,
+     "unit": "s-1",
+     "why": "应变率（测试条件）",
+     "quote": "at a high strain rate of about 4000 / s"
+    },
+    {
+     "value": 150,
+     "unit": "%",
+     "why": "拉伸取向的预拉伸量（制备条件）",
+     "quote": "stretching s-LCN-140 samples uniaxially to 150% strain"
+    },
+    {
+     "value": 0.01,
+     "unit": "s-1",
+     "why": "拉伸速率（测试条件）",
+     "quote": "a consistent strain rate of 0.01/s"
+    },
+    {
+     "value": 512,
+     "unit": "",
+     "why": "原料的平均分子量（试剂规格）",
+     "quote": "bisphenol A polyethylene glycol diether diacrylate (average Mn 512"
+    },
+    {
+     "value": 2500,
+     "unit": "",
+     "why": "原料的平均分子量（试剂规格）",
+     "quote": "aminopropyl terminated polydimethylsiloxane (average Mn 2500"
+    },
+    {
+     "value": 5000,
+     "unit": "Hz",
+     "why": "频率范围（测试条件）",
+     "quote": "at high frequency (> 5000 Hz)"
+    }
+   ]
+  },
+  {
+   "key": "doi_10.1021-jacs.6c01062",
+   "title": "Role of Molecular Topology Elucidated in Unified Gels",
+   "samples": [
+    "Cu-MAC gel",
+    "Cu-CAT gel",
+    "MAC gel",
+    "CAT gel",
+    "LC gel"
+   ],
+   "core": [
+    {
+     "sample_id": "Cu-MAC",
+     "name": "Young's modulus",
+     "value": 3.8,
+     "unit": "kPa",
+     "quote": "the Cu-MAC gel possesses a slightly lower Young's modulus ( E = 3.8 kPa) but a higher breaking strain ( 341 % ), compared to 3.9 kPa and 264 % for the Cu-CAT gel"
+    },
+    {
+     "sample_id": "Cu-MAC",
+     "name": "elongation at break",
+     "value": 341,
+     "unit": "%",
+     "quote": "a higher breaking strain ( 341 % )"
+    },
+    {
+     "sample_id": "Cu-CAT",
+     "name": "Young's modulus",
+     "value": 3.9,
+     "unit": "kPa",
+     "quote": "compared to 3.9 kPa and 264 % for the Cu-CAT gel"
+    },
+    {
+     "sample_id": "Cu-CAT",
+     "name": "elongation at break",
+     "value": 264,
+     "unit": "%",
+     "quote": "compared to 3.9 kPa and 264 % for the Cu-CAT gel"
+    },
+    {
+     "sample_id": "Cu-MAC",
+     "name": "tensile strength",
+     "value": 567,
+     "unit": "kPa",
+     "quote": "a significantly higher tensile strength ( 567 vs 495 kPa)"
+    },
+    {
+     "sample_id": "Cu-CAT",
+     "name": "tensile strength",
+     "value": 495,
+     "unit": "kPa",
+     "quote": "( 567 vs 495 kPa)"
+    },
+    {
+     "sample_id": "Cu-MAC",
+     "name": "toughness",
+     "value": 1099,
+     "unit": "kJ/m3",
+     "quote": "a higher toughness for the Cu-MAC gel ( 1099 kJ/m3 vs 762 kJ/m3 for the Cu-CAT gel)"
+    },
+    {
+     "sample_id": "Cu-CAT",
+     "name": "toughness",
+     "value": 762,
+     "unit": "kJ/m3",
+     "quote": "762 kJ/m3 for the Cu-CAT gel"
+    },
+    {
+     "sample_id": "Cu-MAC",
+     "name": "dissipated energy",
+     "value": 57.3,
+     "unit": "kJ/m3",
+     "quote": "at 200 % strain, the dissipated energy for the Cu-MAC gel (57.3 kJ / m^3) is 1.5 times higher than that of the Cu-CAT gel (37.4 kJ / m^3"
+    },
+    {
+     "sample_id": "Cu-CAT",
+     "name": "dissipated energy",
+     "value": 37.4,
+     "unit": "kJ/m3",
+     "quote": "the Cu-CAT gel (37.4 kJ / m^3"
+    },
+    {
+     "sample_id": "Cu-CAT",
+     "name": "relaxation time",
+     "value": 250,
+     "unit": "s",
+     "quote": "For the Cu-CAT gel, τ_Cu-CAT 250 s"
+    },
+    {
+     "sample_id": "Cu-MAC",
+     "name": "relaxation time",
+     "value": 30000,
+     "unit": "s",
+     "quote": "the Cu-MAC gel, with τ_Cu-MAC 30,000 s"
+    },
+    {
+     "sample_id": "Cu-MAC",
+     "name": "recovery time",
+     "value": 30,
+     "unit": "s",
+     "quote": "the Cu-MAC gel showed a G' recovery after 30 s"
+    },
+    {
+     "sample_id": "Cu-CAT",
+     "name": "recovery time",
+     "value": 12,
+     "unit": "s",
+     "quote": "the Cu-CAT gel restored its original modulus ( G' ) within 12 s"
+    },
+    {
+     "sample_id": "MAC",
+     "name": "Young's modulus",
+     "value": 3.0,
+     "unit": "kPa",
+     "quote": "The Young's moduli are 3.0 kPa for the MAC gel and 1.0 kPa for the CAT gel"
+    },
+    {
+     "sample_id": "CAT",
+     "name": "Young's modulus",
+     "value": 1.0,
+     "unit": "kPa",
+     "quote": "1.0 kPa for the CAT gel"
+    },
+    {
+     "sample_id": "MAC",
+     "name": "toughness",
+     "value": 2025,
+     "unit": "kJ/m3",
+     "quote": "The MAC gel exhibits high toughness ( 2,025 kJ/m3 )"
+    },
+    {
+     "sample_id": "CAT",
+     "name": "toughness",
+     "value": 669,
+     "unit": "kJ/m3",
+     "quote": "the low toughness ( 669 kJ/m3 ) of the CAT gel"
+    },
+    {
+     "sample_id": "CAT",
+     "name": "dissipated energy",
+     "value": 6.0,
+     "unit": "kJ/m3",
+     "quote": "merely 6.0 kJ/m3 for the loop area at 300% strain"
+    },
+    {
+     "sample_id": "MAC",
+     "name": "recovery time",
+     "value": 36,
+     "unit": "s",
+     "quote": "The G' value of the MAC gel recovered after 36 s"
+    },
+    {
+     "sample_id": "CAT",
+     "name": "recovery time",
+     "value": 18,
+     "unit": "s",
+     "quote": "G' of the CAT gel recovered within 18 s"
+    },
+    {
+     "sample_id": "MAC",
+     "name": "relaxation time",
+     "value": 250000,
+     "unit": "s",
+     "quote": "characteristic relaxation times of 250,000 s and 180,000 s, respectively"
+    },
+    {
+     "sample_id": "CAT",
+     "name": "relaxation time",
+     "value": 180000,
+     "unit": "s",
+     "quote": "250,000 s and 180,000 s, respectively"
+    },
+    {
+     "sample_id": "MAC",
+     "name": "dissipated energy",
+     "value": 91.2,
+     "unit": "kJ/m3",
+     "quote": "the MAC gel has the greatest dissipation, U = 91.2 kJ/m3"
+    },
+    {
+     "sample_id": "CAT",
+     "name": "dissipated energy",
+     "value": 24.8,
+     "unit": "kJ/m3",
+     "quote": "the CAT gel has the smallest, with U = 24.8 kJ/m3"
+    },
+    {
+     "sample_id": "Cu-CAT",
+     "name": "dissipated energy",
+     "value": 40.1,
+     "unit": "kJ/m3",
+     "quote": "The Cu-CAT and Cu-MAC exhibit intermediate dissipation, with U = 40.1 kJ/m3 and U = 44.3 kJ/m3"
+    },
+    {
+     "sample_id": "Cu-MAC",
+     "name": "dissipated energy",
+     "value": 44.3,
+     "unit": "kJ/m3",
+     "quote": "U = 44.3 kJ/m3"
+    }
+   ],
+   "edge": [
+    {
+     "sample_id": "",
+     "name": "residual strain",
+     "value": 15.3,
+     "unit": "%",
+     "quote": "a residual strain, ranging from -2.3 % to 15.3 %",
+     "why": "两种凝胶合写的范围"
+    },
+    {
+     "sample_id": "",
+     "name": "residual strain",
+     "value": 2.3,
+     "unit": "%",
+     "quote": "ranging from -2.3 % to 15.3 %",
+     "why": "同上"
+    },
+    {
+     "sample_id": "Cu-MAC",
+     "name": "dissipated energy",
+     "value": 1.5,
+     "unit": "times",
+     "quote": "is 1.5 times higher than that of the Cu-CAT gel",
+     "why": "相对倍数"
+    },
+    {
+     "sample_id": "Cu-MAC",
+     "name": "storage modulus",
+     "value": 22,
+     "unit": "%",
+     "quote": "G' of the Cu-MAC gel dropped by only 22%",
+     "why": "相对变化"
+    },
+    {
+     "sample_id": "Cu-CAT",
+     "name": "storage modulus",
+     "value": 51,
+     "unit": "%",
+     "quote": "the 51% decrease of G' observed for the Cu-CAT gel",
+     "why": "相对变化"
+    },
+    {
+     "sample_id": "",
+     "name": "strain at G'' peak",
+     "value": 30,
+     "unit": "%",
+     "quote": "the peaks of G'' for Cu-CAT and Cu-MAC gels occur at smaller strain values (30–40%) compared to those of CAT and MAC gels (100% for MAC and 200% for CAT)",
+     "why": "流变特征应变"
+    },
+    {
+     "sample_id": "MAC",
+     "name": "strain at G'' peak",
+     "value": 100,
+     "unit": "%",
+     "quote": "(100% for MAC and 200% for CAT)",
+     "why": "同上"
+    },
+    {
+     "sample_id": "CAT",
+     "name": "strain at G'' peak",
+     "value": 200,
+     "unit": "%",
+     "quote": "(100% for MAC and 200% for CAT)",
+     "why": "同上"
+    },
+    {
+     "sample_id": "",
+     "name": "conversion",
+     "value": 95,
+     "unit": "%",
+     "quote": "reaching a high conversion of >95 % within such gels",
+     "why": "反应转化率"
+    },
+    {
+     "sample_id": "Cu-CAT",
+     "name": "diffusion coefficient",
+     "value": 2.02e-06,
+     "unit": "cm2/s",
+     "quote": "Cu-CAT ( D = 2.02 × 10^-6 cm^2/ s )",
+     "why": "连接分子的性质，不是凝胶"
+    },
+    {
+     "sample_id": "Cu-MAC",
+     "name": "diffusion coefficient",
+     "value": 1.83e-06,
+     "unit": "cm2/s",
+     "quote": "Cu-MAC ( D = 1.83 × 10^-6 cm^2/ s )",
+     "why": "同上"
+    },
+    {
+     "sample_id": "MAC",
+     "name": "diffusion coefficient",
+     "value": 1.59e-06,
+     "unit": "cm2/s",
+     "quote": "MAC ... ( D = 1.59 × 10^-6 cm^2/ s )",
+     "why": "同上"
+    },
+    {
+     "sample_id": "CAT",
+     "name": "diffusion coefficient",
+     "value": 1.85e-06,
+     "unit": "cm2/s",
+     "quote": "CAT is structurally compact ( D = 1.85 × 10^-6 cm^2/ s )",
+     "why": "同上"
+    },
+    {
+     "sample_id": "",
+     "name": "equilibrium constant",
+     "value": 13.7,
+     "unit": "",
+     "quote": "an equilibrium constant of Kex = 13.7",
+     "why": "配体交换热力学，不是材料性能"
+    },
+    {
+     "sample_id": "",
+     "name": "enthalpy change",
+     "value": -5.96,
+     "unit": "kJ/mol",
+     "quote": "Δ H = -5.96 kJ·mol-1",
+     "why": "同上"
+    },
+    {
+     "sample_id": "",
+     "name": "entropy change",
+     "value": 1.16,
+     "unit": "J/mol/K",
+     "quote": "Δ S = 1.16 J·mol-1 ·K-1",
+     "why": "同上"
+    },
+    {
+     "sample_id": "CAT",
+     "name": "N-N distance",
+     "value": 24.0,
+     "unit": "Å",
+     "quote": "For CAT, an initial distance of 24.0 between the two terminal N atoms",
+     "why": "DFT 计算的结构参数"
+    },
+    {
+     "sample_id": "CAT",
+     "name": "N-N distance",
+     "value": 32.0,
+     "unit": "Å",
+     "quote": "can be stretched to 32.0",
+     "why": "同上"
+    },
+    {
+     "sample_id": "CAT",
+     "name": "hidden length",
+     "value": 8.0,
+     "unit": "Å",
+     "quote": "corresponding to a hidden length of 8.0",
+     "why": "同上"
+    },
+    {
+     "sample_id": "Cu-CAT",
+     "name": "N-N distance",
+     "value": 17.6,
+     "unit": "Å",
+     "quote": "a shorter initial d_NN of 17.6",
+     "why": "同上"
+    },
+    {
+     "sample_id": "Cu-CAT",
+     "name": "hidden length",
+     "value": 15.0,
+     "unit": "Å",
+     "quote": "a markedly longer hidden length of 15.0",
+     "why": "同上"
+    },
+    {
+     "sample_id": "MAC",
+     "name": "N-N distance",
+     "value": 9.3,
+     "unit": "Å",
+     "quote": "a much shorter initial dNN of 9.3 Å",
+     "why": "同上"
+    },
+    {
+     "sample_id": "Cu-MAC",
+     "name": "N-N distance",
+     "value": 23.4,
+     "unit": "Å",
+     "quote": "increasing the initial dNN to 23.4 Å",
+     "why": "同上"
+    },
+    {
+     "sample_id": "MAC",
+     "name": "hidden length",
+     "value": 28.0,
+     "unit": "Å",
+     "quote": "a decrease in the hidden length from 28.0 Å in MAC to 16.1 Å in Cu-MAC",
+     "why": "同上"
+    },
+    {
+     "sample_id": "Cu-MAC",
+     "name": "hidden length",
+     "value": 16.1,
+     "unit": "Å",
+     "quote": "to 16.1 Å in Cu-MAC",
+     "why": "同上"
+    }
+   ],
+   "negative": [
+    {
+     "value": 10,
+     "unit": "kDa",
+     "why": "原料规格（四臂 PEG 分子量）",
+     "quote": "Tetra-arm polyethylene glycol (10 kDa)"
+    },
+    {
+     "value": 2.5,
+     "unit": "kDa",
+     "why": "原料规格",
+     "quote": "(or 2.5 kDa per arm)"
+    },
+    {
+     "value": 15,
+     "unit": "mM",
+     "why": "配液浓度",
+     "quote": "a 15 mM stock solution"
+    },
+    {
+     "value": 7.5,
+     "unit": "mM",
+     "why": "成胶浓度（配方）",
+     "quote": "Gels were made at 7.5 mM"
+    },
+    {
+     "value": 6,
+     "unit": "mM",
+     "why": "原料的重叠浓度（背景量）",
+     "quote": "the overlap concentration of the polymer (6 mM)"
+    },
+    {
+     "value": 133,
+     "unit": "μL",
+     "why": "投料",
+     "quote": "133 μL of this stock solution"
+    },
+    {
+     "value": 4.9,
+     "unit": "mg",
+     "why": "投料",
+     "quote": "4.9 mg of MAC or CAT"
+    },
+    {
+     "value": 5.7,
+     "unit": "mg",
+     "why": "投料",
+     "quote": "5.7 mg of Cu-MAC or Cu-CAT"
+    },
+    {
+     "value": 2.4,
+     "unit": "mg",
+     "why": "投料",
+     "quote": "2.4 mg for the linear control"
+    },
+    {
+     "value": 100,
+     "unit": "mm/min",
+     "why": "拉伸速率（测试条件）",
+     "quote": "tensile speeds of 100 mm/min"
+    },
+    {
+     "value": 8.0,
+     "unit": "mm",
+     "why": "夹具尺寸",
+     "quote": "A parallel plate geometry 8.0 mm in diameter"
+    },
+    {
+     "value": 1000,
+     "unit": "%",
+     "why": "破坏网络所用应变（测试条件）",
+     "quote": "Following a 1000% strain that induced network disruption"
+    },
+    {
+     "value": 50,
+     "unit": "kJ/mol",
+     "why": "人为设定的能量阈值",
+     "quote": "where the relative energy change remains below 50 kJ/mol (arbitrarily defined)"
+    },
+    {
+     "value": 90,
+     "unit": "°C",
+     "why": "温度循环范围（测试条件）",
+     "quote": "temperature cycled between 25 and 90 °C"
+    },
+    {
+     "value": 500,
+     "unit": "MHz",
+     "why": "仪器频率",
+     "quote": "1 H NMR (500 MHz, DMSO- d6 , 298 K)"
+    }
+   ]
+  },
+  {
+   "key": "doi_10.1021-acsmaterialslett.6c00076",
+   "title": "Ultrasensitive Biopolymer-MOF Composite-Based Pressure Sensor",
+   "samples": [
+    "CS-MOF (2:5)",
+    "CS",
+    "CS-MOF (1:5)",
+    "CS-MOF (3:5)",
+    "MOF"
+   ],
+   "core": [
+    {
+     "sample_id": "CS-MOF",
+     "name": "sensitivity",
+     "value": 4.58,
+     "unit": "kPa-1",
+     "quote": "Low-pressure regime (0-5 kPa): S = 4.58 kPa-1"
+    },
+    {
+     "sample_id": "CS-MOF",
+     "name": "sensitivity",
+     "value": 2.12,
+     "unit": "kPa-1",
+     "quote": "Medium-pressure regime (5-20 kPa): S = 2.12 kPa-1"
+    },
+    {
+     "sample_id": "CS-MOF",
+     "name": "sensitivity",
+     "value": 1.18,
+     "unit": "kPa-1",
+     "quote": "High-pressure regime (20-50 kPa): S = 1.18 kPa-1"
+    },
+    {
+     "sample_id": "CS-MOF",
+     "name": "response time",
+     "value": 200,
+     "unit": "ms",
+     "quote": "response time ( tres ) = 200 ms, recovery time ( trec ) = 220 ms"
+    },
+    {
+     "sample_id": "CS-MOF",
+     "name": "recovery time",
+     "value": 220,
+     "unit": "ms",
+     "quote": "recovery time ( trec ) = 220 ms"
+    },
+    {
+     "sample_id": "CS-MOF",
+     "name": "specific surface area",
+     "value": 42.6,
+     "unit": "m2/g",
+     "quote": "a Brunauer-Emmett-Teller (BET) specific surface area of 42.6 m2 g-1"
+    }
+   ],
+   "edge": [
+    {
+     "sample_id": "CS-MOF",
+     "name": "cycling stability",
+     "value": 2000,
+     "unit": "cycles",
+     "quote": "excellent durability over 2000 cycles",
+     "why": "循环次数（考核条件兼性能）"
+    },
+    {
+     "sample_id": "CS-MOF",
+     "name": "hysteresis",
+     "value": 1.5,
+     "unit": "%",
+     "quote": "negligible hysteresis (<1.5%)",
+     "why": "上限值"
+    },
+    {
+     "sample_id": "CS",
+     "name": "capacitance change",
+     "value": 5,
+     "unit": "%",
+     "quote": "The pristine CS film showed minimal capacitance change ( Δ C/C0 < 5 % at 50 kPa)",
+     "why": "上限值"
+    },
+    {
+     "sample_id": "CS-MOF",
+     "name": "linearity R2",
+     "value": 0.99,
+     "unit": "",
+     "quote": "near-linear response across the full pressure range ( R2 > 0.99 )",
+     "why": "拟合优度"
+    },
+    {
+     "sample_id": "CS-MOF",
+     "name": "correlation R2",
+     "value": 0.95,
+     "unit": "",
+     "quote": "a strong correlation between capacitance changes and fruit mass accumulation (R2=0.95, p<0.001)",
+     "why": "应用演示的统计量"
+    },
+    {
+     "sample_id": "MOF",
+     "name": "rod length",
+     "value": 1,
+     "unit": "μm",
+     "quote": "pristine MOF adopts a uniform rod-like morphology with lengths of approximately 1μm",
+     "why": "形貌尺寸"
+    },
+    {
+     "sample_id": "CS-MOF",
+     "name": "film thickness",
+     "value": 110,
+     "unit": "μm",
+     "quote": "freestanding films approximately 110-120 μm thick",
+     "why": "样品尺寸"
+    }
+   ],
+   "negative": [
+    {
+     "value": 4.8,
+     "unit": "°",
+     "why": "XRD 衍射角",
+     "quote": "Bragg peaks at 2θ values at 4.8°, 9.6°, 12.8° ..."
+    },
+    {
+     "value": 20,
+     "unit": "°",
+     "why": "XRD 衍射角",
+     "quote": "a diffraction peak around 20°"
+    },
+    {
+     "value": 3150,
+     "unit": "cm-1",
+     "why": "拉曼峰",
+     "quote": "a peak corresponds to 3150 cm-1"
+    },
+    {
+     "value": 1580,
+     "unit": "cm-1",
+     "why": "拉曼峰",
+     "quote": "a G band around 1580 cm-1"
+    },
+    {
+     "value": 1340,
+     "unit": "cm-1",
+     "why": "拉曼峰",
+     "quote": "D band at 1340 cm-1"
+    },
+    {
+     "value": 9.8,
+     "unit": "kPa",
+     "why": "测试压力（条件）",
+     "quote": "Cyclic response at 9.8 kPa"
+    },
+    {
+     "value": 19.6,
+     "unit": "kPa",
+     "why": "测试压力（条件）",
+     "quote": "measured at 19.6 kPa"
+    },
+    {
+     "value": 50,
+     "unit": "kPa",
+     "why": "压力范围（条件）",
+     "quote": "applying controlled pressure (0-50 kPa)"
+    },
+    {
+     "value": 49.03,
+     "unit": "kPa",
+     "why": "加载阶梯（条件）",
+     "quote": "Stepwise loading from 0.98 to 49.03 kPa"
+    },
+    {
+     "value": 0.5,
+     "unit": "V",
+     "why": "测试电压",
+     "quote": "an LCR meter (1 kHz, 0.5 V)"
+    },
+    {
+     "value": 85,
+     "unit": "°C",
+     "why": "合成温度",
+     "quote": "heated at 85 °C for 12 h"
+    },
+    {
+     "value": 30,
+     "unit": "mg",
+     "why": "投料",
+     "quote": "Ni(OAc)2·4H2O (30 mg, 0.12 mmol)"
+    },
+    {
+     "value": 14,
+     "unit": "mg",
+     "why": "投料",
+     "quote": "HHTP (14 mg, 0.04 mmol)"
+    },
+    {
+     "value": 0.5,
+     "unit": "g",
+     "why": "投料",
+     "quote": "dissolving 0.5 g of low molecular-weight chitosan"
+    },
+    {
+     "value": 100,
+     "unit": "μm",
+     "why": "电极胶带厚度（器件部件）",
+     "quote": "Flexible gold adhesive tape (100 μm thick)"
+    },
+    {
+     "value": 75,
+     "unit": "°C",
+     "why": "封装固化温度",
+     "quote": "thermal curing at 75 °C for 2 h"
+    },
+    {
+     "value": 77,
+     "unit": "K",
+     "why": "测试温度",
+     "quote": "Nitrogen adsorption desorption isotherm (77 K)"
+    },
+    {
+     "value": 10,
+     "unit": "Hz",
+     "why": "采样率",
+     "quote": "sampling rate: 10 Hz"
+    }
+   ]
+  },
+  {
+   "key": "doi_10.1002-adfm.202518121",
+   "title": "Thermodynamically Driven Phase Separation for Wearable Ionic Thermoelectrics",
+   "samples": [
+    "PDAC0",
+    "PDAC30",
+    "PDAC60",
+    "PDAC90",
+    "PDAC100"
+   ],
+   "core": [
+    {
+     "sample_id": "PDAC60",
+     "name": "thermopower",
+     "value": 30.8,
+     "unit": "mV/K",
+     "quote": "The PDAC60 sample reaches a maximum thermopower of 30.80 mV K-1 at 60 wt.% EMIM:TFSI"
+    },
+    {
+     "sample_id": "PDAC60",
+     "name": "elongation at break",
+     "value": 762.1,
+     "unit": "%",
+     "quote": "This sample demonstrates exceptional tensile strain (762.1%), toughness (2862.51 KJ m-3"
+    },
+    {
+     "sample_id": "PDAC60",
+     "name": "toughness",
+     "value": 2862.51,
+     "unit": "kJ/m3",
+     "quote": "toughness (2862.51 KJ m-3 , representing a 303% increase compared to PDAC0)"
+    },
+    {
+     "sample_id": "PDAC60",
+     "name": "Young's modulus",
+     "value": 86.14,
+     "unit": "kPa",
+     "quote": "a well-balanced Young's modulus (86.14 KPa)"
+    },
+    {
+     "sample_id": "PDAC0",
+     "name": "Young's modulus",
+     "value": 181.72,
+     "unit": "kPa",
+     "quote": "The PDAC0 sample ... exhibits the highest Young's modulus (181.72 KPa) but limited maximum tensile strain (528.4%) and toughness (944.39 KJ m-3 )"
+    },
+    {
+     "sample_id": "PDAC0",
+     "name": "elongation at break",
+     "value": 528.4,
+     "unit": "%",
+     "quote": "limited maximum tensile strain (528.4%)"
+    },
+    {
+     "sample_id": "PDAC0",
+     "name": "toughness",
+     "value": 944.39,
+     "unit": "kJ/m3",
+     "quote": "toughness (944.39 KJ m-3 )"
+    },
+    {
+     "sample_id": "PDAC30",
+     "name": "Young's modulus",
+     "value": 141.63,
+     "unit": "kPa",
+     "quote": "a reduced Young's modulus (141.63 KPa) and slightly decreased tensile strain (498.3%), but significantly improved toughness (1862.45 KJ m-3 )"
+    },
+    {
+     "sample_id": "PDAC30",
+     "name": "elongation at break",
+     "value": 498.3,
+     "unit": "%",
+     "quote": "slightly decreased tensile strain (498.3%)"
+    },
+    {
+     "sample_id": "PDAC30",
+     "name": "toughness",
+     "value": 1862.45,
+     "unit": "kJ/m3",
+     "quote": "significantly improved toughness (1862.45 KJ m-3 )"
+    },
+    {
+     "sample_id": "PDAC90",
+     "name": "Young's modulus",
+     "value": 55.46,
+     "unit": "kPa",
+     "quote": "further reduction in Young's modulus (55.46 KPa), abrupt decrease in tensile strain (252.6%), and dramatic deterioration in toughness (173.92 kJ m-3 )"
+    },
+    {
+     "sample_id": "PDAC90",
+     "name": "elongation at break",
+     "value": 252.6,
+     "unit": "%",
+     "quote": "abrupt decrease in tensile strain (252.6%)"
+    },
+    {
+     "sample_id": "PDAC90",
+     "name": "toughness",
+     "value": 173.92,
+     "unit": "kJ/m3",
+     "quote": "dramatic deterioration in toughness (173.92 kJ m-3 )"
+    },
+    {
+     "sample_id": "PDAC0",
+     "name": "glass transition temperature",
+     "value": -13.54,
+     "unit": "°C",
+     "quote": "pure PDAC gel has a glass transition temperature (T_g) of -13.54°C"
+    },
+    {
+     "sample_id": "PDAC60",
+     "name": "adhesion energy",
+     "value": 86.5,
+     "unit": "J/m2",
+     "quote": "an impressive adhesion energy of 86.5 J m-2 to copper foil in shear tests"
+    },
+    {
+     "sample_id": "PDAC60",
+     "name": "self-healing efficiency",
+     "value": 85,
+     "unit": "%",
+     "quote": "remarkable self-healing capability (85% thermal voltage retention)"
+    },
+    {
+     "sample_id": "PDAC100",
+     "name": "ionic conductivity",
+     "value": 13.33,
+     "unit": "mS/cm",
+     "quote": "reaching 13.33 mS cm-1 for high-content samples (PDAC100)"
+    },
+    {
+     "sample_id": "PDAC60",
+     "name": "ionic conductivity",
+     "value": 6.07,
+     "unit": "mS/cm",
+     "quote": "PDAC60 achieves an optimal balance between conductivity (6.07 mS cm-1 )"
+    },
+    {
+     "sample_id": "PDAC60",
+     "name": "power factor",
+     "value": 0.58,
+     "unit": "mW m-1 K-2",
+     "quote": "yielding a maximum power factor (PF) of 0.58 mW m-1 K-2"
+    },
+    {
+     "sample_id": "PDAC60",
+     "name": "power density",
+     "value": 0.06944,
+     "unit": "mW/m2",
+     "quote": "Under a 122 k Ω load, the power density of Cu electrodes reached a maximum of 0.06944 mW m-2"
+    }
+   ],
+   "edge": [
+    {
+     "sample_id": "PDAC60",
+     "name": "elongation at break",
+     "value": 762,
+     "unit": "%",
+     "quote": "exceptional mechanical compliance (762% strain)",
+     "why": "同一个数的取整写法"
+    },
+    {
+     "sample_id": "",
+     "name": "glass transition temperature",
+     "value": -33.68,
+     "unit": "°C",
+     "quote": "significantly decreases to -33.68°C upon EMIM:TFSI incorporation",
+     "why": "没说是哪个配比"
+    },
+    {
+     "sample_id": "PDAC60",
+     "name": "phase domain size",
+     "value": 0.68,
+     "unit": "μm",
+     "quote": "PDAC60 exhibits a narrow unimodal distribution of 0.68 μm",
+     "why": "形貌尺寸"
+    },
+    {
+     "sample_id": "PDAC30",
+     "name": "phase domain size",
+     "value": 8.2,
+     "unit": "μm",
+     "quote": "The solvent-rich phase of PDAC30 shows a broad size distribution of 8.2 μm",
+     "why": "形貌尺寸"
+    },
+    {
+     "sample_id": "PDAC90",
+     "name": "phase domain size",
+     "value": 0.85,
+     "unit": "μm",
+     "quote": "PDAC90 presents a multimodal profile centered at 0.85 μm",
+     "why": "形貌尺寸"
+    },
+    {
+     "sample_id": "PDAC60",
+     "name": "polydispersity",
+     "value": 0.2,
+     "unit": "",
+     "quote": "minimal polydispersity (PDI < 0.2)",
+     "why": "上限值"
+    },
+    {
+     "sample_id": "",
+     "name": "Flory-Huggins parameter",
+     "value": 352,
+     "unit": "",
+     "quote": "to post-polymerization ( χ ≈ 352 - 354 )",
+     "why": "计算量"
+    },
+    {
+     "sample_id": "",
+     "name": "Flory-Huggins parameter",
+     "value": 20,
+     "unit": "",
+     "quote": "from pre-polymerization ( χ ≈ 20 - 23 )",
+     "why": "计算量"
+    },
+    {
+     "sample_id": "PDAC30",
+     "name": "Gibbs free energy change",
+     "value": 148000.0,
+     "unit": "J/mol",
+     "quote": "increasing from 14.80 × 10^4 (PDAC30) to 22.04 × 10^4 J mol-1 (PDAC90)",
+     "why": "计算量"
+    },
+    {
+     "sample_id": "PDAC90",
+     "name": "Gibbs free energy change",
+     "value": 220400.0,
+     "unit": "J/mol",
+     "quote": "22.04 × 10^4 J mol-1 (PDAC90)",
+     "why": "计算量"
+    },
+    {
+     "sample_id": "",
+     "name": "binding energy",
+     "value": -5.12,
+     "unit": "eV",
+     "quote": "exceptionally strong binding energy (-5.12 eV) between DA + and TFSI -",
+     "why": "DFT 计算"
+    },
+    {
+     "sample_id": "PDAC60",
+     "name": "diffusion coefficient",
+     "value": 2.823e-09,
+     "unit": "m2/s",
+     "quote": "EMIM + cations achieve a peak diffusion coefficient of 2.823 × 10^-9 m2 s-1",
+     "why": "分子动力学模拟"
+    },
+    {
+     "sample_id": "PDAC60",
+     "name": "diffusion coefficient",
+     "value": 120,
+     "unit": "%",
+     "quote": "exceeding values in both ion-deficient (PDAC30) and ion-rich (PDAC90) systems by 120% and 124%",
+     "why": "相对幅度（模拟）"
+    },
+    {
+     "sample_id": "PDAC60",
+     "name": "diffusion coefficient",
+     "value": 124,
+     "unit": "%",
+     "quote": "by 120% and 124%",
+     "why": "同上"
+    },
+    {
+     "sample_id": "PDAC60",
+     "name": "ion-pair spacing",
+     "value": 0.56,
+     "unit": "nm",
+     "quote": "optimal ion-pair spacing (0.56 nm)",
+     "why": "模拟"
+    },
+    {
+     "sample_id": "PDAC60",
+     "name": "toughness",
+     "value": 303,
+     "unit": "%",
+     "quote": "representing a 303% increase compared to PDAC0",
+     "why": "相对幅度"
+    },
+    {
+     "sample_id": "PDAC60",
+     "name": "healing retention",
+     "value": 75,
+     "unit": "%",
+     "quote": "PDAC60 maintains over 75% of its original tensile performance even after 5 repair cycles",
+     "why": "下限值"
+    },
+    {
+     "sample_id": "",
+     "name": "thermopower",
+     "value": 20,
+     "unit": "mV/K",
+     "quote": "At 50% relative humidity (RH), the thermopower is ≈20 mV K-1",
+     "why": "近似值，随湿度"
+    },
+    {
+     "sample_id": "",
+     "name": "thermopower",
+     "value": 30,
+     "unit": "mV/K",
+     "quote": "the thermopower rises to ≈30 mV K-1",
+     "why": "近似值"
+    },
+    {
+     "sample_id": "",
+     "name": "open-circuit voltage",
+     "value": 80.14,
+     "unit": "mV",
+     "quote": "the device achieves an open-circuit voltage of 80.14 mV",
+     "why": "器件演示（8 个单元串联）"
+    },
+    {
+     "sample_id": "",
+     "name": "output voltage",
+     "value": 381,
+     "unit": "mV",
+     "quote": "generating 381 mV from five serially connected legs under a 2.8 K temperature",
+     "why": "器件演示"
+    },
+    {
+     "sample_id": "",
+     "name": "output voltage",
+     "value": 29.2,
+     "unit": "mV",
+     "quote": "The i-TE module produces 29.2 mV at Δ T = 1.0 K",
+     "why": "器件演示"
+    },
+    {
+     "sample_id": "",
+     "name": "capacitor voltage",
+     "value": 27.86,
+     "unit": "mV",
+     "quote": "An external capacitor is charged to 27.86 mV",
+     "why": "器件演示"
+    }
+   ],
+   "negative": [
+    {
+     "value": 3.09,
+     "unit": "mW m-1 K-2",
+     "why": "别人的材料（PEDOT:PSS）",
+     "quote": "power factor 3.09 mW m-1 K-2"
+    },
+    {
+     "value": -46.97,
+     "unit": "mV/K",
+     "why": "别人的材料",
+     "quote": "Ionic thermopower up to -46.97 mV K-1"
+    },
+    {
+     "value": 500,
+     "unit": "%",
+     "why": "别人的材料",
+     "quote": "stretchability ( >500 % strain)"
+    },
+    {
+     "value": -15,
+     "unit": "mV/K",
+     "why": "别人的材料",
+     "quote": "low ionic thermopower ( -15 mV K-1 )"
+    },
+    {
+     "value": 2000,
+     "unit": "%",
+     "why": "别人的材料",
+     "quote": "2000% stretchability due to percolated EMIM + -rich pathways. [17]"
+    },
+    {
+     "value": 0.49,
+     "unit": "ppm",
+     "why": "化学位移",
+     "quote": "a significant upfield shift ( Δδ = 0.49 ppm)"
+    },
+    {
+     "value": 60,
+     "unit": "wt%",
+     "why": "配方",
+     "quote": "At the 60 wt.% loading"
+    },
+    {
+     "value": 30,
+     "unit": "wt%",
+     "why": "配方",
+     "quote": "Upon incorporation of 30 wt.% EMIM:TFSI"
+    },
+    {
+     "value": 60,
+     "unit": "°C",
+     "why": "自修复条件",
+     "quote": "fractured specimens can spontaneously heal at 60°C within 1.5 h"
+    },
+    {
+     "value": 1.5,
+     "unit": "h",
+     "why": "自修复条件",
+     "quote": "within 1.5 h"
+    },
+    {
+     "value": 70,
+     "unit": "%",
+     "why": "测试湿度（条件）",
+     "quote": "we chose 70% RH as the standard testing condition"
+    },
+    {
+     "value": 742,
+     "unit": "cm-1",
+     "why": "拉曼峰",
+     "quote": "the ≈742 cm-1 band"
+    },
+    {
+     "value": 122,
+     "unit": "kΩ",
+     "why": "负载（条件）",
+     "quote": "Under a 122 k Ω load"
+    },
+    {
+     "value": 0.8,
+     "unit": "W m-1 K-1",
+     "why": "别的材料（热熔胶带）的导热系数",
+     "quote": "a thin, highly adhesive hot-melt tape (κ ≈ 0.8 Wm-1 K-1)"
+    },
+    {
+     "value": 365,
+     "unit": "nm",
+     "why": "光固化波长（条件）",
+     "quote": "UV light ( λ = 365 nm, 24W)"
+    },
+    {
+     "value": 100,
+     "unit": "μF",
+     "why": "外接电容",
+     "quote": "a capacitor (100 μ F)"
+    },
+    {
+     "value": 0.7,
+     "unit": "K",
+     "why": "温差（条件）",
+     "quote": "a 0.7 K temperature gradient"
+    }
+   ]
+  },
+  {
+   "key": "doi_10.1126-sciadv.aee4501",
+   "title": "Piezoionic copolymer ionogel with tunable hydrogen bond enables epidermal blood pressure monitoring",
+   "samples": [
+    "PVA/IL",
+    "PP10/IL",
+    "PP20/IL",
+    "PP25/IL",
+    "PP30/IL"
+   ],
+   "core": [
+    {
+     "sample_id": "PP25/IL",
+     "name": "voltage output",
+     "value": 20,
+     "unit": "mV",
+     "quote": "The achieved peak piezoionic output, at 50 kPa , delivers a voltage of 20 mV"
+    },
+    {
+     "sample_id": "PVA",
+     "name": "voltage output",
+     "value": 2,
+     "unit": "mV",
+     "quote": "from the conventional pristine PVA ionogels of 2 mV"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "voltage output",
+     "value": 12,
+     "unit": "mV",
+     "quote": "the voltage response of the PP25/IL ionogel at 13 kPa is 12 mV"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "response time",
+     "value": 96,
+     "unit": "ms",
+     "quote": "the response and recovery times of the PP25/IL ionogel are calculated to be 96 ms and 0.77 s"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "recovery time",
+     "value": 0.77,
+     "unit": "s",
+     "quote": "96 ms and 0.77 s"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "piezoionic coefficient",
+     "value": 1613,
+     "unit": "nV/Pa",
+     "quote": "A high piezoionic coefficient of 1613 nV Pa-1 is obtained in this region"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "power density",
+     "value": 15.2,
+     "unit": "nW/cm3",
+     "quote": "The peak power density of 15.2 nW cm-3 is achieved"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "ionic conductivity",
+     "value": 0.42,
+     "unit": "S/m",
+     "quote": "PP25/IL ionogel exhibits an ionic conductivity of 0.42 S m-1 , an improvement from the 0.37 S m-1 of PVA/IL ionogel"
+    },
+    {
+     "sample_id": "PVA/IL",
+     "name": "ionic conductivity",
+     "value": 0.37,
+     "unit": "S/m",
+     "quote": "the 0.37 S m-1 of PVA/IL ionogel"
+    },
+    {
+     "sample_id": "PVA/IL",
+     "name": "crystallinity",
+     "value": 42.2,
+     "unit": "%",
+     "quote": "the PVA/IL ionogel ... exhibits a crystallinity of 42.2%"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "crystallinity",
+     "value": 24.4,
+     "unit": "%",
+     "quote": "the crystallinity of the PP25/IL ionogel decreases to 24.4%"
+    },
+    {
+     "sample_id": "PVA/IL",
+     "name": "melting temperature",
+     "value": 225,
+     "unit": "°C",
+     "quote": "The melting peak ( Tm ) of PVA/IL appears at 225°C, whereas that of PP25/IL is at a lower value of 222°C"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "melting temperature",
+     "value": 222,
+     "unit": "°C",
+     "quote": "that of PP25/IL is at a lower value of 222°C"
+    },
+    {
+     "sample_id": "PP/IL",
+     "name": "decomposition temperature",
+     "value": 262,
+     "unit": "°C",
+     "quote": "the PP/IL ionogel, with a 5% weight-loss temperature ( Td,5 % ) of 262°C"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "tensile strength",
+     "value": 3.0,
+     "unit": "MPa",
+     "quote": "The PP25/IL ionogel achieves optimal mechanical properties, with a tensile strength of 3.0 MPa, elongation at break of 1510%, Young's modulus of 300 kPa, and toughness of 23.1 MJ m-3"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "elongation at break",
+     "value": 1510,
+     "unit": "%",
+     "quote": "elongation at break of 1510%"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "Young's modulus",
+     "value": 300,
+     "unit": "kPa",
+     "quote": "Young's modulus of 300 kPa"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "toughness",
+     "value": 23.1,
+     "unit": "MJ/m3",
+     "quote": "toughness of 23.1 MJ m-3"
+    }
+   ],
+   "edge": [
+    {
+     "sample_id": "PP25/IL",
+     "name": "voltage output",
+     "value": 21,
+     "unit": "mV",
+     "quote": "remains functional up to 500 kPa and continues to produce a clear transient piezoionic response of 21 mV",
+     "why": "量程极限处的输出"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "voltage output",
+     "value": 10,
+     "unit": "fold",
+     "quote": "a 10-fold improvement after H-bond optimization",
+     "why": "相对倍数"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "stretchability",
+     "value": 15,
+     "unit": "times",
+     "quote": "can be stretched up to 15 times its original length",
+     "why": "与 1510% 同一件事的另一种写法"
+    },
+    {
+     "sample_id": "PVA/IL",
+     "name": "crystallite size",
+     "value": 2.46,
+     "unit": "nm",
+     "quote": "The D decreases significantly from 2.46 nm for PVA/IL to 1.73 nm for PP25/IL",
+     "why": "Scherrer 公式算出的结构参数"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "crystallite size",
+     "value": 1.73,
+     "unit": "nm",
+     "quote": "to 1.73 nm for PP25/IL",
+     "why": "同上"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "interdomain distance",
+     "value": 9.23,
+     "unit": "nm",
+     "quote": "slightly larger for PP25/IL (9.23 nm) than for PVA/IL (7.4 nm)",
+     "why": "SAXS 算出的结构参数"
+    },
+    {
+     "sample_id": "PVA/IL",
+     "name": "interdomain distance",
+     "value": 7.4,
+     "unit": "nm",
+     "quote": "than for PVA/IL (7.4 nm)",
+     "why": "同上"
+    },
+    {
+     "sample_id": "PVA/IL",
+     "name": "scattering vector",
+     "value": 0.085,
+     "unit": "Å-1",
+     "quote": "broad peaks at q = 0.085 and 0.068 for PVA/IL and PP25/IL",
+     "why": "谱峰位置类"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "scattering vector",
+     "value": 0.068,
+     "unit": "Å-1",
+     "quote": "q = 0.085 and 0.068",
+     "why": "同上"
+    },
+    {
+     "sample_id": "",
+     "name": "compressive strain",
+     "value": 80,
+     "unit": "%",
+     "quote": "All ionogels do not fracture at the compressive strain of 80%",
+     "why": "考核条件兼性能下限"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "cycling stability",
+     "value": 1000,
+     "unit": "cycles",
+     "quote": "negligible changes ... after 1000 cycles",
+     "why": "循环次数"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "cycling stability",
+     "value": 20000,
+     "unit": "s",
+     "quote": "maintains nearly constant output after 20,000 s of compression cycles",
+     "why": "循环时长"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "mean absolute error SBP",
+     "value": 5.89,
+     "unit": "mmHg",
+     "quote": "the mean absolute error for SBP is 5.89 mmHg, and the DBP is 3.61 mmHg",
+     "why": "血压系统的指标，不是材料"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "mean absolute error DBP",
+     "value": 3.61,
+     "unit": "mmHg",
+     "quote": "the DBP is 3.61 mmHg",
+     "why": "同上"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "mean absolute error SBP",
+     "value": 5.9,
+     "unit": "mmHg",
+     "quote": "mean absolute errors of 5.9 millimeters of mmHg (mmHg; systolic) and 3.6 mmHg (diastolic)",
+     "why": "同上（摘要里的取整写法）"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "mean absolute error DBP",
+     "value": 3.6,
+     "unit": "mmHg",
+     "quote": "3.6 mmHg (diastolic)",
+     "why": "同上"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "BHS within 5 mmHg",
+     "value": 72,
+     "unit": "%",
+     "quote": "72% within 5 mmHg, 90% within 10 mmHg, and 97% within 15 mmHg",
+     "why": "系统指标"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "BHS within 10 mmHg",
+     "value": 90,
+     "unit": "%",
+     "quote": "90% within 10 mmHg",
+     "why": "系统指标"
+    },
+    {
+     "sample_id": "PP25/IL",
+     "name": "BHS within 15 mmHg",
+     "value": 97,
+     "unit": "%",
+     "quote": "97% within 15 mmHg",
+     "why": "系统指标"
+    },
+    {
+     "sample_id": "",
+     "name": "binding energy",
+     "value": -4.24,
+     "unit": "eV",
+     "quote": "calculated to be -4.24 and -1.21 eV",
+     "why": "DFT 计算"
+    },
+    {
+     "sample_id": "",
+     "name": "binding energy",
+     "value": -1.21,
+     "unit": "eV",
+     "quote": "-4.24 and -1.21 eV",
+     "why": "DFT 计算"
+    },
+    {
+     "sample_id": "PVA/IL",
+     "name": "radius of gyration",
+     "value": 2.25,
+     "unit": "nm",
+     "quote": "a small Rg of 2.25 nm",
+     "why": "分子动力学模拟"
+    },
+    {
+     "sample_id": "PP/IL",
+     "name": "radius of gyration",
+     "value": 2.4,
+     "unit": "nm",
+     "quote": "an increase in Rg from 2.25 to 2.40 nm",
+     "why": "模拟"
+    },
+    {
+     "sample_id": "PVA/IL",
+     "name": "diffusion coefficient",
+     "value": 8.57e-11,
+     "unit": "m2/s",
+     "quote": "the diffusion coefficients of BMIM + ( 8.57 × 10^-11 m2 s-1 )",
+     "why": "模拟"
+    },
+    {
+     "sample_id": "PVA/IL",
+     "name": "diffusion coefficient",
+     "value": 7.78e-11,
+     "unit": "m2/s",
+     "quote": "TFSI - ( 7.78 × 10^-11 m2 s-1 )",
+     "why": "模拟"
+    },
+    {
+     "sample_id": "PVA/IL",
+     "name": "diffusion difference",
+     "value": 7.9e-12,
+     "unit": "m2/s",
+     "quote": "a diffusion difference ... of only 0.79 × 10^-11 m2 s-1",
+     "why": "模拟"
+    },
+    {
+     "sample_id": "PP/IL",
+     "name": "diffusion coefficient",
+     "value": 4.91e-11,
+     "unit": "m2/s",
+     "quote": "reduces its diffusion coefficient to 4.91 × 10^-11 m2 s-1",
+     "why": "模拟"
+    },
+    {
+     "sample_id": "PP/IL",
+     "name": "diffusion coefficient",
+     "value": 1.18e-10,
+     "unit": "m2/s",
+     "quote": "increases its diffusion coefficient by 38% to 11.8 × 10^-11 m2 s-1",
+     "why": "模拟"
+    },
+    {
+     "sample_id": "PP/IL",
+     "name": "diffusion difference",
+     "value": 6.89e-11,
+     "unit": "m2/s",
+     "quote": "the Dd increased sharply to 6.89 × 10^-11 m2 s-1",
+     "why": "模拟"
+    },
+    {
+     "sample_id": "",
+     "name": "RDF peak",
+     "value": 28.9,
+     "unit": "",
+     "quote": "a sharp, intense peak at 0.272 nm with g(r) = 28.9",
+     "why": "模拟"
+    },
+    {
+     "sample_id": "",
+     "name": "RDF peak",
+     "value": 24.1,
+     "unit": "",
+     "quote": "from g(r) = 28.9 to g(r) = 24.1",
+     "why": "模拟"
+    },
+    {
+     "sample_id": "",
+     "name": "RDF peak",
+     "value": 25.0,
+     "unit": "",
+     "quote": "an O—N peak at 0.22 nm with g(r) = 25.0",
+     "why": "模拟"
+    },
+    {
+     "sample_id": "",
+     "name": "H-bond lifetime",
+     "value": 0.08,
+     "unit": "ps",
+     "quote": "an average lifetime of 0.08 ps",
+     "why": "模拟"
+    },
+    {
+     "sample_id": "",
+     "name": "H-bond lifetime",
+     "value": 0.1,
+     "unit": "ps",
+     "quote": "from 0.08 to 0.10 ps",
+     "why": "模拟"
+    }
+   ],
+   "negative": [
+    {
+     "value": 30,
+     "unit": "fold",
+     "why": "别人的工作（冠醚放大 PVA 水凝胶）",
+     "quote": "achieving a 30-fold piezoionic amplification in poly(vinyl alcohol) (PVA) hydrogels (25)"
+    },
+    {
+     "value": 19.7,
+     "unit": "°",
+     "why": "XRD 衍射角",
+     "quote": "a pronounced diffraction peak appears at 2θ = 19.7°"
+    },
+    {
+     "value": 3314,
+     "unit": "cm-1",
+     "why": "红外峰",
+     "quote": "observed at 3314 cm-1"
+    },
+    {
+     "value": 3333,
+     "unit": "cm-1",
+     "why": "红外峰",
+     "quote": "at 3333 cm-1"
+    },
+    {
+     "value": 1350,
+     "unit": "cm-1",
+     "why": "红外峰",
+     "quote": "red-shifted from 1350 to 1342 cm-1"
+    },
+    {
+     "value": 50,
+     "unit": "kPa",
+     "why": "测试压力（条件）",
+     "quote": "Voltage response ... at 50 kPa"
+    },
+    {
+     "value": 13,
+     "unit": "kPa",
+     "why": "测试压力（条件）",
+     "quote": "at 13 kPa"
+    },
+    {
+     "value": 15,
+     "unit": "kPa",
+     "why": "模拟施加的压力（条件）",
+     "quote": "under an applied pressure of 15 kPa"
+    },
+    {
+     "value": 500,
+     "unit": "kPa",
+     "why": "量程上限（条件）",
+     "quote": "remains functional up to 500 kPa"
+    },
+    {
+     "value": 128.76,
+     "unit": "mmHg",
+     "why": "志愿者的血压数据，不是材料",
+     "quote": "SBP reference and estimated values were 128.76 mmHg and 129.10 mmHg"
+    },
+    {
+     "value": 81.28,
+     "unit": "mmHg",
+     "why": "志愿者数据",
+     "quote": "DBP reference and estimated values were 81.28 mmHg"
+    },
+    {
+     "value": 97.1,
+     "unit": "mmHg",
+     "why": "志愿者数据",
+     "quote": "MAP reference and estimated values were 97.10 mmHg"
+    },
+    {
+     "value": 180,
+     "unit": "cm",
+     "why": "志愿者身高",
+     "quote": "heights from 155 to 180 cm"
+    },
+    {
+     "value": 80,
+     "unit": "kg",
+     "why": "志愿者体重",
+     "quote": "body weights from 45 to 80 kg"
+    },
+    {
+     "value": 400,
+     "unit": "g/mol",
+     "why": "原料规格",
+     "quote": "a number-average molar mass ( M_n ) of 400 g mol-1"
+    },
+    {
+     "value": 15,
+     "unit": "wt%",
+     "why": "配液浓度",
+     "quote": "a PVA solution at 15 wt % in DMSO"
+    },
+    {
+     "value": 25,
+     "unit": "wt%",
+     "why": "配方",
+     "quote": "an overall IL content of 25 wt %"
+    },
+    {
+     "value": -20,
+     "unit": "°C",
+     "why": "冷冻条件",
+     "quote": "frozen at -20°C for 8 hours"
+    },
+    {
+     "value": 50,
+     "unit": "mm/min",
+     "why": "拉伸速率（条件）",
+     "quote": "a cross-head speed of 50 mm min-1"
+    }
+   ]
+  }
+ ]
+}

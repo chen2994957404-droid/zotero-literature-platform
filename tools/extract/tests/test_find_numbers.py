@@ -73,3 +73,18 @@ def test_测试手段与性质名不当样品():
         assert not F._looks_like_sample(bad), bad
     for ok in ('PBS-1', 'FC-EtFe', 'PVA/CPO', 'CAN-4-3-30'):
         assert F._looks_like_sample(ok), ok
+
+
+def test_考卷金标形状完整_评分器能跑():
+    from tools.extract.evals import holdout as H
+    papers = H.load_gold()
+    assert len(papers) >= 5
+    for p in papers:
+        assert p['core'] and all('quote' in g for g in p['core'] + p['edge'] + p['negative'])
+        assert all(g.get('why') for g in p['edge'] + p['negative'])
+    g = papers[0]
+    rows = H.rows_from_facts([{'where': 'main', 'norm': str(c['value']), 'sample': c['sample_id'], 'property': c['name']}
+                              for c in g['core']] + [{'where': 'si', 'norm': '1', 'sample': 'x', 'property': 'y'}])
+    from tools.extract.evals.scorers.measurements import score_paper
+    s = score_paper(g, rows)
+    assert s['recall'] == 1.0 and s['precision'] == 1.0, '金标自己喂回去必须满分；SI 的行不参与'
