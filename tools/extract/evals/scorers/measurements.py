@@ -37,6 +37,11 @@ def _norm(s):
     return ' '.join(str(s or '').lower().replace('_', ' ').split())
 
 
+# 只是「这是什么东西」的通称，不区分样品（2026-09-24 考卷评分发现：金标写 Cu-CAT、抽取写 Cu-CAT gel 被判错）
+_GENERIC_HEAD = re.compile(r'\s+(?:gels?|ionogels?|hydrogels?|samples?|films?|composites?|elastomers?|networks?|'
+                           r'materials?|specimens?|membranes?|coatings?)$')
+
+
 def _same_sample(a, b, single=False):
     """样品名对得上吗。**只做大小写与空白归一**，不做模糊匹配 ——
     模糊匹配会把 `SPU` 和 `SPU/10D-SiO2` 算成一个，那正是最该抓的错。
@@ -49,7 +54,7 @@ def _same_sample(a, b, single=False):
     """
     if single:
         return True
-    x, y = _norm(a), _norm(b)
+    x, y = _GENERIC_HEAD.sub('', _norm(a)), _GENERIC_HEAD.sub('', _norm(b))
     if x == y and x:
         return True
     # `1` vs `Polymer 1`、`PBS` vs `PBS 1` 不算 —— 后者是不同样品。
