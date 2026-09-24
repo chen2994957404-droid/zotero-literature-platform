@@ -158,7 +158,11 @@ def _drop_nonbody(md, body_only=False):
             if s['kind'] != _ol.BACKGROUND:
                 continue
             seg = md[s['start']:s['end']]
-            kept = ' '.join(x for x in re.split(r'(?<=[.;])\s+', seg) if not _others_work(x))
+            # 按分句（逗号切）判，不按整句：引言常把自己的数和别人的数写在同一句 ——
+            # 「LCNs exhibit 348.73 MJ/m3, surpassing state-of-the-art elastomers (<150 MJ/m3) and Ti6Al4V (300 MJ/m3 [25])」
+            # 整句删会把 348.73 一起删掉（2026-09-24 考卷去向统计：「没进候选」从 0 涨到 24）
+            kept = ' '.join(', '.join(cl for cl in re.split(r',\s+', x) if not _others_work(cl))
+                            for x in re.split(r'(?<=[.;])\s+', seg))
             text = text.replace(seg, kept, 1)
     return text
 

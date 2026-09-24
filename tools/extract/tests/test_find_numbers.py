@@ -144,3 +144,11 @@ def test_证据够就收_与完整名字():
         got = F.evidence_property(t, c)
         assert (got == want) if want is None else (got and want in got), (t, got)
     assert F._mentions('strength of spu/10d-sio2 rises', 'spu/10d-sio2') and not F._mentions('strength of spu/10d-sio2 rises', 'spu')
+
+
+def test_引言按分句删别人的数_自己的数留下():
+    md = ('# Title\n\n## 1. Introduction\n\nAs an example, hot-pressed LCNs exhibit an energy absorption of 348.73 MJ/m3 at 8000 s-1, '
+          'surpassing state-of-the-art elastomers ( <150 MJ/m3 even at 12000 s-1 ) and even exceeding Ti6Al4V alloys '
+          '( 300 MJ/m3 at 8000 s-1 [25]). Previous work reached 797.4 MPa [19].\n\n## 2. Results\n\nOur sample shows 5 MPa.\n')
+    t = F._drop_nonbody(md, body_only=True)
+    assert '348.73' in t and '150 MJ' not in t and '300 MJ' not in t and '797.4' not in t and '5 MPa' in t, t
