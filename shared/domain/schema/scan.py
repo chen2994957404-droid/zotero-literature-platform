@@ -52,7 +52,8 @@ _UNITS = [
 _UNITS += [u.replace('µ', 'μ') for u in _UNITS if 'µ' in u]
 _UNIT_RE = '|'.join(re.escape(u) for u in sorted(_UNITS, key=len, reverse=True))
 # 无量纲量：数前面有这些词就算候选（泊松比 0.028、R² 0.9998、取向因子 0.330 —— 全是范文会写的数）
-_DIMLESS_CUE = re.compile(r"(?i)\b(ratio|factor|coefficient|R\s*\^?2|R²|Poisson|index|efficiency|degree of|modulus ratio|m_?c|pr_?c|\bof\s+about)\s*(?:of|=|was|is|were|reached|rose to|to|rose from|increased from|decreased from|from|up to)?\s*$")
+# 2026-09-24 删掉了 m_c / pr_c：那是某一篇论文自己的符号，照抄进通用规则是拟合，不是方法
+_DIMLESS_CUE = re.compile(r"(?i)\b(ratio|factor|coefficient|R\s*\^?2|R²|Poisson|index|efficiency|degree of|modulus ratio|\bof\s+about)\s*(?:of|=|was|is|were|reached|rose to|to|rose from|increased from|decreased from|from|up to)?\s*$")
 
 # 数：支持 1.2e5 / 1.2×10^4 / 区间 / 前缀比较符
 _NUM = r'[-+]?\d+(?:[.,]\d+)?(?:\s*[eE][-+]?\d+|\s*[×xX]\s*10\s*\^?\s*[-+−]?\d+)?'

@@ -407,9 +407,8 @@ def _zone_candidates(cands, chat, zone_model, stats):
 _NUM_ANY = re.compile(r'(?<![\d.\w^])(\d+(?:\.\d+)?)(?![\d.])')
 _UNIT_TOK = re.compile(r'\s*(/|\^?[-−]?\d(?![\d.])|[A-Za-zμµ°Ω%][A-Za-zμµ°Ω%·]*)')
 # Pint 认得、但在正文里几乎总是英文词的：in=英寸、a=年、as=阿秒、at=工程大气压…
-_NOT_UNIT = {'in', 'a', 'as', 'at', 'are', 'and', 'or', 'to', 'of', 'for', 'by', 'the', 'an', 'with', 'from', 'on', 'is',
-             'was', 'were', 'be', 'it', 'this', 'that', 'which', 'per', 'pi', 'than', 'then', 'after', 'before', 'under',
-             'over', 'up', 'down', 'each', 'all', 'no'}
+# 用现成的英文停用词表（tools/extract/stopwords.py，原样收录）而不是手写 —— 手写那版漏了 am / de / has / he / me / re
+from tools.extract.stopwords import ENGLISH_STOP_WORDS as _NOT_UNIT
 # 单个大写字母太容易是子图号 / 选项（「Fig. 4 C」会被读成 4 库仑）；只认几个真常见的
 _ONE_LETTER_OK = set('KVNWgmshL')
 _REF_BEFORE = re.compile(r'(?i)(fig(?:ure)?s?\.?|tables?|schemes?|eqs?\.?|equations?|refs?\.?|sections?|[(\[,–-])\s*$')

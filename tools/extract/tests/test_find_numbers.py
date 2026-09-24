@@ -35,8 +35,8 @@ def test_单位上的正幂次保留():
 def test_无量纲_from_to_与_up_to():
     _, _, raws = _found('the Hermans orientation factor rose from 0.005 to 0.330 (Figure 5e)')
     assert '0.005' in raws and '0.330' in raws
-    _, _, raws = _found(r'greatly enhanced $m_{c}$ up to 12.3. This')
-    assert '12.3' in raws
+    _, _, raws = _found('the healing efficiency rose from 0.42 to 0.83 after')
+    assert '0.42' in raws and '0.83' in raws
 
 
 def test_单位表外的写法交给Pint():
