@@ -1,6 +1,6 @@
 # litsearch · 找文献的原料通道
 
-给自己边找边判断的人（或 agent）用的四个动作。**全部免费、只读、不动你的 Zotero。**
+给自己边找边判断的人（或 agent）用的原料通道。**只读、不动你的 Zotero、不调大模型。**
 
 ## 它和「找文献」那个工具的区别
 
@@ -35,7 +35,35 @@ python -m tools.litsearch --cited-by 10.1021/cm980353l     # 后来谁做了
 python -m tools.litsearch --references 10.1021/cm980353l   # 这方向的根在哪
 ```
 
-每条结果都标着 **【库里有】** —— 你是不是早就有这篇了。
+每条结果都标着 **【库里有】** —— 你是不是早就有这篇了；**【无摘要】** —— 源头没摘要（Elsevier 常见），只能凭标题判。
+
+## 按意思找（2026-09-26 加）
+
+精确检索要求词真的出现，**换了说法的同一件事搜不到**。按意思找补这个盲区：
+
+```bash
+# 一段话描述要找什么（英文），找新的一定要给年份（它不按年份排）
+python -m tools.litsearch --semantic "polymer gel that stiffens under impact because dynamic bonds cannot relax" --since 2023
+
+# 照着已经确认相关的几篇找相似的
+python -m tools.litsearch --like 10.1039/d3sc00011g,10.1039/d4mh00002a --since 2024 --slice
+
+# 一次对几篇做雪球，按「连到几个种子」排；--newest 优先看新的跟进
+python -m tools.litsearch --snowball 10.1039/d3sc00011g,10.1039/d4mh00002a --since 2023 --newest
+```
+
+每次最多 50 条（`--slice` 按年切开各取 50）；每次 0.001 美元，免费额度一天约 1000 次。
+
+## 多轮全面检索的台账
+
+agent 替你找一个方向时，会建一本「检索台账」：搜过什么、每篇是哪条路找到的、判没判相关、
+每轮新增了几篇相关的。**一轮下来三条路（字面 / 意思 / 引用）都没有新的相关文章，就说明搜得差不多了**。
+它还会从已判相关的文章里统计出「别人用的新说法」，下一轮拿去搜。
+
+```bash
+python -m tools.litsearch --status 台账名     # 看台账
+python -m tools.litsearch --terms 台账名      # 挖出的新说法
+```
 
 ## 输出里最有用的那个数字
 
@@ -51,10 +79,11 @@ python -m tools.litsearch --references 10.1021/cm980353l   # 这方向的根在�
 
 ## 数据来源
 
-OpenAlex（免费、不要密钥、不限量）。摘要覆盖不是 100%，个别文献没有摘要是源头就没有。
+OpenAlex（按量计费，免费 key 每天 1 美元额度，日常用不完）。**Elsevier 的文章大多没有摘要**（源头不交），
+取摘要时会依次退到证据库原文、Semantic Scholar，都没有就明说。
 
 ## 它不干什么
 
 不下载 PDF（那是 `getpdf`）· 不写 Zotero（那是 `getpdf --to-zotero`）·
 不给全文（先 `paper_fulltext` 拿 id，再 `library_outline` 看菜单、`library_section` 取节）·
-不排序（要机器替你排就用 `discover`）。
+不猜贴题度排序（要机器替你排就用 `discover`；按意思找的相似度、雪球的「连到几个种子」是可数的事实，不算猜）。
