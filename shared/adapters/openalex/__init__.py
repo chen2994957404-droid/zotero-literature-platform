@@ -370,10 +370,11 @@ def works_by_filter(filters, limit=200, select=FIELDS, sort=None, mailto=POLITE_
 # ⚠ 实测出来的三条限制（官方文档只写了第一条）：
 #   ① 每次最多 50 条，**不能翻页**（page=2 返回空，per-page=100 报 400）
 #   ② **排序参数被悄悄忽略**，不加年份过滤返回的多是老文章 → 要「新的」必须带年份过滤
-#   ③ 只用前 2000 字；没摘要的文章（Elsevier 居多，踩坑 #188）只能按标题匹配
+#   ③ 输入**超过 1500 字直接报 400**（官方文档写的是「只用前 2000 字」，2026-09-26 实测不对：
+#      「Search query too long … the limit is 1500」）—— 所以我们自己先截到 1500；没摘要的文章（Elsevier 居多，踩坑 #188）只能按标题匹配
 # 计费：$0.001/次（与全文搜索同价），免费 key $1/天 ≈ 1000 次。
 SEMANTIC_MAX = 50
-SEMANTIC_MAX_CHARS = 2000
+SEMANTIC_MAX_CHARS = 1500
 
 
 def _filter_str(filters):
@@ -402,11 +403,35 @@ def semantic_search(text, filters=None, limit=SEMANTIC_MAX, select=FIELDS):
 
     filters 同 `works_by_filter`（如 {'publication_year': '2023-2026'}）；
     `cited_by_count` 与 `last_known_institutions.country_code` 两个过滤官方不支持。
-    返回 `(items, truncated)`：items 按相似度降序；truncated=输入超过 2000 字被截断。
+    返回 `(items, truncated)`：items 按相似度降序；truncated=输入超过 1500 字被截断。
     """
     url, truncated = semantic_url(text, filters, limit, select)
     d = get(url)
     return [normalize(w) for w in d.get('results', [])], truncated
+
+
+SEMANTIC_SPACING = 1.1      # 官方限速每秒 1 次语义检索；错开 1.1 秒发
+SEMANTIC_WORKERS = 4
+
+
+def semantic_many(jobs, limit=SEMANTIC_MAX, select=FIELDS):
+    """一批语义检索并发发出（每隔 1.1 秒发一个，最多 4 个同时在路上）→ 与 jobs 同序的 [(items, truncated)]。
+
+    为什么要并发（2026-09-26 实测）：单次 5–8 秒，按年切 3 片 × 2 篇种子串行跑了 62 秒，
+    超过 MCP 约 60 秒的调用超时；错开 1.1 秒并发后 4 次共 10 秒，没有被限流。
+    jobs = [(text, filters), ...]。任何一个失败就抛出（不静默返回残缺结果，同 `_batch_filter` 的纪律）。
+    """
+    import concurrent.futures as cf
+    jobs = list(jobs)
+    if len(jobs) <= 1:
+        return [semantic_search(t, f, limit, select) for t, f in jobs]
+    with cf.ThreadPoolExecutor(max_workers=SEMANTIC_WORKERS) as ex:
+        futs = []
+        for i, (t, f) in enumerate(jobs):
+            if i:
+                time.sleep(SEMANTIC_SPACING)
+            futs.append(ex.submit(semantic_search, t, f, limit, select))
+        return [fu.result() for fu in futs]
 
 
 def cited_by(work_id, limit=200, select=FIELDS, mailto=POLITE_MAILTO, page_all=False):

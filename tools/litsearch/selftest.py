@@ -84,7 +84,40 @@ def main():
         [{'title': 'A', 'doi': '10.1/a'}, {'title': 'B', 'doi': '10.1/b'}], 1)
     check('_finish 截断到 limit', len(rows) == 1)
 
-    total = 10
+    # ── 多轮全面检索的纯函数（2026-09-26）────────────────────────────
+    check('按年切片：4 年切 4 片',
+          litsearch.year_windows(2023, 2026, True) == [(2023, 2023), (2024, 2024), (2025, 2025), (2026, 2026)])
+    w = litsearch.year_windows(2015, 2026, True)
+    check('按年切片：超过 6 年切成 6 段且首尾相接',
+          len(w) == 6 and w[0][0] == 2015 and w[-1][1] == 2026
+          and all(w[i][1] + 1 == w[i + 1][0] for i in range(5)), str(w))
+    check('不切片 → 一个窗口原样', litsearch.year_windows(2023, None, False) == [(2023, None)])
+    fused = litsearch.rrf_fuse([[{'doi': 'a'}, {'doi': 'b'}], [{'doi': 'b'}, {'doi': 'c'}]], [[{'doi': 'a'}]])
+    check('RRF：两路都召回的排第一、负例扣到最后',
+          [x['doi'] for x in fused] == ['b', 'c', 'a'] and fused[0]['semantic_hits'] == 2,
+          str([x['doi'] for x in fused]))
+    kept, hidden = litsearch.hide_seen([{'ledger': {'new': True}}, {'ledger': {'new': False}}, {}])
+    check('只留新的：见过的藏掉、没带台账的当新的', len(kept) == 2 and hidden == 1)
+
+    import tempfile
+    from shared.kernel import paths
+    real_ft = paths.fulltext
+    with tempfile.TemporaryDirectory() as tmp:
+        fp = os.path.join(tmp, 'full.md')
+        paths.fulltext = lambda pid: fp
+        try:
+            with open(fp, 'w', encoding='utf-8') as fh:
+                fh.write('# Title\n\n## Abstract\n\nWe made a gel.\nIt stiffens.\n\n## 1. Introduction\n\nBody')
+            check('原文取摘要：Abstract 标题下那段',
+                  litsearch._abstract_from_fulltext('X') == 'We made a gel. It stiffens.')
+            with open(fp, 'w', encoding='utf-8') as fh:
+                fh.write('# Title\n\nLead paragraph here.\n\n# Introduction\n\nBody')
+            check('原文取摘要：没 Abstract 标题取引言之前',
+                  litsearch._abstract_from_fulltext('X') == 'Lead paragraph here.')
+        finally:
+            paths.fulltext = real_ft
+
+    total = 10 + 7
     print(f'\n  {total - len(_fail)}/{total} 通过')
     return 1 if _fail else 0
 

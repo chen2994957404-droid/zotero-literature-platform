@@ -113,7 +113,8 @@ def _resolve(s, ref):
     ref = str(ref or '').strip()
     if not ref:
         return None
-    k = ref if ref.startswith('title:') else _norm_doi(ref)
+    # title: 键再归一一次：agent 可能照原标题自己拼（带标点 / 大小写），不必逐字照抄台账里的键
+    k = _title_key(ref[len('title:'):]) if ref.startswith('title:') else _norm_doi(ref)
     return k if k in s['works'] else None
 
 
@@ -352,7 +353,8 @@ def log_odds(fg, bg, prior_scale=0.01):
 def mine_terms(name, k=30, min_docs=2):
     """已判相关（含部分相关）的标题 + 摘要 vs 其余检索结果 → 显著多出来的词组，排除已搜过的词。
 
-    返回 `{'terms': [{term, z, docs}], 'authors': [(一作, 篇数)], 'venues': [(期刊, 篇数)], 'n_relevant': n}`。
+    返回 `{'terms': 混排前 k, 'phrases': 词组, 'words': 单词, 'authors': [(一作, 篇数)], 'venues': [(期刊, 篇数)], 'n_relevant': n}`，
+    每个词条 `{term, z, docs}`。
     还没判出相关的时候 terms 为空（没有前景就没有「多出来」）—— 如实返回，不拿全体频次冒充。
     """
     s = open_session(name)
@@ -374,11 +376,16 @@ def mine_terms(name, k=30, min_docs=2):
             if any(g in h and g != h for h, _ in keep):
                 continue
             keep.append((g, z))
-            if len(keep) >= k:
+            if len(keep) >= 2 * k:
                 break
+    rows = [{'term': g, 'z': round(z, 2), 'docs': df[g]} for g, z in keep]
+    # 词组与单词分开给（2026-09-26 实测：单词榜会被 networks / design 这类泛词占满，
+    # 而下一轮检索真正用得上的是词组）。各自按 z 排，词组最多 k 个、单词最多 k//2 个。
+    phrases = [r for r in rows if ' ' in r['term']][:k]
+    words = [r for r in rows if ' ' not in r['term']][:max(1, k // 2)]
     authors = Counter(w.get('first_author') for w in rel if w.get('first_author'))
     venues = Counter(w.get('venue') for w in rel if w.get('venue'))
-    return {'terms': [{'term': g, 'z': round(z, 2), 'docs': df[g]} for g, z in keep],
+    return {'terms': rows[:k], 'phrases': phrases, 'words': words,
             'authors': [a for a in authors.most_common(10) if a[1] >= 2],
             'venues': [v for v in venues.most_common(10) if v[1] >= 2],
             'n_relevant': len(rel)}

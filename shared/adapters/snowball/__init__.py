@@ -93,25 +93,32 @@ def _backward(work, limit):
     return out
 
 
-def _forward(work, limit):
-    """前向：谁引用了这篇。按被引数降序，先看影响力大的跟进工作。"""
+def _forward(work, limit, year_from=None, sort='cited_by_count:desc'):
+    """前向：谁引用了这篇。默认按被引数降序，先看影响力大的跟进工作。
+
+    `sort='publication_year:desc'` + `year_from`（2026-09-26 加）：找「最新进展」时要的是**新**的跟进，
+    按被引排会把刚发表、还没人引的新工作压到最后 —— 而那恰恰是要找的。
+    单页上限 200（OpenAlex 的真实上限；以前封在 50，`lit_cited_by` 说能给 200 其实只给 50）。
+    """
     wid = (work.get('id') or '').split('/')[-1]
     if not wid:
         return []
-    out = []
-    per = min(50, max(1, limit))
-    d = _get(f'{OPENALEX}/works?filter=cites:{wid}&per-page={per}'
-             f'&sort=cited_by_count:desc&select={FIELDS}')
-    out += [_norm(w) for w in d.get('results', [])]
-    return out[:limit]
+    per = min(200, max(1, limit))
+    f = f'cites:{wid}' + (f',publication_year:>{int(year_from) - 1}' if year_from else '')
+    d = _get(f'{OPENALEX}/works?filter={f}&per-page={per}'
+             f'&sort={urllib.parse.quote(sort)}&select={FIELDS}')
+    return [_norm(w) for w in d.get('results', [])][:limit]
 
 
-def expand(dois, direction='both', limit_per_seed=40, on_progress=None):
+def expand(dois, direction='both', limit_per_seed=40, on_progress=None,
+           year_from=None, forward_sort='cited_by_count:desc'):
     """从种子文献出发做雪球扩展。
 
     dois          : 种子的 DOI 列表（通常来自用户库里与主题最相关的几篇）
     direction     : 'backward' / 'forward' / 'both'
     limit_per_seed: 每篇种子每个方向最多取多少条
+    year_from     : 只要这一年及以后的（前向在服务端过滤，后向在取回后过滤）
+    forward_sort  : 前向的排序，默认按被引；找新进展用 'publication_year:desc'
 
     返回 {'items': [...], 'stats': [(doi, 后向数, 前向数, 说明)]}
     items 与 sciverse.search_papers 的结构一致，可直接进 lib_match 对照。
@@ -129,6 +136,8 @@ def expand(dois, direction='both', limit_per_seed=40, on_progress=None):
         try:
             if direction in ('backward', 'both'):
                 for it in _backward(w, limit_per_seed):
+                    if year_from and (it.get('year') or 0) < int(year_from):
+                        continue
                     k = it['doi'].lower() or it['openalex_id']
                     if k and k not in seen:
                         seen.add(k)
@@ -136,7 +145,7 @@ def expand(dois, direction='both', limit_per_seed=40, on_progress=None):
                         items.append(it)
                         nb += 1
             if direction in ('forward', 'both'):
-                for it in _forward(w, limit_per_seed):
+                for it in _forward(w, limit_per_seed, year_from, forward_sort):
                     k = it['doi'].lower() or it['openalex_id']
                     if k and k not in seen:
                         seen.add(k)

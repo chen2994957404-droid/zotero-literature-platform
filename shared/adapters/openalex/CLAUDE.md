@@ -35,7 +35,7 @@ items, cut = openalex.semantic_search('一段话', {'publication_year': '2023-20
 
 按**意思**找（GTE-Large 向量，标题 + 摘要），补精确检索「换个说法就搜不到」的盲区。
 实测限制：**每次最多 50 条、不能翻页**；**排序参数被忽略**，要新文章必须加年份过滤；
-只用前 2000 字（超出如实返回 `truncated=True`）；没摘要的文章（Elsevier 居多）只按标题匹配。
+输入超过 1500 字服务端直接报 400（官方文档写 2000，实测 1500），我们先截到 1500 并如实返回 `truncated=True`；没摘要的文章（Elsevier 居多）只按标题匹配。
 $0.001/次。
 
 ## 统一文献字典（与 adapters.sciverse 同构）

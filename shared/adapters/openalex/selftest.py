@@ -83,10 +83,10 @@ def main():
 
     total += 1
     url, cut = openalex.semantic_url('x' * 2500)
-    if cut and 'x' * 2000 in url and 'x' * 2001 not in url:
-        print('  [PASS] 超过 2000 字如实标 truncated 并截断'); ok += 1
+    if cut and 'x' * 1500 in url and 'x' * 1501 not in url:
+        print('  [PASS] 超过 1500 字如实标 truncated 并截断（服务端超 1500 报 400）'); ok += 1
     else:
-        print('  [FAIL] 2000 字截断不对')
+        print('  [FAIL] 1500 字截断不对')
 
     total += 1
     try:

@@ -8,6 +8,12 @@
     python -m tools.litsearch --abstract 10.1021/ma500632f       # 取完整摘要
     python -m tools.litsearch --cited-by 10.1021/cm980353l       # 谁引了这篇
     python -m tools.litsearch --references 10.1021/cm980353l     # 这篇引了谁
+    python -m tools.litsearch --semantic "a paragraph describing the work" --since 2023 [--slice]
+    python -m tools.litsearch --like 10.1/a,10.1/b --since 2024  # 照着这几篇按意思找
+    python -m tools.litsearch --snowball 10.1/a,10.1/b --since 2023 --newest
+    python -m tools.litsearch --status 台账名                     # 看台账：饱和曲线、渠道重叠、估计
+    python -m tools.litsearch --terms 台账名                      # 从判为相关的里挖新说法
+    （任何检索加 --session 台账名 即记账；判断相关请走 MCP 的 lit_judge）
 
 全部免费、只读、不写 Zotero。要收进库用 `python -m tools.getpdf <DOI> --to-zotero`。
 """
@@ -20,10 +26,15 @@ except Exception:
 
 from shared.kernel.cli import flag, opt, positionals, wants_help
 from tools import litsearch
+from tools.litsearch import session as ledger
 
 
 def _line(it):
     mark = '【库里有】' if it.get('in_library') else '         '
+    if not it.get('has_abstract', True):
+        mark += '【无摘要】'
+    if it.get('seed_links'):
+        mark += '[连%d个种子]' % it['seed_links']
     return '%s [%s] 被引%-5s %s\n           %s | %s' % (
         mark, it.get('year') or '????', it.get('citations') or 0,
         (it.get('title') or '')[:78], (it.get('venue') or '?')[:40],
@@ -46,6 +57,40 @@ def main():
 
     doi = opt('--abstract') or opt('--cited-by') or opt('--references')
     limit = int(opt('--limit') or 25)
+    session = opt('--session')
+    since = int(opt('--since') or 0) or None
+    until = int(opt('--until') or 0) or None
+
+    if opt('--status'):
+        import json
+        print(json.dumps(ledger.status(opt('--status')), ensure_ascii=False, indent=1))
+        return 0
+
+    if opt('--terms'):
+        m = ledger.mine_terms(opt('--terms'))
+        for t in m['phrases'] + m['words']:
+            print('%-40s z=%-6s %d 篇' % (t['term'], t['z'], t['docs']))
+        if not m['terms']:
+            print('还挖不出新词：判为相关的有 %d 篇' % m['n_relevant'])
+        return 0
+
+    if opt('--semantic') or opt('--like'):
+        items, info = litsearch.semantic(
+            text=opt('--semantic') or '', like=[d for d in (opt('--like') or '').split(',') if d],
+            year_from=since, year_to=until, slice_by_year=flag('--slice'), limit=limit, session=session)
+        print('按意思检索：发了 %d 次，合并后 %d 篇，列前 %d 篇（每次最多 50 条、不按年份排）'
+              % (info['calls'], info['pool'], len(items)))
+        _show(items)
+        return 0
+
+    if opt('--snowball'):
+        items, stats = litsearch.snowball_many(
+            [d for d in (opt('--snowball') or '').split(',') if d], direction=opt('--direction') or 'both',
+            year_from=since, newest_first=flag('--newest'), limit=limit, session=session)
+        for d, b, f, _n in stats:
+            print('种子 %s：后向 %d · 前向 %d' % (d, b, f))
+        _show(items)
+        return 0
 
     if opt('--abstract'):
         it = litsearch.abstract(opt('--abstract'))
@@ -58,12 +103,13 @@ def main():
 
     if opt('--cited-by'):
         print(f'谁引用了 {doi}（前向雪球）：')
-        _show(litsearch.cited_by(doi, limit=limit))
+        _show(litsearch.cited_by(doi, limit=limit, year_from=since, newest_first=flag('--newest'),
+                                 session=session))
         return 0
 
     if opt('--references'):
         print(f'{doi} 引用了谁（后向雪球）：')
-        _show(litsearch.references(doi, limit=limit))
+        _show(litsearch.references(doi, limit=limit, year_from=since, session=session))
         return 0
 
     terms = positionals()
@@ -71,10 +117,7 @@ def main():
         print(__doc__)
         return 0
     term = ' '.join(terms)
-    items, total = litsearch.search(
-        term, limit=limit,
-        year_from=opt('--since') and int(opt('--since')),
-        year_to=opt('--until') and int(opt('--until')))
+    items, total = litsearch.search(term, limit=limit, year_from=since, year_to=until, session=session)
     print(f'检索词「{term}」：全世界命中 {total} 篇，返回前 {len(items)} 篇')
     if total > len(items):
         print('（命中远多于返回，说明这个词还宽 —— 可以收窄，或提高 --limit 把它捞干净）')
