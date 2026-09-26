@@ -165,3 +165,10 @@ def test_按分支挖词():
             + [{'doi': d['doi'], 'verdict': 'relevant', 'branch': 'c'} for d in b])
     terms = ' '.join(t['term'] for t in S.mine_terms('q', branch='c')['terms'])
     assert 'hydrogenolysis' in terms and 'vitrimer' not in terms
+
+
+def test_体检_一次判太多条():
+    items = [_it('10.1/%d' % i, 'T%d' % i) for i in range(100)]
+    S.record('q', 'keyword', items)
+    S.judge('q', [{'doi': d['doi'], 'verdict': 'irrelevant'} for d in items])
+    assert any('一口气' in n for n in S.status('q')['audit'])

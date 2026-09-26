@@ -288,6 +288,8 @@ def judge(name, judgments):
         w['judgment'] = {'verdict': v, 'criteria': _norm_marks(j.get('criteria')), 'basis': basis,
                          'branches': br, 'reason': str(j.get('reason') or '')[:300], 'round': s.get('round', 1)}
         judged += 1
+    s.setdefault('judge_log', []).append({'round': s.get('round', 1), 'n': judged,
+                                          'time': time.strftime('%Y-%m-%d %H:%M:%S')})
     _save(name, s)
     return {'judged': judged, 'unknown': unknown, 'bad': bad}
 
@@ -426,6 +428,9 @@ def _saturation(curve, s):
     return {'round': last['round'], 'can_claim': not why, 'why': why}
 
 
+JUDGE_BATCH_WARN = 80       # pending 一批默认 20 篇；一次记超过 80 条就提示
+
+
 def _audit(works, rel, s):
     """判断质量体检：只报可数的异常，不替 agent 改判。"""
     notes = []
@@ -436,6 +441,11 @@ def _audit(works, rel, s):
     if len(judged) >= 30 and len(rel) / len(judged) > 0.8:
         notes.append('判过的 %d 篇里 %.0f%% 判成相关 —— 检索结果通常一大半不相关，这个比例可疑：'
                      '是不是没逐篇读、按关键词整批判了？' % (len(judged), 100 * len(rel) / len(judged)))
+    # 一次记几百条，几乎不可能是逐篇读过的（2026-09-26 验收：弱模型 2659 篇几次就判完，明显在题的被判不相关）
+    big = [j['n'] for j in s.get('judge_log') or [] if j['n'] > JUDGE_BATCH_WARN]
+    if big:
+        notes.append('有 %d 次一口气记了超过 %d 条判断（最多 %d 条）—— 读摘要判不了这么快，'
+                     '多半是按关键词整批判的；用 pending 一批 20 篇逐篇读' % (len(big), JUDGE_BATCH_WARN, max(big)))
     if s.get('criteria') and len(judged) >= 20:
         bare = sum(1 for w in judged if not (w['judgment'].get('criteria')))
         if bare / len(judged) > 0.5:
