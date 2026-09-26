@@ -350,10 +350,7 @@ def works_by_filter(filters, limit=200, select=FIELDS, sort=None, mailto=POLITE_
         publication_year           >2009 这种区间写法
         is_retracted               false
     """
-    if isinstance(filters, dict):
-        f = ','.join('%s:%s' % (k, v) for k, v in filters.items() if v not in (None, ''))
-    else:
-        f = str(filters)
+    f = _filter_str(filters)
     url = '%s/works?filter=%s&per-page=%d&select=%s&mailto=%s' % (
         BASE, urllib.parse.quote(f, safe=':|,><=/.'), min(int(limit), 200),
         select, urllib.parse.quote(mailto))
@@ -362,6 +359,54 @@ def works_by_filter(filters, limit=200, select=FIELDS, sort=None, mailto=POLITE_
     d = get(url)
     items = [normalize(w) for w in d.get('results', [])]
     return items, (d.get('meta') or {}).get('count', len(items))
+
+
+# ── 语义（向量）检索（2026-09-26 加）───────────────────────────────────
+# 为什么要有：精确检索要求词真的出现，**换了说法的同一件事完全搜不到**。
+# 2026-09-24 实测「剪切硬化 + 动态键」：语义检索找到了「动态共价 tetra-PEG 的剪切增稠」
+# 这类一个 "shear stiffening" 都没写的文章 —— 精确检索永远搜不到它们。两者互补，不是替代。
+# OpenAlex 用 GTE-Large 把每篇的标题 + 摘要向量化（https://help.openalex.org/guides/semantic-search）。
+#
+# ⚠ 实测出来的三条限制（官方文档只写了第一条）：
+#   ① 每次最多 50 条，**不能翻页**（page=2 返回空，per-page=100 报 400）
+#   ② **排序参数被悄悄忽略**，不加年份过滤返回的多是老文章 → 要「新的」必须带年份过滤
+#   ③ 只用前 2000 字；没摘要的文章（Elsevier 居多，踩坑 #188）只能按标题匹配
+# 计费：$0.001/次（与全文搜索同价），免费 key $1/天 ≈ 1000 次。
+SEMANTIC_MAX = 50
+SEMANTIC_MAX_CHARS = 2000
+
+
+def _filter_str(filters):
+    if isinstance(filters, dict):
+        return ','.join('%s:%s' % (k, v) for k, v in filters.items() if v not in (None, ''))
+    return str(filters or '')
+
+
+def semantic_url(text, filters=None, limit=SEMANTIC_MAX, select=FIELDS, mailto=POLITE_MAILTO):
+    """拼语义检索的地址（纯函数，自测用）。返回 (url, truncated)。"""
+    text = ' '.join((text or '').split())
+    if not text:
+        raise errors.BadInputError('语义检索的输入不能为空')
+    truncated = len(text) > SEMANTIC_MAX_CHARS
+    url = '%s/works?search.semantic=%s&per-page=%d&select=%s&mailto=%s' % (
+        BASE, urllib.parse.quote(text[:SEMANTIC_MAX_CHARS]),
+        max(1, min(int(limit), SEMANTIC_MAX)), select, urllib.parse.quote(mailto))
+    f = _filter_str(filters)
+    if f:
+        url += '&filter=' + urllib.parse.quote(f, safe=':|,><=/.')
+    return url, truncated
+
+
+def semantic_search(text, filters=None, limit=SEMANTIC_MAX, select=FIELDS):
+    """按**意思**检索：一段话（问题描述、一篇摘要）→ 意思最近的至多 50 篇。
+
+    filters 同 `works_by_filter`（如 {'publication_year': '2023-2026'}）；
+    `cited_by_count` 与 `last_known_institutions.country_code` 两个过滤官方不支持。
+    返回 `(items, truncated)`：items 按相似度降序；truncated=输入超过 2000 字被截断。
+    """
+    url, truncated = semantic_url(text, filters, limit, select)
+    d = get(url)
+    return [normalize(w) for w in d.get('results', [])], truncated
 
 
 def cited_by(work_id, limit=200, select=FIELDS, mailto=POLITE_MAILTO, page_all=False):

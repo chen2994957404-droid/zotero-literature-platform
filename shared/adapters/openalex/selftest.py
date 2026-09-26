@@ -11,6 +11,7 @@ import sys
 
 from shared.adapters import openalex
 from shared.kernel import errors
+from shared.kernel.cli import flag
 
 FAKE = {
     'id': 'https://openalex.org/W123',
@@ -72,7 +73,45 @@ def main():
     except errors.BadInputError:
         print('  [PASS] 空检索词被挡住'); ok += 1
 
+    total += 1
+    url, cut = openalex.semantic_url('  shear   stiffening gel ', {'publication_year': '2023-2026'}, limit=999)
+    if ('search.semantic=shear%20stiffening%20gel' in url and 'per-page=50' in url
+            and 'filter=publication_year:2023-2026' in url and not cut):
+        print('  [PASS] 语义检索地址：空白归一、条数封顶 50、年份过滤拼对'); ok += 1
+    else:
+        print(f'  [FAIL] 语义检索地址不对: {url}')
+
+    total += 1
+    url, cut = openalex.semantic_url('x' * 2500)
+    if cut and 'x' * 2000 in url and 'x' * 2001 not in url:
+        print('  [PASS] 超过 2000 字如实标 truncated 并截断'); ok += 1
+    else:
+        print('  [FAIL] 2000 字截断不对')
+
+    total += 1
+    try:
+        openalex.semantic_url('  ')
+        print('  [FAIL] 空的语义输入竟然没报错')
+    except errors.BadInputError:
+        print('  [PASS] 空的语义输入被挡住'); ok += 1
+
     # ── 联网部分 ──
+    if flag('--live'):
+        total += 1
+        try:
+            items, _cut = openalex.semantic_search(
+                'polymer gel that stiffens under impact because of dynamic crosslinks',
+                {'publication_year': '2023-2026'}, limit=5)
+            if items and all(2023 <= (it.get('year') or 0) <= 2026 for it in items):
+                print(f'  [PASS] 真实语义检索通：{len(items)} 篇，年份过滤生效'); ok += 1
+            else:
+                print(f'  [FAIL] 真实语义检索返回异常: {[it.get("year") for it in items]}')
+        except errors.PlatformError as e:
+            print(f'  [SKIP] 连不上 OpenAlex: {e}')
+            total -= 1
+    else:
+        print('  [SKIP] 语义检索真调用（加 --live 才跑，每次 $0.001）')
+
     total += 1
     try:
         items, count = openalex.search('polyborosiloxane', limit=3)

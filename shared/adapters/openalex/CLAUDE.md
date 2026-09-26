@@ -28,7 +28,15 @@ items, total = openalex.search('polyborosiloxane', limit=25, year_from=2015)
 w = openalex.work_by_doi('10.1021/xxx')     # 查不到返回 None
 openalex.restore_abstract(inv)              # 倒排索引摘要 → 正常文本
 openalex.normalize(work)                    # OpenAlex work → 统一文献字典
+items, cut = openalex.semantic_search('一段话', {'publication_year': '2023-2026'})  # 按意思检索
 ```
+
+### 语义检索 `semantic_search`（2026-09-26 加）
+
+按**意思**找（GTE-Large 向量，标题 + 摘要），补精确检索「换个说法就搜不到」的盲区。
+实测限制：**每次最多 50 条、不能翻页**；**排序参数被忽略**，要新文章必须加年份过滤；
+只用前 2000 字（超出如实返回 `truncated=True`）；没摘要的文章（Elsevier 居多）只按标题匹配。
+$0.001/次。
 
 ## 统一文献字典（与 adapters.sciverse 同构）
 
