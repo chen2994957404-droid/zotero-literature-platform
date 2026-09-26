@@ -115,12 +115,36 @@ def _resolve(s, ref):
         return None
     # title: 键再归一一次：agent 可能照原标题自己拼（带标点 / 大小写），不必逐字照抄台账里的键
     k = _title_key(ref[len('title:'):]) if ref.startswith('title:') else _norm_doi(ref)
-    return k if k in s['works'] else None
+    if k in s['works']:
+        return k
+    return _aliases(s).get(k)
 
 
-def open_session(name, question='', criteria=None, scope_note=''):
-    """建或读会话。已存在时：question 只在原来为空时写入；criteria 给了就**替换**（判据可以和用户商量后改）；
-    scope_note 追加一条（范围约定的原话，后续轮次照着办）。"""
+def _aliases(s):
+    """别名键 → 主键（同一篇的预印本 / 另一版本 DOI 并进了主条目，见 `record`）。"""
+    return {a: k for k, w in s['works'].items() for a in (w.get('aliases') or [])}
+
+
+# 同一篇的孪生条目按归一标题认（2026-09-26 验收：正式版 + SSRN 预印本 + 不同版本号各有 DOI，
+# 被当成几篇分别判）。标题太短容易撞（「Introduction」「Editorial」），40 字以上才合并
+TWIN_MIN_TITLE = 40
+
+
+def _twin_index(s):
+    out = {}
+    for k, w in s['works'].items():
+        t = _title_key(w.get('title'))
+        if len(t) - len('title:') >= TWIN_MIN_TITLE:
+            out.setdefault(t, k)
+    return out
+
+
+def open_session(name, question='', criteria=None, scope_note='', branches=None):
+    """建或读会话。已存在时：question 只在原来为空时写入；criteria / branches 给了就**替换**（可以和用户商量后改）；
+    scope_note 追加一条（范围约定的原话，后续轮次照着办）。
+
+    branches：问题里的几条路（例：「vitrimer 化」「化学升级回收」）。判断时给每篇标上属于哪条，
+    `status` 按分支数相关篇、点名没货的分支 —— 2026-09-26 验收：问题明说两条路，弱模型只搜了一条，强模型也漏了大半条。"""
     s = _load(name)
     changed = False
     if s is None:
@@ -129,6 +153,13 @@ def open_session(name, question='', criteria=None, scope_note=''):
         changed = True
     s.setdefault('criteria', [])
     s.setdefault('scope_notes', [])
+    s.setdefault('branches', [])
+    if branches is not None:
+        br = [str(b).strip() for b in (branches if isinstance(branches, (list, tuple)) else [branches])
+              if str(b).strip()]
+        if br != s['branches']:
+            s['branches'] = br
+            changed = True
     if question and not s.get('question'):
         s['question'] = question
         changed = True
@@ -179,9 +210,18 @@ def record(name, channel, items, term='', total=None, seed='', calls=1):
     s = open_session(name)
     rnd = int(s.get('round') or 1)
     before, new = [], 0
+    twins, alias = _twin_index(s), _aliases(s)
     for it in items or []:
         k = key_of(it)
+        k = alias.get(k, k)
         w = s['works'].get(k)
+        if w is None:
+            t = _title_key(it.get('title'))
+            main = twins.get(t) if len(t) - len('title:') >= TWIN_MIN_TITLE else None
+            if main and main != k:
+                w = s['works'][main]            # 同一篇的另一个 DOI：并进主条目，记成别名
+                w.setdefault('aliases', []).append(k)
+                alias[k] = main
         before.append(_state(w))
         if w is None:
             w = s['works'][k] = {
@@ -190,6 +230,9 @@ def record(name, channel, items, term='', total=None, seed='', calls=1):
                 'abstract': (it.get('abstract') or '')[:1500], 'channels': [], 'first_round': rnd,
                 'first_channel': channel, 'judgment': None}
             new += 1
+            t = _title_key(w['title'])
+            if len(t) - len('title:') >= TWIN_MIN_TITLE:
+                twins.setdefault(t, k)
         if channel not in w['channels']:
             w['channels'].append(channel)
         if not w.get('abstract') and it.get('abstract'):
@@ -212,7 +255,9 @@ def _norm_marks(d):
 
 
 def judge(name, judgments):
-    """批量记判断。每条：`{doi, verdict, criteria?: {判据: yes/partial/no/unknown}, basis?, reason?}`。
+    """批量记判断。每条：`{doi, verdict, criteria?: {判据: yes/partial/no/unknown}, branch?, basis?, reason?}`。
+
+    branch：属于问题里的哪条路（字符串或列表，对应 `open_session(branches=)`）。
 
     verdict ∈ relevant / partial / irrelevant / unsure（中文「相关 / 部分 / 不相关 / 没法判」也认）；
     basis ∈ abstract / title / fulltext（默认：有摘要记 abstract，没有记 title）。
@@ -238,11 +283,31 @@ def judge(name, judgments):
         basis = _BASIS_ALIAS.get(basis, basis.lower())
         if basis not in BASES:
             basis = 'abstract' if w.get('abstract') else 'title'
+        br = j.get('branch') or j.get('branches') or []
+        br = [str(b).strip() for b in (br if isinstance(br, (list, tuple)) else [br]) if str(b).strip()]
         w['judgment'] = {'verdict': v, 'criteria': _norm_marks(j.get('criteria')), 'basis': basis,
-                         'reason': str(j.get('reason') or '')[:300], 'round': s.get('round', 1)}
+                         'branches': br, 'reason': str(j.get('reason') or '')[:300], 'round': s.get('round', 1)}
         judged += 1
     _save(name, s)
     return {'judged': judged, 'unknown': unknown, 'bad': bad}
+
+
+def pending(name, n=20):
+    """待判队列：还没判的，按首次出现的轮次排，一次给 n 篇（紧凑：标题、年份、期刊、摘要前 400 字）。
+
+    为什么有它（2026-09-26 验收）：弱模型 697 篇只判了 8 篇，然后看「每轮新增相关 = 0」就宣布饱和。
+    一批批递、判完再给下一批，比指望它自己记得「每篇都要判」可靠。返回 `(批, 还剩多少)`。
+    """
+    s = open_session(name)
+    todo = [(w.get('first_round') or 1, i, k, w) for i, (k, w) in enumerate(s['works'].items())
+            if not w.get('judgment')]
+    todo.sort(key=lambda x: (x[0], x[1]))
+    batch = [{'key': k, 'doi': w.get('doi') or '', 'title': w.get('title') or '', 'year': w.get('year'),
+              'venue': w.get('venue') or '', 'abstract': (w.get('abstract') or '')[:400],
+              'has_abstract': bool(w.get('abstract')), 'channels': list(w.get('channels') or []),
+              'round': w.get('first_round')}
+             for _r, _i, k, w in todo[:max(1, int(n))]]
+    return batch, len(todo) - len(batch)
 
 
 def chapman(n1, n2, m):
@@ -263,7 +328,9 @@ def status(name, benchmark=None):
     rounds = sorted({int(w.get('first_round') or 1) for w in works.values()} | {cur})
     curve = []
     for r in rounds:
-        row = {'round': r, 'new_works': 0, 'new_relevant': 0, 'by_channel': {}}
+        used = sorted({q['channel'] for q in s['searches'] if q.get('round') == r})
+        row = {'round': r, 'new_works': 0, 'new_relevant': 0, 'unjudged': 0, 'by_channel': {},
+               'legs_used': sorted({str(_LEG.get(c, c)) for c in used})}
         for w in works.values():
             if w.get('first_round') != r:
                 continue
@@ -271,6 +338,8 @@ def status(name, benchmark=None):
             c = row['by_channel'].setdefault(ch, {'new': 0, 'relevant': 0})
             c['new'] += 1
             row['new_works'] += 1
+            if not w.get('judgment'):
+                row['unjudged'] += 1
             if _verdict(w) in _REL:
                 c['relevant'] += 1
                 row['new_relevant'] += 1
@@ -291,6 +360,19 @@ def status(name, benchmark=None):
         'relevant_by_channel': {ch: len(v) for ch, v in by_ch.items() if v},
         'relevant_only_by_channel': {ch: n for ch, n in only.items() if n},
     }
+    out['saturation'] = _saturation(curve, s)
+    out['audit'] = _audit(works, rel, s)
+    br = s.get('branches') or []
+    if br or any((w.get('judgment') or {}).get('branches') for w in rel.values()):
+        cnt = Counter(b for w in rel.values() for b in ((w.get('judgment') or {}).get('branches') or []))
+        out['by_branch'] = {b: cnt.get(b, 0) for b in br}
+        out['by_branch'].update({b: n for b, n in cnt.items() if b not in out['by_branch']})
+        out['relevant_without_branch'] = sum(1 for w in rel.values()
+                                             if not (w.get('judgment') or {}).get('branches'))
+        weak = [b for b in br if cnt.get(b, 0) < 3]
+        if weak:
+            out['audit'].append('这些分支相关篇少于 3 篇：%s —— 是真没有，还是没专门搜过？给它们单独做字面 + 语义检索'
+                                % '、'.join(weak))
     txt = {k for k, w in rel.items() if set(w.get('channels') or []) & set(_TEXT)}
     cit = {k for k, w in rel.items() if set(w.get('channels') or []) & set(_CITATION)}
     if txt and cit:
@@ -313,6 +395,56 @@ def status(name, benchmark=None):
             'recall_relevant': round(len(found_rel) / len(bench), 3) if bench else None,
             'missing': sorted(bench - found)[:50]}
     return out
+
+
+_LEG = {'keyword': 'keyword', 'semantic': 'semantic', 'cited_by': 'citation', 'references': 'citation'}
+LEGS = ('keyword', 'semantic', 'citation')
+
+
+def _saturation(curve, s):
+    """能不能说「饱和了」：看最近一轮**做过检索**的那轮 ——
+    三条腿都走了、那一轮新出现的文献全判完了、且没有新的相关篇，三条同时成立才算。
+
+    为什么要替 agent 把关（2026-09-26 验收）：弱模型没判就看「新增相关 = 0」宣布饱和；
+    「饱和」只能在「新来的都判过」之后才有意义。
+    """
+    done = [r for r in curve if r['legs_used']]
+    if not done:
+        return {'can_claim': False, 'why': ['还没做过检索']}
+    last = done[-1]
+    why = []
+    missing = [l for l in LEGS if l not in last['legs_used']]
+    if missing:
+        why.append('第 %d 轮没走这几条腿：%s' % (last['round'], '、'.join(missing)))
+    if last['unjudged']:
+        why.append('第 %d 轮新出现的 %d 篇还没判（先用 pending 判完）' % (last['round'], last['unjudged']))
+    if last['new_relevant']:
+        why.append('第 %d 轮还有 %d 篇新的相关' % (last['round'], last['new_relevant']))
+    unjudged_all = sum(r['unjudged'] for r in curve)
+    if unjudged_all and not last['unjudged']:
+        why.append('更早的轮次还有 %d 篇没判' % unjudged_all)
+    return {'round': last['round'], 'can_claim': not why, 'why': why}
+
+
+def _audit(works, rel, s):
+    """判断质量体检：只报可数的异常，不替 agent 改判。"""
+    notes = []
+    judged = [w for w in works.values() if w.get('judgment')]
+    unj = len(works) - len(judged)
+    if unj:
+        notes.append('还有 %d 篇没判' % unj)
+    if len(judged) >= 30 and len(rel) / len(judged) > 0.8:
+        notes.append('判过的 %d 篇里 %.0f%% 判成相关 —— 检索结果通常一大半不相关，这个比例可疑：'
+                     '是不是没逐篇读、按关键词整批判了？' % (len(judged), 100 * len(rel) / len(judged)))
+    if s.get('criteria') and len(judged) >= 20:
+        bare = sum(1 for w in judged if not (w['judgment'].get('criteria')))
+        if bare / len(judged) > 0.5:
+            notes.append('%d/%d 条判断没有逐条填判据 —— 按判据逐条判更准' % (bare, len(judged)))
+    if len(rel) >= 10:
+        t = sum(1 for w in rel.values() if (w.get('judgment') or {}).get('basis') == 'title')
+        if t / len(rel) > 0.5:
+            notes.append('相关篇里 %d/%d 只凭标题判（多是没摘要的 Elsevier 文章）—— 报告里要注明' % (t, len(rel)))
+    return notes
 
 
 # ── 新词挖掘：带信息先验的对数几率比（Monroe, Colaresi & Quinn 2008）────────────
@@ -350,16 +482,24 @@ def log_odds(fg, bg, prior_scale=0.01):
     return sorted(out, key=lambda x: -x[1])
 
 
-def mine_terms(name, k=30, min_docs=2):
+def mine_terms(name, k=30, min_docs=2, branch=None):
     """已判相关（含部分相关）的标题 + 摘要 vs 其余检索结果 → 显著多出来的词组，排除已搜过的词。
 
     返回 `{'terms': 混排前 k, 'phrases': 词组, 'words': 单词, 'authors': [(一作, 篇数)], 'venues': [(期刊, 篇数)], 'n_relevant': n}`，
     每个词条 `{term, z, docs}`。
     还没判出相关的时候 terms 为空（没有前景就没有「多出来」）—— 如实返回，不拿全体频次冒充。
+    `branch` 给了就只在那条分支的相关篇里挖。
     """
     s = open_session(name)
-    rel = [w for w in s['works'].values() if _verdict(w) in _REL]
-    rest = [w for w in s['works'].values() if _verdict(w) not in _REL]
+
+    def in_focus(w):
+        if _verdict(w) not in _REL:
+            return False
+        return not branch or branch in ((w.get('judgment') or {}).get('branches') or [])
+    # branch：只拿这条分支的相关篇当前景、其余全部（含别的分支）当背景 —— 挖出这条路特有的说法
+    # （2026-09-26 验收：大分支的词把小分支的说法全压下去了）
+    rel = [w for w in s['works'].values() if in_focus(w)]
+    rest = [w for w in s['works'].values() if not in_focus(w)]
     fg, bg, df = Counter(), Counter(), Counter()
     for w in rel:
         gs = _grams((w.get('title') or '') + '. ' + (w.get('abstract') or ''))

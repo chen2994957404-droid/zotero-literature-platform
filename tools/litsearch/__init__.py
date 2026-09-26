@@ -104,9 +104,24 @@ def _index(force=False):
     return titles, dois
 
 
+# 不是论文的条目（2026-09-26 验收：审稿决定信、作者回复、figshare / Zenodo 数据集混进结果，
+# 每条都要 agent 判一遍，白花工夫）。按 OpenAlex 的 type 认，没有 type 的（Sciverse 退路）按 DOI 形状认
+NONPAPER_TYPES = {'peer-review', 'dataset', 'paratext', 'erratum', 'supplementary-materials', 'retraction'}
+_NONPAPER_DOI = re.compile(r'(/v\d+/(decision|review|response|author-response)\d*$)|(/(decision|review)\d+$)'
+                           r'|^10\.6084/|^10\.5281/')
+
+
+def is_nonpaper(it):
+    """审稿记录、数据集、勘误这类不是论文的条目。"""
+    if (it.get('type') or '') in NONPAPER_TYPES:
+        return True
+    return bool(_NONPAPER_DOI.search((it.get('doi') or '').lower()))
+
+
 def _finish(items, limit):
-    """统一收尾：截断 → 标「我有没有」→ 标「能不能立刻读」→ 标「像不像书」→ 返回。"""
-    items = list(items or [])[:max(1, min(int(limit), MAX_LIMIT))]
+    """统一收尾：剔除非论文 → 截断 → 标「我有没有」→ 标「能不能立刻读」→ 标「像不像书」→ 返回。"""
+    items = [it for it in (items or []) if not is_nonpaper(it)]
+    items = items[:max(1, min(int(limit), MAX_LIMIT))]
     titles, dois = _index()
     mark_have(items, titles, dois)
     mark_readable(items)

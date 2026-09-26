@@ -66,7 +66,7 @@ def _auth(url):
     return url + ('&' if '?' in url else '?') + 'api_key=' + urllib.parse.quote(k)
 # 只取用得上的字段：响应小一个数量级，也更快
 FIELDS = ('id,doi,title,publication_year,cited_by_count,primary_location,'
-          'abstract_inverted_index,open_access,authorships,primary_topic,topics')
+          'abstract_inverted_index,open_access,authorships,primary_topic,topics,type')
 
 _RETRIABLE = (429, 500, 502, 503, 504)
 
@@ -78,12 +78,29 @@ def get(url, timeout=45, retries=2):
     失败时抛 `shared.kernel.errors` 里的分类异常，调用方可以据此决定要不要再等。
     """
     last = None
-    for attempt in range(retries + 1):
+    for attempt in range(retries + 5):
+        if attempt > retries and not (last or '').startswith('HTTP 429'):
+            break
         try:
             req = urllib.request.Request(_auth(url), headers=UA)
             return json.loads(urllib.request.urlopen(req, timeout=timeout).read())
         except urllib.error.HTTPError as e:
             last = f'HTTP {e.code}'
+            body = ''
+            if e.code == 429:
+                try:
+                    body = e.read().decode('utf-8', 'replace')[:400]
+                except Exception:
+                    body = ''
+            # 语义检索的「每秒 1 次」限速和日额度用完都是 429，但处理完全不同（2026-09-26 实测：
+            # 几个会话并发检索时撞的是前者，提示却写成「额度用尽等 UTC 午夜」，把人带沟里）。
+            # 前者响应体写着 "per second" / retryAfter —— 多等几轮就好，不算失败
+            if e.code == 429 and ('per second' in body or 'retryAfter' in body):
+                if attempt < retries + 4:
+                    time.sleep(1.5 + attempt)
+                    continue
+                raise errors.RateLimited('OpenAlex 语义检索限速（每秒 1 次），多个检索同时在跑；'
+                                         '等几秒重试即可，不是额度用完', service='openalex') from e
             if e.code in _RETRIABLE and attempt < retries:
                 time.sleep(3 * (attempt + 1))
                 continue
@@ -170,6 +187,9 @@ def normalize(w):
         # 而是把「谁出版的、付不付费」递出去，让调用方自己按他的路线挑。
         # OpenAlex 在 work 上直接给这两个字段，零额外请求。
         'publisher': src.get('host_organization_name') or '',
+        # 条目类型（article / review / preprint / dataset / peer-review …，2026-09-26 加）：
+        # 审稿意见、数据集这类不是论文，检索端据此剔除（验收里它们占了不少逐篇判断的工夫）
+        'type': w.get('type') or '',
         'oa_status': (w.get('open_access') or {}).get('oa_status') or '',
         'oa_url': (loc.get('landing_page_url') or '') if isinstance(loc, dict) else '',
         'openalex_id': (w.get('id') or '').split('/')[-1],

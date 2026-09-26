@@ -105,3 +105,63 @@ def test_挖新词_排除搜过的_没判相关时如实为空():
     assert not any(t == 'shear stiffening' for t in terms), '搜过的词不再推荐'
     assert not any('fabric' in t for t in terms)
     assert m['authors'] == [('Li', 3)] and m['venues'] == [('Macromolecules', 3)]
+
+
+def test_同一篇的多个DOI并成一条_别名也能判():
+    t = 'Selective hydrogenolysis of polyethylene into liquid alkanes over ruthenium catalysts'
+    S.record('q', 'keyword', [_it('10.1021/main', t)])
+    st = S.record('q', 'semantic', [_it('10.2139/ssrn.123', t + '.'), _it('10.1/short', 'Editorial')])
+    assert st[0]['new'] is False, '同标题（≥40 字）的另一个 DOI 算同一篇'
+    w = S.open_session('q')['works']
+    assert set(w) == {'10.1021/main', '10.1/short'} and w['10.1021/main']['aliases'] == ['10.2139/ssrn.123']
+    assert w['10.1021/main']['channels'] == ['keyword', 'semantic']
+    assert S.judge('q', [{'doi': '10.2139/ssrn.123', 'verdict': 'relevant'}])['judged'] == 1
+    S.record('q', 'keyword', [_it('10.1/other', 'Editorial')])
+    assert '10.1/other' in S.open_session('q')['works'], '短标题不合并（容易撞）'
+
+
+def test_待判队列按轮次一批批给():
+    S.record('q', 'keyword', [_it('10.1/%d' % i, 'T%d' % i, 'abs') for i in range(5)])
+    S.next_round('q')
+    S.record('q', 'semantic', [_it('10.2/x', 'X')])
+    batch, left = S.pending('q', n=3)
+    assert [b['doi'] for b in batch] == ['10.1/0', '10.1/1', '10.1/2'] and left == 3
+    S.judge('q', [{'doi': b['doi'], 'verdict': 'irrelevant'} for b in batch])
+    batch, left = S.pending('q', n=10)
+    assert [b['doi'] for b in batch] == ['10.1/3', '10.1/4', '10.2/x'] and left == 0
+
+
+def test_没判完或腿没走全就不能说饱和():
+    S.record('q', 'keyword', [_it('10.1/a', 'A')])
+    S.judge('q', [{'doi': '10.1/a', 'verdict': 'relevant'}])
+    S.next_round('q')
+    S.record('q', 'keyword', [_it('10.1/b', 'B')])
+    sat = S.status('q')['saturation']
+    assert not sat['can_claim'] and any('没判' in w for w in sat['why']) and any('没走' in w for w in sat['why'])
+    S.record('q', 'semantic', [])
+    S.record('q', 'cited_by', [])
+    S.judge('q', [{'doi': '10.1/b', 'verdict': 'irrelevant'}])
+    assert S.status('q')['saturation']['can_claim'] is True
+
+
+def test_体检_相关比例可疑_分支没货():
+    S.open_session('q', criteria=['c1'], branches=['vitrimer 化', '化学升级回收'])
+    items = [_it('10.1/%d' % i, 'T%d' % i) for i in range(40)]
+    S.record('q', 'keyword', items)
+    S.judge('q', [{'doi': d['doi'], 'verdict': 'relevant', 'branch': 'vitrimer 化'} for d in items])
+    st = S.status('q')
+    assert any('可疑' in n for n in st['audit'])
+    assert any('没有逐条填判据' in n for n in st['audit'])
+    assert st['by_branch'] == {'vitrimer 化': 40, '化学升级回收': 0}
+    assert any('化学升级回收' in n for n in st['audit'])
+
+
+def test_按分支挖词():
+    a = [_it('10.1/a%d' % i, 'Vitrimer polyethylene exchange %d' % i, 'boronic ester vitrimer network') for i in range(3)]
+    b = [_it('10.1/b%d' % i, 'Hydrogenolysis ruthenium catalyst %d' % i, 'ruthenium hydrogenolysis liquid alkanes')
+         for i in range(3)]
+    S.record('q', 'keyword', a + b)
+    S.judge('q', [{'doi': d['doi'], 'verdict': 'relevant', 'branch': 'v'} for d in a]
+            + [{'doi': d['doi'], 'verdict': 'relevant', 'branch': 'c'} for d in b])
+    terms = ' '.join(t['term'] for t in S.mine_terms('q', branch='c')['terms'])
+    assert 'hydrogenolysis' in terms and 'vitrimer' not in terms

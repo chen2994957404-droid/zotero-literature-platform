@@ -182,17 +182,33 @@ def _session_open(a):
     if a.get('nextRound'):
         ledger.next_round(name)
     crit = _list(a.get('criteria')) if a.get('criteria') is not None else None
+    br = _list(a.get('branches')) if a.get('branches') is not None else None
     s = ledger.open_session(name, question=a.get('question') or '', criteria=crit,
-                            scope_note=a.get('scopeNote') or '')
+                            scope_note=a.get('scopeNote') or '', branches=br)
     lines = ['台账「%s」· 第 %s 轮' % (s['name'], s['round']),
              '问题：%s' % (s.get('question') or '（还没写）'),
              '判据：%s' % ('；'.join('%d. %s' % (i + 1, c) for i, c in enumerate(s['criteria']))
                          or '（还没定 —— 和用户商量后用 criteria 写进来）')]
+    if s.get('branches'):
+        lines.append('分支（问题里的几条路）：' + '；'.join(s['branches']))
     if s.get('scope_notes'):
         lines.append('范围约定：' + '；'.join(n['note'] for n in s['scope_notes']))
     lines.append('已记 %d 次检索、%d 篇文献。' % (len(s['searches']), len(s['works'])))
-    return {'text': '\n'.join(lines), 'structured': {k: s[k] for k in ('name', 'question', 'criteria',
-                                                                      'scope_notes', 'round')}}
+    return {'text': '\n'.join(lines), 'structured': {k: s.get(k) for k in (
+        'name', 'question', 'criteria', 'branches', 'scope_notes', 'round')}}
+
+
+def _pending(a):
+    batch, left = ledger.pending(a.get('session') or '', n=a.get('n') or 20)
+    if not batch:
+        return {'text': '台账里的文献都判完了。', 'structured': {'items': [], 'left': 0}}
+    lines = ['待判 %d 篇（判完这批还剩 %d 篇）。读完用 lit_judge 一次记这一批：' % (len(batch), left)]
+    for b in batch:
+        lines.append('- %s [%s] %s | %s%s' % (b['doi'] or b['key'], b['year'] or '????', b['title'][:110],
+                                             (b['venue'] or '?')[:36], '' if b['has_abstract'] else ' 【无摘要】'))
+        if b['abstract']:
+            lines.append('    ' + b['abstract'])
+    return {'text': '\n'.join(lines), 'structured': {'items': batch, 'left': left}}
 
 
 def _judge(a):
@@ -226,6 +242,16 @@ def _status(a):
         chs = '，'.join('%s 新%d/相关%d' % (c, x['new'], x['relevant']) for c, x in r['by_channel'].items())
         lines.append('  第 %d 轮：新 %d 篇，新的相关 %d 篇%s' % (r['round'], r['new_works'], r['new_relevant'],
                                                         ('（' + chs + '）') if chs else ''))
+    sat = st.get('saturation') or {}
+    if sat.get('can_claim'):
+        lines.append('✅ 饱和：第 %s 轮三条腿都走了、新文献全判完、没有新的相关篇 —— 可以停（报告里写明）' % sat.get('round'))
+    else:
+        lines.append('⛔ 现在不能说饱和：' + '；'.join(sat.get('why') or []))
+    if st.get('by_branch'):
+        lines.append('各分支的相关篇：' + '，'.join('%s %d' % kv for kv in st['by_branch'].items())
+                     + ('；没标分支的 %d 篇' % st['relevant_without_branch'] if st.get('relevant_without_branch') else ''))
+    for n in st.get('audit') or []:
+        lines.append('⚠ ' + n)
     if st['relevant_by_channel']:
         lines.append('各渠道找到的相关篇：' + '，'.join('%s %d' % kv for kv in st['relevant_by_channel'].items())
                      + '；只有它找到的：' + ('，'.join('%s %d' % kv for kv in st['relevant_only_by_channel'].items())
@@ -250,7 +276,7 @@ def _status(a):
 
 
 def _terms(a):
-    m = ledger.mine_terms(a.get('session') or '', k=a.get('k') or 30)
+    m = ledger.mine_terms(a.get('session') or '', k=a.get('k') or 30, branch=a.get('branch') or None)
     if not m['terms']:
         return {'text': '还挖不出新词：台账里判为相关的有 %d 篇（至少要几篇相关的，才能看出它们比其余多用了什么词）。'
                         % m['n_relevant'], 'structured': m}
@@ -371,6 +397,9 @@ def register(server):
             'criteria': {'type': 'array', 'items': {'type': 'string'},
                          'description': '判据（给了就替换原来的）'},
             'scopeNote': {'type': 'string', 'description': '追加一条范围约定'},
+            'branches': {'type': 'array', 'items': {'type': 'string'},
+                         'description': '问题里的几条路（例：["vitrimer 化", "化学升级回收"]）；'
+                                        '判断时给每篇标分支，lit_status 会点名没货的分支'},
             'nextRound': {'type': 'boolean', 'description': '进入下一轮'}},
          'required': ['name']},
         _session_open)
@@ -379,7 +408,8 @@ def register(server):
         'lit_judge',
         '把你对一批文献的判断记进台账（一次多篇）。每条：'
         '{"doi": "...", "verdict": "relevant|partial|irrelevant|unsure", '
-        '"criteria": {"判据1": "yes|partial|no|unknown", ...}, "basis": "abstract|title|fulltext", "reason": "一句话"}。'
+        '"criteria": {"判据1": "yes|partial|no|unknown", ...}, "branch": "属于哪条分支", '
+        '"basis": "abstract|title|fulltext", "reason": "一句话"}。'
         '**按判据逐条判**比整体判更准；只看了标题的 basis 写 title（统计里单列，不当确定）。'
         '没 DOI 的用结果里给的 title: 键。只写本地台账文件。',
         {'type': 'object', 'properties': {
@@ -389,8 +419,19 @@ def register(server):
         _judge)
 
     server.register_tool(
+        'lit_pending',
+        '**待判队列**：台账里还没判的文献，按轮次一批批给（默认 20 篇，带摘要前 400 字）。'
+        '读完这批用 lit_judge 一次记下，再取下一批，直到判完 —— **没判完不能说饱和**（lit_status 会拦）。只读。',
+        {'type': 'object', 'properties': {
+            'session': {'type': 'string', 'description': '台账名'},
+            'n': {'type': 'integer', 'minimum': 1, 'maximum': 60, 'description': '一批几篇，默认 20'}},
+         'required': ['session']},
+        _pending)
+
+    server.register_tool(
         'lit_status',
-        '看台账：每轮每个渠道新增了多少篇、多少篇相关（**饱和曲线**：连续一轮三个渠道都没有新的相关篇 = 该停了）；'
+        '看台账：**能不能说饱和**（三条腿走全 + 新文献判完 + 没有新相关，三条同时成立才放行）；'
+        '每轮每个渠道新增了多少篇、多少篇相关；各分支找到几篇；判断质量体检（相关比例可疑、没逐条填判据等）；'
         '各渠道各自独有的贡献；文本渠道对引用渠道的**捕获–再捕获估计**（还漏多少，只当参考）；'
         '还有多少没判、多少只凭标题判。给 benchmark（一组 DOI，如某篇综述的参考文献）还会算相对召回。只读。',
         {'type': 'object', 'properties': {
@@ -406,6 +447,7 @@ def register(server):
         '外加相关篇里反复出现的一作与期刊。下一轮的检索词优先从这里取 —— 真实文献里的说法比凭空想的全。只读。',
         {'type': 'object', 'properties': {
             'session': {'type': 'string', 'description': '台账名'},
-            'k': {'type': 'integer', 'minimum': 5, 'maximum': 80, 'description': '最多列多少个词组，默认 30'}},
+            'k': {'type': 'integer', 'minimum': 5, 'maximum': 80, 'description': '最多列多少个词组，默认 30'},
+            'branch': {'type': 'string', 'description': '只在这条分支的相关篇里挖（大分支的词会压住小分支，分开挖）'}},
          'required': ['session']},
         _terms)
