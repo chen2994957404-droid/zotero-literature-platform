@@ -186,6 +186,7 @@ flash 的正式名已是 `deepseek-flash`（旧名 `deepseek-v4-flash` 靠转发
   **打了标签先按 DOI 对账**（`host/watcher/service.paper_id_for`）：证据库里已有的用原目录，
   Zotero 编号只登记成属性；有范文（公众号推文 `reference.md`）的，推文当正文精读、我们只补 SI（2026-09-15 用户定）。
 - 老库回流：`python -m tools.getpdf --从Zotero落地`（一次性，只读 Zotero）。
+- ⏸ **2026-09-27 起后台自动建库已停**（本机设置 `AUTO_BUILD=0`，用户定）：落地流水线、每日盯新刊取件、每小时回流粗抽都不跑，只留打标签精读；下面这条在开关打开时才生效。
 - **落地即自动**（`host/ingest`）：正本一到，MineRU 解析 → 骨架 → 向量化自动做完，
   一分钱大模型的钱不花；之后模型就能 `library_outline` → `library_section` 自己读它。
   精读仍只由「待处理」标签触发。

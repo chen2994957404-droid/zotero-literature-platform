@@ -3,6 +3,9 @@
 
 ## 管三个进程（2026-09-17 起，之前只管 watcher 一个）
 
+**2026-09-27 起后两个受「后台自动建库」开关管**（`AUTO_BUILD`，默认关）：用户决定证据库先停、
+只留打标签精读。开关关着时只守 watcher，落地流水线与每日作业都不拉。
+
 | 进程 | 干什么 | 形态 |
 |---|---|---|
 | `host.watcher.service` | 盯 Zotero 标签 → 精读 → 回写（花钱、要人打标签） | 常驻 |
@@ -61,9 +64,21 @@ SERVICES = [
     {'name': 'watcher', 'beacon': 'watcher', 'module': 'host.watcher.service', 'args': [],
      'pat': "'watcher[\\\\./]service'", 'no_progress': NO_PROGRESS},
     {'name': 'ingest',  'beacon': 'ingest',  'module': 'host.ingest', 'args': ['--loop'],
-     'pat': "'host[\\\\./]ingest'",          'no_progress': NO_PROGRESS},
+     'pat': "'host[\\\\./]ingest'",          'no_progress': NO_PROGRESS, 'auto_build': True},
 ]
 BEACON = SERVICES[0]['beacon']     # 老名字，测试与日志还在用
+
+
+def auto_build_on():
+    """「后台自动建库」开着吗（控制面板 AUTO_BUILD，默认关 —— 2026-09-27 用户定：只留打标签精读）。"""
+    from shared.kernel.config import get_site
+    return (get_site('AUTO_BUILD') or '0').strip() == '1'
+
+
+def active_services(auto_build):
+    """这次该守的进程：精读监听永远在；标了 auto_build 的只在自动建库开着时才守。
+    SERVICES 本身保持全量 —— 停进程、测试核对报活名都要认得全部。"""
+    return [s for s in SERVICES if auto_build or not s.get('auto_build')]
 
 # 看门狗拉起的三个孙子进程。**重启计划任务时要把它们全停掉**：任务停的只是看门狗，
 # 孙子进程照跑旧代码（踩坑 #62）—— 面板的重启按钮与 `host.deploy.update` 都从这里取，别各写一份。
@@ -194,12 +209,22 @@ def main():
     # 机器角色守卫：常驻服务只能在运行端（主力机）跑。
     # 两台都跑会重复精读同一篇、重复写回 Zotero、重复烧钱，标签状态机还会互相打架。
     role.require_prod('看门狗（守护 watcher / 落地流水线 / 每日作业）', force=flag('--force'))
-    log(f'看门狗启动。管 {len(SERVICES)} 个常驻进程 + 每日作业；'
+    auto = auto_build_on()
+    services = active_services(auto)
+    log(f'看门狗启动。管 {len(services)} 个常驻进程（{"、".join(s["name"] for s in services)}）'
+        f'{" + 每日作业" if auto else "；后台自动建库已关，不拉落地流水线与每日作业"}；'
         f'报活阈值 {STALE}s，无进展阈值 {NO_PROGRESS}s，检查间隔 {CHECK}s')
-    last_restart = {s['name']: 0 for s in SERVICES}
+    if not auto:
+        # 开关刚关上时，上一轮拉起的落地流水线可能还活着 —— 停掉它，否则它会一直跑下去
+        for svc in SERVICES:
+            if svc.get('auto_build'):
+                for pid in find_pids(svc['pat']):
+                    _sp.run(['taskkill', '/F', '/PID', pid], timeout=20)
+                    log(f'自动建库已关，停掉 {svc["name"]} PID={pid}')
+    last_restart = {s['name']: 0 for s in services}
     while True:
         now = time.time()
-        for svc in SERVICES:
+        for svc in services:
             if now - last_restart[svc['name']] < GRACE:      # 刚重启的宽限期内不判死
                 continue
             alive_age, progress_age = ages(svc['beacon'])
@@ -210,7 +235,7 @@ def main():
                 restart_service(svc)
                 last_restart[svc['name']] = now
         try:
-            if daily_due(now):
+            if auto and daily_due(now):
                 launch_daily()
         except Exception as e:
             log(f'拉每日作业失败：{type(e).__name__}: {e}')

@@ -107,6 +107,12 @@ def main():
     log('=== 自动同步开始 ===')
     if not check_deps():
         return
+    # 2026-09-27 用户定：证据库先停，只留打标签精读。任务本身照跑 —— 上面的保活
+    # （Zotero / Ollama 没起来就拉起）精读监听还靠它；只是不再回流、不再粗抽。
+    from shared.kernel.config import get_site
+    if (get_site('AUTO_BUILD') or '0').strip() != '1':
+        log('后台自动建库已关（控制面板 AUTO_BUILD），本轮只保活，不回流不抽取')
+        return
     # 1. Zotero 里新加的文献 → 回流成本地正本（落地流水线随后自动解析 / 骨架 / 向量化）
     run_module('tools.getpdf', 'Zotero 新条目回流', ['--从Zotero落地', '--安静'])
     # 2. 增量粗层结构化抽取（新文献进对比表 → 横向比较能看到）
