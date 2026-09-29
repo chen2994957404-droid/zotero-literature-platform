@@ -318,6 +318,49 @@ def main():
                     if n not in names and n not in ('tool', 'prompt', 'resource'))
     check('instructions 提到的工具名都存在', not ghosts, '不存在的：' + ', '.join(ghosts))
 
+    # 5. /science：给 Claude Science 的精简面（2026-09-29）
+    import json as _json
+    import tempfile
+    import time
+    from host.mcp import science as S
+    sci = S.build(real)
+    sn = {t['name'] for t in sci._tools}
+    check('/science 借到了全部工具 + paper_files', set(S.BORROW) | {'paper_files'} == sn,
+          '缺：' + ', '.join(sorted(set(S.BORROW) | {'paper_files'} - sn)))
+    check('/science 不打 confirm（Claude Science 自己会问人）',
+          not any(t['confirm'] for t in sci._tools))
+    check('/science 不含写 Zotero / 花钱的工具',
+          not (sn & {'getpdf_stash_one', 'deepread_request', 'ask_library', 'extract_one'}))
+    ghosts = sorted(n for n in set(re.findall(r'`([a-z][a-z0-9_]+)`', S.INSTRUCTIONS)) if n not in sn)
+    check('/science 说明里提到的工具名都存在', not ghosts, ', '.join(ghosts))
+    check('to_wsl：盘符路径换成 /mnt', S.to_wsl('D:\\02_AI\\x\\main.pdf') == '/mnt/d/02_AI/x/main.pdf')
+    with tempfile.TemporaryDirectory() as td:
+        pp = os.path.join(td, 'p.json')
+        check('没有进度文件 → 没在跑', S.running_job(pp) == '')
+        io.open(pp, 'w', encoding='utf-8').write(_json.dumps({'total': 3, 'finished': 1, 'done': False}))
+        check('进度未完且新鲜 → 在跑', '1/3' in S.running_job(pp))
+        check('进度未完但早就不动了 → 当它死了、不挡路',
+              S.running_job(pp, now=time.time() + S.STALE_SECS + 5) == '')
+        io.open(pp, 'w', encoding='utf-8').write(_json.dumps({'total': 3, 'finished': 3, 'done': True}))
+        check('进度已完 → 没在跑', S.running_job(pp) == '')
+
+    httpd3 = ThreadingHTTPServer(('127.0.0.1', 0),
+                                 H.make_handler(build_fake_server(), '', {S.ENDPOINT: sci}))
+    p3 = httpd3.server_address[1]
+    threading.Thread(target=httpd3.serve_forever, daemon=True).start()
+    try:
+        import urllib.request
+        def _list(path):
+            req = urllib.request.Request(f'http://127.0.0.1:{p3}{path}', method='POST',
+                                         data=b'{"jsonrpc":"2.0","id":1,"method":"tools/list"}',
+                                         headers={'Content-Type': 'application/json'})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return {t['name'] for t in _json.loads(r.read())['result']['tools']}
+        check('HTTP 路由：/science 给精简面', _list(S.ENDPOINT) == sn)
+        check('HTTP 路由：/mcp 仍是原来那个服务', 'paper_files' not in _list(H.ENDPOINT))
+    finally:
+        httpd3.shutdown(); httpd3.server_close()
+
     print(f'\n结果：{len(_PASS)} 过 / {len(_FAIL)} 挂')
     if _FAIL:
         print('挂掉项：', ', '.join(_FAIL))

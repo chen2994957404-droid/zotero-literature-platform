@@ -193,9 +193,12 @@ def main():
         return print_list(build_server())        # 给人看的那条路，走真 stdout
     if flag('--http'):
         from host.mcp import http_transport as mcp_http
+        from host.mcp import science
         # HTTP 那条腿不占用 stdout，日志照常打屏幕，所以不做私有化切换
-        return mcp_http.serve(build_server(),
-                              port=int(opt('--port') or mcp_http.DEFAULT_PORT)) or 0
+        full = build_server()
+        # 同一个服务多挂一个 /science：给 Claude Science 的精简面（只管「拿到全文 → 读」）
+        return mcp_http.serve(full, port=int(opt('--port') or mcp_http.DEFAULT_PORT),
+                              routes={science.ENDPOINT: science.build(full)}) or 0
     protocol_out = _claim_stdout_for_protocol()  # ⚠ 必须在 build_server() 之前
     s = build_server()
     s.serve(out=protocol_out)

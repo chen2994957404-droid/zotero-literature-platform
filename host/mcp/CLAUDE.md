@@ -20,6 +20,8 @@ R4 窗（2026-08-31）改成**聚合**：服务端自己不知道有哪些工具
 | `registry.py` | 读 `tools/*/tool.toml`、import 各 `tools/<t>/mcp.py` 调 `register(server)`、校验自洽 |
 | `stdio.py` | 手写 MCP stdio 协议层（JSON-RPC 2.0 + 换行分隔，零第三方依赖）|
 | `selftest.py` | 协议层离线自测（不联网、不依赖用户数据）|
+| `http_transport.py` | Streamable HTTP 传输（只绑 127.0.0.1，跨机走 SSH 隧道）；一个进程可挂多个端点 |
+| `science.py` | **给 Claude Science 的精简面**（端点 `/science`）：只挂「库里有没有 → 取全文 → 按节读 → 给文件路径」9 个工具，不打 confirm；服务端强制「同一时刻只一个取全文作业」|
 
 为什么不用官方 SDK：平台「少依赖」架构准则 + 协议已实测稳定（官方 SDK 的 ReadBuffer
 就是按 `\n` 切帧，序列化 = `JSON + '\n'`）；日后要接 SSE/HTTP 再换 SDK，本层接口不变。

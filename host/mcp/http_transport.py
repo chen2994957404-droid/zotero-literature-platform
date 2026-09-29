@@ -106,8 +106,16 @@ def _dispatch(server, messages):
     return out
 
 
-def make_handler(server, token=''):
-    """造一个绑定到这个 MCP 服务的 HTTP 处理器类。"""
+def make_handler(server, token='', routes=None):
+    """造一个绑定到这个 MCP 服务的 HTTP 处理器类。
+
+    `routes` = {端点路径: 服务}，给同一个进程挂多个 MCP 端点用（2026-09-29：
+    `/science` 是给 Claude Science 的精简面，见 host/mcp/science.py）。
+    不给就只有 `ENDPOINT` → `server` 一条。
+    """
+    table = {ENDPOINT: server}
+    table.update(routes or {})
+    table = {k.rstrip('/'): v for k, v in table.items()}
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = 'HTTP/1.1'
@@ -119,19 +127,20 @@ def make_handler(server, token=''):
 
         # ── 三道闸 ───────────────────────────────────────────────────
         def _guard(self):
-            """通过返回 True；否则已经把错误答复写出去了，调用方直接 return。"""
+            """通过返回这条路径对应的服务；否则已经把错误答复写出去了，返回 None。"""
             if not _is_local_origin(self.headers.get('Origin')):
                 self._plain(403, '拒绝：Origin 不是本机（防 DNS 重绑定）')
-                return False
+                return None
             if token:
                 auth = self.headers.get('Authorization') or ''
                 if auth != f'Bearer {token}':
                     self._plain(401, '拒绝：Authorization 不对')
-                    return False
-            if self.path.split('?')[0].rstrip('/') not in (ENDPOINT, ENDPOINT.rstrip('/')):
-                self._plain(404, f'本服务的 MCP 端点是 {ENDPOINT}')
-                return False
-            return True
+                    return None
+            target = table.get(self.path.split('?')[0].rstrip('/'))
+            if target is None:
+                self._plain(404, '本服务的 MCP 端点是 ' + ' / '.join(sorted(table)))
+                return None
+            return target
 
         # ── 输出 ─────────────────────────────────────────────────────
         def _plain(self, code, text):
@@ -157,18 +166,19 @@ def make_handler(server, token=''):
 
         # ── 方法 ─────────────────────────────────────────────────────
         def do_GET(self):
-            if not self._guard():
+            if self._guard() is None:
                 return
             # 规范：不提供服务端主动推流就回 405，客户端据此不再等 SSE
             self._plain(405, '本服务不提供服务端主动推流（SSE）；请用 POST 发 JSON-RPC。')
 
         def do_DELETE(self):
-            if not self._guard():
+            if self._guard() is None:
                 return
             self._plain(405, '本服务不使用会话，没有会话可以结束。')
 
         def do_POST(self):
-            if not self._guard():
+            target = self._guard()
+            if target is None:
                 return
             try:
                 n = int(self.headers.get('Content-Length') or 0)
@@ -199,7 +209,7 @@ def make_handler(server, token=''):
             # 规范：整批只含通知/响应（都没有 id 的请求）→ 202，空体
             has_request = any(isinstance(m, dict) and m.get('method') and 'id' in m
                               for m in messages)
-            replies = _dispatch(server, messages)
+            replies = _dispatch(target, messages)
             if not has_request:
                 self._empty(202)
                 return
@@ -211,12 +221,13 @@ def make_handler(server, token=''):
     return Handler
 
 
-def serve(server, port=DEFAULT_PORT, host='127.0.0.1', token=None):
+def serve(server, port=DEFAULT_PORT, host='127.0.0.1', token=None, routes=None):
     """起 HTTP 服务并阻塞。**只绑 127.0.0.1** —— 跨机访问走 SSH 端口转发。"""
     if token is None:
         token = get_key('MCP_HTTP_TOKEN', default='') or ''
-    httpd = ThreadingHTTPServer((host, int(port)), make_handler(server, token))
+    httpd = ThreadingHTTPServer((host, int(port)), make_handler(server, token, routes))
     log.info(f'MCP HTTP 服务起来了：http://{host}:{port}{ENDPOINT}'
+             + ''.join(f' + {r}' for r in (routes or {}))
              + ('（带令牌校验）' if token else '（没配 MCP_HTTP_TOKEN，只靠绑本机保护）'))
     try:
         httpd.serve_forever()
