@@ -358,6 +358,16 @@ def main():
                 return {t['name'] for t in _json.loads(r.read())['result']['tools']}
         check('HTTP 路由：/science 给精简面', _list(S.ENDPOINT) == sn)
         check('HTTP 路由：/mcp 仍是原来那个服务', 'paper_files' not in _list(H.ENDPOINT))
+        # stdio ↔ HTTP 转接（Claude Science 只认本机命令，见 bridge.py）
+        from host.mcp import bridge as B
+        u = f'http://127.0.0.1:{p3}{S.ENDPOINT}'
+        r = B.forward({'jsonrpc': '2.0', 'id': 7, 'method': 'tools/list'}, u)
+        check('转接：请求原样转过去、答复原样带回',
+              r and r.get('id') == 7 and {t['name'] for t in r['result']['tools']} == sn)
+        check('转接：通知不回话', B.forward({'jsonrpc': '2.0', 'method': 'notifications/initialized'}, u) is None)
+        r = B.forward({'jsonrpc': '2.0', 'id': 8, 'method': 'ping'}, 'http://127.0.0.1:1/science')
+        check('转接：连不上 → 回一条带人话的 JSON-RPC 错误（不是崩掉）',
+              r and r.get('id') == 8 and '隧道' in r['error']['message'])
     finally:
         httpd3.shutdown(); httpd3.server_close()
 
