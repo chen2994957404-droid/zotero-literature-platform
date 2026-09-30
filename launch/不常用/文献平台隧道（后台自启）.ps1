@@ -8,7 +8,7 @@
 
 $key  = Join-Path $env:USERPROFILE '.ssh\id_ed25519_zotero_b'
 $port = 8778
-$hosts = @('211.83.153.16', '192.168.123.216')   # 先公网、再局域网；哪个通用哪个
+$hosts = @('100.85.251.62', '211.83.153.16', '192.168.123.216')   # 先 Tailscale（在家也通）、再校园网公网、再局域网；哪个通用哪个
 
 while ($true) {
     foreach ($h in $hosts) {

@@ -12,7 +12,8 @@ REM
 REM 这个窗口**别关**。关了 Antigravity 就连不上文献平台了。
 
 set KEY=%USERPROFILE%\.ssh\id_ed25519_zotero_b
-set HOSTADDR=211.83.153.16
+REM 2026-09-30 起走 Tailscale（在工位、在家都通）；校园网公网地址 211.83.153.16 只在校内通
+set HOSTADDR=100.85.251.62
 set PORT=8778
 
 echo.
