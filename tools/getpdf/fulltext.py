@@ -205,12 +205,12 @@ def _menu_of(pid):
     from shared.domain.schema import outline as _outline
     try:
         cache = paths.outline(pid)
-        if os.path.exists(cache) and os.path.getmtime(cache) >= os.path.getmtime(paths.fulltext(pid)):
-            o = json.load(io.open(cache, encoding='utf-8'))
-        else:
-            si_p = paths.si_fulltext(pid)
-            o = _outline.build_outline(io.open(paths.fulltext(pid), encoding='utf-8').read(),
-                                       si_md=io.open(si_p, encoding='utf-8').read() if os.path.exists(si_p) else '')
+        si_p = paths.si_fulltext(pid)
+        md = io.open(paths.fulltext(pid), encoding='utf-8').read()
+        si_md = io.open(si_p, encoding='utf-8').read() if os.path.exists(si_p) else ''
+        o = json.load(io.open(cache, encoding='utf-8')) if os.path.exists(cache) else {}
+        if not _outline.is_current(o, md, si_md):       # 签名对不上 = 旧缓存，现算
+            o = _outline.build_outline(md, si_md=si_md)
         body = _outline.menu(o)
         if o.get('si'):
             body += '\n--- 补充材料 SI ---\n' + _outline.menu(o['si'])

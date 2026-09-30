@@ -323,7 +323,7 @@ def outline(key, refresh=False):
     **不是错误**，是「这篇还没取到全文，要先解析」这个事实。
 
     结果缓存在 `curated/<key>/outline.json`：算一次几十毫秒，但一天要被点很多次。
-    `full.md` 比缓存新时自动重算（跟 paperdb 的新鲜度判据同一个道理）。
+    缓存带签名（`outline.signature`：文本 + 算法版本），对不上就重算。
     """
     from shared.domain.schema import outline as _outline
     md_path = paths.fulltext(key)
@@ -331,17 +331,19 @@ def outline(key, refresh=False):
         return {'itemKey': key, 'available': False,
                 'why': '这篇还没有解析出全文（parsed/full.md 不存在）'}
     cache = paths.outline(key)
-    if not refresh and os.path.exists(cache) and (
-            os.path.getmtime(cache) >= os.path.getmtime(md_path)):
-        try:
-            d = json.load(io.open(cache, encoding='utf-8'))
-            d.update({'itemKey': key, 'available': True, 'cached': True})
-            return d
-        except Exception:
-            pass                      # 缓存坏了就重算，不让它拖垮这次调用
     md = io.open(md_path, encoding='utf-8').read()
     si_path = paths.si_fulltext(key)
     si_md = io.open(si_path, encoding='utf-8').read() if os.path.exists(si_path) else ''
+    # 新鲜度看**签名**（哪份文本 + 哪版算法），不看修改时间：清洗规则或骨架算法改了、
+    # full.md 没动时，按时间判会一直用错位的旧缓存（2026-09-30，1034/1090 篇中招）
+    if not refresh and os.path.exists(cache):
+        try:
+            d = json.load(io.open(cache, encoding='utf-8'))
+            if _outline.is_current(d, md, si_md):
+                d.update({'itemKey': key, 'available': True, 'cached': True})
+                return d
+        except Exception:
+            pass                      # 缓存坏了就重算，不让它拖垮这次调用
     d = _outline.build_outline(md, si_md=si_md)
     try:
         os.makedirs(os.path.dirname(cache), exist_ok=True)

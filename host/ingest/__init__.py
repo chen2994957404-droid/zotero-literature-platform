@@ -134,11 +134,10 @@ def _outline(pid, say):
     """骨架（菜单）。纯脚本，几十毫秒。"""
     if not os.path.isfile(paths.fulltext(pid)):
         return 'skip'
-    if os.path.isfile(paths.outline(pid)) and \
-            os.path.getmtime(paths.outline(pid)) >= os.path.getmtime(paths.fulltext(pid)):
-        return 'skip'
     from tools import library
-    d = library.outline(pid, refresh=True)
+    d = library.outline(pid)          # 它自己按签名判新鲜（文本 + 算法版本）：对得上就是缓存
+    if d.get('available') and d.get('cached'):
+        return 'skip'
     if d.get('available'):
         say(f'  ✓ 骨架 {len(d.get("sections") or [])} 节')
         return 'done'

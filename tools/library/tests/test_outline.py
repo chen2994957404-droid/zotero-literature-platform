@@ -121,12 +121,23 @@ class Test缓存:
         assert library.outline(paper)['cached'] is True
         assert os.path.exists(paths.outline(paper))
 
-    def test_全文变新了要重算(self, paper):
+    def test_全文内容变了要重算(self, paper):
         library.outline(paper)
-        os.utime(paths.fulltext(paper), None)      # 假装重新解析过
-        import time
-        time.sleep(0.01)
+        with io.open(paths.fulltext(paper), 'a', encoding='utf-8') as f:
+            f.write('\n\n## 9. Added later\n\nnew text.\n')     # 重新解析出了不同的全文
+        assert library.outline(paper)['cached'] is False
+
+    def test_只是文件时间变了_内容没变就用缓存(self, paper):
+        library.outline(paper)
         os.utime(paths.fulltext(paper), None)
+        assert library.outline(paper)['cached'] is True
+
+    def test_算法或清洗规则变了_旧缓存要重算_取节不能错位(self, paper, monkeypatch):
+        """2026-09-30 Claude Science 实测：clean_body 改过而 full.md 没动，按修改时间判新鲜
+        就一直用旧缓存 —— 位置整体错开（取节开头被截几个字）、还留着老算法的重复段落编号。"""
+        from shared.domain.schema import outline as O
+        library.outline(paper)
+        monkeypatch.setattr(O, 'OUTLINE_VERSION', O.OUTLINE_VERSION + 1)
         assert library.outline(paper)['cached'] is False
 
     def test_缓存坏了不影响这次调用(self, paper):

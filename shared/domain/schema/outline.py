@@ -69,6 +69,27 @@ BODY = '主体'                # 位置在引言之后、结论之前，但标�
                              # 不告诉模型「这是结果」—— 综述里它就不是结果。
 UNKNOWN = '未分类'
 
+# 骨架算法的版本。**改了 build_outline 的输出（地址怎么编、位置怎么算）就加一**，
+# 旧缓存会因签名对不上而自动重算。只看文件修改时间是不够的（2026-09-30，Claude Science 实测报出）：
+# `clean_body` 9-24 改过，full.md 没动，于是 1034/1090 篇的缓存位置整体错开几个字（取节时开头被截），
+# 132 篇还留着老算法的重复段落编号（s4.p1 出现两次、第二个取不到）。
+OUTLINE_VERSION = 2
+
+
+def signature(md, si_md=''):
+    """这份骨架是从哪份文本、哪一版算法算出来的 → 短指纹。缓存对不上就该重算。"""
+    import hashlib
+    h = hashlib.sha1(('v%d|' % OUTLINE_VERSION).encode('utf-8'))
+    h.update(scan.clean_body(md or '').encode('utf-8'))
+    h.update(b'|SI|')
+    h.update(scan.clean_body(si_md or '').encode('utf-8'))
+    return h.hexdigest()[:16]
+
+
+def is_current(d, md, si_md=''):
+    """缓存的骨架还能用吗（签名对得上）。"""
+    return bool(d) and d.get('sig') == signature(md, si_md)
+
 KINDS = (ABSTRACT, BACKGROUND, SYNTHESIS, METHODS, RESULTS, DISCUSSION,
          CONCLUSION, NONBODY, BODY, UNKNOWN)
 
@@ -369,6 +390,7 @@ def build_outline(md, si_md=''):
                   'unknown_ratio': round(
                       by_kind.get(UNKNOWN, 0) / total, 3) if total else 0.0},
     }
+    out['sig'] = signature(md, si_md)
     if si_md:
         si = build_outline(si_md)
         out['si'] = {'sections': si['sections'], 'tables': si['tables'],
