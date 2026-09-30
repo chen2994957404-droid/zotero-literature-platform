@@ -31,6 +31,17 @@
 拆开之后：精读跑一小时也不会被误杀（后台仍在报活）；
 进程真死了 5 分钟内发现；活着但卡在某个不返回的调用上，由进度阈值兜底。
 
+## 另守两样「按端口认」的（2026-09-29 用户定：加进自启）
+
+| 端口 | 是谁 | 谁要它 |
+|---|---|---|
+| 8778 | MCP HTTP 服务 `host/mcp/server.py --http`（`/mcp` + `/science`） | Claude Science（经 B 机 WSL 的 litplatform）、Antigravity |
+| 9333 | 取全文用的浏览器（`launch/取全文用的浏览器.bat`） | 取全文（机构订阅 + 人机验证通行证都在它身上） |
+
+它们没有心跳，**端口在监听就算活着**；不在就拉起来（同样有 GRACE 宽限，不会连着拉）。
+不受 AUTO_BUILD 管：它们只是「有人来要才干活」的服务，不自己去建库。
+浏览器直接跑那个 .bat（参数只有一份正本）；bat 末尾的 pause 在 stdin=NUL 下立即返回。
+
 用法: python -m host.watcher.watchdog    # 前台常驻；日常由任务计划 ZoteroLiteratureWatcher 自启
 """
 import os, sys, time
@@ -67,6 +78,44 @@ SERVICES = [
      'pat': "'host[\\\\./]ingest'",          'no_progress': NO_PROGRESS, 'auto_build': True},
 ]
 BEACON = SERVICES[0]['beacon']     # 老名字，测试与日志还在用
+
+
+def port_services():
+    """按端口守的服务：[{name, port, cmd}]。端口走各自的正本（HTTP 默认口 / 浏览器调试口配置）。"""
+    from urllib.parse import urlparse
+
+    from host.mcp import http_transport
+    from shared.adapters import pdf_fetch
+    return [
+        {'name': 'mcp_http', 'port': http_transport.DEFAULT_PORT,
+         'cmd': [sys.executable, os.path.join(ROOT, 'host', 'mcp', 'server.py'), '--http']},
+        {'name': 'getpdf_browser', 'port': urlparse(pdf_fetch.cdp_url()).port or 9333,
+         'cmd': ['cmd', '/c', os.path.join(ROOT, 'launch', '取全文用的浏览器.bat')]},
+    ]
+
+
+def port_open(port, host='127.0.0.1', timeout=1.0):
+    """本机这个端口有人在听吗（只连回环地址，不出本机）。"""
+    import socket
+    try:
+        with socket.create_connection((host, int(port)), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def ensure_ports(now, last, services=None, is_open=port_open, start=None):
+    """端口不在监听的拉起来；刚拉过的 GRACE 内不重复拉。返回这轮拉了谁（便于测）。"""
+    start = start or (lambda cmd: _sp.spawn(cmd, cwd=ROOT))
+    started = []
+    for svc in (services if services is not None else port_services()):
+        if is_open(svc['port']) or now - last.get(svc['name'], 0) < GRACE:
+            continue
+        start(svc['cmd'])
+        last[svc['name']] = now
+        started.append(svc['name'])
+        log(f'[{svc["name"]}] 端口 {svc["port"]} 没在监听 → 已拉起')
+    return started
 
 
 def auto_build_on():
@@ -222,6 +271,7 @@ def main():
                     _sp.run(['taskkill', '/F', '/PID', pid], timeout=20)
                     log(f'自动建库已关，停掉 {svc["name"]} PID={pid}')
     last_restart = {s['name']: 0 for s in services}
+    last_port = {}
     while True:
         now = time.time()
         for svc in services:
@@ -234,6 +284,10 @@ def main():
                 log(f'[{svc["name"]}] {why} → 重启')
                 restart_service(svc)
                 last_restart[svc['name']] = now
+        try:
+            ensure_ports(now, last_port)
+        except Exception as e:
+            log(f'守端口服务失败：{type(e).__name__}: {e}')
         try:
             if auto and daily_due(now):
                 launch_daily()

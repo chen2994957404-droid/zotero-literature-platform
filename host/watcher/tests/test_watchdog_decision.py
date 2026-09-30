@@ -146,3 +146,33 @@ class TestDailyDue:
         monkeypatch.setattr(wd, 'log', lambda *a, **k: None)
         wd.launch_daily()
         assert not wd.daily_due(self._at('23:00'))
+
+
+# ── 按端口守的两样（2026-09-29：MCP HTTP 服务 + 取全文浏览器加进自启）──────────
+
+def test_端口在监听就不拉_不在就拉_宽限期内不重复拉(wd):
+    svcs = [{'name': 'a', 'port': 1, 'cmd': ['x']}, {'name': 'b', 'port': 2, 'cmd': ['y']}]
+    up = {1}
+    got, last = [], {}
+    r = wd.ensure_ports(1000, last, services=svcs, is_open=lambda p: p in up, start=got.append)
+    assert r == ['b'] and got == [['y']]
+    # 刚拉过、端口还没起来 → 宽限期内不再拉
+    assert wd.ensure_ports(1000 + wd.GRACE - 1, last, services=svcs,
+                           is_open=lambda p: p in up, start=got.append) == []
+    # 过了宽限期还没起来 → 再拉一次
+    assert wd.ensure_ports(1000 + wd.GRACE + 1, last, services=svcs,
+                           is_open=lambda p: p in up, start=got.append) == ['b']
+
+
+def test_端口服务表指向真实存在的入口(wd):
+    import os
+    names = set()
+    for s in wd.port_services():
+        names.add(s['name'])
+        assert isinstance(s['port'], int) and s['port'] > 0
+        assert os.path.exists(s['cmd'][-1] if s['name'] == 'getpdf_browser' else s['cmd'][1]), s
+    assert names == {'mcp_http', 'getpdf_browser'}
+
+
+def test_没人监听的端口判为不通(wd):
+    assert wd.port_open(1, timeout=0.3) is False
