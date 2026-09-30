@@ -58,6 +58,7 @@ from shared.kernel.log import get_logger
 
 COLLECTION = 'literature'        # 集合名：全平台只有这一个
 SPACE = 'cosine'                 # 向量空间：与 embed 模型（bge-m3）配套
+PAGE = 5000                      # 读全部元数据时一页多少条（一次全取在十几万块时会出错）
 
 
 class Store:
@@ -134,13 +135,24 @@ class Store:
     def all_metadatas(self):
         """全部条目的元数据（增量入库时用来看哪些 key 已经有了）。
 
-        库为空或元数据缺失时返回空列表，不抛错。
+        库为空或元数据缺失时返回空列表。**分页读**，读失败**不许静默**。
+
+        ⚠ 2026-09-30 实测（B 机 13.6 万块）：一次 `get()` 全取会在 chromadb 里出错，
+        原来这里 `except: return []` 把它吞了 —— 于是 `existing_keys()` 说「一篇都没入过库」，
+        增量向量化会把全库重做一遍，去重脚本也误报「留下那份没有块」。
         """
-        try:
-            got = self._coll.get(include=['metadatas'])
-            return [m for m in (got.get('metadatas') or []) if m]
-        except Exception:
-            return []
+        out, offset = [], 0
+        while True:
+            try:
+                got = self._coll.get(include=['metadatas'], limit=PAGE, offset=offset)
+            except Exception as e:
+                raise errors.ExternalServiceError(
+                    f'读向量库元数据失败（第 {offset} 条起）：{e}', service='vectordb') from e
+            page = got.get('metadatas') or []
+            out += [m for m in page if m]
+            if len(page) < PAGE:
+                return out
+            offset += PAGE
 
     def delete_by(self, **fields):
         """按元数据删块，例：`delete_by(key='ABCD1234', source='library')`。

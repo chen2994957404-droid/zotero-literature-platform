@@ -93,6 +93,18 @@ class TestIncremental:
         metas = filled.all_metadatas()
         assert len(metas) == 3 and all(m.get('title') for m in metas)
 
+    def test_分页读_多于一页也读全(self, filled, monkeypatch):
+        """2026-09-30：B 机 13.6 万块一次全取会出错、被吞成空列表 → 改成分页。页比数据小也要读全。"""
+        monkeypatch.setattr(vectordb, 'PAGE', 2)
+        assert filled.existing_keys() == {'AAAAAAAA', 'BBBBBBBB', 'CCCCCCCC'}
+
+    def test_读失败不许静默(self, filled, monkeypatch):
+        def boom(**kw):
+            raise RuntimeError('too many SQL variables')
+        monkeypatch.setattr(filled._coll, 'get', boom)
+        with pytest.raises(errors.ExternalServiceError):
+            filled.all_metadatas()
+
 
 class TestRebuild:
     def test_rebuild清空旧数据(self, filled, tmp_path):
