@@ -38,6 +38,7 @@ prompt —— DSH 上现有的 `mcp__zotero__*` 自动检索当场失效。**判
 import io
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -146,6 +147,9 @@ def render_retrieve(rows, query=''):
 
 # ── 参考文献：让模型在证据库内部顺着引用走 ───────────────────────────
 
+_REF_NUM = re.compile(r'^\s*(?:\(\d{1,3}\)|\[\d{1,3}\]|\d{1,3}\.)\s')   # 参考文献条目的编号：(12) / [12] / 12.
+
+
 def refs(key):
     """这篇的参考文献条目 → [{n, text, doi, in_db, id}]。纯脚本，从解析出的全文里抽。
 
@@ -181,6 +185,11 @@ def refs(key):
     # 关键词行不是参考文献（MineRU 常把 Keywords 挤进参考文献节开头；2026-09-30 复测：V2C7D8W4 的「第 1 条」
     # 其实是关键词行，编号 1 还因此出现两次）
     parts = [p for p in parts if not re.match(r'(?i)^\W*key\s*words?\b', p)]
+    # 编号列表里没编号的那块不是参考文献（V2C7D8W4：关键词 + 「Received… Published online…」稿件日期
+    # 粘成一块，带数字、不带 Keywords 字样，前两道都拦不住）
+    numbered = [bool(_REF_NUM.match(p)) for p in parts]
+    if parts and sum(numbered) >= 0.8 * len(parts):
+        parts = [p for p, ok in zip(parts, numbered) if ok]
     by_doi = catalog.by_doi()
     # 标题子串对账只用**归一后**够长的标题：中文题名归一后是空串，'' in 任何字符串都成立，
     # 2026-09-14 实测一篇的 32 条参考文献全被标成「已在库」就是这么来的

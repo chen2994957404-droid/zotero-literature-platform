@@ -341,7 +341,8 @@ def test_参考文献里的关键词行被滤掉(tmp_path, monkeypatch):
         monkeypatch.setattr(paths, name, str(d))
     key = 'KEYW0001'
     refs = '\n'.join(['Keywords: polyborosiloxane; dynamic bonds',
-                      'impact protection, polyborosiloxane, rheology, shear stiffening'] +   # 不带标签的关键词行
+                      'impact protection, polyborosiloxane, rheology, shear stiffening',   # 不带标签的关键词行
+                      'shear-stiffening gels Received: May 18, 2021 Published online: August 7, 2021'] +   # 粘着稿件日期、带数字
                      ['%d. Author%d, J. Polym. Sci. 2020, %d, 1-10.' % (i, i, i) for i in range(1, 7)])
     md = '# T\n\n## 1. Introduction\n\ntext.\n\n## References\n\n' + refs + '\n'
     os.makedirs(os.path.dirname(paths.fulltext(key)), exist_ok=True)
