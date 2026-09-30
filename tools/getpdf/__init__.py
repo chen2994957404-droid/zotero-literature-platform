@@ -268,7 +268,7 @@ def _register_meta(pid, doi, source):
 
 
 def land(doi, with_si=True, allow_fetch=True, zotero_index=None,
-         pdf_path=None, si_path=None):
+         pdf_path=None, si_path=None, use_zotero=True):
     """把一篇**收进证据库** → dict(doi, id, ok, action, source, pdf, si, note, in_zotero)。
 
     正文从哪来（按顺序，拿到就停）：本地正本已有 → 调用方给的文件 →
@@ -277,6 +277,8 @@ def land(doi, with_si=True, allow_fetch=True, zotero_index=None,
 
     `action`：`landed` 这次真落了新东西 / `exists` 早就齐了 / `failed` 连正文都没有。
     `allow_fetch=False` 时不向出版商发任何请求（「先看看手上有没有」）。
+    `use_zotero=False` 时**完全不碰 Zotero**：不去 Zotero 里找正文 / SI 附件（2026-09-30 用户定：
+    Claude Science 那条路不跟 Zotero 扯上关系 —— 只认证据库正本和出版商）。
     """
     doi = catalog.norm_doi(doi)
     out = {'doi': doi, 'id': '', 'ok': False, 'action': 'failed', 'source': '',
@@ -290,6 +292,7 @@ def land(doi, with_si=True, allow_fetch=True, zotero_index=None,
         out['note'] = str(e)
         return out
     out.update(id=pid, in_zotero=in_zotero)
+    zot = in_zotero and use_zotero           # 这次要不要去 Zotero 里找附件
     changed = False
     fetched_si = None                 # fetch_pair 顺手取回的 SI（下面 SI 那段先认它）
 
@@ -302,7 +305,7 @@ def land(doi, with_si=True, allow_fetch=True, zotero_index=None,
         out['source'] = catalog.SRC_LOCAL
     else:
         att = None
-        if in_zotero:
+        if zot:
             try:
                 from shared.adapters.zotero_client import find_pdf
                 att = find_pdf(pid)
@@ -335,7 +338,7 @@ def land(doi, with_si=True, allow_fetch=True, zotero_index=None,
             out['si'] = have
         else:
             src = si_path if (si_path and os.path.exists(si_path)) else ''
-            if not src and in_zotero:
+            if not src and zot:
                 try:
                     from shared.adapters.zotero_client import find_si
                     src = find_si(pid)[0] or ''

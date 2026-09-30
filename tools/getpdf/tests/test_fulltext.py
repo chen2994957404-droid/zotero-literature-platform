@@ -208,7 +208,7 @@ def test_撞上人机验证的整批跑完后补试一次(env, monkeypatch):
     monkeypatch.setattr(F, 'RETRY_COOLDOWN', 0)
     tries = {}
     real_one = F.one
-    def flaky(doi, zotero_index=None, allow_fetch=True):
+    def flaky(doi, zotero_index=None, allow_fetch=True, use_zotero=True):
         tries[doi] = tries.get(doi, 0) + 1
         if doi.endswith('/b') and tries[doi] == 1:
             return {'doi': doi, 'id': '', 'ok': False, 'source': F.SRC_FETCH, 'secs': 0, 'chars': 0,
@@ -216,8 +216,21 @@ def test_撞上人机验证的整批跑完后补试一次(env, monkeypatch):
         if doi.endswith('/c'):
             return {'doi': doi, 'id': '', 'ok': False, 'source': F.SRC_FETCH, 'secs': 0, 'chars': 0,
                     'why': '正文没取到 —— ' + pdf_fetch.REASONS['no_access']}
-        return real_one(doi, zotero_index, allow_fetch)
+        return real_one(doi, zotero_index, allow_fetch, use_zotero)
     monkeypatch.setattr(F, 'one', flaky)
     rs = F.many(['10.1021/a', '10.1021/b', '10.1021/c'], gap=0, limit=3)
     assert [r['ok'] for r in rs] == [True, True, False]
     assert tries == {'10.1021/a': 1, '10.1021/b': 2, '10.1021/c': 1}, '只有被验证挡住的才补试，没权限的不白敲'
+
+
+def test_不碰Zotero那条路_一次都不问Zotero(env, monkeypatch):
+    """2026-09-30 用户定：Claude Science 那条路不跟 Zotero 扯上关系 —— 只认证据库正本和出版商。"""
+    from tools import getpdf
+    monkeypatch.setattr(getpdf, 'doi_index', lambda *a, **k: pytest.fail('不许问 Zotero 的 DOI 索引'))
+    monkeypatch.setattr('shared.adapters.zotero_client.find_pdf', lambda *a, **k: pytest.fail('不许去 Zotero 找正文附件'))
+    monkeypatch.setattr('shared.adapters.zotero_client.find_si', lambda *a, **k: pytest.fail('不许去 Zotero 找 SI 附件'))
+    from shared.kernel import catalog
+    zkey = 'ZOTK1234'                                 # 一篇 id 恰好是 Zotero 编号的老文献（证据库里有目录、没正本）
+    catalog.register(zkey, doi=DOI)
+    rs = F.many([DOI], gap=0, use_zotero=False)
+    assert rs[0]['ok'] and rs[0]['source'] == F.SRC_FETCH, '不找 Zotero 就直接去出版商取'

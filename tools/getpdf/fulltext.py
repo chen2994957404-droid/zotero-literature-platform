@@ -78,7 +78,7 @@ def _parse(pid, pdf_path):
     return ok, time.time() - t0, '' if ok else '解析跑完了但没产出 full.md'
 
 
-def one(doi, zotero_index=None, allow_fetch=True):
+def one(doi, zotero_index=None, allow_fetch=True, use_zotero=True):
     """一篇 → dict(doi, id, ok, source, secs, chars, why)。**不抛异常**。
 
     `allow_fetch=False` 时只走前三层（不向出版商发任何请求）——
@@ -113,13 +113,13 @@ def one(doi, zotero_index=None, allow_fetch=True):
         # 出版商确认过没挂的（si_status=none）不再去敲（2026-09-30：Angew 一篇正文在、SI 一直缺）
         from shared.kernel import catalog
         if allow_fetch and catalog.si_status(pid) == catalog.SI_UNKNOWN:
-            _land(doi, allow_fetch, zotero_index)
+            _land(doi, allow_fetch, zotero_index, use_zotero)
         return done(True, SRC_CACHE)
 
     # ── 2～4. 落成本地正本（本地 → Zotero 复制 → 真去取）───────────
     had_local = os.path.exists(paths.local_pdf(pid))
     run = None if had_local else jobs.start(pid, 'fetch', producer='fulltext')
-    landed = _land(doi, allow_fetch, zotero_index)
+    landed = _land(doi, allow_fetch, zotero_index, use_zotero)
     if not landed['ok']:
         if run:
             jobs.fail(run, landed.get('note') or 'no_pdf')
@@ -159,20 +159,21 @@ def _si_state(pid, allow_parse=True):
     return 'parsed' if os.path.exists(paths.si_fulltext(pid)) else 'failed:没产出 full.md'
 
 
-def _land(doi, allow_fetch, zotero_index):
+def _land(doi, allow_fetch, zotero_index, use_zotero=True):
     """真正去落地。**单独一个函数是为了能在测试里替换掉**（别真敲出版商）。"""
     from tools import getpdf
     return getpdf.land(doi, with_si=True, allow_fetch=allow_fetch,
-                       zotero_index=zotero_index)
+                       zotero_index=zotero_index, use_zotero=use_zotero)
 
 
-def many(dois, allow_fetch=True, gap=None, progress=None, limit=3):
+def many(dois, allow_fetch=True, gap=None, progress=None, limit=3, use_zotero=True):
     """一批 DOI → 一批结果。**取是串行的，20 秒间隔不能省**。
 
     为什么默认只收 3 篇（`limit`）：出版商风控封的是**整个机构的 IP**，
     而模型不知道这个代价有多重。真要一整批，走 `getpdf_batch` 那条人点的路。
 
     `progress` 给一个文件路径就会边跑边写进度 —— 这是「发起 + 轮询」的那半。
+    `use_zotero=False`：完全不碰 Zotero（不问它的 DOI 索引、不去它那找附件）—— Claude Science 那条路。
     """
     from tools import getpdf
     dois = [d.strip() for d in (dois or []) if d and d.strip()][:max(1, int(limit))]
@@ -184,7 +185,7 @@ def many(dois, allow_fetch=True, gap=None, progress=None, limit=3):
     def _cached(d):
         pid = catalog.find(d)
         return bool(pid) and os.path.exists(paths.fulltext(pid))
-    if not all(_cached(d) for d in dois):
+    if use_zotero and not all(_cached(d) for d in dois):
         try:
             index = getpdf.doi_index()         # Zotero 里已有的先认出来，能省一次下载
         except Exception as e:
@@ -192,7 +193,7 @@ def many(dois, allow_fetch=True, gap=None, progress=None, limit=3):
 
     out, t0 = [], time.time()
     for i, doi in enumerate(dois):
-        r = one(doi, zotero_index=index, allow_fetch=allow_fetch)
+        r = one(doi, zotero_index=index, allow_fetch=allow_fetch, use_zotero=use_zotero)
         out.append(r)
         _write_progress(progress, dois, out, t0, done=False)
         # 只有**真去取了**才需要礼貌间隔；命中缓存/本地的不算敲出版商
@@ -205,7 +206,7 @@ def many(dois, allow_fetch=True, gap=None, progress=None, limit=3):
         log.info('%d 篇撞上人机验证，歇 %d 秒后补试一次', len(again), RETRY_COOLDOWN)
         time.sleep(RETRY_COOLDOWN)
         for n, i in enumerate(again):
-            out[i] = one(dois[i], zotero_index=index, allow_fetch=True)
+            out[i] = one(dois[i], zotero_index=index, allow_fetch=True, use_zotero=use_zotero)
             _write_progress(progress, dois, out, t0, done=False)
             if n + 1 < len(again) and gap > 0:
                 time.sleep(gap)
