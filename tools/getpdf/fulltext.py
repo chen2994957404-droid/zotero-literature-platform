@@ -146,10 +146,17 @@ def many(dois, allow_fetch=True, gap=None, progress=None, limit=3):
     dois = [d.strip() for d in (dois or []) if d and d.strip()][:max(1, int(limit))]
     gap = getpdf.GAP if gap is None else gap
     index = {}
-    try:
-        index = getpdf.doi_index()         # Zotero 里已有的先认出来，能省一次下载
-    except Exception as e:
-        log.warn('取 Zotero 的 DOI 索引失败（不影响，只是可能重下）：%s', str(e)[:120])
+    # Zotero 的 DOI 索引要问一趟 Zotero（实测约 10 秒）。全都已经在证据库里、解析过的，
+    # 根本用不上它 —— 「只查不取」原来 11.5 秒、而 library_db_search 只要 1 秒，就差在这（2026-09-30）
+    from shared.kernel import catalog
+    def _cached(d):
+        pid = catalog.find(d)
+        return bool(pid) and os.path.exists(paths.fulltext(pid))
+    if not all(_cached(d) for d in dois):
+        try:
+            index = getpdf.doi_index()         # Zotero 里已有的先认出来，能省一次下载
+        except Exception as e:
+            log.warn('取 Zotero 的 DOI 索引失败（不影响，只是可能重下）：%s', str(e)[:120])
 
     out, t0 = [], time.time()
     for i, doi in enumerate(dois):

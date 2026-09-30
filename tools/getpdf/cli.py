@@ -98,7 +98,9 @@ def main():
             # 会向出版商发真实请求 + 花 MineRU 额度 —— 编程端默认拦住
             role.require_prod('取全文（向出版商取 PDF + MineRU 解析）',
                               force=flag('--force'))
-        rs = F.many(keys, allow_fetch=allow,
+        # --limit：一次处理几篇（默认 3，MCP 的 /science 面一次最多交 25 篇）。
+        # 只是「一批几篇」，风控靠的串行 + 20 秒间隔在 many() 里，不受它影响
+        rs = F.many(keys, allow_fetch=allow, limit=int(opt('--limit') or 3),
                     progress=paths.runtime('fulltext_progress.json'))
         print(F.summarize(rs))
         return 0 if all(r['ok'] for r in rs) else 1

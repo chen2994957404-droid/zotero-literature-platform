@@ -337,8 +337,28 @@ def main():
     from host.mcp import science as S
     sci = S.build(real)
     sn = {t['name'] for t in sci._tools}
-    check('/science 借到了全部工具 + paper_files', set(S.BORROW) | {'paper_files'} == sn,
-          '缺：' + ', '.join(sorted(set(S.BORROW) | {'paper_files'} - sn)))
+    want = set(S.BORROW) | {t[0] for t in S.TOOLS}
+    check('/science 自己的 + 借来的工具都在', want == sn, '缺：' + ', '.join(sorted(want - sn)))
+    # v0.2（2026-09-30，按 Claude Science 的实测评估改）
+    check('DOI 归一：带 doi.org / doi: 前缀都认',
+          S.norm_doi('https://doi.org/10.1016/j.x.1') == '10.1016/j.x.1'
+          and S.norm_doi('doi: 10.1021/a.b') == '10.1021/a.b' and S.norm_doi('HYZ9WTML') == '')
+    figs = S.figure_images('\n'.join(['![](images/a.jpg)', 'Figure 1. Cap one', '', 'text',
+                                      '![](images/b.jpg)  ', 'Fig. 2 cap', 'Figure 1 again']), 'IMG')
+    check('图号 → 图片：图注前最近那张，同号只记一次',
+          [(f['ref'], os.path.basename(f['image'])) for f in figs] == [('Figure 1', 'a.jpg'), ('Figure 2', 'b.jpg')],
+          str(figs))
+    dd = S.dedupe_hits([{'doi': '10.1/x', 'id': 'A', 'text': 'same'}, {'doi': '10.1/X', 'id': 'doi_x', 'text': 'same'},
+                        {'doi': '10.1/x', 'id': 'A', 'text': 'other'}])
+    check('检索去重：同一篇存两份时同一段只留一条', [d['id'] for d in dd] == ['A', 'A'], str(dd))
+    from host.mcp import litcall as LC
+    check('litcall：有结构化就只给结构化',
+          LC.unpack({'result': {'content': [{'type': 'text', 'text': 't'}], 'structuredContent': {'a': 1}}}) == (False, {'a': 1}))
+    check('litcall：工具报错 → 出错 + 原文',
+          LC.unpack({'result': {'content': [{'type': 'text', 'text': '坏了'}], 'isError': True}}) == (True, {'error': '坏了'}))
+    no_struct = [t['name'] for t in sci._tools if t['name'] in {x[0] for x in S.TOOLS}]
+    check('/science 自己的工具都声明了参数表', all(sci._tools[i]['inputSchema'].get('type') == 'object'
+                                                 for i in range(len(sci._tools))), ','.join(no_struct))
     check('/science 不打 confirm（Claude Science 自己会问人）',
           not any(t['confirm'] for t in sci._tools))
     check('/science 不含写 Zotero / 花钱的工具',

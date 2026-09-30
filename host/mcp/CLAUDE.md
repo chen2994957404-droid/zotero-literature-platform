@@ -21,7 +21,8 @@ R4 窗（2026-08-31）改成**聚合**：服务端自己不知道有哪些工具
 | `stdio.py` | 手写 MCP stdio 协议层（JSON-RPC 2.0 + 换行分隔，零第三方依赖）|
 | `selftest.py` | 协议层离线自测（不联网、不依赖用户数据）|
 | `http_transport.py` | Streamable HTTP 传输（只绑 127.0.0.1，跨机走 SSH 隧道）；一个进程可挂多个端点 |
-| `science.py` | **给 Claude Science 的精简面**（端点 `/science`）：只挂「库里有没有 → 取全文 → 按节读 → 给文件路径」9 个工具，不打 confirm；服务端强制「同一时刻只一个取全文作业」|
+| `science.py` | **给 Claude Science 的面**（端点 `/science`，v0.2 按它的实测评估改）：12 个工具，全部回 structuredContent；itemKey 可给 DOI；取全文一次 ≤25 篇（串行 + 20 秒 + 同时只一个作业，服务端强制）；进度可 wait_s；节可批量；全库清单；图号→图片 |
+| `litcall.py` | 一行调一个工具（**只用标准库**，跑在 B 机 WSL）：握手、调用、只打印结构化结果；`--list` / `--batch` |
 | `bridge.py` | stdio ↔ HTTP 转接（**只用标准库**，不 import 项目）：Claude Science 的 Remote 只收公网 https，所以它以本机命令 `python host/mcp/bridge.py` 拉起本文件，转给 `127.0.0.1:8778/science` |
 
 为什么不用官方 SDK：平台「少依赖」架构准则 + 协议已实测稳定（官方 SDK 的 ReadBuffer
