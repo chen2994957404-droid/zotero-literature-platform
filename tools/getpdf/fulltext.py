@@ -198,8 +198,28 @@ def many(dois, allow_fetch=True, gap=None, progress=None, limit=3):
         # 只有**真去取了**才需要礼貌间隔；命中缓存/本地的不算敲出版商
         if (r.get('source') == SRC_FETCH and i + 1 < len(dois) and gap > 0):
             time.sleep(gap)
+    # 撞上人机验证 / 被挡回验证页的，歇一会儿**补试一次**（2026-09-30：RSC 的 Cloudflare 时有时无，
+    # 同一篇隔几分钟再取就过了）。仍然串行、每篇之间照样隔 gap；只补试一次，不死磕。
+    again = [i for i, r in enumerate(out) if allow_fetch and blocked(r)]
+    if again:
+        log.info('%d 篇撞上人机验证，歇 %d 秒后补试一次', len(again), RETRY_COOLDOWN)
+        time.sleep(RETRY_COOLDOWN)
+        for n, i in enumerate(again):
+            out[i] = one(dois[i], zotero_index=index, allow_fetch=True)
+            _write_progress(progress, dois, out, t0, done=False)
+            if n + 1 < len(again) and gap > 0:
+                time.sleep(gap)
     _write_progress(progress, dois, out, t0, done=True)
     return out
+
+
+RETRY_COOLDOWN = 60        # 撞上人机验证的，整批跑完后歇多久再补试一次
+
+
+def blocked(r):
+    """这篇是不是被人机验证 / 验证页挡住的（值得过一会儿再试，而不是没权限、没链接）。"""
+    why = r.get('why') or ''
+    return (not r.get('ok')) and any(pdf_fetch.REASONS[k] in why for k in ('captcha', 'not_pdf'))
 
 
 def _write_progress(path, dois, results, t0, done):

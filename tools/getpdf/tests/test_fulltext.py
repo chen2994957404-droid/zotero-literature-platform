@@ -201,3 +201,23 @@ def test_确认没有SI的不再去敲(env, monkeypatch):
     from tools import getpdf
     monkeypatch.setattr(getpdf, 'fetch_si_one', lambda *a, **k: pytest.fail('确认没有的不许再敲出版商'))
     assert F.one(DOI)['source'] == F.SRC_CACHE
+
+
+def test_撞上人机验证的整批跑完后补试一次(env, monkeypatch):
+    from shared.adapters import pdf_fetch
+    monkeypatch.setattr(F, 'RETRY_COOLDOWN', 0)
+    tries = {}
+    real_one = F.one
+    def flaky(doi, zotero_index=None, allow_fetch=True):
+        tries[doi] = tries.get(doi, 0) + 1
+        if doi.endswith('/b') and tries[doi] == 1:
+            return {'doi': doi, 'id': '', 'ok': False, 'source': F.SRC_FETCH, 'secs': 0, 'chars': 0,
+                    'why': '正文没取到 —— ' + pdf_fetch.REASONS['captcha']}
+        if doi.endswith('/c'):
+            return {'doi': doi, 'id': '', 'ok': False, 'source': F.SRC_FETCH, 'secs': 0, 'chars': 0,
+                    'why': '正文没取到 —— ' + pdf_fetch.REASONS['no_access']}
+        return real_one(doi, zotero_index, allow_fetch)
+    monkeypatch.setattr(F, 'one', flaky)
+    rs = F.many(['10.1021/a', '10.1021/b', '10.1021/c'], gap=0, limit=3)
+    assert [r['ok'] for r in rs] == [True, True, False]
+    assert tries == {'10.1021/a': 1, '10.1021/b': 2, '10.1021/c': 1}, '只有被验证挡住的才补试，没权限的不白敲'
