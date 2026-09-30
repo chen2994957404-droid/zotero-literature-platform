@@ -177,8 +177,13 @@ _JS_STATE = """() => {
   return {
     url: location.href,
     title: (document.querySelector('h1') || {}).innerText || document.title || '',
+    // 人机验证页。**浏览器是中文界面时 Cloudflare 那页也是中文**（2026-09-30：ACS / RSC 各一篇
+    // 卡在「正在进行安全验证」，只认英文的旧判据没认出来，被误报成「找不到 PDF 链接」「确认没有 SI」）
     captcha: has('Are you a robot') ||
-             (has('Just a moment') && t.toLowerCase().indexOf('checking') >= 0),
+             (has('Just a moment') && t.toLowerCase().indexOf('checking') >= 0) ||
+             has('正在进行安全验证') || has('确认您是真人') || has('验证您是真人') ||
+             has('Performing security verification') || has('Verify you are human') ||
+             (has('Ray ID') && has('Cloudflare') && t.length < 800),
     paywall: has('Get Access') || has('Purchase PDF') || has('Get rights and content')
              && !hits.length,
     candidates: hits,
@@ -191,6 +196,7 @@ _JS_STATE = """() => {
 # `await r.blob()` 就永远不回来，而 page.evaluate 没有默认超时 —— 整个取件批次在那儿挂了半小时。
 # AbortController 到点掐断，外层按「没拿到」处理，换下一个候选。
 GRAB_TIMEOUT_MS = 120000
+CAPTCHA_WAIT = 15          # 撞上人机验证页先等它自己放行多少秒
 
 _JS_GRAB = """async (u) => {
   const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), %d);
@@ -597,6 +603,19 @@ def _land(page, doi, timeout, settle, kind='fulltext'):
     """打开 doi.org/<doi> → 页面状态。正文找不到链接时再看第二眼（Wiley 慢渲染）。"""
     _goto_landing(page, doi, timeout)
     st = _state_ready(page, settle)
+    # Cloudflare 的验证页在真浏览器里常常几秒后自己放行（它在后台跑检查）。原来一见验证页就放弃，
+    # 这里先等它最多 CAPTCHA_WAIT 秒；放行了就接着找链接，还拦着才报 captcha 让人去点（2026-09-30）
+    waited = 0
+    while st.get('captcha') and waited < CAPTCHA_WAIT:
+        page.wait_for_timeout(1500)
+        waited += 1.5
+        try:
+            st = _eval_obj(page, _JS_STATE, timeout_ms=20000)
+        except Exception:
+            st = {'captcha': True}      # 放行那一下会跳页，evaluate 可能报「上下文没了」—— 再看一眼
+    if waited and not st.get('captcha'):
+        log.info(f'{doi} 人机验证页 {waited:.0f} 秒后自己放行了')
+        st = _state_ready(page, settle)
     # 2026-09-14 实测：Wiley 一篇第一次报 no_pdf_link，几分钟后重取就拿到了 ——
     # 页面里 `/doi/pdf/` 链接和 citation_pdf_url 都在，只是还没渲染出来。
     if (kind != 'si' and not st.get('candidates') and not st.get('captcha')
