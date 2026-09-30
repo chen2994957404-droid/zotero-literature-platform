@@ -196,7 +196,7 @@ _JS_STATE = """() => {
 # `await r.blob()` 就永远不回来，而 page.evaluate 没有默认超时 —— 整个取件批次在那儿挂了半小时。
 # AbortController 到点掐断，外层按「没拿到」处理，换下一个候选。
 GRAB_TIMEOUT_MS = 120000
-CAPTCHA_WAIT = 15          # 撞上人机验证页先等它自己放行多少秒
+CAPTCHA_WAIT = 30          # 撞上人机验证页先等它自己放行多少秒（Cloudflare 不弹窗、后台自己过；15 秒实测不够）
 
 _JS_GRAB = """async (u) => {
   const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), %d);
@@ -612,7 +612,7 @@ def _land(page, doi, timeout, settle, kind='fulltext'):
         try:
             st = _eval_obj(page, _JS_STATE, timeout_ms=20000)
         except Exception:
-            st = {'captcha': True}      # 放行那一下会跳页，evaluate 可能报「上下文没了」—— 再看一眼
+            st = dict(st, captcha=True)     # 放行那一下会跳页，evaluate 可能报「上下文没了」—— 再看一眼
     if waited and not st.get('captcha'):
         log.info(f'{doi} 人机验证页 {waited:.0f} 秒后自己放行了')
         st = _state_ready(page, settle)
@@ -748,6 +748,14 @@ class _Intercept:
                 pass
 
 
+def _on_challenge(page):
+    """当前页是不是人机验证页（跳页那一瞬 evaluate 会失败 —— 当作还在验证，再等一下）。"""
+    try:
+        return bool(_eval_obj(page, _JS_STATE, timeout_ms=10000).get('captcha'))
+    except Exception:
+        return True
+
+
 def _grab(page, ctx, cands, kind, timeout, settle, out):
     """按候选顺序把字节取回来，填进 out。拿到返回 True。
 
@@ -798,6 +806,13 @@ def _grab(page, ctx, cands, kind, timeout, settle, out):
             except Exception:
                 pass    # 导航到 PDF 常抛 ERR_ABORTED（被拦截后一定抛），不代表失败
             page.wait_for_timeout(min(settle, 3) * 1000)
+            # 导航到文件地址时 Cloudflare 也会插一页「正在进行安全验证」，**不弹窗、不用点**，
+            # 后台检查跑完自己放行、文件随后才到（2026-09-30 Wiley 一篇 SI：原来等 3 秒就判「不是 PDF」，
+            # 实际再等几秒就截到 3.3 MB 的 PDF）。所以还在验证页上就接着等。
+            waited = 0.0
+            while cap.raw is None and not cap.too_big and waited < CAPTCHA_WAIT and _on_challenge(page):
+                page.wait_for_timeout(1500)
+                waited += 1.5
         if cap.too_big:
             out['reason'], out['pdf_url'] = 'too_big', cap.url or cand
             return False
@@ -879,7 +894,7 @@ def fetch(doi, url=None, timeout=90, settle=6, kind='fulltext'):
     page = _new_page(browser, ctx)
     try:
         st = _land(page, doi, timeout, settle, kind)
-        out['landing'], out['title'] = st.get('url', ''), (st.get('title') or '').strip()
+        out['landing'], out['title'] = st.get('url', ''), str(st.get('title') or '').strip()
         if st.get('captcha'):
             out['reason'] = 'captcha'
             return out
@@ -922,7 +937,7 @@ def fetch_both(doi, url=None, timeout=90, settle=6):
     try:
         st = _land(page, doi, timeout, settle)
         main['landing'] = si['landing'] = st.get('url', '')
-        main['title'] = si['title'] = (st.get('title') or '').strip()
+        main['title'] = si['title'] = str(st.get('title') or '').strip()
         if st.get('captcha'):
             main['reason'] = si['reason'] = 'captcha'
             return main, si

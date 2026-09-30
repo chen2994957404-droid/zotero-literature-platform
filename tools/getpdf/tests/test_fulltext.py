@@ -181,3 +181,23 @@ def test_只查不取时不解析SI(env, monkeypatch):
 
 def test_没有SI就说没有(env):
     assert F.one(DOI)['si'] == 'none'
+
+
+def test_正文早有SI缺_再要这篇时去补SI(env, monkeypatch):
+    F.one(DOI)                                   # 第一次：正文到手，SI 没取成（替身回 no_si）
+    from shared.kernel import catalog
+    pid = paths.paper_id_from_doi(DOI)
+    catalog.clear_si_none(pid)                   # 假设那次的「没有 SI」是误判，撤回
+    got = []
+    from tools import getpdf
+    monkeypatch.setattr(getpdf, 'fetch_si_one', lambda d, where=None: got.append(d) or {
+        'doi': d, 'ok': False, 'reason': 'captcha', 'path': '', 'bytes': 0})
+    r = F.one(DOI)
+    assert r['source'] == F.SRC_CACHE and got == [DOI], '缓存命中也该去补缺的 SI'
+
+
+def test_确认没有SI的不再去敲(env, monkeypatch):
+    F.one(DOI)                                   # 替身回 no_si → 记成「确认没有」
+    from tools import getpdf
+    monkeypatch.setattr(getpdf, 'fetch_si_one', lambda *a, **k: pytest.fail('确认没有的不许再敲出版商'))
+    assert F.one(DOI)['source'] == F.SRC_CACHE

@@ -109,6 +109,11 @@ def one(doi, zotero_index=None, allow_fetch=True):
 
     # ── 1. 缓存 ────────────────────────────────────────────────────
     if os.path.exists(paths.fulltext(pid)):
+        # 正文早就有、SI 还缺（上次没取成）：趁这次有人要这篇，去补 SI。
+        # 出版商确认过没挂的（si_status=none）不再去敲（2026-09-30：Angew 一篇正文在、SI 一直缺）
+        from shared.kernel import catalog
+        if allow_fetch and catalog.si_status(pid) == catalog.SI_UNKNOWN:
+            _land(doi, allow_fetch, zotero_index)
         return done(True, SRC_CACHE)
 
     # ── 2～4. 落成本地正本（本地 → Zotero 复制 → 真去取）───────────

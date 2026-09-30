@@ -136,6 +136,13 @@ def mark_si_none(pid, why=''):
     register(pid, overwrite=True, si_status=SI_NONE, si_note=why or '出版商页面没挂补充材料')
 
 
+def clear_si_none(pid, why=''):
+    """撤回「这篇没有 SI」：下次取全文会重新去看。
+    谁需要它：2026-09-30 查出中文版 Cloudflare 验证页被误读成「出版商页面没挂 SI」并记进了档案 ——
+    判据修好了，已经记错的得能撤。"""
+    register(pid, overwrite=True, si_status=SI_UNKNOWN, si_note=why or '撤回：上次的「没有 SI」不可信')
+
+
 def ids():
     """证据库里所有文献 id（curated 与 raw 两层目录名的并集，只认合法 id）。"""
     out = set()
