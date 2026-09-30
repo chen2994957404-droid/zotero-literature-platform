@@ -21,8 +21,17 @@
 |---|---|---|
 | `papers` | 一篇文献 | `key` / `title` / `tier` / `source` / `si_used` / `schema_ver` / `is_review` + schema 的每个字段 |
 | `samples` | **一个配方** | `key` / `sample_id` / `composition` / `preparation` / `dynamic_bond` / `role` |
-| `measurements` | **一个数字** | `key` / `sample_id` / `name` / `raw_name` / `value` / `value_max` / `unit` / `cmp` / `condition` / `location` / `section` / `method` / `raw` |
+| `measurements` | **一个数字** | `key` / `sample_id` / `name` / `raw_name` / `value` / `value_max` / `unit` / `cmp` / `condition` / `location` / `section` / `method` / `raw` + 推导列 `kind` / `unit_norm` / `value_si` / `value_max_si` / `si_unit` |
 | `curves` | **一条曲线** | `key` / `fig` / `series` / `chart_type` / `x_label` / `x_unit` / `y_label` / `y_unit` / `n_points` / `confidence` / `caption` / `points` |
+
+### 推导列与去重视图（2026-09-30，给建 ML 数据集用）
+
+重建时由 `derive()` 算，**原值一字不动**：
+- `kind`：absolute / relative（有量纲的性质配 % 或倍数 =「提高 40%」）/ mismatch（量纲不对）/ bad_name / unknown（性质不在 `schema.PROPERTY_DIMENSION` 里）
+- `unit_norm`：同一单位唯一写法（kJ mol-1 与 kJ/mol → `kJ / mol`）；`value_si` / `value_max_si` / `si_unit`：换到国际单位制（仅 absolute）
+
+视图 `papers_canonical`：每个 DOI 只留最高档一行（papers 里全文层与摘要层常各一行）。
+表结构一改，`_ensure_fresh` 会先核对列（`schema_current`）再重建 —— 只看时间戳会让数值库变空。
 
 `properties` 保留成 `measurements` 的视图（同名同列），**老查询、老 evals、老 SQL 一行都不用改**。
 建库时 `_migrate()` 会把 v1 库里那张 `properties` 表丢掉换成视图 —— 库本来就是可再生索引，换掉零风险。
