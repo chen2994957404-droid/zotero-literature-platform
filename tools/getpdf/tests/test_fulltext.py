@@ -146,3 +146,38 @@ def test_命令行的参数顺序(monkeypatch):
     assert cli.positionals() == ['10.1002/pat.70289']
     monkeypatch.setattr(cli, '_argv', lambda: ['--fulltext', '10.1002/pat.70289'])
     assert cli.positionals() == [], '写反了就是空的 —— 这就是那次空跑的原因'
+
+
+# ── SI 顺手解析（2026-09-30：落地流水线停了，取全文拿到的 si.pdf 一直没人解析）──────
+
+def _put_si(pid):
+    os.makedirs(paths.paper_raw_dir(pid), exist_ok=True)
+    io.open(paths.local_si(pid, 'pdf'), 'wb').write(b'%PDF-1.4 si')
+
+
+def test_SI原件在就一起解析(env, monkeypatch):
+    seen = []
+    def fake_doc(src, out_dir, reuse=True):
+        seen.append(src)
+        os.makedirs(out_dir, exist_ok=True)
+        io.open(os.path.join(out_dir, 'full.md'), 'w', encoding='utf-8').write('# SI\n\nDFT B3LYP.\n')
+    monkeypatch.setattr('shared.adapters.pdf_parse.parse_document', fake_doc)
+    pid = paths.paper_id_from_doi(DOI)
+    _put_si(pid)
+    r = F.one(DOI)
+    assert r['ok'] and r['si'] == 'parsed' and len(seen) == 1
+    assert F.one(DOI)['si'] == 'parsed' and len(seen) == 1, '解析过的 SI 不重复解析'
+
+
+def test_只查不取时不解析SI(env, monkeypatch):
+    monkeypatch.setattr('shared.adapters.pdf_parse.parse_document',
+                        lambda *a, **k: pytest.fail('只查不取不许花解析额度'))
+    pid = paths.paper_id_from_doi(DOI)
+    os.makedirs(os.path.dirname(paths.fulltext(pid)), exist_ok=True)
+    io.open(paths.fulltext(pid), 'w', encoding='utf-8').write('# T\n')
+    _put_si(pid)
+    assert F.one(DOI, allow_fetch=False)['si'] == 'unparsed'
+
+
+def test_没有SI就说没有(env):
+    assert F.one(DOI)['si'] == 'none'

@@ -390,7 +390,7 @@ def _fulltext(a):
 
 
 def _slim_result(r):
-    return {k: r.get(k) for k in ('doi', 'id', 'ok', 'source', 'secs', 'chars', 'why')}
+    return {k: r.get(k) for k in ('doi', 'id', 'ok', 'source', 'secs', 'chars', 'si', 'why')}
 
 
 def _status(a):

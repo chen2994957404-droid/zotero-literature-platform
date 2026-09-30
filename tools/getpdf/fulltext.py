@@ -104,7 +104,8 @@ def one(doi, zotero_index=None, allow_fetch=True):
                 chars = 0
         return {'doi': doi, 'id': pid, 'ok': ok, 'source': source,
                 'secs': round(time.time() - t0, 1), 'chars': chars,
-                'in_zotero': in_zotero, 'why': why}
+                'in_zotero': in_zotero, 'why': why,
+                'si': _si_state(pid, allow_fetch) if ok else ''}
 
     # ── 1. 缓存 ────────────────────────────────────────────────────
     if os.path.exists(paths.fulltext(pid)):
@@ -125,6 +126,32 @@ def one(doi, zotero_index=None, allow_fetch=True):
         landed.get('source'), SRC_LOCAL)
     ok, _s, why = _parse(pid, landed['pdf'])
     return done(ok, source, why)
+
+
+def _si_state(pid, allow_parse=True):
+    """这篇的 SI 到哪一步了；原件在、还没解析就**顺手解析**（2026-09-30）。
+
+    → 'parsed' / 'none'（没有 SI 原件）/ 'failed:<why>' / 'unparsed'（只查不取时不解析）。
+
+    为什么在这里做：SI 解析原来只由落地流水线（host.ingest）做，而那条线 09-27 起随「后台自动建库」停了 ——
+    Claude Science 取了两篇，si.pdf 都在盘上，却一篇都没解析，它看不到软件、力场、泛函这些只写在 SI 里的细节。
+    取全文是有人明确要这篇，SI 就该一起备好。pdf 走 MineRU（花解析额度，不花模型钱），docx 直接读字。
+    """
+    if os.path.exists(paths.si_fulltext(pid)):
+        return 'parsed'
+    src = paths.find_local_si(pid)
+    if not src:
+        return 'none'
+    if not allow_parse:
+        return 'unparsed'
+    run = jobs.start(pid, 'parse_si', producer='fulltext')
+    try:
+        pdf_parse.parse_document(src, paths.si_parsed_dir(pid, create=True), reuse=True)
+    except Exception as e:
+        jobs.fail(run, str(e)[:200])
+        return 'failed:%s' % str(e)[:80]
+    jobs.finish(run)
+    return 'parsed' if os.path.exists(paths.si_fulltext(pid)) else 'failed:没产出 full.md'
 
 
 def _land(doi, allow_fetch, zotero_index):
