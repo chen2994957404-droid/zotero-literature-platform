@@ -221,11 +221,28 @@ def make_handler(server, token='', routes=None):
     return Handler
 
 
+class _ExclusiveServer(ThreadingHTTPServer):
+    """**独占端口**：第二份进程绑不上就当场失败退出。
+
+    标准库默认 `allow_reuse_address = 1`，在 Windows 上那是 SO_REUSEADDR ——
+    **允许两个进程同时绑同一个端口**，第二份不报错、一直挂着，请求落到谁身上看运气。
+    2026-09-29 部署时真撞上：更新脚本重启服务的那一秒空档里，看门狗也发现端口没人听，
+    各拉了一份，两份都活着。所以关掉复用，Windows 上再加 SO_EXCLUSIVEADDRUSE。
+    """
+    allow_reuse_address = False
+
+    def server_bind(self):
+        import socket
+        if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 def serve(server, port=DEFAULT_PORT, host='127.0.0.1', token=None, routes=None):
     """起 HTTP 服务并阻塞。**只绑 127.0.0.1** —— 跨机访问走 SSH 端口转发。"""
     if token is None:
         token = get_key('MCP_HTTP_TOKEN', default='') or ''
-    httpd = ThreadingHTTPServer((host, int(port)), make_handler(server, token, routes))
+    httpd = _ExclusiveServer((host, int(port)), make_handler(server, token, routes))
     log.info(f'MCP HTTP 服务起来了：http://{host}:{port}{ENDPOINT}'
              + ''.join(f' + {r}' for r in (routes or {}))
              + ('（带令牌校验）' if token else '（没配 MCP_HTTP_TOKEN，只靠绑本机保护）'))

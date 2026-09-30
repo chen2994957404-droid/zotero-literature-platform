@@ -154,14 +154,14 @@ def test_端口在监听就不拉_不在就拉_宽限期内不重复拉(wd):
     svcs = [{'name': 'a', 'port': 1, 'cmd': ['x']}, {'name': 'b', 'port': 2, 'cmd': ['y']}]
     up = {1}
     got, last = [], {}
-    r = wd.ensure_ports(1000, last, services=svcs, is_open=lambda p: p in up, start=got.append)
+    r = wd.ensure_ports(1000, last, services=svcs, is_open=lambda p: p in up, start=got.append, say=lambda m: None)
     assert r == ['b'] and got == [['y']]
     # 刚拉过、端口还没起来 → 宽限期内不再拉
     assert wd.ensure_ports(1000 + wd.GRACE - 1, last, services=svcs,
-                           is_open=lambda p: p in up, start=got.append) == []
+                           is_open=lambda p: p in up, start=got.append, say=lambda m: None) == []
     # 过了宽限期还没起来 → 再拉一次
     assert wd.ensure_ports(1000 + wd.GRACE + 1, last, services=svcs,
-                           is_open=lambda p: p in up, start=got.append) == ['b']
+                           is_open=lambda p: p in up, start=got.append, say=lambda m: None) == ['b']
 
 
 def test_端口服务表指向真实存在的入口(wd):

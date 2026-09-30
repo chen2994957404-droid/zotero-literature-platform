@@ -305,6 +305,18 @@ def main():
         httpd.shutdown()
         httpd.server_close()
 
+    # 独占端口：第二份进程必须绑不上（Windows 默认允许两份同占一个口，2026-09-29 真撞上过）
+    a = H._ExclusiveServer(('127.0.0.1', 0), H.make_handler(build_fake_server(), ''))
+    try:
+        try:
+            H._ExclusiveServer(('127.0.0.1', a.server_address[1]), H.make_handler(build_fake_server(), ''))
+            dup = True
+        except OSError:
+            dup = False
+        check('HTTP：同一端口第二份绑不上（独占）', not dup)
+    finally:
+        a.server_close()
+
     # 4. 握手说明（instructions.md）：里面提到的工具名必须真的存在 —— 说明与清单一分家，
     #    外部 agent 就会照着一个不存在的名字调（2026-09-18 加）
     import re

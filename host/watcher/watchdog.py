@@ -104,9 +104,10 @@ def port_open(port, host='127.0.0.1', timeout=1.0):
         return False
 
 
-def ensure_ports(now, last, services=None, is_open=port_open, start=None):
+def ensure_ports(now, last, services=None, is_open=port_open, start=None, say=None):
     """端口不在监听的拉起来；刚拉过的 GRACE 内不重复拉。返回这轮拉了谁（便于测）。"""
     start = start or (lambda cmd: _sp.spawn(cmd, cwd=ROOT))
+    say = say or log          # 测试传一个空函数：别把假服务写进主力机的真日志（部署体检会跑测试）
     started = []
     for svc in (services if services is not None else port_services()):
         if is_open(svc['port']) or now - last.get(svc['name'], 0) < GRACE:
@@ -114,7 +115,7 @@ def ensure_ports(now, last, services=None, is_open=port_open, start=None):
         start(svc['cmd'])
         last[svc['name']] = now
         started.append(svc['name'])
-        log(f'[{svc["name"]}] 端口 {svc["port"]} 没在监听 → 已拉起')
+        say(f'[{svc["name"]}] 端口 {svc["port"]} 没在监听 → 已拉起')
     return started
 
 
