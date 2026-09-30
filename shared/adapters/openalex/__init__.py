@@ -226,14 +226,20 @@ def search(query, limit=25, year_from=None, mailto='research@example.com'):
 
 
 def work_by_doi(doi):
-    """按 DOI 取一篇文献。查不到返回 None（便于批量处理时直接跳过）。"""
+    """按 DOI 取一篇文献。**OpenAlex 里没有这篇**返回 None；限流 / 断网 / 服务出错照实抛。
+
+    原来任何错误都回 None（2026-09-30 排查「出错不报错」）：限流时调用方看到的是「这篇不存在」，
+    Claude Science 据此下结论。现在只有 404 才是「没有」。
+    """
     doi = (doi or '').strip().replace('https://doi.org/', '')
     if not doi:
         return None
     try:
         return get(f'{BASE}/works/doi:{urllib.parse.quote(doi)}')
-    except errors.PlatformError:
-        return None
+    except errors.ExternalServiceError as e:
+        if 'HTTP 404' in str(e):
+            return None
+        raise
 
 
 # ── 批量取用（方向地图那类「几百上千篇一起要」的活）────────────────────

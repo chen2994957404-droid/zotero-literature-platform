@@ -21,8 +21,12 @@
    先让用户看见「今天花了多少」，再由他自己定这个数。
 2. **拦在调用之前，不在中途。** 一次调用要么完整发生要么不发生 ——
    半截的精读比不精读更难收拾。
-3. **账本坏了不能挡住干活。** 读写账本的任何异常都吞掉并放行：
-   记账是辅助，不是主线。宁可少记一笔，不可因为记账失败而停摆。
+3. **账本坏了：没设限额时不挡；设了限额时宁可先停。**（2026-09-30 改，原来是「一律吞掉放行」）
+   原来的做法有个致命的副作用：账本一瞬间读不出来（另一个进程正在写）就当「今天还没花过」，
+   接着 `record()` 拿这本空账**覆盖掉当天的真账** —— 限额这道唯一的硬闸就归零了。
+   现在：没有账本 = 空账；读不出来先重试，还不行 → `record()` 不写、记一条错误日志；
+   `check()` 在设了限额时报「账本读不了，先停」并告诉人怎么恢复（删掉那个文件）。
+   没设限额时 `check()` 不读账本，照旧永远放行。
 
 ## 用法
 
@@ -106,21 +110,45 @@ def cost_yuan(model, prompt=0, completion=0, channel=''):
     return (int(prompt or 0) * row[1] + int(completion or 0) * row[2]) / 1e6
 
 
+def _log():
+    from shared.kernel.log import get_logger
+    return get_logger('budget')
+
+
+class LedgerUnreadable(Exception):
+    """账本在、却读不出来（坏了，或一直被别人占着）。"""
+
+
 def _load():
-    """读今天的账。**换了一天就自动从零开始**，不必有人来清。"""
+    """读今天的账。**换了一天就自动从零开始**，不必有人来清。
+
+    ⚠ **「没有账本」和「账本读不出来」必须分开**（2026-09-30 排查「出错不报错」）：
+    原来两者都当「今天还没花过」—— 于是另一个进程正在写的那一瞬读失败，
+    `record()` 就拿一本空账把当天的真账**覆盖掉**，花钱上限这道唯一的硬闸当场归零。
+    现在：没有 → 空账；读不出来 → 重试几次（多半是别人正在写）→ 还不行就抛 `LedgerUnreadable`。
+    """
     blank = {'date': _today(), 'calls': 0, 'prompt': 0, 'completion': 0, 'yuan': 0.0,
              'models': {}, 'by_purpose': {}}
-    try:
-        d = json.load(io.open(paths.runtime(LEDGER), encoding='utf-8'))
-        if d.get('date') != blank['date']:
-            return blank                      # 昨天的账，今天重新算
-        for k in ('calls', 'prompt', 'completion'):
-            d[k] = int(d.get(k) or 0)
-        d.setdefault('models', {})
-        d.setdefault('by_purpose', {})
-        return d
-    except Exception:
-        return blank                          # 没有 / 坏了 / 正在写 → 当作今天还没花过
+    p = paths.runtime(LEDGER)
+    last = None
+    for attempt in range(5):
+        if not os.path.exists(p):
+            return blank
+        try:
+            # 必须 with 关掉：读失败时异常会攥着这个句柄，Windows 上紧接着的 _save 就替换不了文件
+            with io.open(p, encoding='utf-8') as f:
+                d = json.load(f)
+            if d.get('date') != blank['date']:
+                return blank                  # 昨天的账，今天重新算
+            for k in ('calls', 'prompt', 'completion'):
+                d[k] = int(d.get(k) or 0)
+            d.setdefault('models', {})
+            d.setdefault('by_purpose', {})
+            return d
+        except Exception as e:
+            last = '%s: %s' % (type(e).__name__, e)     # 只留文字，别攥着异常（它引用着栈帧和文件）
+            time.sleep(0.2 * (attempt + 1))
+    raise LedgerUnreadable(f'{p}：{last}')
 
 
 def _save(d):
@@ -157,7 +185,13 @@ def check(what='调用大模型'):
     lim = _limits()
     if not lim['calls'] and not lim['tokens'] and not lim.get('yuan'):
         return                                # 没设限额 = 只记账不拦
-    d = _load()
+    try:
+        d = _load()
+    except LedgerUnreadable as e:
+        # 设了限额却不知道今天花了多少 → **宁可先停**，不能当成没花过接着花
+        raise BudgetExceeded(
+            f'今天的花钱账本读不出来（{e}），为防超支先没有执行「{what}」。'
+            f'把那个文件删掉即可恢复（今天的计数会从零开始）。')
     if lim['calls'] and d['calls'] >= lim['calls']:
         raise BudgetExceeded(
             f'今天的调用次数用完了（{d["calls"]}/{lim["calls"]} 次），'
@@ -198,5 +232,8 @@ def record(prompt=0, completion=0, model='', purpose='', channel=''):
         row['calls'] += 1
         row['completion'] += int(completion or 0)
         _save(d)
-    except Exception:
-        pass
+    except LedgerUnreadable as e:
+        # 读不出来就**别写** —— 写就是拿空账覆盖真账。记不上这一笔要说出来，不许静默
+        _log().error(f'花钱账本读不出来，这一笔没记上（{e}）')
+    except Exception as e:
+        _log().error(f'记账失败，这一笔没记上：{type(e).__name__}: {e}')

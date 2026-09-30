@@ -88,11 +88,10 @@ def sample_list(md, limit=30):
 
 def _ask_int(chat, sysp, user, model, n_opts, options=()):
     """→ 选项序号或 None。小模型常不听「只答数字」而答选项原文（1B 实测），所以按文本也认。"""
-    try:
-        raw = chat(sysp, user + '\n\nReply with the option number only.', provider='ollama', model=model,
-                   temperature=0.0, max_tokens=12, num_ctx=NUM_CTX, thinking=False)
-    except Exception:
-        return None
+    # 模型服务本身的错（连不上 / 重试 4 次仍失败 / 额度用完 / 没密钥）**不吞**：吞了就被当成
+    # 「模型答了没有」，整批数据被悄悄填错（2026-09-30 排查「出错不报错」）。让这一篇失败、之后重试。
+    raw = chat(sysp, user + '\n\nReply with the option number only.', provider='ollama', model=model,
+               temperature=0.0, max_tokens=12, num_ctx=NUM_CTX, thinking=False)
     raw = (raw or '').strip()
     m = re.match(r'\s*\(?(\d+)[.)\s]?', raw)
     if m and 0 <= int(m.group(1)) <= n_opts:
@@ -108,10 +107,9 @@ def _ask_int(chat, sysp, user, model, n_opts, options=()):
 
 def _ask_name(chat, sysp, user, model, options):
     """答名字 → 选项序号（0 = none / 对不上）。名字按去空格、忽略大小写比；也认「包含」（模型常少写个空格或多写个 s）。"""
-    try:
-        raw = chat(sysp, user, provider='ollama', model=model, temperature=0.0, max_tokens=16, num_ctx=NUM_CTX, thinking=False)
-    except Exception:
-        return 0
+    # 模型服务本身的错（连不上 / 重试 4 次仍失败 / 额度用完 / 没密钥）**不吞**：吞了就被当成
+    # 「模型答了没有」，整批数据被悄悄填错（2026-09-30 排查「出错不报错」）。让这一篇失败、之后重试。
+    raw = chat(sysp, user, provider='ollama', model=model, temperature=0.0, max_tokens=16, num_ctx=NUM_CTX, thinking=False)
     ans = (raw or '').strip().strip('`"\'.').lower().replace(' ', '')
     if not ans or ans in ('none', 'no', '0', 'unknown', 'notstated'):
         return 0
@@ -261,11 +259,10 @@ def _window(group):
 
 def _ask_list(chat, sysp, user, model, n_items, n_opts):
     """一次答 n_items 个序号（每行 `k: 序号`）。答不齐 → None，调用方退回逐个问。"""
-    try:
-        raw = chat(sysp, user + '\n\nReply with one line per number, in the form `k: option`, nothing else.',
-                   provider='ollama', model=model, temperature=0.0, max_tokens=6 * n_items + 4, num_ctx=NUM_CTX, thinking=False)
-    except Exception:
-        return None
+    # 模型服务本身的错（连不上 / 重试 4 次仍失败 / 额度用完 / 没密钥）**不吞**：吞了就被当成
+    # 「模型答了没有」，整批数据被悄悄填错（2026-09-30 排查「出错不报错」）。让这一篇失败、之后重试。
+    raw = chat(sysp, user + '\n\nReply with one line per number, in the form `k: option`, nothing else.',
+               provider='ollama', model=model, temperature=0.0, max_tokens=6 * n_items + 4, num_ctx=NUM_CTX, thinking=False)
     got = {}
     for k, v in re.findall(r'(\d+)\s*[:：.)-]\s*(\d+)', raw or ''):
         k, v = int(k), int(v)
@@ -278,12 +275,11 @@ def _ask_list(chat, sysp, user, model, n_items, n_opts):
 
 def _ask_names(chat, user, model, n_items, opts):
     """性质题：每行 `k: <性质名或 0>`。名字优先对到 opts（序号或原文都认），对不上就归一后照收。答不齐 → None。"""
-    try:
-        raw = chat(SYS_PROP_MULTI, user + '\n\nReply with one line per number: `k: property name` (copy a listed name if it fits, '
-                   'otherwise write the property in 2-4 words), or `k: 0` if it is not a measured material property. Nothing else.',
-                   provider='ollama', model=model, temperature=0.0, max_tokens=14 * n_items + 6, num_ctx=NUM_CTX, thinking=False)
-    except Exception:
-        return None
+    # 模型服务本身的错（连不上 / 重试 4 次仍失败 / 额度用完 / 没密钥）**不吞**：吞了就被当成
+    # 「模型答了没有」，整批数据被悄悄填错（2026-09-30 排查「出错不报错」）。让这一篇失败、之后重试。
+    raw = chat(SYS_PROP_MULTI, user + '\n\nReply with one line per number: `k: property name` (copy a listed name if it fits, '
+               'otherwise write the property in 2-4 words), or `k: 0` if it is not a measured material property. Nothing else.',
+               provider='ollama', model=model, temperature=0.0, max_tokens=14 * n_items + 6, num_ctx=NUM_CTX, thinking=False)
     got = {}
     for line in (raw or '').splitlines():
         m = re.match(r'\s*(\d+)\s*[:：.)-]\s*(.+?)\s*$', line)

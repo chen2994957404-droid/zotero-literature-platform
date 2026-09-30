@@ -76,8 +76,10 @@ def work_by_doi(doi):
         return None
     try:
         return _get(f'{OPENALEX}/works/doi:{urllib.parse.quote(doi)}')
-    except SnowballError:
-        return None
+    except SnowballError as e:
+        if 'HTTP 404' in str(e):        # 只有「OpenAlex 里没有这篇」才算查不到；限流 / 断网照实抛（2026-09-30）
+            return None
+        raise
 
 
 def _backward(work, limit):

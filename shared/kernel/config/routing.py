@@ -128,12 +128,20 @@ PURPOSES = {
 # ── 读写 ──────────────────────────────────────────────────────────────
 def _load():
     """读用户的路由文件。没有 / 坏了 → 空表（内置通道照常可用）。"""
+    if not os.path.exists(ROUTING_FILE):
+        return {}
     try:
-        d = json.load(io.open(ROUTING_FILE, encoding='utf-8'))
+        with io.open(ROUTING_FILE, encoding='utf-8') as f:
+            d = json.load(f)
         if not isinstance(d, dict):
-            return {}
+            raise ValueError('顶层不是对象')
         return d
-    except Exception:
+    except Exception as e:
+        # 文件在却读不出来：照常退回内置通道，但**必须说出来** —— 否则用户配好的模型 / 通道被悄悄换掉，
+        # 可能走到更贵的那条（2026-09-30 排查「出错不报错」）
+        from shared.kernel.log import get_logger
+        get_logger('config').error(f'模型路由表读不出来（{ROUTING_FILE}：{type(e).__name__}: {str(e)[:120]}）'
+                                   f'—— 这次按内置默认通道走；去控制面板「用途」页重新保存一次即可修好')
         return {}
 
 

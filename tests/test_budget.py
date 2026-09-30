@@ -75,13 +75,38 @@ def test_换一天自动清零(干净的账本, monkeypatch):
     assert budget.today()['calls'] == 0
 
 
-def test_账本坏了也不许挡住干活(干净的账本, monkeypatch):
-    """记账是辅助，不是主线。坏账本必须当作「今天还没花过」。"""
+def test_账本坏了_设了限额就先停_不许当成没花过(干净的账本, monkeypatch):
+    """2026-09-30 改：原来坏账本当「今天还没花过」，record 还会拿空账覆盖真账 —— 限额这道硬闸归零。"""
+    monkeypatch.setattr(budget.time, 'sleep', lambda s: None)
     io.open(str(干净的账本), 'w', encoding='utf-8').write('这不是 JSON{{{')
     _限额(monkeypatch, calls=5)
-    budget.check('精读一篇')           # 不许抛
-    budget.record(completion=1, model='m')   # 也不许抛
-    assert budget.today()['calls'] == 1
+    with pytest.raises(budget.BudgetExceeded, match='删掉'):
+        budget.check('精读一篇')
+    budget.record(completion=1, model='m')   # 不许抛，也不许写
+    assert io.open(str(干净的账本), encoding='utf-8').read() == '这不是 JSON{{{', '读不出来就别写，写就是覆盖'
+
+
+def test_账本坏了_没设限额照旧放行(干净的账本, monkeypatch):
+    monkeypatch.setattr(budget.time, 'sleep', lambda s: None)
+    io.open(str(干净的账本), 'w', encoding='utf-8').write('这不是 JSON{{{')
+    budget.check('精读一篇')                # 没限额不读账本，不许抛
+
+
+def test_一瞬间读不出来_重试后照常_不许把当天的账清零(干净的账本, monkeypatch):
+    """另一个进程正在写的那一瞬读失败 —— 原来直接当空账，接着 record 把真账覆盖成 1 次。"""
+    monkeypatch.setattr(budget.time, 'sleep', lambda s: None)
+    for _ in range(7):
+        budget.record(completion=1, model='m')
+    real_load, n = budget.json.load, {'k': 0}
+    def 偶尔失败(f):
+        n['k'] += 1
+        if n['k'] == 1:
+            raise ValueError('正在写，读到半截')
+        return real_load(f)
+    monkeypatch.setattr(budget.json, 'load', 偶尔失败)
+    budget.record(completion=1, model='m')
+    monkeypatch.setattr(budget.json, 'load', real_load)
+    assert budget.today()['calls'] == 8
 
 
 def test_记账失败不许把主线弄挂(monkeypatch):

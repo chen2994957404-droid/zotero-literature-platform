@@ -76,13 +76,33 @@ def keyring_status():
         return True, '可用'
 
 
+_WARNED = set()
+
+
+def _warn_once(tag, msg):
+    """同一件事一个进程只说一次（凭据库每取一次密钥就读一回，不能刷屏）。"""
+    if tag in _WARNED:
+        return
+    _WARNED.add(tag)
+    try:
+        from shared.kernel.log import get_logger
+        get_logger('config').warn(msg)
+    except Exception:
+        import sys
+        print(msg, file=sys.stderr)
+
+
 def _kr_get(name):
     kr = _keyring()
     if not kr:
         return ''
     try:
         return kr.get_password(KEYRING_SERVICE, name) or ''
-    except Exception:
+    except Exception as e:
+        # 读不出来 ≠ 没有这个密钥。典型是 SSH 远程会话里凭据库整个打不开（踩坑 #101），
+        # 上层只会说「没有密钥」，把人往填密钥那边带。把真原因记下来（2026-09-30）
+        _warn_once('kr:' + name, f'系统凭据库读不出 {name}（{type(e).__name__}: {str(e)[:120]}）'
+                                 f'—— 不是没填，是这个会话读不到凭据库；SSH 远程会话里是常态，要密钥的活走 job 通道')
         return ''
 
 

@@ -595,7 +595,9 @@ def stash(doi, pdf_path, purpose='建库', col_key=None, index=None, force=False
         # 条目重复还能合并，附件重复只能一个个删，而且删错了文件就没了。
         if not (pdf_path and os.path.exists(pdf_path)):
             out['note'] = '没有 PDF 可挂（只收了元数据）'
-        elif _has_pdf_child(key):
+        elif (has := _has_pdf_child(key)) is None:
+            out['note'] = '查不到 Zotero 上有没有 PDF 附件，这次先不挂（免得重复）；重跑一次即可'
+        elif has:
             out['note'] = '已有 PDF 附件，没重复挂'
         else:
             att = _web.upload_attachment(key, pdf_path, 'Full Text PDF',
@@ -655,12 +657,17 @@ def _backfill(item_key, doi, purpose, force=False):
 
 
 def _has_pdf_child(item_key):
-    """这个条目下面已经有 PDF 附件了吗（问云端，理由同 find_by_doi）。"""
+    """这个条目下面已经有 PDF 附件了吗（问云端，理由同 find_by_doi）→ True / False / **None = 查不到**。
+
+    ⚠ 查不到**不能**当「没有」（2026-09-30 排查「出错不报错」）：那样会再挂一份，
+    而附件重复只能一个个手删。调用方见到 None 就这次先不挂。
+    """
     from shared.adapters.zotero_client import _web
     try:
         kids = _web.zweb(f'/items/{item_key}/children?format=json')
-    except Exception:
-        return False
+    except Exception as e:
+        log.warn(f'{item_key} 问 Zotero 有没有 PDF 附件没问成（{str(e)[:100]}）—— 这次先不挂，免得重复')
+        return None
     for c in kids or []:
         d = c.get('data') or c
         if d.get('itemType') != 'attachment':
@@ -718,7 +725,10 @@ def attach_pdf(item_key, pdf_path, force=False):
     from shared.adapters.zotero_client import _web
     if not (pdf_path and os.path.exists(pdf_path)):
         return False, '没有 PDF 文件可挂'
-    if _has_pdf_child(item_key):
+    has = _has_pdf_child(item_key)
+    if has is None:
+        return False, '查不到 Zotero 上有没有 PDF 附件，这次先不挂（免得重复）；重跑一次即可'
+    if has:
         return False, '已有 PDF 附件，没重复挂'
     att = _web.upload_attachment(item_key, pdf_path, 'Full Text PDF',
                                  action='挂正文 PDF', force=force)

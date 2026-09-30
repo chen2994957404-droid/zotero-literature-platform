@@ -59,11 +59,10 @@ def sentences(text):
 
 def _ask(chat, model, batch):
     user = '\n'.join('%d. %s' % (i + 1, s[:400]) for i, s in enumerate(batch))
-    try:
-        raw = chat(SYS, user, provider='ollama', model=model, temperature=0.0, max_tokens=8 * len(batch),
-                   num_ctx=NUM_CTX, thinking=False)
-    except Exception:
-        return None
+    # 模型服务本身的错（连不上 / 重试 4 次仍失败 / 额度用完 / 没密钥）**不吞**：吞了就被当成
+    # 「模型答了没有」，整批数据被悄悄填错（2026-09-30 排查「出错不报错」）。让这一篇失败、之后重试。
+    raw = chat(SYS, user, provider='ollama', model=model, temperature=0.0, max_tokens=8 * len(batch),
+               num_ctx=NUM_CTX, thinking=False)
     nums = [int(x) for x in re.findall(r'\b([1-6])\b', raw or '')]
     if len(nums) != len(batch):
         return None

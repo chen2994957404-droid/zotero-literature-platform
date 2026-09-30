@@ -191,11 +191,10 @@ def verify(sent, d):
 
 
 def _ask(chat, sent, model):
-    try:
-        raw = chat(SYS, 'Sentence: ' + sent, provider='ollama', model=model, temperature=0.0, max_tokens=160,
-                   num_ctx=NUM_CTX, thinking=False)
-    except Exception:
-        return None
+    # 模型服务本身的错（连不上 / 重试 4 次仍失败 / 额度用完 / 没密钥）**不吞**：吞了就被当成
+    # 「模型答了没有」，整批数据被悄悄填错（2026-09-30 排查「出错不报错」）。让这一篇失败、之后重试。
+    raw = chat(SYS, 'Sentence: ' + sent, provider='ollama', model=model, temperature=0.0, max_tokens=160,
+               num_ctx=NUM_CTX, thinking=False)
     return _parse(raw)
 
 
