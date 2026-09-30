@@ -17,7 +17,6 @@ Claude Science 自己会检索（它有 OpenAlex），它缺的只有一样 —�
 | `paper_fulltext`    | 给 DOI → 取正文+SI → 解析 → 返回 id 与骨架菜单（后台跑） |
 | `fulltext_status`   | 轮询上面那个 |
 | `library_outline` / `library_section` | 按菜单点节、段、表、图注 |
-| `library_refs`      | 这篇的参考文献，哪些库里有 |
 | `paper_files`       | 这篇的 PDF / SI / 全文 Markdown 在哪 —— 给 Linux 路径，Claude Science 的算力（B 机 WSL 的 science 账号）能直接读 |
 
 ## 规矩为什么几乎为零，却还留一条
@@ -55,8 +54,12 @@ NAME = 'literature-science'
 VERSION = '0.1.0'
 
 # 从完整服务里借来的工具（名字不改 —— 两边说同一种话，日志好对）
+# 2026-09-29 用户：「工具给真正有用的就行，描述写得好不等于起作用」。判据：它自己做不到、或做起来很费劲的才给。
+#   留：取全文 + 轮询（校园网出口，它独有）、库里有没有（1100 篇的目录）、按意思找段落（向量库，它重建不起）、
+#       骨架菜单 + 按节取（跨几十篇只看要的那节；出处能写成 id + s5.p3）、文件路径（它的算力能直接读原件）
+#   去：library_refs —— 它有 OpenAlex，顺引用自己查更全
 BORROW = ('library_db_search', 'library_retrieve', 'library_outline',
-          'library_section', 'library_refs', 'paper_fulltext', 'fulltext_status', 'ping')
+          'library_section', 'paper_fulltext', 'fulltext_status', 'ping')
 
 # 进度文件多久没动就当那个作业已经死了（一篇取 + 解析通常 1 分钟内会写一次进度）
 STALE_SECS = 600
