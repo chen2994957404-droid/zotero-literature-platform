@@ -199,6 +199,10 @@ def refs(key):
             norm = catalog.norm_title(p)
             pid = next((v for t, v in titles.items() if t in norm), '')
         body_txt = p[m.end():] if m else p                 # 去掉条目自己的编号，别跟 [n] 重复显示
+        if not re.search(r'\d', body_txt):
+            # 参考文献一定带数字（年份、卷页）；一个数字都没有的是关键词行之类（2026-09-30：V2C7D8W4 的
+            # 关键词行不带「Keywords」字样，33 条因此对不上 Crossref 的 32 条，DOI 也补不上）
+            continue
         out.append({'n': n, 'text': re.sub(r'\s+', ' ', body_txt).strip()[:300], 'doi': doi,
                     'in_db': bool(pid), 'id': pid})
     return out

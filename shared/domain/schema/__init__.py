@@ -26,6 +26,7 @@
   - compare_table / reviews_table : 记录 → Markdown 表（**返回字符串，不写盘**）
 """
 import json
+import functools
 import re
 
 # ── Domain schema: soft matter / dynamic-bond elastomers / self-healing ──
@@ -287,19 +288,30 @@ _ALIAS_TO_CANON = sorted(
     key=lambda x: -len(x[0]))
 
 
+# 别名 → 编译好的「整词匹配」正则，只编一次（原来每次调用都对几百个别名现 escape + 现编，
+# 数值库重建时调 13 万次，占了重建的大半时间 —— 2026-09-30 在 B 机上 profile 出来的）
+_ALIAS_RES = [(re.compile(r'(^|[^a-z])' + re.escape(a) + r'($|[^a-z])'), a, canon) for a, canon in _ALIAS_TO_CANON]
+
+
 def normalize_property_name(name):
     """性能名字 → 统一词表里的正名；词表里没有的原样返回（小写去空白）。
 
     **只做名字归一，不碰单位、不碰数值。**词表外的名字照样入库 ——
     宁可库里多几个没归一的名字，也不要把它们悄悄丢掉。
+    纯函数，按名字缓存（6 万条数值里名字只有几千种）。
     """
+    return _normalize_property_name(str(name or ''))
+
+
+@functools.lru_cache(maxsize=None)
+def _normalize_property_name(name):
     t = re.sub(r'\s+', ' ', str(name or '')).strip().lower().strip('（）()[]:：')
     if not t:
         return ''
     if t in PROPERTY_ALIASES:
         return t
-    for alias, canon in _ALIAS_TO_CANON:
-        if alias == t or re.search(r'(^|[^a-z])' + re.escape(alias) + r'($|[^a-z])', t):
+    for rx, alias, canon in _ALIAS_RES:
+        if alias == t or rx.search(t):
             return canon
     return t
 
