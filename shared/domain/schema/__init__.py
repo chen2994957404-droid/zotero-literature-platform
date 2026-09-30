@@ -255,6 +255,7 @@ PROPERTY_DIMENSION = {
     'flexural modulus': (_P,), 'shear strength': (_P,), 'shear modulus': (_P,), 'yield strength': (_P,), 'tensile modulus': (_P,),
     'adhesion strength': (_P, _E_AREA, _FORCE),        # MPa、N/m（剥离，与 J/m² 同量纲）、N
     'hardness': (_P,),
+    'impact strength': (_E_AREA, _FORCE),              # kJ/m²（缺口/无缺口冲击）、J/m（悬臂梁，能量/长度 = 力的量纲）
     'toughness': (_E_VOL, _E_AREA, _E), 'fracture energy': (_E_AREA, _E_VOL, _E), 'fracture toughness': (_E_AREA, _K1C, _E_VOL, _E),
     'dissipated energy': (_E_VOL, _E_AREA, _E), 'energy density': (_E_MASS, _E_VOL, _E),
     'glass transition temperature': (_TEMP,), 'melting temperature': (_TEMP,), 'decomposition temperature': (_TEMP,), 'thermal stability': (_TEMP,),

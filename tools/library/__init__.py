@@ -178,6 +178,9 @@ def refs(key):
     parts = [p.strip() for p in parts if p.strip()]
     if len(parts) < 3:
         parts = [p.strip() for p in re.split(r'\n\s*\n', body) if p.strip()]
+    # 关键词行不是参考文献（MineRU 常把 Keywords 挤进参考文献节开头；2026-09-30 复测：V2C7D8W4 的「第 1 条」
+    # 其实是关键词行，编号 1 还因此出现两次）
+    parts = [p for p in parts if not re.match(r'(?i)^\W*key\s*words?\b', p)]
     by_doi = catalog.by_doi()
     # 标题子串对账只用**归一后**够长的标题：中文题名归一后是空串，'' in 任何字符串都成立，
     # 2026-09-14 实测一篇的 32 条参考文献全被标成「已在库」就是这么来的

@@ -69,3 +69,20 @@ def test_没有源JSON时不要把已有的库清空(db):
     assert len(paperdb.query('SELECT key FROM papers')) == 1, (
         '源目录空了应保持现状，而不是把库清空 —— 空结果看起来像「没这篇」，'
         '比报错更难发现')
+
+
+def test_表结构改过_旧库时间再新也要重建_不许变空(db):
+    """2026-09-30：measurements 加了推导列。旧库时间戳是新的，只看时间就不重建；
+    而 connect() 会把列对不上的旧表整张丢掉 —— 数值库变空、不报错。"""
+    import sqlite3
+    _write(db, 'AAAA1111', '第一篇')
+    assert paperdb.query('SELECT key FROM papers')           # 先建好
+    p = paperdb.db_path()
+    paperdb._conn_cache.clear()
+    c = sqlite3.connect(p)
+    c.executescript('DROP TABLE papers; CREATE TABLE papers (key TEXT, title TEXT);'
+                    "INSERT INTO papers VALUES ('OLD', 'old layout');")
+    c.commit(); c.close()
+    os.utime(p, (time.time() + 60, time.time() + 60))         # 库比源新得多
+    assert not paperdb.schema_current(p)
+    assert [r['key'] for r in paperdb.query('SELECT key FROM papers')] == ['AAAA1111']

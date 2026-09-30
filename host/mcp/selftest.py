@@ -351,6 +351,15 @@ def main():
     dd = S.dedupe_hits([{'doi': '10.1/x', 'id': 'A', 'text': 'same'}, {'doi': '10.1/X', 'id': 'doi_x', 'text': 'same'},
                         {'doi': '10.1/x', 'id': 'A', 'text': 'other'}])
     check('检索去重：同一篇存两份时同一段只留一条', [d['id'] for d in dd] == ['A', 'A'], str(dd))
+    cr = S.crossref_refs('10.1/p', fetch=lambda d: {'reference': [
+        {'DOI': '10.1/A', 'unstructured': 'A et al.'}, {'article-title': 'B', 'year': '2020'}]})
+    check('Crossref 参考文献：有序、DOI 小写、没有 unstructured 就拼题录',
+          [c['doi'] for c in cr] == ['10.1/a', ''] and '2020' in cr[1]['text'], str(cr))
+    rows = [{'n': 1, 'doi': ''}, {'n': 2, 'doi': ''}]
+    check('Crossref 补 DOI：条数对得上按顺序补、标来源、对账证据库',
+          S.enrich_refs(rows, cr, {'10.1/a': 'HAVE0001'}) and rows[0]['doi'] == '10.1/a'
+          and rows[0]['doi_from'] == 'crossref' and rows[0]['id'] == 'HAVE0001' and rows[1]['doi'] == '')
+    check('Crossref 补 DOI：条数对不上不硬对', S.enrich_refs([{'n': 1, 'doi': ''}], cr, {}) is False)
     from host.mcp import litcall as LC
     check('litcall：有结构化就只给结构化',
           LC.unpack({'result': {'content': [{'type': 'text', 'text': 't'}], 'structuredContent': {'a': 1}}}) == (False, {'a': 1}))

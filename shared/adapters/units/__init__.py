@@ -15,6 +15,8 @@
     same_dimension(a, b) → bool
     to_base(value, unit_text) → (换算后的值, 基本单位字符串) 或 None
     normalize_unit(unit_text) → Pint 认的写法（'MJ m-3' → 'MJ/m**3'）
+    canonical_unit(unit_text) → 同一单位的唯一写法（'kJ mol-1' / 'kJ/mol' → 'kJ / mol'）
+    si_unit(unit_text) → 换到基本单位后的缩写写法（'MPa' → 'kg / m / s ** 2'）
 """
 import re
 
@@ -77,6 +79,29 @@ def canonical(dims):
 def same_dimension(a, b):
     da, db = dimension(a), dimension(b)
     return bool(da) and da == db
+
+
+def canonical_unit(text):
+    """同一个单位的任何写法 → 同一个字符串（Pint 的缩写格式）：'kJ mol-1' 与 'kJ/mol' 都 → 'kJ / mol'。
+    认不出返回 ''。给数值库的 unit_norm 列用（2026-09-30：同一量两种写法各一百多条，建数据集会被当成两种单位）。"""
+    t = normalize_unit(text)
+    if not t:
+        return ''
+    try:
+        return '{:~}'.format(_reg().Quantity(1, t).units)
+    except Exception:
+        return ''
+
+
+def si_unit(text):
+    """这个单位换到国际单位制基本单位后的写法（缩写）：'MPa' → 'kg / m / s ** 2'。认不出返回 ''。"""
+    t = normalize_unit(text)
+    if not t:
+        return ''
+    try:
+        return '{:~}'.format(_reg().Quantity(1, t).to_base_units().units)
+    except Exception:
+        return ''
 
 
 def to_base(value, text):

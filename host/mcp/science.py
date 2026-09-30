@@ -176,7 +176,11 @@ def _manifest(a):
     stats = {'papers': len(rows), 'with_doi': n('doi'), 'pdf': n('pdf'), 'si': n('si'),
              'fulltext': n('fulltext'), 'summary': n('summary'), 'structured': n('structured')}
     return _out('全库清单 %d 篇 → %s' % (len(rows), to_wsl(path)),
-                {'path': to_wsl(path), 'fields': list(_CARD_KEYS), 'stats': stats})
+                {'path': to_wsl(path), 'fields': list(_CARD_KEYS), 'stats': stats,
+                 # 口径（2026-09-30 复测提的）：这里是证据库目录（有正本 / 全文的库）；paperdb 的 papers 表
+                 # 另含只有摘要的 OpenAlex 层，所以行数多得多；统计请用视图 papers_canonical
+                 'scope': 'evidence library (papers with PDF/full text). paperdb.papers additionally holds '
+                          'abstract-only rows (OpenAlex); use view papers_canonical for one row per DOI.'})
 
 
 def dedupe_hits(rows):
@@ -251,12 +255,55 @@ def _section(a):
     return _out('取到 %d/%d 处' % (got, len(out)), {'results': out})
 
 
+def crossref_refs(doi, fetch=None):
+    """出版社在 Crossref 登记的参考文献（有序，常带 DOI）→ [{n, doi, text}]。取不到返回 []。"""
+    if not doi:
+        return []
+    try:
+        if fetch is None:
+            from shared.adapters import crossref
+            fetch = crossref.work
+        items = fetch(doi).get('reference') or []
+    except Exception:
+        return []
+    out = []
+    for i, r in enumerate(items, 1):
+        text = r.get('unstructured') or ', '.join(
+            str(x) for x in (r.get('author'), r.get('year'), r.get('article-title'), r.get('journal-title')) if x)
+        out.append({'n': i, 'doi': (r.get('DOI') or '').lower(), 'text': text[:300]})
+    return out
+
+
+def enrich_refs(rows, cr, by_doi):
+    """正文抽的参考文献缺 DOI 时，用 Crossref 那份补。**条数对得上才按顺序补**；对不上不硬对（返回 False）。"""
+    if not cr or len(cr) != len(rows):
+        return False
+    for r, c in zip(rows, cr):
+        if not r.get('doi') and c['doi']:
+            r['doi'], r['doi_from'] = c['doi'], 'crossref'
+            pid = by_doi.get(c['doi'], '')
+            if pid:
+                r['in_db'], r['id'] = True, pid
+    return True
+
+
 def _refs(a):
+    from shared.kernel import catalog
     from tools import library
     pid = _resolve(a.get('itemKey'))
     rows = library.refs(pid)
-    return _out('%s：%d 条参考文献，%d 条已在证据库' % (pid, len(rows), sum(1 for r in rows if r.get('in_db'))),
-                {'itemKey': pid, 'refs': rows})
+    data = {'itemKey': pid, 'refs': rows}
+    # 正文里抽到的 DOI 不到一半 → 去 Crossref 取出版社登记的那份（2026-09-30 复测：有的篇 59 条 0 个 DOI）
+    if rows and sum(1 for r in rows if r.get('doi')) * 2 < len(rows):
+        cr = crossref_refs(catalog.doi_of(catalog.read_meta(pid)))
+        if cr:
+            aligned = enrich_refs(rows, cr, catalog.by_doi())
+            data['crossref_aligned'] = aligned
+            if not aligned:
+                data['crossref'] = cr        # 条数对不上：两份都给，由你对
+    n_doi = sum(1 for r in rows if r.get('doi'))
+    return _out('%s：%d 条参考文献（%d 条有 DOI），%d 条已在证据库' % (
+        pid, len(rows), n_doi, sum(1 for r in rows if r.get('in_db'))), data)
 
 
 _IMG_LINE = re.compile(r'!\[[^\]]*\]\(([^)]+)\)')

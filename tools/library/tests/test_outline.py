@@ -330,3 +330,21 @@ def test_段地址不重复():
     ids = [p['id'] for p in o['sections'][0]['paras']]
     assert len(ids) == len(set(ids)), ids
     assert ids == ['s1.p%d' % i for i in range(1, len(ids) + 1)]
+
+
+# ── 参考文献：关键词行不算一条（2026-09-30，Claude Science 复测：「第 1 条」其实是关键词行）──
+
+def test_参考文献里的关键词行被滤掉(tmp_path, monkeypatch):
+    for name in ('RAW', 'CURATED'):
+        d = tmp_path / name.lower()
+        d.mkdir()
+        monkeypatch.setattr(paths, name, str(d))
+    key = 'KEYW0001'
+    refs = '\n'.join(['Keywords: polyborosiloxane; dynamic bonds'] +
+                     ['%d. Author%d, J. Polym. Sci. 2020, %d, 1-10.' % (i, i, i) for i in range(1, 7)])
+    md = '# T\n\n## 1. Introduction\n\ntext.\n\n## References\n\n' + refs + '\n'
+    os.makedirs(os.path.dirname(paths.fulltext(key)), exist_ok=True)
+    io.open(paths.fulltext(key), 'w', encoding='utf-8').write(md)
+    rows = library.refs(key)
+    assert [r['n'] for r in rows] == [1, 2, 3, 4, 5, 6]
+    assert not any('Keywords' in r['text'] for r in rows)

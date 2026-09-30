@@ -69,7 +69,8 @@ _PAPER_COLS = (['key', 'title', 'doi', 'zotero_key', 'tier', 'source', 'si_used'
 _SAMPLE_COLS = ['key', 'sample_id', 'composition', 'preparation', 'dynamic_bond',
                 'role', 'application']
 _MEAS_COLS = ['key', 'sample_id', 'name', 'raw_name', 'value', 'value_max', 'unit',
-              'cmp', 'condition', 'location', 'section', 'method', 'verified', 'raw']
+              'cmp', 'condition', 'location', 'section', 'method', 'verified', 'raw',
+              'kind', 'unit_norm', 'value_si', 'value_max_si', 'si_unit']
 _CURVE_COLS = ['key', 'fig', 'series', 'chart_type', 'x_label', 'x_unit', 'y_label',
                'y_unit', 'n_points', 'confidence', 'caption', 'points']
 
@@ -115,7 +116,14 @@ CREATE TABLE IF NOT EXISTS measurements (
   section   TEXT,
   method    TEXT,
   verified  TEXT,
-  raw       TEXT
+  raw       TEXT,
+  -- 下面五列是**重建时推导的**（2026-09-30，Claude Science 复测：建 ML 数据集时单位写法不一、
+  -- 「提高 40%%」与绝对值混在一起）。原写法 unit / value 一字不动，推导列只是另一个看法。
+  kind      TEXT,     -- absolute / relative（有量纲的性质配上 %% 或倍数 = 相对变化）/ mismatch（量纲不对）/ bad_name / unknown
+  unit_norm TEXT,     -- Pint 认的写法（kJ mol-1 → kJ/mol）
+  value_si  REAL,     -- 换到国际单位制基本单位（仅 absolute 且量纲认得出）
+  value_max_si REAL,
+  si_unit   TEXT
 );
 CREATE TABLE IF NOT EXISTS curves (
   key        TEXT,
@@ -140,6 +148,17 @@ CREATE INDEX IF NOT EXISTS idx_meas_value   ON measurements(value);
 CREATE INDEX IF NOT EXISTS idx_meas_key     ON measurements(key, sample_id);
 CREATE INDEX IF NOT EXISTS idx_papers_tier  ON papers(tier);
 CREATE INDEX IF NOT EXISTS idx_papers_zkey  ON papers(zotero_key);
+CREATE INDEX IF NOT EXISTS idx_meas_kind    ON measurements(kind);
+-- 每个 DOI 只留一行（取最高档：精+SI > 精层 > 本地+SI > 本地 > 粗层 > 摘要）。
+-- papers 表里同一篇常有「全文层（Zotero 编号）」与「摘要层（OpenAlex 编号）」两行 ——
+-- 分层存储是设计，但做统计 / 训练时会重复计数（2026-09-30 复测：67 个 DOI 各两行）。没 DOI 的原样保留。
+CREATE VIEW IF NOT EXISTS papers_canonical AS
+  SELECT * FROM (
+    SELECT p.*, ROW_NUMBER() OVER (
+      PARTITION BY CASE WHEN coalesce(p.doi, '') = '' THEN p.key ELSE lower(p.doi) END
+      ORDER BY CASE p.tier WHEN '精+SI' THEN 0 WHEN '精层' THEN 1 WHEN '本地+SI' THEN 2
+                           WHEN '本地' THEN 3 WHEN '粗层' THEN 4 ELSE 5 END, p.key) AS _rank
+    FROM papers p) WHERE _rank = 1;
 """ % (',\n  '.join(f'"{f}" TEXT' for f in _FIELDS))
 
 _conn_cache = {}
@@ -282,7 +301,51 @@ def _with_cards(records):
 
 
 _MEAS_COLS = ['key', 'sample_id', 'name', 'raw_name', 'value', 'value_max', 'unit',
-              'cmp', 'condition', 'location', 'section', 'method', 'verified', 'raw']
+              'cmp', 'condition', 'location', 'section', 'method', 'verified', 'raw',
+              'kind', 'unit_norm', 'value_si', 'value_max_si', 'si_unit']
+
+
+_DERIVE_CACHE = {}
+
+
+def derive(m):
+    """一条数值 → 五列推导值 {kind, unit_norm, value_si, value_max_si, si_unit}。**不改原值**。
+
+    判「相对还是绝对」靠**性质该有的量纲**（`schema.PROPERTY_DIMENSION`，抽取把关用的同一张表）：
+    拉伸强度该是压强，却配了 % 或倍数 → 这是「提高 40%」；断裂伸长率、自修复效率本来就是无量纲 → % 是绝对值。
+    换算走 Pint（`shared.adapters.units`）；按单位缓存成「a + b·x」的仿射换算（°C → K 也对）。
+    """
+    from shared.adapters import units
+    name, unit = (m.get('name') or '').strip(), (m.get('unit') or '').strip()
+    out = {'kind': 'unknown', 'unit_norm': '', 'value_si': None, 'value_max_si': None, 'si_unit': ''}
+    if not any(ch.isalpha() for ch in name):
+        out['kind'] = 'bad_name'                 # 名字只是个单位或符号（"%"），抽错了
+        return out
+    if unit not in _DERIVE_CACHE:
+        dim = units.dimension(unit) if unit else ''
+        lo, hi = units.to_base(0, unit), units.to_base(1, unit)
+        conv = (lo[0], hi[0] - lo[0], hi[1]) if (dim and dim != 'dimensionless' and lo and hi) else None
+        if conv:
+            conv = (conv[0], conv[1], units.si_unit(unit) or conv[2])
+        _DERIVE_CACHE[unit] = (dim, (units.canonical_unit(unit) or unit) if unit else '', conv)
+    dim, norm, conv = _DERIVE_CACHE[unit]
+    out['unit_norm'] = norm
+    allowed = schema.PROPERTY_DIMENSION.get(schema.normalize_property_name(name))
+    is_ratio = (not unit) or dim == 'dimensionless' or unit in ('%', '-fold', 'fold', 'times')
+    if allowed is None:
+        out['kind'] = 'unknown' if is_ratio else ('absolute' if dim else 'unknown')
+    elif is_ratio:
+        out['kind'] = 'absolute' if allowed == () else 'relative'
+    elif dim:
+        out['kind'] = 'absolute' if dim in allowed else 'mismatch'
+    if out['kind'] == 'absolute' and conv:
+        a, b, si = conv
+        for src, dst in (('value', 'value_si'), ('value_max', 'value_max_si')):
+            v = m.get(src)
+            if isinstance(v, (int, float)):
+                out[dst] = a + b * v
+        out['si_unit'] = si
+    return out
 
 
 def _journals():
@@ -349,6 +412,7 @@ def _insert_curves(conn, curves_by_key):
                                      json.dumps(pts, ensure_ascii=False)))
                 n_c += 1
             for m in schema.curve_measurements(cur, fig=fig):
+                m.update(derive(m))
                 conn.execute(sql_m, [key] + [m.get(c) for c in _MEAS_COLS[1:]])
                 n_m += 1
     return n_c, n_m
@@ -544,6 +608,7 @@ def rebuild(records=None, log=print):
                 conn.execute(sql_s, [key] + [s.get(c, '') for c in _SAMPLE_COLS[1:]])
                 n_samp += 1
             for m in meas:
+                m.update(derive(m))
                 conn.execute(sql_m, [key] + [m.get(c) for c in _MEAS_COLS[1:]])
                 n_meas += 1
         n_curve, n_cm = _insert_curves(conn, _curves())
@@ -557,6 +622,23 @@ def rebuild(records=None, log=print):
     return len(records), n_samp, n_meas
 
 
+def schema_current(path):
+    """库里四张表的列跟代码里的定义一致吗（不一致 = 代码改过表结构，旧库要重建）。"""
+    try:
+        c = sqlite3.connect(path)
+        try:
+            for table, want in (('papers', _PAPER_COLS), ('samples', _SAMPLE_COLS),
+                                ('measurements', _MEAS_COLS), ('curves', _CURVE_COLS)):
+                have = [r[1] for r in c.execute('PRAGMA table_info(%s)' % table)]
+                if set(have) != set(want):
+                    return False
+        finally:
+            c.close()
+    except sqlite3.Error:
+        return False
+    return True
+
+
 def _ensure_fresh():
     """库比 `structured/*.json` 旧就自己重建一次（秒级、不花钱）。
 
@@ -568,10 +650,16 @@ def _ensure_fresh():
     是索引自己的事。让抽取方负责，就得每个写 JSON 的人都记得刷一次，
     漏一个（手改过 JSON、从别处拷进来一份）用户就查到旧数据 —— 而且不报错。
 
-    判据只看时间戳：库文件比最新的那份 JSON 旧 = 该重建。
+    判据：库文件比最新的那份 JSON 旧 = 该重建；**表的列跟代码对不上也要重建**。
     重建 175 篇不到一秒，宁可多建一次，也不要给出旧答案。
+
+    ⚠ 列对不上那条（2026-09-30 加）：表结构一改（加推导列），`connect()` 里的 `_migrate`
+    会把旧表整张丢掉 —— 而库文件时间是新的，只看时间戳就不会重建，**数值库变空、不报错**。
     """
     p = db_path()
+    if os.path.exists(p) and not schema_current(p):
+        rebuild(log=lambda *_: None)
+        return
     try:
         db_mtime = os.path.getmtime(p)
     except OSError:
