@@ -108,7 +108,7 @@ class Log:
         接受并忽略 print 的 `flush=` 等关键字，方便老代码原样替换。
         """
         sep = kwargs.get('sep', ' ')
-        self._emit(logging.INFO, sep.join(str(a) for a in args))
+        self._emit(logging.INFO, _fmt(args, sep))
 
     def info(self, *args):
         self(*args)
@@ -118,10 +118,10 @@ class Log:
         return self.warn(*args)
 
     def warn(self, *args):
-        self._emit(logging.WARNING, '⚠ ' + ' '.join(str(a) for a in args))
+        self._emit(logging.WARNING, '⚠ ' + _fmt(args))
 
     def error(self, *args):
-        self._emit(logging.ERROR, '✗ ' + ' '.join(str(a) for a in args))
+        self._emit(logging.ERROR, '✗ ' + _fmt(args))
 
     def _emit(self, level, msg):
         try:
@@ -137,6 +137,17 @@ class Log:
     def path(self):
         """这个 logger 写到哪个文件（面板要展示日志时用）。"""
         return paths.log(self.name)
+
+
+def _fmt(args, sep=' '):
+    """参数 → 一行字。**也认标准库那种 `log.warn('%s 没成：%s', a, b)` 写法**（2026-10-02）：
+    原来只会用空格拼，于是日志里出现「%d 篇撞上人机验证 1 60」—— 三处代码按标准库习惯写了 %s。"""
+    if len(args) > 1 and isinstance(args[0], str) and '%' in args[0]:
+        try:
+            return args[0] % tuple(args[1:])
+        except (TypeError, ValueError):
+            pass
+    return sep.join(str(a) for a in args)
 
 
 def get_logger(name, to_stdout=True):

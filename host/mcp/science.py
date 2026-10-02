@@ -408,6 +408,9 @@ def _status(a):
     results = [_slim_result(r) for r in d.get('results') or []]
     data = {'total': d.get('total', 0), 'finished': d.get('finished', 0), 'done': bool(d.get('done')),
             'elapsed_s': d.get('elapsed', 0), 'results': results}
+    if d.get('current') and not d.get('done'):
+        # 正在处理哪篇、已经多久（每 15 秒更新）—— 解析一篇大文献要好几分钟，这个数在涨就说明没卡死
+        data['current'] = d['current']
     if a.get('brief') is False:
         from tools.getpdf import fulltext as F
         data['menus'] = {r['id']: F._menu_of(r['id']) for r in results if r.get('ok')}

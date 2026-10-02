@@ -36,6 +36,7 @@
 import io
 import os
 import sys
+import threading
 import time
 
 # 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
@@ -192,7 +193,26 @@ def many(dois, allow_fetch=True, gap=None, progress=None, limit=3, use_zotero=Tr
             log.warn('取 Zotero 的 DOI 索引失败（不影响，只是可能重下）：%s', str(e)[:120])
 
     out, t0 = [], time.time()
+    # 心跳：解析一篇大文献要好几分钟，期间原来进度一动不动 —— Claude Science 看着「用时卡在 34.8 秒」
+    # 以为队列死了、停止轮询（2026-10-02）。现在每 HEARTBEAT_S 秒重写一次：正在处理哪篇、已经多久。
+    now = {'doi': '', 'since': t0}
+    stop = threading.Event()
+    def _beat():
+        while not stop.wait(HEARTBEAT_S):
+            _write_progress(progress, dois, out, t0, done=False, current=now)
+    threading.Thread(target=_beat, daemon=True).start()
+    try:
+        return _many_loop(dois, out, t0, now, index, allow_fetch, use_zotero, gap, progress)
+    finally:
+        stop.set()
+
+
+HEARTBEAT_S = 15
+
+
+def _many_loop(dois, out, t0, now, index, allow_fetch, use_zotero, gap, progress):
     for i, doi in enumerate(dois):
+        now.update(doi=doi, since=time.time())
         r = one(doi, zotero_index=index, allow_fetch=allow_fetch, use_zotero=use_zotero)
         out.append(r)
         _write_progress(progress, dois, out, t0, done=False)
@@ -203,9 +223,10 @@ def many(dois, allow_fetch=True, gap=None, progress=None, limit=3, use_zotero=Tr
     # 同一篇隔几分钟再取就过了）。仍然串行、每篇之间照样隔 gap；只补试一次，不死磕。
     again = [i for i, r in enumerate(out) if allow_fetch and blocked(r)]
     if again:
-        log.info('%d 篇撞上人机验证，歇 %d 秒后补试一次', len(again), RETRY_COOLDOWN)
+        log.info(f'{len(again)} 篇撞上人机验证，歇 {RETRY_COOLDOWN} 秒后补试一次')
         time.sleep(RETRY_COOLDOWN)
         for n, i in enumerate(again):
+            now.update(doi=dois[i], since=time.time())
             out[i] = one(dois[i], zotero_index=index, allow_fetch=True, use_zotero=use_zotero)
             _write_progress(progress, dois, out, t0, done=False)
             if n + 1 < len(again) and gap > 0:
@@ -223,12 +244,22 @@ def blocked(r):
     return (not r.get('ok')) and any(pdf_fetch.REASONS[k] in why for k in ('captcha', 'not_pdf'))
 
 
-def _write_progress(path, dois, results, t0, done):
+_PROGRESS_LOCK = threading.Lock()     # 心跳线程和主流程都会写进度文件，别同时写
+
+
+def _write_progress(path, dois, results, t0, done, current=None):
     if not path:
         return
+    with _PROGRESS_LOCK:
+        _write_progress_locked(path, dois, results, t0, done, current)
+
+
+def _write_progress_locked(path, dois, results, t0, done, current=None):
     import json
     payload = {'total': len(dois), 'finished': len(results), 'done': done,
                'elapsed': round(time.time() - t0, 1), 'results': results}
+    if current and current.get('doi') and not done:
+        payload['current'] = {'doi': current['doi'], 'for_s': round(time.time() - current['since'])}
     try:
         io.open(path, 'w', encoding='utf-8').write(
             json.dumps(payload, ensure_ascii=False, indent=1))

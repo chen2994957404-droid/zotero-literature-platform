@@ -33,6 +33,10 @@ class PDFParseError(Exception):
     pass
 
 
+
+POLL_EVERY_S = 8          # 多久问一次 MineRU
+POLL_MAX_S = 900          # 最多等多久（15 分钟）
+
 def _token():
     """取 MineRU token：走 config 原子模块（环境变量 → .env），避免子进程拿不到。"""
     t = os.environ.get('MINERU_TOKEN')
@@ -99,10 +103,11 @@ def _parse_once(pdf_path, out_dir, model_version, ocr):
     if status not in (200, 201):
         raise PDFParseError(f'上传失败 HTTP {status}')
 
-    # 3. 轮询（字段结构见踩坑 #2）
-    zip_url = None
-    for _ in range(40):
-        time.sleep(8)
+    # 3. 轮询（字段结构见踩坑 #2）。最多等 POLL_MAX_S：原来 40×8 秒≈5 分钟，大文献（12 MB 的 Adv. Mater.）
+    # 在 MineRU 那边排队 + 解析常超过它，平台先放弃了、MineRU 其实还在跑（2026-10-02）
+    zip_url, st = None, '?'
+    for _ in range(POLL_MAX_S // POLL_EVERY_S):
+        time.sleep(POLL_EVERY_S)
         r = _api(f'/extract-results/batch/{batch_id}')
         res = r['data']['extract_result'][0]
         st = res['state']
@@ -114,7 +119,8 @@ def _parse_once(pdf_path, out_dir, model_version, ocr):
             log.warn('MineRU 解析失败 batch=%s model=%s ocr=%s 返回=%s' % (batch_id, model_version, ocr, res))
             raise PDFParseError('解析失败: ' + res.get('err_msg', '') + f'（batch {batch_id}，{model_version}）')
     if not zip_url:
-        raise PDFParseError('解析超时')
+        log.warn('MineRU 解析等了 %d 秒还没好 batch=%s 最后状态=%s' % (POLL_MAX_S, batch_id, st))
+        raise PDFParseError(f'解析超时（等了 {POLL_MAX_S // 60} 分钟，MineRU 状态 {st}，batch {batch_id}）')
 
     # 4. 下载解压
     zip_bytes = urllib.request.urlopen(zip_url, timeout=120).read()
