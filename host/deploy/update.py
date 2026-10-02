@@ -341,10 +341,18 @@ def main():
 
     # ── 1. 拉代码 ──
     step(1, total, '拉取最新代码')
-    # --no-edit：合并时不弹编辑器。本机分支和远程分叉过的话，`git pull` 会产生
-    # 一个合并提交，git 默认要为它开编辑器让人写说明（主力机上就弹出了记事本，
-    # 不关掉脚本就一直卡着）。这里是自动流程，不该等人。
-    ok, out = run(['git', 'pull', '--no-edit'], timeout=600)
+    # 环境变量 DEPLOY_NO_PULL=1：**代码已经用别的办法送到了**，跳过拉取、照常重装 / 体检 / 重启。
+    # 2026-10-02：B 连不上 GitHub（Failed to connect，连试三次），而改动只差一个提交 ——
+    # 从编程端打个 git bundle 经 Tailscale 送过去、本机 fast-forward 合进来，再走这里。
+    # 用环境变量不用命令行参数：本脚本是引导脚本，顶上不许 import 项目里的参数解析（会在装包前就挂）。
+    if os.environ.get('DEPLOY_NO_PULL') == '1':
+        print('  已按 DEPLOY_NO_PULL=1 跳过（代码已由别的途径送到）')
+        ok, out = True, ''
+    else:
+        # --no-edit：合并时不弹编辑器。本机分支和远程分叉过的话，`git pull` 会产生
+        # 一个合并提交，git 默认要为它开编辑器让人写说明（主力机上就弹出了记事本，
+        # 不关掉脚本就一直卡着）。这里是自动流程，不该等人。
+        ok, out = run(['git', 'pull', '--no-edit'], timeout=600)
     if not ok:
         print('\n** 拉取失败 **')
         print('最常见的原因：这台机器上改过代码。本机不该改代码，改动请在编程端做。')
