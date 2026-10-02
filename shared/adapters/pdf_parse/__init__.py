@@ -36,6 +36,7 @@ class PDFParseError(Exception):
 
 POLL_EVERY_S = 8          # 多久问一次 MineRU
 POLL_MAX_S = 900          # 最多等多久（15 分钟）
+PENDING_TTL_S = 48 * 3600  # 超时没等完的任务记多久（过了就当它丢了，重新上传）
 
 def _token():
     """取 MineRU token：走 config 原子模块（环境变量 → .env），避免子进程拿不到。"""
@@ -83,8 +84,47 @@ def parse_pdf(pdf_path, out_dir, reuse=True):
         return _parse_once(pdf_path, out_dir, model_version='pipeline', ocr=False)
 
 
+_PENDING = '.mineru_pending.json'
+
+
+def _pending_get(out_dir, pdf_path, model_version):
+    """上次超时时还在 MineRU 那边排队的任务 → batch_id，没有 / 过期 / 文件变了 → ''。"""
+    p = os.path.join(out_dir, _PENDING)
+    try:
+        with io.open(p, encoding='utf-8') as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return ''
+    if (d.get('model') == model_version and d.get('size') == os.path.getsize(pdf_path)
+            and time.time() - d.get('at', 0) < PENDING_TTL_S):
+        return d.get('batch_id') or ''
+    return ''
+
+
+def _pending_set(out_dir, pdf_path, model_version, batch_id):
+    try:
+        with io.open(os.path.join(out_dir, _PENDING), 'w', encoding='utf-8') as f:
+            json.dump({'batch_id': batch_id, 'model': model_version, 'size': os.path.getsize(pdf_path),
+                       'at': time.time()}, f)
+    except OSError:
+        pass
+
+
+def _pending_clear(out_dir):
+    try:
+        os.remove(os.path.join(out_dir, _PENDING))
+    except OSError:
+        pass
+
+
 def _parse_once(pdf_path, out_dir, model_version, ocr):
     fname = os.path.basename(pdf_path)
+    # 0. 上次超时、MineRU 那边还在排着的任务：**接着查它，不重新上传**（2026-10-02）。
+    #    重新上传 = 排到队尾重排 —— MineRU 忙时一篇 Adv. Mater. 排了 17 分钟还是 pending，每次超时重试都从头排。
+    batch_id = _pending_get(out_dir, pdf_path, model_version)
+    if batch_id:
+        log.info(f'{fname} 接着查上次没等完的 MineRU 任务 {batch_id}（不重新上传、不重新排队）')
+        return _poll_and_fetch(pdf_path, out_dir, model_version, ocr, batch_id)
     # 1. 申请上传地址
     r = _api('/file-urls/batch', 'POST', {
         "enable_formula": True, "enable_table": True, "language": "en", "model_version": model_version,
@@ -102,6 +142,11 @@ def _parse_once(pdf_path, out_dir, model_version, ocr):
     status = resp.status; conn.close()
     if status not in (200, 201):
         raise PDFParseError(f'上传失败 HTTP {status}')
+    _pending_set(out_dir, pdf_path, model_version, batch_id)     # 万一下面等超时，下次接着查这个任务
+    return _poll_and_fetch(pdf_path, out_dir, model_version, ocr, batch_id)
+
+
+def _poll_and_fetch(pdf_path, out_dir, model_version, ocr, batch_id):
 
     # 3. 轮询（字段结构见踩坑 #2）。最多等 POLL_MAX_S：原来 40×8 秒≈5 分钟，大文献（12 MB 的 Adv. Mater.）
     # 在 MineRU 那边排队 + 解析常超过它，平台先放弃了、MineRU 其实还在跑（2026-10-02）
@@ -117,14 +162,17 @@ def _parse_once(pdf_path, out_dir, model_version, ocr):
             # 把 MineRU 回的整条记录和 batch_id 留下：它的 err_msg 只有一句通用话，
             # 拿 batch_id 才能去它后台查（2026-09-18 一晚 10 次失败，事后只剩这一句）
             log.warn('MineRU 解析失败 batch=%s model=%s ocr=%s 返回=%s' % (batch_id, model_version, ocr, res))
+            _pending_clear(out_dir)                  # 明确失败了：下次重新上传（换档也走这条）
             raise PDFParseError('解析失败: ' + res.get('err_msg', '') + f'（batch {batch_id}，{model_version}）')
     if not zip_url:
         log.warn('MineRU 解析等了 %d 秒还没好 batch=%s 最后状态=%s' % (POLL_MAX_S, batch_id, st))
-        raise PDFParseError(f'解析超时（等了 {POLL_MAX_S // 60} 分钟，MineRU 状态 {st}，batch {batch_id}）')
+        raise PDFParseError(f'解析超时（等了 {POLL_MAX_S // 60} 分钟，MineRU 状态 {st}，batch {batch_id}；'
+                            f'任务还在 MineRU 那边排着，再提交这篇会接着等它，不会重新排队）')
 
     # 4. 下载解压
     zip_bytes = urllib.request.urlopen(zip_url, timeout=120).read()
     zipfile.ZipFile(io.BytesIO(zip_bytes)).extractall(out_dir)
+    _pending_clear(out_dir)
     link_origin(out_dir, pdf_path)
     return out_dir
 
