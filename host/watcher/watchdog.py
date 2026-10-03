@@ -73,7 +73,7 @@ GRACE = 180         # 重启后给进程的启动宽限期，期间不判死
 #         PowerShell 单引号串里反斜杠是字面量，所以这一串原样就是正则；点 / 斜杠 / 反斜杠三种写法都认。
 SERVICES = [
     {'name': 'watcher', 'beacon': 'watcher', 'module': 'host.watcher.service', 'args': [],
-     'pat': "'watcher[\\\\./]service'", 'no_progress': NO_PROGRESS},
+     'pat': "'watcher[\\\\./]service'", 'no_progress': NO_PROGRESS, 'tag_deepread': True},
     {'name': 'ingest',  'beacon': 'ingest',  'module': 'host.ingest', 'args': ['--loop'],
      'pat': "'host[\\\\./]ingest'",          'no_progress': NO_PROGRESS, 'auto_build': True},
 ]
@@ -125,10 +125,18 @@ def auto_build_on():
     return (get_site('AUTO_BUILD') or '0').strip() == '1'
 
 
-def active_services(auto_build):
-    """这次该守的进程：精读监听永远在；标了 auto_build 的只在自动建库开着时才守。
+def tag_deepread_on():
+    """「打标签自动精读」开着吗（控制面板 TAG_DEEPREAD，默认开；2026-10-03 用户关掉，只留 Claude Science 要的服务）。"""
+    from shared.kernel.config import get_site
+    return (get_site('TAG_DEEPREAD') or '1').strip() != '0'
+
+
+def active_services(auto_build, tag_deepread=True):
+    """这次该守的进程：精读监听看 TAG_DEEPREAD；标了 auto_build 的只在自动建库开着时才守。
     SERVICES 本身保持全量 —— 停进程、测试核对报活名都要认得全部。"""
-    return [s for s in SERVICES if auto_build or not s.get('auto_build')]
+    return [s for s in SERVICES
+            if (auto_build or not s.get('auto_build'))
+            and (tag_deepread or not s.get('tag_deepread'))]
 
 # 看门狗拉起的三个孙子进程。**重启计划任务时要把它们全停掉**：任务停的只是看门狗，
 # 孙子进程照跑旧代码（踩坑 #62）—— 面板的重启按钮与 `host.deploy.update` 都从这里取，别各写一份。
@@ -260,17 +268,18 @@ def main():
     # 两台都跑会重复精读同一篇、重复写回 Zotero、重复烧钱，标签状态机还会互相打架。
     role.require_prod('看门狗（守护 watcher / 落地流水线 / 每日作业）', force=flag('--force'))
     auto = auto_build_on()
-    services = active_services(auto)
-    log(f'看门狗启动。管 {len(services)} 个常驻进程（{"、".join(s["name"] for s in services)}）'
-        f'{" + 每日作业" if auto else "；后台自动建库已关，不拉落地流水线与每日作业"}；'
+    tag = tag_deepread_on()
+    services = active_services(auto, tag)
+    log(f'看门狗启动。管 {len(services)} 个常驻进程（{"、".join(s["name"] for s in services) or "无"}）'
+        f'{" + 每日作业" if auto else "；后台自动建库已关，不拉落地流水线与每日作业"}'
+        f'{"" if tag else "；打标签自动精读已关"}；'
         f'报活阈值 {STALE}s，无进展阈值 {NO_PROGRESS}s，检查间隔 {CHECK}s')
-    if not auto:
-        # 开关刚关上时，上一轮拉起的落地流水线可能还活着 —— 停掉它，否则它会一直跑下去
-        for svc in SERVICES:
-            if svc.get('auto_build'):
-                for pid in find_pids(svc['pat']):
-                    _sp.run(['taskkill', '/F', '/PID', pid], timeout=20)
-                    log(f'自动建库已关，停掉 {svc["name"]} PID={pid}')
+    # 开关刚关上时，上一轮拉起的进程可能还活着 —— 停掉，否则它会一直跑下去
+    for svc in SERVICES:
+        if svc not in services:
+            for pid in find_pids(svc['pat']):
+                _sp.run(['taskkill', '/F', '/PID', pid], timeout=20)
+                log(f'开关已关，停掉 {svc["name"]} PID={pid}')
     last_restart = {s['name']: 0 for s in services}
     last_port = {}
     while True:
