@@ -15,11 +15,21 @@
   - parse_docx(path, out_dir)    → out_dir（只有 full.md：文字 + 表格，python-docx 读，不花额度）
   - parse_document(path, out_dir) → 按扩展名分派到上面两个。**精读 / 取全文 / 落地流水线
                                     三处都只调这一个**（2026-09-13 收拢，此前三处各写一遍）。
+  - parse_pdf_text(pdf_path, out_dir) → 快速文本层：PyMuPDF 本地抽字，几秒出 full.md（无表格结构、无图），
+                                    打 `.tier_text` 标记。之后 parse_pdf（MineRU）成功会覆盖它并去掉标记。
+  - parse_document_text(path, out_dir) → 快速层的分派：pdf → parse_pdf_text，docx → parse_docx。
+  - tier(out_dir)                 → 'structured'（MineRU / docx）/ 'text'（只有快速层）/ 'none'
+
+## 两层（2026-10-04，Claude Science 的需求文档）
+
+MineRU 是云端排队，忙起来一篇 pending 半小时（2026-10-02 两篇都卡在 pending、0 字可读，
+PDF 明明已经在盘上）。所以拿到 PDF 先出**快速文本层**（本地、几秒、不联网），
+按节按段马上能读；MineRU 在后台补表格与版面，成功了升级成 structured，失败了文本层照旧可用。
 
 配置（环境变量）：
   - MINERU_TOKEN : MineRU API token（必须；无默认，密钥不硬编码）
 """
-import os, json, time, zipfile, io, urllib.request, urllib.error
+import os, re, json, time, zipfile, io, urllib.request, urllib.error
 import urllib.parse as _up, http.client as _hc
 
 from shared.kernel.log import get_logger
@@ -173,6 +183,7 @@ def _poll_and_fetch(pdf_path, out_dir, model_version, ocr, batch_id):
     zip_bytes = urllib.request.urlopen(zip_url, timeout=120).read()
     zipfile.ZipFile(io.BytesIO(zip_bytes)).extractall(out_dir)
     _pending_clear(out_dir)
+    _tier_text_clear(out_dir)                 # MineRU 的 full.md 已经覆盖了快速层
     link_origin(out_dir, pdf_path)
     return out_dir
 
@@ -279,6 +290,213 @@ def parse_document(path, out_dir, reuse=True):
     ext = real_ext(path, os.path.splitext(path or '')[1].lower())
     if ext == '.pdf':
         return parse_pdf(path, out_dir, reuse=reuse)
+    if ext == '.docx':
+        return parse_docx(path, out_dir, reuse=reuse)
+    raise PDFParseError(f'不会解析这种文件：{ext or "(无扩展名)"}（只认 .pdf / .docx）')
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 快速文本层（PyMuPDF，本地几秒）
+# ══════════════════════════════════════════════════════════════════════
+
+TIER_TEXT, TIER_STRUCTURED, TIER_NONE = 'text', 'structured', 'none'
+_TIER_MARK = '.tier_text'
+MIN_TEXT_CHARS = 1500     # 整篇抽出来不到这么多字 = 没有文字层（扫描件），快速层帮不上，等 MineRU 的 OCR
+
+
+def tier(out_dir):
+    """这个解析目录到哪一档：有 full.md 且没有快速层标记 = structured（MineRU 或 docx 直读）。"""
+    if not os.path.exists(os.path.join(out_dir, 'full.md')):
+        return TIER_NONE
+    return TIER_TEXT if os.path.exists(os.path.join(out_dir, _TIER_MARK)) else TIER_STRUCTURED
+
+
+def _tier_text_clear(out_dir):
+    try:
+        os.remove(os.path.join(out_dir, _TIER_MARK))
+    except OSError:
+        pass
+
+
+_SECTION_WORDS = re.compile(
+    r'(?i)^(?:\d+(?:\.\d+)*\.?\s+|[IVX]+\.\s+)?(?:abstract|introduction|background|results?|discussion|'
+    r'results and discussion|conclusions?|summary|experimental(?: section)?|methods?|materials and methods|'
+    r'materials|characterization|acknowledge?ments?|references|supporting information|'
+    r'associated content|author information|notes|conflicts? of interest|data availability)\b')
+_NUMBERED_HEAD = re.compile(r'^\d+(?:\.\d+){0,3}\.?\s+[A-Z]')
+_MULTI_NUM_HEAD = re.compile(r'^\d+\.\d+(?:\.\d+){0,2}\.?\s+[A-Z][A-Za-z]')
+_CAPTION_START = re.compile(r'(?i)^(?:fig(?:ure)?|table|scheme)\.?\s*S?\d+')
+
+
+def _norm_repeat(t):
+    """页眉页脚判重用：数字抹成 #（页码、卷期每页不同，其余相同）。"""
+    return re.sub(r'\d+', '#', t.strip().lower())[:80]
+
+
+def _blocks(doc):
+    """→ [(页号, 文字, 字号, 是否加粗, 相对纵坐标, 开头的加粗/斜体段)]，每个文字块一条，行内拼好、断词接上。
+
+    「开头的加粗/斜体段」用来认**接排标题**：`2.2. Preparation of PDBS. The mixture was…` 这种
+    标题和正文挤在同一块里（Elsevier 常见），整块看不像标题，只有开头那截换了字体。
+    """
+    out = []
+    for pno, page in enumerate(doc):
+        h = page.rect.height or 1
+        for b in page.get_text('dict').get('blocks', []):
+            if b.get('type') != 0:
+                continue
+            lines, sizes, bold, total, lead, lead_open = [], [], 0, 0, '', True
+            for ln in b.get('lines', []):
+                spans = [s for s in ln.get('spans', []) if s.get('text', '').strip()]
+                if not spans:
+                    continue
+                lines.append(''.join(s['text'] for s in ln['spans']).strip())
+                for s in spans:
+                    n = len(s['text'].strip())
+                    sizes.append((s.get('size', 0), n))
+                    total += n
+                    font = (s.get('font') or '').lower()
+                    is_b = bool(s.get('flags', 0) & 16) or 'bold' in font
+                    styled = is_b or bool(s.get('flags', 0) & 2) or 'italic' in font   # Elsevier 二级标题是斜体
+                    if is_b:
+                        bold += n
+                    if lead_open:
+                        if styled:
+                            lead += s['text']
+                        else:
+                            lead_open = False
+            if not lines:
+                continue
+            text = ''
+            for ln in lines:                   # 行尾连字符 + 下一行小写开头 = 一个词被折断了
+                if text.endswith('-') and ln[:1].islower():
+                    text = text[:-1] + ln
+                else:
+                    text = (text + ' ' + ln) if text else ln
+            size = max(sizes, key=lambda x: x[1])[0] if sizes else 0
+            out.append((pno, text, round(size * 2) / 2, bool(total) and bold / total > 0.6,
+                        b['bbox'][1] / h, ' '.join(lead.split())))
+    return out
+
+
+_BULLET = re.compile(r'^[■▪●•◆▶⬛]+\s*')   # ACS 的 ■ INTRODUCTION 之类
+
+
+def _is_heading(t, size, body, bold):
+    """一整块像不像标题。"""
+    t0 = _BULLET.sub('', t).strip()
+    if len(t0) >= 140 or t0.endswith(('.', ',', ';')) or _CAPTION_START.match(t0):
+        return False
+    # 图里的矢量字（子图标号 a / b / c、坐标轴、单位）也是一个个文字块：字母太少的一律不算
+    if (len(re.findall(r'[A-Za-z]', t0)) < 4 or not re.search(r'[A-Za-z]{3}', t0)
+            or t0.lower().startswith(('doi', 'http', 'www.'))):
+        return False
+    if size >= body + 1.5:
+        return True
+    if _SECTION_WORDS.fullmatch(t0.rstrip(':')) and len(t0) < 60:
+        return True
+    if bold and size >= body - 0.6:
+        # 加粗的短行：章节词 / 编号开头的一律算；别的要像一句标题（≥2 个词、大写开头、不太长）
+        if _SECTION_WORDS.match(t0) or _NUMBERED_HEAD.match(t0):
+            return True
+        return len(t0) < 100 and len(t0.split()) >= 2 and t0[:1].isupper()
+    # 多级编号（2.1 / 3.2.1）本身就说明是小节标题，不管字体
+    return bool(_MULTI_NUM_HEAD.match(t0)) and len(t0) < 120
+
+
+def _run_in_head(t, lead):
+    """接排标题：开头加粗段像编号标题 / 章节词，且后面还有正文 → (标题, 正文)，否则 None。"""
+    lead = _BULLET.sub('', lead.strip()).rstrip(':').strip()
+    t = _BULLET.sub('', t.strip())
+    if not lead or len(lead) > 120 or len(lead) >= len(t) - 20 or not t.startswith(lead[:10]):
+        return None
+    if not (_NUMBERED_HEAD.match(lead) or _SECTION_WORDS.match(lead)):
+        return None
+    return lead.rstrip('.'), t[len(lead):].lstrip(' .:')
+
+
+def text_markdown(doc):
+    """一个打开的 PyMuPDF 文档 → Markdown 文本（标题按字号 / 加粗 / 章节词认，正文一块一段）。
+
+    只求「按节按段能读」，不求版面：表格会散成几行字，图只剩图注 —— 那是 MineRU 那一档的事。
+    """
+    blocks = _blocks(doc)
+    if not blocks:
+        return ''
+    # 正文字号 = 按字数加权最多的那个
+    weight = {}
+    for b in blocks:
+        weight[b[2]] = weight.get(b[2], 0) + len(b[1])
+    body = max(weight, key=lambda k: weight[k])
+    # 页眉页脚：贴着页顶 / 页底、在三分之一以上的页上重复出现
+    pages = len(doc)
+    seen = {}
+    for p, t, _s, _b, y, _l in blocks:
+        if (y < 0.08 or y > 0.92) and len(t) < 160:
+            seen.setdefault(_norm_repeat(t), set()).add(p)
+    repeat = {k for k, ps in seen.items() if pages >= 3 and len(ps) >= max(3, pages // 3)}
+
+    parts, title_done = [], False
+    for p, t, s, bold, y, lead in blocks:
+        if (y < 0.08 or y > 0.92) and (_norm_repeat(t) in repeat or re.fullmatch(r'\d{1,4}', t.strip())):
+            continue
+        if not title_done and p == 0 and s >= body + 4 and len(t) < 300:
+            parts.append('# ' + t)
+            title_done = True
+            continue
+        if _is_heading(t, s, body, bold):
+            parts.append('## ' + _BULLET.sub('', t).strip())
+            continue
+        ri = _run_in_head(t, lead)
+        if ri:
+            parts.append('## ' + ri[0])
+            if ri[1]:
+                parts.append(ri[1])
+            continue
+        parts.append(t)
+    return '\n\n'.join(parts) + '\n'
+
+
+def parse_pdf_text(pdf_path, out_dir, reuse=True):
+    """PDF → out_dir/full.md（快速文本层）。本地 PyMuPDF，不联网、不花额度，一篇几秒。
+
+    已有 full.md（任何一档）且 reuse=True 时不动它 —— 不拿快速层去盖 MineRU 的结果。
+    没有文字层（扫描件）抛 PDFParseError：快速层帮不上，只能等 MineRU 的 OCR。
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    md_path = os.path.join(out_dir, 'full.md')
+    if reuse and os.path.exists(md_path):
+        return out_dir
+    try:
+        import fitz
+    except ImportError:
+        raise PDFParseError('需要 PyMuPDF：pip install PyMuPDF')
+    try:
+        doc = fitz.open(pdf_path)
+    except Exception as e:
+        raise PDFParseError(f'PDF 打不开：{type(e).__name__}: {str(e)[:80]}')
+    try:
+        md = text_markdown(doc)
+        pages = len(doc)
+    finally:
+        doc.close()
+    if len(md) < MIN_TEXT_CHARS:
+        raise PDFParseError(f'PDF 几乎没有文字层（{pages} 页只抽到 {len(md)} 字，多半是扫描件），要等 MineRU 的 OCR')
+    with io.open(os.path.join(out_dir, _TIER_MARK), 'w', encoding='utf-8') as fh:
+        json.dump({'engine': 'pymupdf', 'at': time.strftime('%Y-%m-%d %H:%M:%S'),
+                   'pages': pages, 'chars': len(md)}, fh)
+    tmp = md_path + '.tmp'
+    with io.open(tmp, 'w', encoding='utf-8') as fh:
+        fh.write(md)
+    os.replace(tmp, md_path)
+    return out_dir
+
+
+def parse_document_text(path, out_dir, reuse=True):
+    """快速层的分派：pdf → parse_pdf_text；docx 本来就是直读文字 + 表格（就是它的最终档）。"""
+    ext = real_ext(path, os.path.splitext(path or '')[1].lower())
+    if ext == '.pdf':
+        return parse_pdf_text(path, out_dir, reuse=reuse)
     if ext == '.docx':
         return parse_docx(path, out_dir, reuse=reuse)
     raise PDFParseError(f'不会解析这种文件：{ext or "(无扩展名)"}（只认 .pdf / .docx）')

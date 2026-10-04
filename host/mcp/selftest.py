@@ -385,6 +385,27 @@ def main():
         io.open(pp, 'w', encoding='utf-8').write(_json.dumps({'total': 3, 'finished': 3, 'done': True}))
         check('进度已完 → 没在跑', S.running_job(pp) == '')
 
+        # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md）
+        big = S.cap('t', lambda a: {'text': 'x', 'structured': {'blob': 'y' * 60000, 'n': 3}}, spill_dir=td)
+        r = big({})
+        spilled = r['structured'].get('spilled', '')
+        check('超 50 KB 的结果写文件、只回路径（不再给半截 JSON）',
+              r['structured'].get('bytes', 0) > S.MAX_OUT and spilled
+              and len(_json.dumps(r['structured'])) < 2000 and r['structured']['summary'].get('n') == 3, str(r)[:200])
+        small = S.cap('t', lambda a: {'text': 'x', 'structured': {'a': 1}}, spill_dir=td)({})
+        check('小结果原样回', small == {'text': 'x', 'structured': {'a': 1}})
+        cap_line, grid = S.table_rows('Table 1. Props<table><tr><th>Sample</th><th colspan="2">σ (MPa)</th></tr>'
+                                      '<tr><td rowspan="2">PBS-1</td><td>1.2</td><td>0.1</td></tr>'
+                                      '<tr><td>1.5</td><td>0.2</td></tr></table>')
+        check('表格转行列：colspan 展开、rowspan 往下补',
+              cap_line == 'Table 1. Props' and grid == [['Sample', 'σ (MPa)', 'σ (MPa)'], ['PBS-1', '1.2', '0.1'],
+                                                        ['PBS-1', '1.5', '0.2']], str(grid))
+        check('表格转 CSV', S._as_csv(grid).splitlines()[0] == 'Sample,σ (MPa),σ (MPa)')
+        keep, gone = S.precheck(['10.1/real', '10.1/fake'], exists_fn=lambda d: d.endswith('real'))
+        check('DOI 预检：Crossref 查无此 DOI 的当场 NOT_FOUND，不占队列',
+              keep == ['10.1/real'] and gone and gone[0]['doi'] == '10.1/fake' and gone[0]['code'] == 'NOT_FOUND')
+        check('图号归一：Fig. 3b / Figure 3 对得上', S._fig_key('Fig. 3b') == S._fig_key('Figure 3') == 'figure 3')
+
     httpd3 = ThreadingHTTPServer(('127.0.0.1', 0),
                                  H.make_handler(build_fake_server(), '', {S.ENDPOINT: sci}))
     p3 = httpd3.server_address[1]

@@ -21,8 +21,8 @@ R4 窗（2026-08-31）改成**聚合**：服务端自己不知道有哪些工具
 | `stdio.py` | 手写 MCP stdio 协议层（JSON-RPC 2.0 + 换行分隔，零第三方依赖）|
 | `selftest.py` | 协议层离线自测（不联网、不依赖用户数据）|
 | `http_transport.py` | Streamable HTTP 传输（只绑 127.0.0.1，跨机走 SSH 隧道）；一个进程可挂多个端点 |
-| `science.py` | **给 Claude Science 的面**（端点 `/science`，v0.2 按它的实测评估改）：12 个工具，全部回 structuredContent；itemKey 可给 DOI；取全文一次 ≤25 篇（串行 + 20 秒 + 同时只一个作业，服务端强制）；进度可 wait_s；节可批量；全库清单；图号→图片 |
-| `litcall.py` | 一行调一个工具（**只用标准库**，跑在 B 机 WSL）：握手、调用、只打印结构化结果；`--list` / `--batch` |
+| `science.py` | **给 Claude Science 的面**（端点 `/science`，v0.3 按它 10-04 的需求文档改）：14 个工具，全部回 structuredContent；itemKey 可给 DOI；取全文一次 ≤25 篇（串行 + 20 秒 + 同时只一个作业，服务端强制）；结果带 code/retryable/stage/tier/route；`fulltext_retry` 续跑、`paper_status` 一次看清一批；**任何返回超 50 KB 落文件只回路径**；表格出 CSV/JSON；节可 offset 分页 |
+| `litcall.py` | 一行调一个工具（**只用标准库**，跑在 B 机 WSL）：握手、调用、只打印结构化结果；`--list` / `--batch` / `--version`；batch 总输出过 48 KB 的条目落到 `~/.cache/litcall/` |
 | `bridge.py` | stdio ↔ HTTP 转接（**只用标准库**，不 import 项目）：Claude Science 的 Remote 只收公网 https，所以它以本机命令 `python host/mcp/bridge.py` 拉起本文件，转给 `127.0.0.1:8778/science` |
 
 为什么不用官方 SDK：平台「少依赖」架构准则 + 协议已实测稳定（官方 SDK 的 ReadBuffer

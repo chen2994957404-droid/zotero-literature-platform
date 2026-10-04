@@ -178,3 +178,9 @@ Wiley 1.15MB pdf · Elsevier 12.1MB docx · ACS 老 1.68MB pdf(18页) · ACS 新
 
 扩展名照抄出版商给的文件名，文件头却是 `%PDF`；python-docx 打开当然「Package not found」，主力机 24 篇 SI 天天解析失败。
 **落盘与解析都看文件头**（`pdf_parse.real_ext`），扩展名只兜底。
+
+
+## 取全文：PDF 在盘上、可读 0 字（2026-10-04，踩坑 #191）
+
+MineRU 云端一篇 pending 半小时，而「解析成功才算拿到」，于是 PDF 在手也读不了、后面的跟着等。
+现在 PDF 到手先出快速文本层（PyMuPDF，几秒），MineRU 后台补。判断「还要不要跑 MineRU」看 `pdf_parse.tier()`，别看 full.md 在不在。

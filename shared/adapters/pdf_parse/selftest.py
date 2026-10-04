@@ -59,6 +59,37 @@ def main():
         else:
             print('  [FAIL] real_ext 判错')
 
+    # 5. 快速文本层（2026-10-04）：本地抽字出 full.md，标 text；MineRU 的结果（无标记）算 structured
+    from shared.adapters.pdf_parse import parse_pdf_text, tier, TIER_TEXT, TIER_STRUCTURED, TIER_NONE
+    total += 2
+    with tempfile.TemporaryDirectory() as d:
+        try:
+            import fitz
+            pdf = os.path.join(d, 'a.pdf')
+            doc = fitz.open()
+            body = ' '.join('the borosiloxane network reached a tensile strength of 12 MPa' for _ in range(30))
+            for title in ('1. Introduction', '2. Results and Discussion'):
+                pg = doc.new_page()
+                pg.insert_text((72, 80), title, fontsize=16)
+                pg.insert_textbox(fitz.Rect(72, 100, 520, 780), body, fontsize=10)
+            doc.save(pdf)
+            out = os.path.join(d, 'parsed')
+            before = tier(out)
+            parse_pdf_text(pdf, out)
+            md = open(os.path.join(out, 'full.md'), encoding='utf-8').read()
+            if before == TIER_NONE and tier(out) == TIER_TEXT and '## 2. Results and Discussion' in md:
+                print('  [PASS] 快速文本层：出 full.md、认出标题、标成 text'); ok += 1
+            else:
+                print('  [FAIL] 快速文本层没按预期出来：', before, tier(out), md[:80])
+            os.remove(os.path.join(out, '.tier_text'))      # 等价于 MineRU 覆盖之后
+            parse_pdf_text(pdf, out)                         # reuse：不许拿快速层盖掉 MineRU 的结果
+            if tier(out) == TIER_STRUCTURED:
+                print('  [PASS] 已有 MineRU 结果时快速层不覆盖'); ok += 1
+            else:
+                print('  [FAIL] 快速层盖掉了 MineRU 的结果')
+        except ImportError:
+            print('  [SKIP] 没装 PyMuPDF'); ok += 2
+
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)
 

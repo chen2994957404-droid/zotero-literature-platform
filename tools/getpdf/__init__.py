@@ -282,7 +282,7 @@ def land(doi, with_si=True, allow_fetch=True, zotero_index=None,
     """
     doi = catalog.norm_doi(doi)
     out = {'doi': doi, 'id': '', 'ok': False, 'action': 'failed', 'source': '',
-           'pdf': '', 'si': '', 'note': '', 'in_zotero': False}
+           'pdf': '', 'si': '', 'note': '', 'in_zotero': False, 'reason': ''}
     if not pdf_fetch.is_doi(doi):
         out['note'] = '不像一个 DOI'
         return out
@@ -321,6 +321,7 @@ def land(doi, with_si=True, allow_fetch=True, zotero_index=None,
                 r, fetched_si = fetch_pair(doi)
             else:
                 r = fetch_one(doi)
+            out['reason'] = r['reason']          # 机器读的失败原因 / 'oa' / 'ok'（状态码与 route 靠它）
             if r['ok']:
                 changed |= _copy(r['path'], main)
                 out['source'] = catalog.SRC_FETCH

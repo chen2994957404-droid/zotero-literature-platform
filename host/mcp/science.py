@@ -50,7 +50,12 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.2.0'
+VERSION = '0.3.0'
+# v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
+#   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
+#   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
+#   library_section 加 offset 分页、表格出 CSV/JSON · 提交前问 Crossref，无效 DOI 当场 NOT_FOUND ·
+#   新增 paper_status（一次看清一批的档位）· outline 带 tier 与图片路径
 
 # 原样借用的（输出本来就合适）
 BORROW = ('paperdb_sql', 'paperdb_measurements', 'ping')
@@ -58,12 +63,18 @@ BORROW = ('paperdb_sql', 'paperdb_measurements', 'ping')
 MAX_DOIS = 25          # 一次提交的上限；与 getpdf 单次最多 25 篇的老约定一致
 MAX_WAIT = 30          # fulltext_status 最多等多久（HTTP 服务一次只跑一个调用，等太久会堵别人）
 STALE_SECS = 600       # 进度文件多久没动就当那个作业已经死了
+STALL_SECS = 300       # 同一篇处理超过这么久没进展 → 状态里标 stalled（下载各步自带超时，正常到不了这么久）
+MAX_OUT = 50000        # 一次返回的结构化数据上限（字节）：调用方的远程命令输出过 64 KB 就被截断（2026-10 实测）
 
 INSTRUCTIONS = """\
 材料学研究者（聚硼硅氧烷 / 动态键弹性体）的文献证据库，约 1100 篇，跑在他校园网里的主力机上。
 检索你自己来；这里给你：付费全文（学校订阅）、库索引、向量检索、按节读、原件路径、抽出来的数值库。
 每个工具都返回 structuredContent（JSON）；itemKey 可以给证据库 id，也可以直接给 DOI。
 取全文：串行、每篇隔 20 秒、同时只跑一个作业（服务端强制，保护全校出口 IP），一篇约 1 分钟。
+PDF 到手几秒内先出 tier=text（本地抽字，可按节读、无表格结构）；MineRU 后台补成 tier=structured（含表格）。
+每篇结果带 code（OK / CAPTCHA_REQUIRED / NOT_SUBSCRIBED / NOT_FOUND / NO_PDF_LINK / PARSE_PENDING /
+PARSE_FAILED / NETWORK_ERROR / NOT_FETCHED）与 retryable；CAPTCHA_REQUIRED 等人在主力机浏览器点完后用 fulltext_retry。
+任何返回超过 50 KB 会写成文件、只回 spilled 路径。
 文件路径是 B 机 WSL 路径（/mnt/d/...），你的 SSH 算力能直接读。"""
 
 _DOI_PREFIX = re.compile(r'(?i)^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)')
@@ -223,20 +234,129 @@ def _outline(a):
                    for t in o.get('tables') or []],
         'figures': [{k: f.get(k) for k in ('id', 'ref', 'caption', 'section')} for f in o.get('figures') or []],
         'chars': (o.get('stats') or {}).get('chars', 0)}
-    data = {'itemKey': pid, 'available': True, 'main': slim(d)}
+    from tools.getpdf import fulltext as F
+    data = {'itemKey': pid, 'available': True, 'main': slim(d), 'tier': F.tier_of(pid)}
+    # 图注带上图片路径（只有 MineRU 那一档有图片；快速文本层只有图注）
+    imgs = _figure_map(pid)
+    for f in data['main']['figures']:
+        f['image'] = imgs.get(_fig_key(f.get('ref')), '')
     if d.get('si'):
         data['si'] = slim(d['si'])         # SI 的地址与正文同形（s4.p1），取时传 si=true
+        data['si_tier'] = F.tier_of(pid, si=True)
     return _out('%s：正文 %d 节%s' % (pid, len(data['main']['sections']),
                                    '，另有 SI（取 SI 的节传 si=true）' if d.get('si') else ''), data)
 
 
-def _one_section(req, max_chars):
+def _fig_key(ref):
+    """'Figure 3' / 'Fig. 3b' / 'Scheme 1' → 'figure 3' / 'scheme 1'（对图号用）。"""
+    r = re.sub(r'\s+', ' ', (ref or '').lower().replace('fig.', 'figure').replace('fig ', 'figure ')).strip()
+    return re.sub(r'(\d)[a-z]$', r'\1', r.rstrip('.'))
+
+
+def _figure_map(pid):
+    """这篇「图号 → 图片 WSL 路径」。没有 MineRU 图片目录时是空的。"""
+    from shared.kernel import paths
+    md, img = paths.fulltext(pid), paths.images_dir(pid)
+    if not (os.path.exists(md) and os.path.isdir(img)):
+        return {}
+    text = io.open(md, encoding='utf-8').read()
+    return {_fig_key(f['ref']): to_wsl(f['image']) for f in figure_images(text, img)}
+
+
+def _html_cells(html):
+    """HTML 表格 → [[{text, colspan, rowspan}, …], …]（标准库 html.parser）。"""
+    from html.parser import HTMLParser
+    rows = []
+    st: dict = {'row': None, 'cell': None}
+
+    class P(HTMLParser):
+        def handle_starttag(self, tag, attrs):
+            a = dict(attrs)
+            if tag == 'tr':
+                st['row'] = []
+            elif tag in ('td', 'th') and st['row'] is not None:
+                st['cell'] = {'text': '', 'colspan': int(a.get('colspan') or 1),
+                              'rowspan': int(a.get('rowspan') or 1)}
+            elif tag == 'br' and st['cell'] is not None:
+                st['cell']['text'] += ' '
+
+        def handle_endtag(self, tag):
+            if tag in ('td', 'th') and st['cell'] is not None and st['row'] is not None:
+                st['row'].append(st['cell'])
+                st['cell'] = None
+            elif tag == 'tr' and st['row'] is not None:
+                rows.append(st['row'])
+                st['row'] = None
+
+        def handle_data(self, data):
+            if st['cell'] is not None:
+                st['cell']['text'] += data
+
+    P().feed(html or '')
+    return rows
+
+
+def html_table_rows(html):
+    """HTML 表格 → 规整的行列表：colspan 展开成重复格，rowspan 往下面几行补同一格。"""
+    grid, carry = [], {}                       # carry：列号 → (还要补几行, 文字)
+    for cells in _html_cells(html):
+        line, col, cells = [], 0, list(cells)
+        while cells or carry.get(col):
+            if carry.get(col):
+                left, txt = carry[col]
+                line.append(txt)
+                carry[col] = (left - 1, txt) if left > 1 else None
+                col += 1
+                continue
+            c = cells.pop(0)
+            txt = ' '.join(c['text'].split())
+            for _ in range(max(1, c['colspan'])):
+                line.append(txt)
+                if c['rowspan'] > 1:
+                    carry[col] = (c['rowspan'] - 1, txt)
+                col += 1
+        grid.append(line)
+    return grid
+
+
+def table_rows(text):
+    """一段含 <table> 的文字 → (表前的图注文字, 行列表)。没有表格返回 (text, [])。"""
+    m = re.search(r'(?is)<table\b.*?</table>', text or '')
+    if not m:
+        return text, []
+    return text[:m.start()].strip(), html_table_rows(m.group(0))
+
+
+def _as_csv(rows):
+    import csv
+    buf = io.StringIO()
+    csv.writer(buf, lineterminator='\n').writerows(rows)
+    return buf.getvalue()
+
+
+def _one_section(req, max_chars, offset=0, fmt='html'):
     from tools import library
     pid = _resolve(req.get('itemKey'))
-    r = library.section(pid, req.get('sectionId') or '', max_chars=max_chars, si=bool(req.get('si')))
-    return {'itemKey': pid, 'sectionId': req.get('sectionId'), 'si': bool(req.get('si')),
-            'text': r.get('text', ''), 'chars': r.get('chars', 0),
-            'truncated': bool(r.get('truncated')), 'why_empty': r.get('why_empty', '')}
+    offset = max(0, int(req.get('offset') or offset or 0))
+    fmt = (req.get('format') or fmt or 'html').lower()
+    r = library.section(pid, req.get('sectionId') or '', max_chars=offset + max_chars, si=bool(req.get('si')))
+    full = r.get('text', '')
+    out = {'itemKey': pid, 'sectionId': req.get('sectionId'), 'si': bool(req.get('si')),
+           'why_empty': r.get('why_empty', '')}
+    if fmt in ('csv', 'json') and full:
+        caption, rows = table_rows(full)
+        if rows:
+            out.update(format=fmt, caption=caption, n_rows=len(rows), n_cols=max(len(x) for x in rows),
+                       chars=len(full))
+            out['csv' if fmt == 'csv' else 'rows'] = _as_csv(rows) if fmt == 'csv' else rows
+            return out
+        out['format_note'] = '这处没有 HTML 表格（快速文本层没有表格结构，等 tier=structured），按文字给'
+    text = full[offset:offset + max_chars]
+    more = bool(r.get('truncated')) or len(full) > offset + max_chars
+    out.update(text=text, chars=len(text), offset=offset, truncated=more)
+    if more:
+        out['next_offset'] = offset + len(text)
+    return out
 
 
 def _section(a):
@@ -248,11 +368,11 @@ def _section(a):
     out = []
     for q in reqs[:50]:
         try:
-            out.append(_one_section(q, max_chars))
+            out.append(_one_section(q, max_chars, a.get('offset') or 0, a.get('format') or 'html'))
         except ValueError as e:
             out.append({'itemKey': q.get('itemKey'), 'sectionId': q.get('sectionId'),
                         'text': '', 'chars': 0, 'why_empty': str(e)})
-    got = sum(1 for r in out if r['chars'])
+    got = sum(1 for r in out if r.get('chars'))
     return _out('取到 %d/%d 处' % (got, len(out)), {'results': out})
 
 
@@ -355,6 +475,38 @@ def _paper_files(a):
 # 取全文：提交（后台串行）+ 看进度（可等）
 # ══════════════════════════════════════════════════════════════════════
 
+def precheck(dois, exists_fn=None):
+    """库里没有的 DOI 先问 Crossref：查无此 DOI 的当场退回（NOT_FOUND，不占队列）。
+
+    → (要交的, 退回的 [{doi, code, why}])。Crossref 连不上 / 别的错一律放行 —— 预检只拦「确定不存在」的，
+    拿不准就交给出版商那边判（宁可多跑一篇，不能误杀）。并发问（5 路），25 篇约几秒。
+    """
+    from shared.kernel import catalog
+    lookup = exists_fn
+    if lookup is None:
+        from shared.adapters import crossref
+
+        def _exists(d):
+            try:
+                crossref.work(d)
+                return True
+            except crossref.DoiNotFound:
+                return False
+            except Exception:
+                return True
+        lookup = _exists
+    todo = [d for d in dois if not catalog.find(d)]
+    if not todo:
+        return list(dois), []
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        exists = dict(zip(todo, ex.map(lookup, todo)))
+    keep = [d for d in dois if exists.get(d, True)]
+    gone = [{'doi': d, 'code': 'NOT_FOUND', 'retryable': False,
+             'why': 'Crossref 查无此 DOI（多半抄错了），没排进队列'} for d in dois if not exists.get(d, True)]
+    return keep, gone
+
+
 def _fulltext(a):
     from shared.kernel import paths, subproc
     dois, bad = [], []
@@ -362,6 +514,7 @@ def _fulltext(a):
         n = norm_doi(str(d))
         (dois if n else bad).append(n or str(d))
     dois = list(dict.fromkeys(dois))          # 队列内去重
+    rejected = [{'doi': d, 'code': 'NOT_FOUND', 'retryable': False, 'why': '不像一个 DOI'} for d in bad]
     if not dois:
         raise ValueError('没有像样的 DOI：%s' % ', '.join(bad) if bad else '没给 DOI')
     if len(dois) > MAX_DOIS:
@@ -376,7 +529,11 @@ def _fulltext(a):
         from tools.getpdf import fulltext as F
         rs = F.many(dois, allow_fetch=False, limit=len(dois), use_zotero=False)
         return _out('只查不取：%d/%d 篇手上有全文' % (sum(1 for r in rs if r['ok']), len(rs)),
-                    {'results': [_slim_result(r) for r in rs], 'rejected': bad})
+                    {'results': [_slim_result(r) for r in rs], 'rejected': rejected})
+    dois, gone = precheck(dois)
+    rejected += gone
+    if not dois:
+        return _out('全部退回：%d 篇 DOI 无效' % len(rejected), {'submitted': [], 'rejected': rejected, 'eta_s': 0})
     path = _progress_path()
     try:
         io.open(path, 'w', encoding='utf-8').write(json.dumps(
@@ -386,12 +543,28 @@ def _fulltext(a):
     subproc.spawn([sys.executable, '-m', 'tools.getpdf'] + dois
                   + ['--fulltext', '--limit', str(len(dois)), '--no-zotero'], cwd=paths.ROOT)
     eta = len(dois) * 60
-    return _out('已提交 %d 篇，后台串行，预计约 %d 分钟' % (len(dois), max(1, eta // 60)),
-                {'submitted': dois, 'rejected': bad, 'eta_s': eta})
+    return _out('已提交 %d 篇，后台串行，预计约 %d 分钟%s' % (
+        len(dois), max(1, eta // 60), '；退回 %d 篇' % len(rejected) if rejected else ''),
+                {'submitted': dois, 'rejected': rejected, 'eta_s': eta})
+
+
+_RESULT_KEYS = ('doi', 'id', 'ok', 'code', 'retryable', 'stage', 'tier', 'route', 'source',
+                'secs', 'chars', 'si', 'why', 'deferred')
 
 
 def _slim_result(r):
-    return {k: r.get(k) for k in ('doi', 'id', 'ok', 'source', 'secs', 'chars', 'si', 'why')}
+    out = {k: r.get(k) for k in _RESULT_KEYS if k in r}
+    if out.get('id'):
+        # 档位看盘、现算：MineRU 在后台把 text 升成 structured，进度文件里那份是提交时的
+        from tools.getpdf import fulltext as F
+        try:
+            out['tier'] = F.tier_of(out['id'])
+            out['si_tier'] = F.tier_of(out['id'], si=True)
+        except Exception:
+            pass
+        if out.get('code') == 'PARSE_PENDING' and out.get('tier') in ('text', 'structured'):
+            out.update(ok=True, code='OK', retryable=False, why='')
+    return out
 
 
 def _status(a):
@@ -407,14 +580,113 @@ def _status(a):
             break
     results = [_slim_result(r) for r in d.get('results') or []]
     data = {'total': d.get('total', 0), 'finished': d.get('finished', 0), 'done': bool(d.get('done')),
-            'elapsed_s': d.get('elapsed', 0), 'results': results}
+            'elapsed_s': d.get('elapsed', 0), 'results': results,
+            'retryable': [r['doi'] for r in results if r.get('retryable') and not r.get('ok')]}
+    if d.get('upgrading'):
+        data['upgrading'] = True               # 下载完了，MineRU 还在后台补表格；结果里的 tier 会自己变
     if d.get('current') and not d.get('done'):
         # 正在处理哪篇、已经多久（每 15 秒更新）—— 解析一篇大文献要好几分钟，这个数在涨就说明没卡死
         data['current'] = d['current']
+        if (d['current'].get('for_s') or 0) > STALL_SECS:
+            data['stalled'] = True
+            data['stalled_hint'] = '同一篇处理了 %d 秒还没完：多半是浏览器那边卡在验证页，看主力机桌面提醒' % d['current']['for_s']
     if a.get('brief') is False:
         from tools.getpdf import fulltext as F
         data['menus'] = {r['id']: F._menu_of(r['id']) for r in results if r.get('ok')}
     return _out('%d/%d 篇%s' % (data['finished'], data['total'], '，完成' if data['done'] else '，还在跑'), data)
+
+
+def _retry(a):
+    """上一个作业里可重试的（撞验证 / 暂缓 / 网络错）再交一次。也可以自己给 dois。"""
+    dois = a.get('dois')
+    if not dois:
+        d = _read_progress() or {}
+        dois = [r['doi'] for r in d.get('results') or []
+                if not r.get('ok') and (r.get('retryable') or r.get('code') in ('CAPTCHA_REQUIRED', 'NETWORK_ERROR'))]
+    if not dois:
+        return _out('上一个作业里没有可重试的', {'submitted': [], 'rejected': [], 'eta_s': 0})
+    return _fulltext({'dois': dois})
+
+
+def _paper_status(a):
+    """一批 DOI / id → 每篇的档位、SI、表图数、最近一次错误。不取、不解析、零成本。"""
+    from shared.kernel import catalog, paths
+    from tools import library
+    from tools.getpdf import fulltext as F
+    keys = list(a.get('dois') or []) + list(a.get('itemKeys') or [])
+    if not keys:
+        raise ValueError('给 dois=[…] 或 itemKeys=[…]')
+    last = {r.get('doi'): r for r in ((_read_progress() or {}).get('results') or [])}
+    out = []
+    for k in keys[:200]:
+        doi = norm_doi(str(k))
+        try:
+            pid = _resolve(k)
+        except ValueError:
+            row = {'key': k, 'doi': doi, 'in_db': False, 'tier': 'none'}
+            if doi in last:
+                row.update(last_code=last[doi].get('code'), last_why=last[doi].get('why'))
+            out.append(row)
+            continue
+        row = {'key': k, 'id': pid, 'doi': doi or catalog.doi_of(catalog.read_meta(pid)), 'in_db': True,
+               'pdf': os.path.exists(paths.local_pdf(pid)), 'si_original': bool(paths.find_local_si(pid)),
+               'tier': F.tier_of(pid), 'si_tier': F.tier_of(pid, si=True)}
+        if row['tier'] != 'none':
+            try:
+                o = library.outline(pid)
+                row.update(sections=len(o.get('sections') or []), tables=len(o.get('tables') or []),
+                           figures=len(o.get('figures') or []))
+            except Exception:
+                pass
+        if row['doi'] in last:
+            r = last[row['doi']]
+            row.update(route=r.get('route') or r.get('source'), last_code=r.get('code'))
+            if not r.get('ok'):
+                row['last_why'] = r.get('why')
+        out.append(row)
+    n = lambda t: sum(1 for r in out if r.get('tier') == t)
+    return _out('%d 篇：structured %d、text %d、没有可读全文 %d' % (len(out), n('structured'), n('text'), n('none')),
+                {'papers': out})
+
+
+def cap(name, handler, limit=None, spill_dir=None):
+    """包一层：结构化结果超过 MAX_OUT 字节就写成文件、只回路径（2026-10：6 篇 outline 合一次 batch，
+    JSON 在 64 KB 处被截成半截）。文件在 logs/science_out/，B 机 WSL 读得到。"""
+    limit = limit or MAX_OUT
+
+    def h(a):
+        r = handler(a)
+        data = r.get('structured') if isinstance(r, dict) else None
+        if data is None:
+            return r
+        raw = json.dumps(data, ensure_ascii=False)
+        size = len(raw.encode('utf-8'))
+        if size <= limit:
+            return r
+        from shared.kernel import paths
+        d = spill_dir or paths.runtime('science_out')
+        os.makedirs(d, exist_ok=True)
+        _sweep(d)
+        p = os.path.join(d, '%s-%s-%d.json' % (name, time.strftime('%Y%m%d-%H%M%S'), int(time.time() * 1000) % 1000))
+        io.open(p, 'w', encoding='utf-8').write(raw)
+        summary = {k: (len(v) if isinstance(v, (list, dict)) else v) for k, v in data.items()
+                   if not isinstance(v, str) or len(v) < 200}
+        return _out('%s：结果 %d 字节，超过 %d，已写到 %s' % (r.get('text', ''), size, limit, to_wsl(p)),
+                    {'spilled': to_wsl(p), 'bytes': size, 'summary': summary,
+                     'hint': '整份结果在 spilled 文件里（JSON）；或者缩小请求（少几处 / maxChars / offset 分页）'})
+    return h
+
+
+def _sweep(d, keep_s=3 * 86400):
+    """落出来的大结果留三天。"""
+    now = time.time()
+    try:
+        for f in os.listdir(d):
+            p = os.path.join(d, f)
+            if now - os.path.getmtime(p) > keep_s:
+                os.remove(p)
+    except OSError:
+        pass
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -433,10 +705,13 @@ TOOLS = [
       'where': {'type': 'string', 'enum': ['all', 'main', 'si']}}, ['query'], _retrieve),
     ('library_outline', '一篇的骨架：节 / 长节的段 / 表 / 图注，各自的地址、类别、字数。有 SI 的另给 si 一份。',
      {'itemKey': _KEY}, ['itemKey'], _outline),
-    ('library_section', '按地址取原文：s5 一节（含子节）/ s5.p3 一段 / t1 一张表（HTML）/ f2 一条图注；SI 的传 si=true。'
-     '可批量：requests=[{itemKey, sectionId, si}]（最多 50 处）。',
+    ('library_section', '按地址取原文：s5 一节（含子节）/ s5.p3 一段 / t1 一张表 / f2 一条图注；SI 的传 si=true。'
+     '表格 format=csv|json（默认 html）。长的用 offset 分页（回 next_offset）。'
+     '可批量：requests=[{itemKey, sectionId, si, offset, format}]（最多 50 处）。',
      {'itemKey': _KEY, 'sectionId': {'type': 'string'}, 'si': {'type': 'boolean'},
       'requests': {'type': 'array', 'items': {'type': 'object'}},
+      'offset': {'type': 'integer', 'minimum': 0},
+      'format': {'type': 'string', 'enum': ['html', 'csv', 'json']},
       'maxChars': {'type': 'integer', 'minimum': 100, 'maximum': 200000}}, [], _section),
     ('library_refs', '一篇的参考文献条目（带 DOI 的给 DOI），标出哪些已在证据库（in_db + id）。',
      {'itemKey': _KEY}, ['itemKey'], _refs),
@@ -447,17 +722,25 @@ TOOLS = [
      '同一时刻只跑一个作业。allowFetch=false 只查手上有没有（同步、零成本）。',
      {'dois': {'type': 'array', 'items': {'type': 'string'}}, 'allowFetch': {'type': 'boolean'}},
      ['dois'], _fulltext),
-    ('fulltext_status', '取全文作业的进度。wait_s（≤30）= 等到有新一篇完成再回；brief=false 附每篇的骨架菜单。',
+    ('fulltext_status', '取全文作业的进度。每篇带 code / retryable / tier（现算）；retryable 列出可续跑的 DOI；'
+     'stalled=true 表示同一篇卡太久。wait_s（≤30）= 等到有新一篇完成再回；brief=false 附每篇的骨架菜单。',
      {'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': MAX_WAIT}, 'brief': {'type': 'boolean'}},
      [], _status),
+    ('fulltext_retry', '续跑：把上一个作业里撞人机验证 / 暂缓 / 网络错的再交一次（人在主力机浏览器点完验证后用）。'
+     '也可以自己给 dois。规矩同 paper_fulltext。',
+     {'dois': {'type': 'array', 'items': {'type': 'string'}}}, [], _retry),
+    ('paper_status', '一批 DOI 或 id 的现状：在不在库、tier（none/text/structured）、SI、节 / 表 / 图数、'
+     '上次取全文的 route 与错误码。零成本，不取不解析。',
+     {'dois': {'type': 'array', 'items': {'type': 'string'}},
+      'itemKeys': {'type': 'array', 'items': {'type': 'string'}}}, [], _paper_status),
 ]
 
 
 def build(full):
-    """装成给 Claude Science 的服务：自己的 9 个 + 从完整服务 `full` 借的 3 个。"""
+    """装成给 Claude Science 的服务：自己的 11 个 + 从完整服务 `full` 借的 3 个。每个都套 50 KB 上限。"""
     s = MCPStdioServer(NAME, VERSION, instructions=INSTRUCTIONS)
     for name, desc, props, req, fn in TOOLS:
-        s.register_tool(name, desc, {'type': 'object', 'properties': props, 'required': req}, fn)
+        s.register_tool(name, desc, {'type': 'object', 'properties': props, 'required': req}, cap(name, fn))
     have = {t['name']: t for t in full._tools}
     missing = [n for n in BORROW if n not in have]
     if missing:
@@ -466,5 +749,5 @@ def build(full):
     for n in BORROW:
         t = have.get(n)
         if t:
-            s.register_tool(n, t['description'], t['inputSchema'], t['handler'])  # 不打 confirm
+            s.register_tool(n, t['description'], t['inputSchema'], cap(n, t['handler']))  # 不打 confirm
     return s

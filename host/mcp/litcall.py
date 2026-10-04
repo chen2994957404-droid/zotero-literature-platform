@@ -4,6 +4,14 @@
     python3 litcall.py <工具名> '<JSON 参数>'         # 打印 structuredContent（JSON）
     python3 litcall.py --list                         # 工具清单：名字 + 一句话 + 参数
     python3 litcall.py --batch < calls.jsonl          # 一次会话跑多条：每行 {"tool": ..., "args": {...}}，每行出一个 JSON
+    python3 litcall.py --version                      # litcall 与服务端的版本
+
+## 输出不超过 50 KB（2026-10-04）
+
+调用方经 SSH 读 stdout，过 64 KB 就被截断 —— 6 篇 outline 合一次 batch，JSON 断在中间。
+服务端每个工具已经各自封顶 50 KB（超了写文件、回路径）；这里再管 `--batch` 的**总量**：
+累计快到 50 KB 时，后面的每条写进 `~/.cache/litcall/` 的文件，那一行只印 `{"tool", "ok", "spilled": 路径}`。
+每一行都是完整的 JSON，不会再有半截。
 
 ## 为什么要它（2026-09-30，Claude Science 的评估里提的）
 
@@ -30,6 +38,9 @@ import argparse
 import json
 import subprocess
 
+VERSION = '0.3.0'
+MAX_STDOUT = 48000          # 字节；留点余量给 SSH 那边的 64 KB 截断线
+
 HANDSHAKE = [
     {'jsonrpc': '2.0', 'id': 0, 'method': 'initialize',
      'params': {'protocolVersion': '2024-11-05', 'capabilities': {},
@@ -39,7 +50,7 @@ HANDSHAKE = [
 
 
 def session(messages, cmd=None, timeout=600):
-    """握手 + 一串消息 → {id: 回复}。一次 SSH 会话跑完。"""
+    """握手 + 一串消息 → {id: 回复}（握手那条的 id 是 0）。一次 SSH 会话跑完。"""
     cmd = cmd or os.environ.get('LITPLATFORM_CMD') or os.path.expanduser('~/bin/litplatform')
     payload = ''.join(json.dumps(m, ensure_ascii=False) + '\n' for m in HANDSHAKE + messages)
     p = subprocess.run([cmd], input=payload.encode('utf-8'), capture_output=True, timeout=timeout,
@@ -72,6 +83,24 @@ def unpack(reply):
     return False, data
 
 
+def spill(text, n, root=None):
+    """一条放不下的结果写进 ~/.cache/litcall/，回路径。留三天。"""
+    import time
+    root = root or os.path.expanduser('~/.cache/litcall')
+    os.makedirs(root, exist_ok=True)
+    now = time.time()
+    for f in os.listdir(root):
+        try:
+            if now - os.path.getmtime(os.path.join(root, f)) > 3 * 86400:
+                os.remove(os.path.join(root, f))
+        except OSError:
+            pass
+    p = os.path.join(root, 'batch-%s-%d-%d.json' % (time.strftime('%Y%m%d-%H%M%S'), os.getpid(), n))
+    with open(p, 'w', encoding='utf-8') as fh:
+        fh.write(text)
+    return p
+
+
 def call(tool, args):
     return {'jsonrpc': '2.0', 'method': 'tools/call', 'params': {'name': tool, 'arguments': args}}
 
@@ -82,7 +111,14 @@ def main():
     ap.add_argument('args', nargs='?', default='{}', help='JSON 参数，如 \'{"query": "polyborosiloxane"}\'')
     ap.add_argument('--list', action='store_true', help='列出工具')
     ap.add_argument('--batch', action='store_true', help='从 stdin 读多行 {"tool","args"}，同一会话跑完')
+    ap.add_argument('--version', action='store_true', help='litcall 与服务端的版本')
     a = ap.parse_args()
+
+    if a.version:
+        info = (session([]).get(0, {}).get('result') or {}).get('serverInfo') or {}
+        print(json.dumps({'litcall': VERSION, 'server': info.get('name'), 'server_version': info.get('version')},
+                         ensure_ascii=False))
+        return 0
 
     if a.list:
         r = session([{'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'}]).get(1, {})
@@ -96,11 +132,18 @@ def main():
         jobs = [json.loads(l) for l in sys.stdin if l.strip()]
         msgs = [dict(call(j['tool'], j.get('args') or {}), id=i + 1) for i, j in enumerate(jobs)]
         replies = session(msgs)
-        bad = 0
+        bad, used = 0, 0
         for i, j in enumerate(jobs):
             err, data = unpack(replies.get(i + 1, {'error': {'message': '没有回复'}}))
             bad += err
-            print(json.dumps({'tool': j['tool'], 'ok': not err, 'data': data}, ensure_ascii=False))
+            line = json.dumps({'tool': j['tool'], 'ok': not err, 'data': data}, ensure_ascii=False)
+            size = len(line.encode('utf-8')) + 1
+            if used + size > MAX_STDOUT:
+                line = json.dumps({'tool': j['tool'], 'ok': not err, 'spilled': spill(line, i + 1),
+                                   'bytes': size}, ensure_ascii=False)
+                size = len(line.encode('utf-8')) + 1
+            used += size
+            print(line)
         return 1 if bad else 0
 
     if not a.tool:
@@ -111,7 +154,10 @@ def main():
     except ValueError as e:
         raise SystemExit('参数不是合法 JSON：%s' % e)
     err, data = unpack(session([dict(call(a.tool, args), id=1)]).get(1, {'error': {'message': '没有回复'}}))
-    print(json.dumps(data, ensure_ascii=False))
+    line = json.dumps(data, ensure_ascii=False)
+    if len(line.encode('utf-8')) > MAX_STDOUT:             # 服务端已封顶，这里兜底（老版本服务端）
+        line = json.dumps({'spilled': spill(line, 1), 'bytes': len(line.encode('utf-8'))}, ensure_ascii=False)
+    print(line)
     return 1 if err else 0
 
 

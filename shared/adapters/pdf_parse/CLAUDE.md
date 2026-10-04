@@ -23,6 +23,13 @@ PDF → 结构化文本 + 图坐标（调 MineRU 云服务）。
 |---|---|
 | `parse_pdf(path, out_dir)` | 解析，产出 `full.md` + `layout.json` |
 | `is_parsed(out_dir)` | 是否已解析过（靠 `layout.json` 判断） |
+| `parse_pdf_text(path, out_dir)` | **快速文本层**：PyMuPDF 本地抽字，几秒出 `full.md`，打 `.tier_text` 标记；已有 full.md 不覆盖 |
+| `parse_document_text(path, out_dir)` | 快速层分派：pdf → 上一个，docx → `parse_docx` |
+| `tier(out_dir)` | `structured`（MineRU / docx）/ `text`（只有快速层）/ `none` |
+
+**两层（2026-10-04）**：MineRU 是云端排队，忙时一篇 pending 半小时。取全文拿到 PDF 先出快速层
+（马上能按节读），MineRU 在后台补；成功会覆盖 full.md 并清掉 `.tier_text`。
+判断「还要不要跑 MineRU」用 `tier() != 'structured'`，**别再用「full.md 在不在」**。
 
 ## 注意
 

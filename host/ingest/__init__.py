@@ -57,6 +57,12 @@ def _failed_recently(pid, step):
     return (time.time() - (r.get('finished_at') or r.get('started_at') or 0)) < RETRY_AFTER
 
 
+def _structured(pid, si=False):
+    """解析到了 MineRU 那一档（或 docx 直读）。只有快速文本层（取全文先出的那层）的还要补 MineRU。"""
+    from shared.adapters.pdf_parse import tier, TIER_STRUCTURED
+    return tier(paths.si_parsed_dir(pid) if si else paths.parsed_dir(pid)) == TIER_STRUCTURED
+
+
 def backlog():
     """还没做完免费三步的文献 id 列表：有正本没解析 / 有 SI 没解析 / 解析了没骨架。
 
@@ -66,8 +72,8 @@ def backlog():
     out = []
     for r in catalog.scan():
         pid = r['id']
-        need_main = r['pdf'] and not r['fulltext'] and not _failed_recently(pid, 'parse')
-        need_si = r['si'] and not r['si_fulltext'] and not _failed_recently(pid, 'parse_si')
+        need_main = r['pdf'] and not _structured(pid) and not _failed_recently(pid, 'parse')
+        need_si = r['si'] and not _structured(pid, si=True) and not _failed_recently(pid, 'parse_si')
         need_outline = r['fulltext'] and not os.path.isfile(paths.outline(pid))
         need_units = r['fulltext'] and not os.path.isfile(paths.units(pid)) and not _failed_recently(pid, 'units')
         need_profile = r['fulltext'] and not os.path.isfile(paths.profile(pid)) and not _failed_recently(pid, 'profile')
@@ -81,8 +87,8 @@ def failures():
     """最近失败、正在等重试的文献：[(id, step, error)]。给人看「哪几篇一直做不成」。"""
     out = []
     for r in catalog.scan():
-        for step, need in (('parse', r['pdf'] and not r['fulltext']),
-                           ('parse_si', r['si'] and not r['si_fulltext'])):
+        for step, need in (('parse', r['pdf'] and not _structured(r['id'])),
+                           ('parse_si', r['si'] and not _structured(r['id'], si=True))):
             if need and _failed_recently(r['id'], step):
                 last = jobs.last(r['id'], step) or {}
                 out.append((r['id'], step, (last.get('error') or '')[:100]))
@@ -91,7 +97,7 @@ def failures():
 
 def _parse_main(pid, say):
     """正文 PDF → parsed/full.md。已解析直接复用。返回 'done' / 'skip' / 'fail:<why>'。"""
-    if os.path.isfile(paths.fulltext(pid)):
+    if _structured(pid):
         return 'skip'
     pdf = paths.local_pdf(pid)
     if not os.path.isfile(pdf):
@@ -111,7 +117,7 @@ def _parse_main(pid, say):
 
 def _parse_si(pid, say):
     """SI → si_parsed/full.md。pdf 走 MineRU；docx 直接读字（含表格）。"""
-    if os.path.isfile(paths.si_fulltext(pid)):
+    if _structured(pid, si=True):
         return 'skip'
     src = paths.find_local_si(pid)
     if not src:

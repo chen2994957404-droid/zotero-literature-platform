@@ -101,9 +101,10 @@ def main():
         # --limit：一次处理几篇（默认 3，MCP 的 /science 面一次最多交 25 篇）。
         # 只是「一批几篇」，风控靠的串行 + 20 秒间隔在 many() 里，不受它影响
         # --no-zotero：完全不碰 Zotero（MCP 的 /science 面，给 Claude Science 用的那条路）
+        from tools.getpdf import notify
         rs = F.many(keys, allow_fetch=allow, limit=int(opt('--limit') or 3),
                     progress=paths.runtime('fulltext_progress.json'),
-                    use_zotero=not flag('--no-zotero'))
+                    use_zotero=not flag('--no-zotero'), notify=notify.desktop)
         print(F.summarize(rs))
         return 0 if all(r['ok'] for r in rs) else 1
 
