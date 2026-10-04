@@ -101,7 +101,7 @@ def crop_figures(parsed_dir):
     return figs
 
 
-def shrink_jpeg(image_path, max_bytes=30000, min_side=320):
+def shrink_jpeg(image_path, max_bytes=30000, min_side=200):
     """一张图 → 不超过 max_bytes 的 JPEG 字节（先降质量，再减半边长）。给「直接回图」用。
 
     2026-10-04 加：Claude Science 取一张图要用户在界面上批准传文件，等了 20 多分钟；
@@ -115,7 +115,7 @@ def shrink_jpeg(image_path, max_bytes=30000, min_side=320):
     if pix.alpha or (pix.colorspace and pix.colorspace.n not in (1, 3)):
         pix = fitz.Pixmap(fitz.csRGB, pix)       # 去透明、CMYK 转 RGB（JPEG 只收灰度 / RGB）
     while True:
-        for q in (80, 65, 50):
+        for q in (80, 65, 50, 40):
             data = pix.tobytes('jpg', jpg_quality=q)
             if len(data) <= max_bytes:
                 return data
