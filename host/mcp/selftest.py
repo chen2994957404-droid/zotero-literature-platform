@@ -337,8 +337,10 @@ def main():
     from host.mcp import science as S
     sci = S.build(real)
     sn = {t['name'] for t in sci._tools}
-    want = set(S.BORROW) | {t[0] for t in S.TOOLS}
+    want = set(S.BORROW) | {t[0] for t in S.TOOLS} | {'ping'}
     check('/science 自己的 + 借来的工具都在', want == sn, '缺：' + ', '.join(sorted(want - sn)))
+    pong = [t for t in sci._tools if t['name'] == 'ping'][0]['handler']({})
+    check('/science 的 ping 报的是它自己的版本', pong['structured']['version'] == S.VERSION, str(pong))
     # v0.2（2026-09-30，按 Claude Science 的实测评估改）
     check('DOI 归一：带 doi.org / doi: 前缀都认',
           S.norm_doi('https://doi.org/10.1016/j.x.1') == '10.1016/j.x.1'

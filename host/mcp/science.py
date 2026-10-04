@@ -58,7 +58,7 @@ VERSION = '0.3.0'
 #   新增 paper_status（一次看清一批的档位）· outline 带 tier 与图片路径
 
 # 原样借用的（输出本来就合适）
-BORROW = ('paperdb_sql', 'paperdb_measurements', 'ping')
+BORROW = ('paperdb_sql', 'paperdb_measurements')   # ping 自己挂：借来的那个报的是完整服务的版本（2026-10-04 Claude Science 发现）
 
 MAX_DOIS = 25          # 一次提交的上限；与 getpdf 单次最多 25 篇的老约定一致
 MAX_WAIT = 30          # fulltext_status 最多等多久（HTTP 服务一次只跑一个调用，等太久会堵别人）
@@ -736,9 +736,14 @@ TOOLS = [
 ]
 
 
+def _ping(a):
+    return _out(f'{NAME} {VERSION} 在跑', {'ok': True, 'server': NAME, 'version': VERSION})
+
+
 def build(full):
     """装成给 Claude Science 的服务：自己的 11 个 + 从完整服务 `full` 借的 3 个。每个都套 50 KB 上限。"""
     s = MCPStdioServer(NAME, VERSION, instructions=INSTRUCTIONS)
+    s.register_tool('ping', '存活检查：服务在跑、是哪一版。', {'type': 'object', 'properties': {}}, _ping)
     for name, desc, props, req, fn in TOOLS:
         s.register_tool(name, desc, {'type': 'object', 'properties': props, 'required': req}, cap(name, fn))
     have = {t['name']: t for t in full._tools}
