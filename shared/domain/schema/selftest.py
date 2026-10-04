@@ -397,6 +397,27 @@ def main():
     else:
         print('  [FAIL] 洗单位把别的弄坏了')
 
+    # 地址跨版本稳住（2026-10-04）：快速层与 MineRU 认出的标题数不同，节号会错位，按标题 / 原句找回
+    from shared.domain.schema import outline as O
+    total += 2
+    body = 'The storage modulus of the borosiloxane network rose sharply at high frequency. ' * 3
+    text_v = '# T\n\n## 1 Introduction\n\nIntro text here.\n\n## 2.2 Mechanical Properties\n\n' + body + '\n\n## 3 Conclusion\n\nDone.\n'
+    st_v = ('# T\n\n## ABSTRACT\n\nAbs.\n\n## 1\n\n## Introduction\n\nIntro text here.\n\n## 2.2 Mechanical Proper‐ties\n\n'
+            + body.replace('borosiloxane', 'boro­siloxane') + '\n\n## 3 Conclusion\n\nDone.\n')
+    ot, os_ = O.build_outline(text_v), O.build_outline(st_v)
+    old = O.find_section(ot, '2.2 Mechanical Properties')
+    new = O.find_section(os_, '2.2 Mechanical Properties')
+    title_of = {s['id']: s['title'] for s in os_['sections']}
+    if old and new and old != new and 'Mechanical' in title_of.get(new, ''):
+        print(f'  [PASS] 按标题找回节：快速层 {old} → 升级后 {new}（横线写法不同也认）'); ok += 1
+    else:
+        print('  [FAIL] 按标题找不回节', old, new)
+    got = O.locate(st_v, os_, 'storage modulus of the borosiloxane network rose sharply')
+    if got and got.partition('.')[0] == new:
+        print('  [PASS] 按一句原文找回现在的地址'); ok += 1
+    else:
+        print('  [FAIL] 按原文定位错了', got, new)
+
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)
 

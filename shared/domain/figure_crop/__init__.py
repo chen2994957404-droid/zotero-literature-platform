@@ -99,3 +99,26 @@ def crop_figures(parsed_dir):
         b64 = 'data:image/png;base64,' + base64.b64encode(pix.tobytes('png')).decode()
         figs.append({'b64': b64, 'caption': it['caption'], 'page': it['page'], 'num': i})
     return figs
+
+
+def shrink_jpeg(image_path, max_bytes=30000, min_side=320):
+    """一张图 → 不超过 max_bytes 的 JPEG 字节（先降质量，再减半边长）。给「直接回图」用。
+
+    2026-10-04 加：Claude Science 取一张图要用户在界面上批准传文件，等了 20 多分钟；
+    缩到几十 KB 直接放进工具返回里，就不用传文件。读不了 / 缩不下返回 b''。
+    """
+    import fitz
+    try:
+        pix = fitz.Pixmap(image_path)
+    except Exception:
+        return b''
+    if pix.alpha or (pix.colorspace and pix.colorspace.n not in (1, 3)):
+        pix = fitz.Pixmap(fitz.csRGB, pix)       # 去透明、CMYK 转 RGB（JPEG 只收灰度 / RGB）
+    while True:
+        for q in (80, 65, 50):
+            data = pix.tobytes('jpg', jpg_quality=q)
+            if len(data) <= max_bytes:
+                return data
+        if min(pix.width, pix.height) // 2 < min_side:
+            return data if len(data) <= max_bytes * 1.5 else b''
+        pix.shrink(1)                             # 长宽各减半

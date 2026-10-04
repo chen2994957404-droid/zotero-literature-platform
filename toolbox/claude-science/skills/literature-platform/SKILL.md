@@ -28,6 +28,14 @@ What to expect (server 0.3):
   Branch on `code`, not on the Chinese `why`.
 - **CAPTCHA.** The server defers the rest of that publisher, keeps going with others, and pops a reminder on
   the user's desktop. Ask the user to click it in the "取全文用的浏览器", then call `fulltext_retry`.
+- **Citing.** Section ids (`s8`, `s8.p2`) are per-version: they can shift when a paper goes text → structured.
+  Record the section `title` (and ideally a short `quote`) with every citation; pass them back to `library_section`
+  (`{"sectionId":"s8","title":"2.2 Mechanical Properties"}` or `{"quote":"…"}`) and it finds the current place,
+  returning `remapped_from`. Every outline / section carries `rev` (tier + text hash) so you can see a change.
+- **Figures.** `figure_image` (`{"itemKey":…, "fig":"Figure 2"}`) returns a small JPEG as base64 — no file transfer.
+  `image_kind: "full"` = whole figure cropped from the PDF; `"panel"` = only one sub-panel (fallback).
+- **Search.** `library_db_search` ignores dash variants and also matches by words; `library_retrieve` drops
+  heading-only fragments and takes `per_paper` (e.g. 1) to spread hits across papers.
 - **Size.** Any result over 50 KB comes back as `{"spilled": "<path>"}` — read that file (`cat`) instead.
   Long sections: `offset` / `next_offset`. In `--batch`, lines past ~48 KB total are spilled to `~/.cache/litcall/`.
 - Invalid DOIs are rejected immediately (`NOT_FOUND` in `rejected`), they never enter the queue.

@@ -408,6 +408,33 @@ def main():
               keep == ['10.1/real'] and gone and gone[0]['doi'] == '10.1/fake' and gone[0]['code'] == 'NOT_FOUND')
         check('图号归一：Fig. 3b / Figure 3 对得上', S._fig_key('Fig. 3b') == S._fig_key('Figure 3') == 'figure 3')
 
+        # v0.3.1（同日，它的实测报告）
+        hits = [{'doi': '10.1/a', 'text': 'Molecular dynamics simulation'},
+                {'doi': '10.1/a', 'text': 'x' * 120}, {'doi': '10.1/a', 'text': 'y' * 120},
+                {'doi': '10.1/b', 'text': 'z' * 120}]
+        got = S.filter_hits(hits, 5, per_paper=1)
+        check('检索：只有一行标题的碎片滤掉、每篇最多 per_paper 段',
+              [h['doi'] for h in got] == ['10.1/a', '10.1/b'] and got[0]['text'][0] == 'x', str(got)[:120])
+        from shared.kernel import catalog as C
+        hay = C._fold('Slide‐Ring Polyrotaxane Elastomers')
+        check('库内搜索：横线写法不同也认、按词也能中',
+              C._fold('Slide-Ring') in hay and all(w in C._words(hay) for w in C._words(C._fold('ring slide'))))
+        png = os.path.join(td, 'fig.png')
+        try:
+            import fitz
+            pg = fitz.open().new_page(width=800, height=600)
+            for i in range(40):
+                pg.draw_circle((20 * i, 15 * i), 30, color=(i / 40, 0.3, 0.6), fill=(0.2, i / 40, 0.4))
+            pg.get_pixmap(matrix=fitz.Matrix(2, 2)).save(png)
+            from shared.domain.figure_crop import shrink_jpeg
+            small = shrink_jpeg(png, 30000)
+            check('看图：缩成 ≤30 KB 的 JPEG（base64 后压在 50 KB 线内）',
+                  0 < len(small) <= 30000 and small[:2] == b'\xff\xd8', str(len(small)))
+        except ImportError:
+            pass
+        m2 = S._CAP_REF.match('Figure 2. Whole')
+        check('整张图：图注认出图号（Figure 2）', bool(m2) and m2.group(1) == 'Figure 2')
+
     httpd3 = ThreadingHTTPServer(('127.0.0.1', 0),
                                  H.make_handler(build_fake_server(), '', {S.ENDPOINT: sci}))
     p3 = httpd3.server_address[1]

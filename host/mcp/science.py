@@ -50,12 +50,16 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.3.0'
+VERSION = '0.3.1'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
 #   library_section 加 offset 分页、表格出 CSV/JSON · 提交前问 Crossref，无效 DOI 当场 NOT_FOUND ·
 #   新增 paper_status（一次看清一批的档位）· outline 带 tier 与图片路径
+# v0.3.1（同日，它的实测报告 literature_platform_eval_2026-10-04.md）：
+#   节号随 text→structured 升级会错位 → library_section 收 title / quote 找回现在的位置（remapped_from）、带 rev ·
+#   图号对照改成整张图（版面坐标裁，image_kind=full）· 新增 figure_image（小 JPEG 直接回，不传文件）·
+#   检索滤掉只有标题的碎片、per_paper · 表格 CSV 带图注 · 库内搜索不分横线写法 · ping 报自己的版本
 
 # 原样借用的（输出本来就合适）
 BORROW = ('paperdb_sql', 'paperdb_measurements')   # ping 自己挂：借来的那个报的是完整服务的版本（2026-10-04 Claude Science 发现）
@@ -207,11 +211,32 @@ def dedupe_hits(rows):
     return out
 
 
+MIN_HIT_CHARS = 80     # 比这短的命中多半只是一行小标题（"Molecular dynamics simulation"），没有可读的内容
+
+
+def filter_hits(rows, n, per_paper=0, min_chars=MIN_HIT_CHARS):
+    """去重 → 去掉只有一行标题的碎片 → 每篇最多 per_paper 段（0 = 不限）→ 取前 n。"""
+    out, per = [], {}
+    for r in dedupe_hits(rows):
+        if len((r.get('text') or '').strip()) < min_chars:
+            continue
+        k = (r.get('doi') or r.get('id') or '').lower()
+        if per_paper and per.get(k, 0) >= per_paper:
+            continue
+        per[k] = per.get(k, 0) + 1
+        out.append(r)
+        if len(out) >= n:
+            break
+    return out
+
+
 def _retrieve(a):
     from tools import library
     n = int(a.get('n') or 8)
-    rows = library.retrieve(a['query'], n=n + 4, where=a.get('where') or 'all')
-    rows = dedupe_hits(rows)[:n]
+    per_paper = int(a.get('per_paper') or 0)
+    # 多取一些候选：碎片和同篇超额的要筛掉（2026-10-04 Claude Science：滑环查询 5 条里 3 条同一篇）
+    rows = library.retrieve(a['query'], n=n * (4 if per_paper else 2) + 4, where=a.get('where') or 'all')
+    rows = filter_hits(rows, n, per_paper)
     return _out('%d 段最相近「%s」' % (len(rows), a['query']), {'hits': rows})
 
 
@@ -235,11 +260,13 @@ def _outline(a):
         'figures': [{k: f.get(k) for k in ('id', 'ref', 'caption', 'section')} for f in o.get('figures') or []],
         'chars': (o.get('stats') or {}).get('chars', 0)}
     from tools.getpdf import fulltext as F
-    data = {'itemKey': pid, 'available': True, 'main': slim(d), 'tier': F.tier_of(pid)}
-    # 图注带上图片路径（只有 MineRU 那一档有图片；快速文本层只有图注）
+    data = {'itemKey': pid, 'available': True, 'main': slim(d), 'tier': F.tier_of(pid), 'rev': text_rev(pid),
+            'cite_hint': '节号会随解析升级变（text → structured）；记出处请连 title 一起记，'
+                         '取时传 title（或 quote 一句原文）就能找回，回复里有 remapped_from'}
+    # 图注带上图片路径：整张图（full）优先，裁不出来的才给 MineRU 碎图（panel）；快速文本层没有图
     imgs = _figure_map(pid)
     for f in data['main']['figures']:
-        f['image'] = imgs.get(_fig_key(f.get('ref')), '')
+        f['image'], f['image_kind'] = imgs.get(_fig_key(f.get('ref')), ('', ''))
     if d.get('si'):
         data['si'] = slim(d['si'])         # SI 的地址与正文同形（s4.p1），取时传 si=true
         data['si_tier'] = F.tier_of(pid, si=True)
@@ -254,13 +281,74 @@ def _fig_key(ref):
 
 
 def _figure_map(pid):
-    """这篇「图号 → 图片 WSL 路径」。没有 MineRU 图片目录时是空的。"""
+    """这篇「图号 → (图片 WSL 路径, 'full' | 'panel')」。
+
+    先用按版面坐标裁好的**整张图**（`full_figures`）；裁不出来的号才退回 MineRU 的碎图（`panel`，
+    多子图的 Figure 只指到其中一块 —— 2026-10-04 Claude Science 实测「图 1」只指到一个小图）。
+    """
     from shared.kernel import paths
+    out = {}
     md, img = paths.fulltext(pid), paths.images_dir(pid)
-    if not (os.path.exists(md) and os.path.isdir(img)):
-        return {}
-    text = io.open(md, encoding='utf-8').read()
-    return {_fig_key(f['ref']): to_wsl(f['image']) for f in figure_images(text, img)}
+    if os.path.exists(md) and os.path.isdir(img):
+        text = io.open(md, encoding='utf-8').read()
+        out = {_fig_key(f['ref']): (to_wsl(f['image']), 'panel') for f in figure_images(text, img)}
+    for f in full_figures(pid):
+        if f.get('ref'):
+            out[_fig_key(f['ref'])] = (to_wsl(f['image']), 'full')
+    return out
+
+
+_CAP_REF = re.compile(r'(?i)^\s*((?:fig(?:ure)?|scheme)\.?\s*S?\d+)')
+
+
+def full_figures(pid, crop=None):
+    """整张 Figure 的 PNG：[{num, page, ref, caption, image}]。裁一次存进 curated/<id>/figures/，之后直接读。
+
+    要 MineRU 那一档（layout.json + 原 PDF）；快速文本层没有版面坐标，返回 []。
+    layout.json 比索引新（重新解析过）就重裁。
+    """
+    import base64
+    from shared.kernel import paths
+    parsed = paths.parsed_dir(pid)
+    lay = os.path.join(parsed, 'layout.json')
+    if not os.path.exists(lay):
+        return []
+    d = paths.figures_dir(pid)
+    idx = os.path.join(d, 'index.json')
+    if os.path.exists(idx) and os.path.getmtime(idx) >= os.path.getmtime(lay):
+        try:
+            return json.load(io.open(idx, encoding='utf-8'))
+        except ValueError:
+            pass
+    if crop is None:
+        from shared.domain.figure_crop import crop_figures as crop
+    try:
+        figs = crop(parsed)
+    except Exception:
+        return []
+    os.makedirs(d, exist_ok=True)
+    out = []
+    for f in figs:
+        m = _CAP_REF.match(f.get('caption') or '')
+        p = os.path.join(d, 'fig_%02d_p%d.png' % (f['num'], f['page'] + 1))
+        io.open(p, 'wb').write(base64.b64decode(f['b64'].split(',', 1)[-1]))
+        out.append({'num': f['num'], 'page': f['page'] + 1, 'ref': re.sub(r'\s+', ' ', m.group(1)) if m else '',
+                    'caption': (f.get('caption') or '')[:200], 'image': p})
+    io.open(idx, 'w', encoding='utf-8').write(json.dumps(out, ensure_ascii=False))
+    return out
+
+
+def text_rev(pid, si=False):
+    """这篇正文（或 SI）当前版本的短指纹：档位 + 文本哈希前 8 位。变了就说明节号可能变了。"""
+    import hashlib
+    from shared.kernel import paths
+    from tools.getpdf import fulltext as F
+    p = paths.si_fulltext(pid) if si else paths.fulltext(pid)
+    try:
+        h = hashlib.sha1(io.open(p, 'rb').read()).hexdigest()[:8]
+    except OSError:
+        return ''
+    return '%s-%s' % (F.tier_of(pid, si=si), h)
 
 
 def _html_cells(html):
@@ -339,12 +427,21 @@ def _one_section(req, max_chars, offset=0, fmt='html'):
     pid = _resolve(req.get('itemKey'))
     offset = max(0, int(req.get('offset') or offset or 0))
     fmt = (req.get('format') or fmt or 'html').lower()
-    r = library.section(pid, req.get('sectionId') or '', max_chars=offset + max_chars, si=bool(req.get('si')))
+    si = bool(req.get('si'))
+    addr, anchor = reanchor(pid, req.get('sectionId') or '', req.get('title') or '', req.get('quote') or '', si)
+    r = library.section(pid, addr, max_chars=offset + max_chars, si=si)
     full = r.get('text', '')
-    out = {'itemKey': pid, 'sectionId': req.get('sectionId'), 'si': bool(req.get('si')),
-           'why_empty': r.get('why_empty', '')}
+    out = {'itemKey': pid, 'sectionId': addr, 'si': si, 'why_empty': r.get('why_empty', ''),
+           'title': anchor.get('title', ''), 'rev': text_rev(pid, si)}
+    if anchor.get('remapped_from'):
+        out['remapped_from'] = anchor['remapped_from']
+        out['remap_by'] = anchor['by']
+    if anchor.get('warning'):
+        out['warning'] = anchor['warning']
     if fmt in ('csv', 'json') and full:
         caption, rows = table_rows(full)
+        if not caption and addr.lower().startswith('t'):
+            caption = _table_caption(pid, addr, si)          # 表的文字只含 <table>，图注在骨架里
         if rows:
             out.update(format=fmt, caption=caption, n_rows=len(rows), n_cols=max(len(x) for x in rows),
                        chars=len(full))
@@ -359,10 +456,68 @@ def _one_section(req, max_chars, offset=0, fmt='html'):
     return out
 
 
+def _table_caption(pid, tid, si=False):
+    from tools import library
+    o = library.outline(pid)
+    src = (o.get('si') or {}) if si else o
+    for t in src.get('tables') or []:
+        if t.get('id') == tid.lower():
+            return t.get('caption') or ''
+    return ''
+
+
+def reanchor(pid, addr, title='', quote='', si=False):
+    """按 title / quote 把（可能是旧版本的）地址对到现在的版本 → (地址, {title, remapped_from, by, warning})。
+
+    - 给了 quote：以原句为准，找它现在所在的段 / 节（最精确）。
+    - 给了 title：sectionId 那一节的标题对不上 → 按标题找回那一节（原来是段地址的，退到整节）。
+    - 都没给：照 sectionId 取，只把那节现在的标题带回去，让调用方自己核。
+    """
+    from shared.domain.schema import outline as O
+    from shared.kernel import paths
+    from tools import library
+    o = library.outline(pid)
+    src = (o.get('si') or {}) if si else o
+    titles = {x['id']: x.get('title', '') for x in src.get('sections') or []}
+    sec = (addr or '').lower().partition('.')[0]
+    info = {'title': titles.get(sec, '')}
+    if not src.get('sections'):
+        return addr, info
+    if quote:
+        p = paths.si_fulltext(pid) if si else paths.fulltext(pid)
+        try:
+            md = io.open(p, encoding='utf-8').read()
+        except OSError:
+            md = ''
+        got = O.locate(md, src, quote)
+        if got:
+            if got.lower() != (addr or '').lower():
+                info.update(remapped_from=addr, by='quote')
+            info['title'] = titles.get(got.partition('.')[0], '')
+            return got, info
+        info['warning'] = '这句原文在当前版本里没找到（可能断行 / 公式写法不同）'
+    if title and not addr:
+        got = O.find_section(src, title)
+        if got:
+            info['title'] = titles.get(got, '')
+            return got, info
+        info['warning'] = '标题「%s」在当前版本里没找到' % title[:60]
+    elif title and O.norm_text(titles.get(sec, '')) != O.norm_text(title):
+        got = O.find_section(src, title)
+        if got:
+            info.update(remapped_from=addr, by='title', title=titles.get(got, ''))
+            if '.' in (addr or ''):
+                info['warning'] = '段号随版本变了，给的是整节'
+            return got, info
+        info['warning'] = '标题「%s」在当前版本里没找到，按 sectionId 照取' % title[:60]
+    return addr, info
+
+
 def _section(a):
     max_chars = int(a.get('maxChars') or 20000)
     reqs = a.get('requests') or ([{'itemKey': a.get('itemKey'), 'sectionId': a.get('sectionId'),
-                                   'si': a.get('si')}] if a.get('itemKey') else [])
+                                   'si': a.get('si'), 'title': a.get('title'), 'quote': a.get('quote')}]
+                                 if a.get('itemKey') else [])
     if not reqs:
         raise ValueError('给 itemKey + sectionId，或 requests=[{itemKey, sectionId, si}]')
     out = []
@@ -460,14 +615,40 @@ def paper_files(key):
     return {k: p for k, p in cands.items() if p and os.path.exists(p)}
 
 
+MAX_IMAGE_KB = 36      # base64 会大三分之一，36 KB 的图回出去约 48 KB，压在 50 KB 线内
+
+
+def _figure_image(a):
+    """一张图直接回成小 JPEG（base64）：不用传文件、不用等界面批准（2026-10-04 Claude Science：取一张图等了 20 多分钟）。"""
+    import base64
+    from shared.domain.figure_crop import shrink_jpeg
+    pid = _resolve(a.get('itemKey'))
+    want = str(a.get('fig') or '').strip()
+    key = _fig_key('figure ' + want if want.isdigit() else want)
+    imgs = _figure_map(pid)
+    hit = imgs.get(key)
+    if not hit:
+        raise ValueError('「%s」没有对上的图片；有的是：%s' % (want, ', '.join(sorted(imgs)) or '（这篇还没有图片，tier 不是 structured）'))
+    path, kind = hit
+    win = path
+    if win.startswith('/mnt/'):
+        win = win[5].upper() + ':' + win[6:].replace('/', os.sep)
+    max_kb = max(8, min(int(a.get('max_kb') or 30), MAX_IMAGE_KB))
+    data = shrink_jpeg(win, max_kb * 1024)
+    if not data:
+        raise ValueError('这张图缩不到 %d KB 以内（或读不了）：%s' % (max_kb, path))
+    return _out('%s %s：%d KB JPEG（%s）' % (pid, want, len(data) // 1024, '整张图' if kind == 'full' else '子图碎块'),
+                {'itemKey': pid, 'fig': want, 'image_kind': kind, 'path': path, 'mime': 'image/jpeg',
+                 'bytes': len(data), 'base64': base64.b64encode(data).decode()})
+
+
 def _paper_files(a):
     pid = _resolve(a.get('itemKey'))
     got = paper_files(pid)
     data = {'itemKey': pid, 'files': {k: to_wsl(p) for k, p in got.items()}, 'figures': []}
-    if 'main_md' in got and 'images_dir' in got:
-        md = io.open(got['main_md'], encoding='utf-8').read()
-        data['figures'] = [{'ref': f['ref'], 'image': to_wsl(f['image'])}
-                           for f in figure_images(md, got['images_dir'])]
+    m = _figure_map(pid)
+    data['figures'] = [{'ref': k.title(), 'image': v[0], 'image_kind': v[1]} for k, v in sorted(
+        m.items(), key=lambda kv: (kv[0].split(' ')[0], int(re.sub(r'\D', '', kv[0]) or 0)))]
     return _out('%s：%d 个文件，%d 张图对上了图号' % (pid, len(got), len(data['figures'])), data)
 
 
@@ -700,17 +881,21 @@ TOOLS = [
      {'query': {'type': 'string'}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 200}}, ['query'], _db_search),
     ('library_manifest', '全库清单写成 JSON 文件（每篇 id/DOI/标题/年份/期刊/有什么），回文件路径与统计。',
      {}, [], _manifest),
-    ('library_retrieve', '向量检索证据库：最相近的段落 + 文献 id + 节地址（拿去 library_section 读上下文）。',
+    ('library_retrieve', '向量检索证据库：最相近的段落 + 文献 id + 节地址（拿去 library_section 读上下文）。'
+     '只有一行标题的碎片已滤掉；per_paper=1 每篇最多一段。',
      {'query': {'type': 'string'}, 'n': {'type': 'integer', 'minimum': 1, 'maximum': 30},
+      'per_paper': {'type': 'integer', 'minimum': 0, 'maximum': 10},
       'where': {'type': 'string', 'enum': ['all', 'main', 'si']}}, ['query'], _retrieve),
     ('library_outline', '一篇的骨架：节 / 长节的段 / 表 / 图注，各自的地址、类别、字数。有 SI 的另给 si 一份。',
      {'itemKey': _KEY}, ['itemKey'], _outline),
     ('library_section', '按地址取原文：s5 一节（含子节）/ s5.p3 一段 / t1 一张表 / f2 一条图注；SI 的传 si=true。'
      '表格 format=csv|json（默认 html）。长的用 offset 分页（回 next_offset）。'
-     '可批量：requests=[{itemKey, sectionId, si, offset, format}]（最多 50 处）。',
+     '节号会随解析升级变：传 title（节标题）或 quote（一句原文）找回现在的位置，回复带 remapped_from。'
+     '可批量：requests=[{itemKey, sectionId, title, quote, si, offset, format}]（最多 50 处）。',
      {'itemKey': _KEY, 'sectionId': {'type': 'string'}, 'si': {'type': 'boolean'},
       'requests': {'type': 'array', 'items': {'type': 'object'}},
       'offset': {'type': 'integer', 'minimum': 0},
+      'title': {'type': 'string'}, 'quote': {'type': 'string'},
       'format': {'type': 'string', 'enum': ['html', 'csv', 'json']},
       'maxChars': {'type': 'integer', 'minimum': 100, 'maximum': 200000}}, [], _section),
     ('library_refs', '一篇的参考文献条目（带 DOI 的给 DOI），标出哪些已在证据库（in_db + id）。',
@@ -726,6 +911,10 @@ TOOLS = [
      'stalled=true 表示同一篇卡太久。wait_s（≤30）= 等到有新一篇完成再回；brief=false 附每篇的骨架菜单。',
      {'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': MAX_WAIT}, 'brief': {'type': 'boolean'}},
      [], _status),
+    ('figure_image', '一张图直接回成小 JPEG（base64，默认 ≤30 KB，最多 36 KB）：fig 给 "Figure 2" / "Scheme 1" / "2"。'
+     '不用传文件。整张图（image_kind=full）要 tier=structured。',
+     {'itemKey': _KEY, 'fig': {'type': 'string'}, 'max_kb': {'type': 'integer', 'minimum': 8, 'maximum': MAX_IMAGE_KB}},
+     ['itemKey', 'fig'], _figure_image),
     ('fulltext_retry', '续跑：把上一个作业里撞人机验证 / 暂缓 / 网络错的再交一次（人在主力机浏览器点完验证后用）。'
      '也可以自己给 dois。规矩同 paper_fulltext。',
      {'dois': {'type': 'array', 'items': {'type': 'string'}}}, [], _retry),

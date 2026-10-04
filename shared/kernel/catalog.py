@@ -263,19 +263,43 @@ def have_index():
     return titles, dois
 
 
+_DASHES = dict.fromkeys(map(ord, '‐‑‒–—―−﹘﹣－'), '-')
+
+
+def _fold(s):
+    """搜索用的归一：全半角 / 连字（ﬂ→fl）/ 各种横线统一成 `-`、不分大小写、空白压成一个。
+
+    2026-10-04 Claude Science 实测：查 "Slide-Ring" 找不到标题里写成 "Slide‐Ring"（U+2010）的两篇。
+    """
+    import unicodedata
+    return ' '.join(unicodedata.normalize('NFKC', s or '').translate(_DASHES).lower().split())
+
+
+def _words(s):
+    return re.sub(r'[^0-9a-z一-龥]+', ' ', s).split()
+
+
 def search(text, limit=25):
-    """按标题 / DOI / 期刊 子串搜（不分大小写）→ 目录卡列表。免费、秒回、不联网。"""
-    q = (text or '').strip().lower()
+    """按标题 / DOI / 期刊 子串搜（不分大小写、不分横线写法）→ 目录卡列表。免费、秒回、不联网。
+
+    先整串比；整串没中再按词比（"slide ring" 也能中 "Slide‐Ring"，词序不限）。
+    """
+    q = _fold(text).strip()
     if not q:
         return []
-    out = []
+    qw = _words(q)
+    exact, loose = [], []
     for r in scan():
-        hay = ' '.join([r['title'], r['doi'], r['journal'], r['id']]).lower()
+        hay = _fold(' '.join([r['title'], r['doi'], r['journal'], r['id']]))
         if q in hay:
-            out.append(r)
-            if len(out) >= limit:
+            exact.append(r)
+            if len(exact) >= limit:
                 break
-    return out
+        elif qw and len(loose) < limit:
+            hw = set(_words(hay))
+            if all(w in hw for w in qw):
+                loose.append(r)
+    return (exact + loose)[:limit]
 
 
 def stats():

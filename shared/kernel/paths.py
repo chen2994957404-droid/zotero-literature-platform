@@ -407,6 +407,18 @@ def curves(key):
     return os.path.join(paper_dir(key), 'curves.json')
 
 
+def figures_dir(key, create=False):
+    """curated/<key>/figures/ —— 按版面坐标裁好的**整张** Figure（PNG + index.json），给调用方看图用。
+
+    2026-10-04 加：MineRU 的 images/ 是一块块碎图（子图各一张），按图号对照只能指到其中一块
+    （Claude Science 实测：「图 1」指到的只是储能模量那一个小图）。整图由 `figure_crop` 裁，派生物，删了可重裁。
+    """
+    p = os.path.join(paper_dir(key), 'figures')
+    if create:
+        os.makedirs(p, exist_ok=True)
+    return p
+
+
 def outline(key):
     """★ curated/<key>/outline.json —— 这篇的**骨架**（章节地址 + 类别 + 密度）。
 

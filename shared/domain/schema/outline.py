@@ -427,6 +427,76 @@ def section_text(md, outline, addr, with_subsections=True):
     return ''
 
 
+# ── 地址跨版本稳住（2026-10-04，Claude Science 实测）─────────────────────────
+# 节号 s1、s2… 是按标题顺序编的。同一篇从快速文本层升级到 MineRU 之后，认出的标题多几个、少几个，
+# 编号就整体错位：Angew 一篇快速层的 s8 是「2.2 力学性能」，升级后 s8 成了「结论」——
+# 调用方记下的出处悄悄指错。所以出处要能用**标题**和**原句**重新找回来，编号只是这一版的便捷写法。
+
+_DASHES = dict.fromkeys(map(ord, '‐‑‒–—―−﹘﹣－'), '-')
+
+
+def norm_text(s):
+    """比对用：全半角 / 连字 / 各种横线统一，大小写不分，非字母数字压成一个空格。"""
+    import unicodedata
+    s = unicodedata.normalize('NFKC', s or '').translate(_DASHES).lower()
+    return re.sub(r'[^0-9a-z一-龥]+', ' ', s).strip()
+
+
+def _squash(s):
+    """只留字母数字（归一后）：断词的连字符、软连字符、横线、空格、标点都不计 —— 两版解析最常差在这些上。"""
+    return norm_text(s).replace(' ', '')
+
+
+def find_section(outline, title):
+    """按标题找节 → 节 id 或 ''。先全等（只比字母数字），再去掉编号比，最后看包含。"""
+    want_n = norm_text(title)
+    if not want_n:
+        return ''
+    secs = outline.get('sections') or []
+    strip_num = lambda t: re.sub(r'^\d+( \d+)*\s+', '', t)
+    sq = lambda t: t.replace(' ', '')
+    want, want_x = sq(want_n), sq(strip_num(want_n))
+    for pick in (lambda t: sq(t) == want,
+                 lambda t: sq(strip_num(t)) == want_x,
+                 lambda t: len(want_x) >= 6 and len(sq(strip_num(t))) >= 6
+                 and (want_x in sq(t) or sq(strip_num(t)) in want)):
+        for s in secs:
+            if pick(norm_text(s.get('title', ''))):
+                return s['id']
+    return ''
+
+
+def locate(md, outline, quote):
+    """一句原文 → 它现在所在的最小地址（有段地址给段 `s5.p2`，没有给节 `s5`）；找不到 ''。
+
+    两边都只比字母数字（断词连字、软连字符、横线、空白、标点都不计），所以快速层与 MineRU 的细微差别不影响。
+    """
+    want = _squash(quote)
+    if len(want) < 12:
+        return ''
+    text = scan.clean_body(md or '')
+    # 在只留字母数字的文本里找，再映射回原文位置：逐字符建对照表
+    import unicodedata
+    buf, pos_map = [], []
+    for i, ch in enumerate(text):
+        for cc in unicodedata.normalize('NFKC', ch).lower():
+            if re.match(r'[0-9a-z一-龥]', cc):
+                buf.append(cc)
+                pos_map.append(i)
+    hit = ''.join(buf).find(want)
+    if hit < 0:
+        return ''
+    at = pos_map[hit]
+    best = ''
+    for s in outline.get('sections') or []:
+        if s['start'] <= at < s['end']:
+            best = s['id']
+            for p in s.get('paras') or []:
+                if p['start'] <= at < p['end']:
+                    return p['id']
+    return best
+
+
 def addresses(outline):
     """这份骨架里所有可点的地址（报错时列给模型看）。"""
     ids = []
