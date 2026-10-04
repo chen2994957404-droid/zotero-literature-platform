@@ -62,7 +62,7 @@ VERSION = '0.3.1'
 #   检索滤掉只有标题的碎片、per_paper · 表格 CSV 带图注 · 库内搜索不分横线写法 · ping 报自己的版本
 
 # 原样借用的（输出本来就合适）
-BORROW = ('paperdb_sql', 'paperdb_measurements')   # ping 自己挂：借来的那个报的是完整服务的版本（2026-10-04 Claude Science 发现）
+BORROW = ()     # 2026-10-04 用户定：只给它做不到的（取全文）。数值库它自己会抽，不借了；ping 自己挂
 
 MAX_DOIS = 25          # 一次提交的上限；与 getpdf 单次最多 25 篇的老约定一致
 MAX_WAIT = 30          # fulltext_status 最多等多久（HTTP 服务一次只跑一个调用，等太久会堵别人）
@@ -72,7 +72,7 @@ MAX_OUT = 50000        # 一次返回的结构化数据上限（字节）：调�
 
 INSTRUCTIONS = """\
 材料学研究者（聚硼硅氧烷 / 动态键弹性体）的文献证据库，约 1100 篇，跑在他校园网里的主力机上。
-检索你自己来；这里给你：付费全文（学校订阅）、库索引、向量检索、按节读、原件路径、抽出来的数值库。
+检索、读参考文献、抽数据你自己来；这里只给你做不到的：付费全文（学校订阅）取回并解析，以及他手上这些全文的查找、向量检索、按节读、看图。
 每个工具都返回 structuredContent（JSON）；itemKey 可以给证据库 id，也可以直接给 DOI。
 取全文：串行、每篇隔 20 秒、同时只跑一个作业（服务端强制，保护全校出口 IP），一篇约 1 分钟。
 PDF 到手几秒内先出 tier=text（本地抽字，可按节读、无表格结构）；MineRU 后台补成 tier=structured（含表格）。
@@ -174,29 +174,6 @@ def _db_search(a):
     doi = norm_doi(q)
     rows = library.db_search(doi or q, limit=int(a.get('limit') or 25))
     return _out('%d 篇匹配「%s」' % (len(rows), q), {'papers': [_card(r) for r in rows]})
-
-
-def manifest_rows():
-    from shared.kernel import catalog
-    return [_card(r) for r in catalog.scan()]
-
-
-def _manifest(a):
-    from shared.kernel import paths
-    rows = manifest_rows()
-    path = paths.runtime('library_manifest.json')
-    io.open(path, 'w', encoding='utf-8').write(json.dumps(
-        {'generated': time.strftime('%Y-%m-%d %H:%M:%S'), 'fields': list(_CARD_KEYS), 'papers': rows},
-        ensure_ascii=False))
-    n = lambda k: sum(1 for r in rows if r.get(k))
-    stats = {'papers': len(rows), 'with_doi': n('doi'), 'pdf': n('pdf'), 'si': n('si'),
-             'fulltext': n('fulltext'), 'summary': n('summary'), 'structured': n('structured')}
-    return _out('全库清单 %d 篇 → %s' % (len(rows), to_wsl(path)),
-                {'path': to_wsl(path), 'fields': list(_CARD_KEYS), 'stats': stats,
-                 # 口径（2026-09-30 复测提的）：这里是证据库目录（有正本 / 全文的库）；paperdb 的 papers 表
-                 # 另含只有摘要的 OpenAlex 层，所以行数多得多；统计请用视图 papers_canonical
-                 'scope': 'evidence library (papers with PDF/full text). paperdb.papers additionally holds '
-                          'abstract-only rows (OpenAlex); use view papers_canonical for one row per DOI.'})
 
 
 def dedupe_hits(rows):
@@ -531,57 +508,6 @@ def _section(a):
     return _out('取到 %d/%d 处' % (got, len(out)), {'results': out})
 
 
-def crossref_refs(doi, fetch=None):
-    """出版社在 Crossref 登记的参考文献（有序，常带 DOI）→ [{n, doi, text}]。取不到返回 []。"""
-    if not doi:
-        return []
-    try:
-        if fetch is None:
-            from shared.adapters import crossref
-            fetch = crossref.work
-        items = fetch(doi).get('reference') or []
-    except Exception:
-        return []
-    out = []
-    for i, r in enumerate(items, 1):
-        text = r.get('unstructured') or ', '.join(
-            str(x) for x in (r.get('author'), r.get('year'), r.get('article-title'), r.get('journal-title')) if x)
-        out.append({'n': i, 'doi': (r.get('DOI') or '').lower(), 'text': text[:300]})
-    return out
-
-
-def enrich_refs(rows, cr, by_doi):
-    """正文抽的参考文献缺 DOI 时，用 Crossref 那份补。**条数对得上才按顺序补**；对不上不硬对（返回 False）。"""
-    if not cr or len(cr) != len(rows):
-        return False
-    for r, c in zip(rows, cr):
-        if not r.get('doi') and c['doi']:
-            r['doi'], r['doi_from'] = c['doi'], 'crossref'
-            pid = by_doi.get(c['doi'], '')
-            if pid:
-                r['in_db'], r['id'] = True, pid
-    return True
-
-
-def _refs(a):
-    from shared.kernel import catalog
-    from tools import library
-    pid = _resolve(a.get('itemKey'))
-    rows = library.refs(pid)
-    data = {'itemKey': pid, 'refs': rows}
-    # 正文里抽到的 DOI 不到一半 → 去 Crossref 取出版社登记的那份（2026-09-30 复测：有的篇 59 条 0 个 DOI）
-    if rows and sum(1 for r in rows if r.get('doi')) * 2 < len(rows):
-        cr = crossref_refs(catalog.doi_of(catalog.read_meta(pid)))
-        if cr:
-            aligned = enrich_refs(rows, cr, catalog.by_doi())
-            data['crossref_aligned'] = aligned
-            if not aligned:
-                data['crossref'] = cr        # 条数对不上：两份都给，由你对
-    n_doi = sum(1 for r in rows if r.get('doi'))
-    return _out('%s：%d 条参考文献（%d 条有 DOI），%d 条已在证据库' % (
-        pid, len(rows), n_doi, sum(1 for r in rows if r.get('in_db'))), data)
-
-
 _IMG_LINE = re.compile(r'!\[[^\]]*\]\(([^)]+)\)')
 _CAP_LINE = re.compile(r'(?im)^\s*(?:\*\*)?((?:Fig(?:ure)?|Scheme)\.?\s*S?\d+)')
 
@@ -879,8 +805,6 @@ _KEY = {'type': 'string', 'description': '证据库 id 或 DOI'}
 TOOLS = [
     ('library_db_search', '证据库里有没有：按标题 / DOI / 期刊子串搜，回目录卡（有无正文、SI、已解析、已精读、已结构化）。',
      {'query': {'type': 'string'}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 200}}, ['query'], _db_search),
-    ('library_manifest', '全库清单写成 JSON 文件（每篇 id/DOI/标题/年份/期刊/有什么），回文件路径与统计。',
-     {}, [], _manifest),
     ('library_retrieve', '向量检索证据库：最相近的段落 + 文献 id + 节地址（拿去 library_section 读上下文）。'
      '只有一行标题的碎片已滤掉；per_paper=1 每篇最多一段。',
      {'query': {'type': 'string'}, 'n': {'type': 'integer', 'minimum': 1, 'maximum': 30},
@@ -898,8 +822,6 @@ TOOLS = [
       'title': {'type': 'string'}, 'quote': {'type': 'string'},
       'format': {'type': 'string', 'enum': ['html', 'csv', 'json']},
       'maxChars': {'type': 'integer', 'minimum': 100, 'maximum': 200000}}, [], _section),
-    ('library_refs', '一篇的参考文献条目（带 DOI 的给 DOI），标出哪些已在证据库（in_db + id）。',
-     {'itemKey': _KEY}, ['itemKey'], _refs),
     ('paper_files', '一篇手上的文件（正文 PDF / SI 原件 / 解析 Markdown / 图片目录 / 中文精读），B 机 WSL 路径；'
      '另给「图号 → 图片文件」对照。',
      {'itemKey': _KEY}, ['itemKey'], _paper_files),
@@ -930,7 +852,7 @@ def _ping(a):
 
 
 def build(full):
-    """装成给 Claude Science 的服务：自己的 11 个 + 从完整服务 `full` 借的 3 个。每个都套 50 KB 上限。"""
+    """装成给 Claude Science 的服务：只挂它做不到的那几样（取全文 + 读取回来的全文）。每个都套 50 KB 上限。"""
     s = MCPStdioServer(NAME, VERSION, instructions=INSTRUCTIONS)
     s.register_tool('ping', '存活检查：服务在跑、是哪一版。', {'type': 'object', 'properties': {}}, _ping)
     for name, desc, props, req, fn in TOOLS:

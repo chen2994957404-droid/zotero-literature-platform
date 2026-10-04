@@ -15,7 +15,7 @@ Run on the SSH host **zotero-b** (not locally):
 ```
 
 Typical path: `paper_status` / `library_db_search` / `library_retrieve` → `library_outline` → `library_section`
-(→ `library_refs`, `paper_files`). Not in the library → `paper_fulltext` with `allowFetch:true`,
+(→ `paper_files`, `figure_image`). Reference lists, data extraction and web search are yours to do (OpenAlex etc.). Not in the library → `paper_fulltext` with `allowFetch:true`,
 then poll `fulltext_status` with `wait_s`.
 
 What to expect (server 0.3):
