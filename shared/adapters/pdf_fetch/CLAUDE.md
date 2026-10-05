@@ -75,3 +75,8 @@
 
 `python shared/adapters/pdf_fetch/selftest.py` —— **纯离线**，只验不碰浏览器也成立的部分。
 浏览器那半只能在真机上验：`python -m tools.getpdf --probe`。
+
+
+## 撞上人机验证的标签不关（2026-10-05，踩坑 #192）
+
+平时标签后台开、用完就关；撞上验证时**留着并切到最前**（`_hold_for_human`），因为只有人能点、而提醒已经把人叫过来了。

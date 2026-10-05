@@ -449,7 +449,7 @@ def _many_loop(dois, res, t0, now, index, allow_fetch, use_zotero, gap, progress
                 warned.add(pub)
                 try:
                     notify('取全文撞上人机验证',
-                           '%s 被挡住了。请到「取全文用的浏览器」里点一下验证，之后让 Claude 续跑。' % doi)
+                           '%s 被挡住了。「取全文用的浏览器」里停在验证页的那个标签已经切到最前面，点一下通过，再让 Claude 续跑。' % doi)
                 except Exception as e:
                     log.info('桌面提醒没发出去：%s', str(e)[:80])
         return r

@@ -875,6 +875,26 @@ def _close(page, err=None):
         _drop_connection()
 
 
+def _hold_for_human(page):
+    """撞上人机验证：**这个标签留着、拉到最前面**，等人来点。返回 True 表示留下了。
+
+    2026-10-05 用户：「弹了人机验证的提示，打开浏览器却没看到」—— 取件的标签是后台开的
+    （09-17 用户要求取件别把窗口弹出来），撞上验证后又被 finally 里的 `_close` 关掉了，
+    人到浏览器前只剩首页。验证只有人能点，这时候就该把它摆到人眼前；平时取件照旧后台、不打扰。
+    留下的标签之后由 `_sweep` 按「最多留 3 个」清掉。
+    """
+    try:
+        page.bring_to_front()
+    except Exception:
+        pass
+    return True
+
+
+def _challenged(page, out):
+    """取完一看：是不是停在验证页上（not_pdf 多半就是被挡回了验证页）。"""
+    return out.get('reason') in ('captcha', 'not_pdf') and (out.get('reason') == 'captcha' or _on_challenge(page))
+
+
 def _blank(doi):
     return {'ok': False, 'reason': 'navigate_failed', 'doi': doi,
             'pdf': b'', 'landing': '', 'title': '', 'pdf_url': '', 'filename': ''}
@@ -892,11 +912,13 @@ def fetch(doi, url=None, timeout=90, settle=6, kind='fulltext'):
     out = _blank(doi)
     browser, ctx = _connect(url)
     page = _new_page(browser, ctx)
+    held = False
     try:
         st = _land(page, doi, timeout, settle, kind)
         out['landing'], out['title'] = st.get('url', ''), str(st.get('title') or '').strip()
         if st.get('captcha'):
             out['reason'] = 'captcha'
+            held = _hold_for_human(page)
             return out
         if kind == 'si':
             pick = _pick_si_on(page, st, timeout, settle, doi=doi)
@@ -911,6 +933,8 @@ def fetch(doi, url=None, timeout=90, settle=6, kind='fulltext'):
             out['reason'] = 'no_access' if st.get('paywall') else 'no_pdf_link'
             return out
         _grab(page, ctx, cands, 'fulltext', timeout, settle, out)
+        if _challenged(page, out):
+            held = _hold_for_human(page)
         return out
     except BrowserUnavailable:
         raise
@@ -920,7 +944,8 @@ def fetch(doi, url=None, timeout=90, settle=6, kind='fulltext'):
         _close(page, e)
         return out
     finally:
-        _close(page)
+        if not held:
+            _close(page)
 
 
 def fetch_both(doi, url=None, timeout=90, settle=6):
@@ -934,12 +959,14 @@ def fetch_both(doi, url=None, timeout=90, settle=6):
     main, si = _blank(doi), _blank(doi)
     browser, ctx = _connect(url)
     page = _new_page(browser, ctx)
+    held = False
     try:
         st = _land(page, doi, timeout, settle)
         main['landing'] = si['landing'] = st.get('url', '')
         main['title'] = si['title'] = str(st.get('title') or '').strip()
         if st.get('captcha'):
             main['reason'] = si['reason'] = 'captcha'
+            held = _hold_for_human(page)
             return main, si
         cands = st.get('candidates') or []
         # SI 先在落地页上挑（要滚页面 / 进 suppl 入口），此时页面还没被正文的导航带走
@@ -956,6 +983,9 @@ def fetch_both(doi, url=None, timeout=90, settle=6):
                     pass
         if cands:
             _grab(page, ctx, cands, 'fulltext', timeout, settle, main)
+            if _challenged(page, main):
+                held = _hold_for_human(page)
+                return main, si               # 正文都被挡了，SI 不用再去敲
         else:
             main['reason'] = 'no_access' if st.get('paywall') else 'no_pdf_link'
         if pick:
@@ -971,7 +1001,8 @@ def fetch_both(doi, url=None, timeout=90, settle=6):
         _close(page, e)
         return main, si
     finally:
-        _close(page)
+        if not held:
+            _close(page)
 
 
 DOI_RE = re.compile(r'^10\.\d{4,9}/\S+$')
