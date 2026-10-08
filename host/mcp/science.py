@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.7.4'
+VERSION = '0.7.5'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -899,7 +899,8 @@ def enrich(items, match=None, find=None, tier=None, warnings=None):
 
         def _crossref(it):
             first = ((it.get('authors') or [''])[0] or '').split(',')[0]
-            return crossref.match_title(it['title'], it.get('year'), first)
+            src = (it.get('source') or '').split('(')[0].strip()
+            return crossref.match_title(it['title'], it.get('year'), first, journal=src, volume=_volume_of(it) or '')
         match = _crossref
     if find is None or tier is None:
         from shared.kernel import catalog

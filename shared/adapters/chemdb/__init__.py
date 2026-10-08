@@ -472,9 +472,11 @@ _PICK_JS = r"""async ([toggle, pattern]) => {
   // 只点看得见的那个（加了筛选后页面上会多出一个藏着的同名按钮，2026-10-08 实测点到藏着的，菜单不出来）
   const t = [...document.querySelectorAll(toggle)].find(e => e.offsetParent !== null) || document.querySelector(toggle);
   if (!t) return {got: null, seen: [], why: 'no_toggle'};
+  const re = new RegExp(pattern, 'i');
+  // 已经是要的排序（SciFinder 会记住上一次的排序，2026-10-08 实测按钮上就写着 Times Cited）→ 不用点
+  if (re.test((t.innerText || '').trim())) return {got: (t.innerText || '').trim(), seen: [], already: true};
   t.scrollIntoView({block: 'center'}); t.click();
   await new Promise(r => setTimeout(r, 900));
-  const re = new RegExp(pattern, 'i');
   const opts = [...document.querySelectorAll('[role=menuitem], [role=option], [role=menuitemradio], .dropdown-item, [role=listbox] li')]
     .filter(e => e.offsetParent !== null);
   const seen = opts.map(e => (e.innerText || '').trim()).filter(Boolean);

@@ -70,22 +70,29 @@ def title_similarity(a, b):
     return difflib.SequenceMatcher(None, a, b).ratio() if a and b else 0.0
 
 
-def match_title(title, year=None, author=''):
-    """按标题（+ 年份、第一作者）找 DOI → {doi, score, title, year} 或 None。
+def match_title(title, year=None, author='', journal='', volume=''):
+    """按标题（+ 年份、第一作者、刊名、卷）找 DOI → {doi, score, title, year, journal, volume, page} 或 None。
 
     给「只有标题没有 DOI」的列表用（SciFinder 的结果列表就是这样，2026-10-08）。
-    score = 标题相似度；年份对不上扣 0.1。调用方按 score 决定信不信（≥0.9 基本就是它）。
+    score = 标题相似度；年份对不上扣 0.1。给了卷号时，标题一样像的候选里**卷号对得上的优先**：
+    Angewandte 同一篇有德文版（卷 131）和国际版（卷 58），标题一字不差，只靠标题会配到德文版（2026-10-08 实测 13 条）。
     """
-    q = {'query.bibliographic': title, 'rows': '3', 'select': 'DOI,title,issued,container-title,volume,page'}
+    q = {'query.bibliographic': title, 'rows': '5' if volume or journal else '3',
+         'select': 'DOI,title,issued,container-title,volume,page'}
     if author:
         q['query.author'] = author
+    if journal:
+        q['query.container-title'] = journal
     items = get('/works?' + urllib.parse.urlencode(q), timeout=20)['message'].get('items') or []
-    best = None
+    best, best_key = None, None
     for it in items:
         t = (it.get('title') or [''])[0]
         y = ((it.get('issued') or {}).get('date-parts') or [[None]])[0][0]
         s = title_similarity(title, t) - (0.1 if year and y and abs(int(y) - int(year)) > 1 else 0)
-        if not best or s > best['score']:
+        vol_ok = bool(volume) and str(it.get('volume') or '') == str(volume)
+        key = (round(s, 2) >= 0.9 and vol_ok, s)          # 标题够像时卷号对得上的排前面
+        if best_key is None or key > best_key:
+            best_key = key
             best = {'doi': (it.get('DOI') or '').lower(), 'score': round(s, 3), 'title': t, 'year': y,
                     'journal': (it.get('container-title') or [''])[0], 'volume': it.get('volume'), 'page': it.get('page')}
     return best
