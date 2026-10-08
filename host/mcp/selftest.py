@@ -370,6 +370,17 @@ def main():
     ghosts = sorted(n for n in set(re.findall(r'`([a-z][a-z0-9_]+)`', S.INSTRUCTIONS)) if n not in sn)
     check('/science 说明里提到的工具名都存在', not ghosts, ', '.join(ghosts))
     check('to_wsl：盘符路径换成 /mnt', S.to_wsl('D:\\02_AI\\x\\main.pdf') == '/mnt/d/02_AI/x/main.pdf')
+    # v0.4（2026-10-08）：SciFinder / Reaxys 按人的频率 —— 间隔与每日上限在服务端
+    with tempfile.TemporaryDirectory() as td:
+        up = os.path.join(td, 'u.json')
+        t0 = 1791450000.0
+        check('chemdb：没用过 → 0 次、不用等', S.chemdb_quota('scifinder', up, t0, daily=3) == (0, 3, 0.0))
+        S.chemdb_charge('scifinder', up, t0)
+        used, _, wait = S.chemdb_quota('scifinder', up, t0 + 10, daily=3)
+        check('chemdb：刚用过 → 记 1 次、还要等够间隔', used == 1 and abs(wait - (S.CHEMDB_GAP - 10)) < 0.01, str((used, wait)))
+        check('chemdb：两个库分开记次数', S.chemdb_quota('reaxys', up, t0 + 10, daily=3)[0] == 0)
+        check('chemdb：隔天清零', S.chemdb_quota('scifinder', up, t0 + 86400 * 2, daily=3)[0] == 0)
+        check('chemdb：新工具挂上了', {'chemdb_search', 'chemdb_page'} <= sn)
     with tempfile.TemporaryDirectory() as td:
         pp = os.path.join(td, 'p.json')
         check('没有进度文件 → 没在跑', S.running_job(pp) == '')

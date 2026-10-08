@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.3.1'
+VERSION = '0.4.0'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -60,6 +60,9 @@ VERSION = '0.3.1'
 #   节号随 text→structured 升级会错位 → library_section 收 title / quote 找回现在的位置（remapped_from）、带 rev ·
 #   图号对照改成整张图（版面坐标裁，image_kind=full）· 新增 figure_image（小 JPEG 直接回，不传文件）·
 #   检索滤掉只有标题的碎片、per_paper · 表格 CSV 带图注 · 库内搜索不分横线写法 · ping 报自己的版本
+# v0.4（2026-10-08 用户定）：chemdb_search / chemdb_page —— 借主力机浏览器搜 SciFinder / Reaxys、读结果页文字。
+#   它进不去这两个库（学校订阅 + 个人登录），人一条条点开筛又太慢。按人的频率：两次至少隔 CHEMDB_GAP 秒、
+#   每个库每天至多 CHEMDB_DAILY 次（服务端强制）。CAS 条款禁止脚本代替手工 —— 用户知情后决定小量用。
 
 # 原样借用的（输出本来就合适）
 BORROW = ()     # 2026-10-04 用户定：只给它做不到的（取全文）。数值库它自己会抽，不借了；ping 自己挂
@@ -68,6 +71,8 @@ MAX_DOIS = 25          # 一次提交的上限；与 getpdf 单次最多 25 篇�
 MAX_WAIT = 30          # fulltext_status 最多等多久（HTTP 服务一次只跑一个调用，等太久会堵别人）
 STALE_SECS = 600       # 进度文件多久没动就当那个作业已经死了
 STALL_SECS = 300       # 同一篇处理超过这么久没进展 → 状态里标 stalled（下载各步自带超时，正常到不了这么久）
+CHEMDB_GAP = 30        # SciFinder / Reaxys 两次操作至少隔几秒（人的速度；不够就等，最多等这么久）
+CHEMDB_DAILY = 20      # 每个库每天最多几次（搜索和翻页都算）；控制面板 CHEMDB_DAILY 可改
 MAX_OUT = 50000        # 一次返回的结构化数据上限（字节）：调用方的远程命令输出过 64 KB 就被截断（2026-10 实测）
 
 INSTRUCTIONS = """\
@@ -79,7 +84,9 @@ PDF 到手几秒内先出 tier=text（本地抽字，可按节读、无表格结
 每篇结果带 code（OK / CAPTCHA_REQUIRED / NOT_SUBSCRIBED / NOT_FOUND / NO_PDF_LINK / PARSE_PENDING /
 PARSE_FAILED / NETWORK_ERROR / NOT_FETCHED）与 retryable；CAPTCHA_REQUIRED 等人在主力机浏览器点完后用 fulltext_retry。
 任何返回超过 50 KB 会写成文件、只回 spilled 路径。
-文件路径是 B 机 WSL 路径（/mnt/d/...），你的 SSH 算力能直接读。"""
+文件路径是 B 机 WSL 路径（/mnt/d/...），你的 SSH 算力能直接读。
+SciFinder / Reaxys：`chemdb_search` 搜一次读结果列表第 1 页的文字，`chemdb_page` 翻页。按人的频率：两次至少隔 30 秒、
+每个库每天有上限（回复里 quota 告诉你还剩几次）—— 先想好检索词，别试错式地连搜。code=LOGIN_REQUIRED 时请人在主力机浏览器里登录。"""
 
 _DOI_PREFIX = re.compile(r'(?i)^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)')
 
@@ -756,6 +763,79 @@ def _paper_status(a):
                 {'papers': out})
 
 
+
+# ══════════════════════════════════════════════════════════════════════
+# SciFinder / Reaxys：按人的频率搜、读结果页（2026-10-08）
+# ══════════════════════════════════════════════════════════════════════
+
+def _chemdb_usage_path():
+    from shared.kernel import paths
+    return paths.runtime('chemdb_usage.json')
+
+
+def chemdb_quota(db, path=None, now=None, daily=None):
+    """→ (今天已用, 上限, 还要等几秒)。账本按天记，跨天自动清零。"""
+    now = now or time.time()
+    path = path or _chemdb_usage_path()
+    if daily is None:
+        from shared.kernel import config
+        try:
+            daily = int(config.get_key('CHEMDB_DAILY', default='') or CHEMDB_DAILY)
+        except ValueError:
+            daily = CHEMDB_DAILY
+    try:
+        d = json.load(io.open(path, encoding='utf-8'))
+    except Exception:
+        d = {}
+    today = time.strftime('%Y-%m-%d', time.localtime(now))
+    used = d.get('days', {}).get(today, {}).get(db, 0)
+    wait = max(0.0, CHEMDB_GAP - (now - float(d.get('last', 0))))
+    return used, daily, wait
+
+
+def chemdb_charge(db, path=None, now=None):
+    """记一次（搜索或翻页）。只留最近 7 天。"""
+    now = now or time.time()
+    path = path or _chemdb_usage_path()
+    try:
+        d = json.load(io.open(path, encoding='utf-8'))
+    except Exception:
+        d = {}
+    today = time.strftime('%Y-%m-%d', time.localtime(now))
+    days = d.get('days', {})
+    days.setdefault(today, {})[db] = days.get(today, {}).get(db, 0) + 1
+    d = {'last': now, 'days': {k: days[k] for k in sorted(days)[-7:]}}
+    io.open(path, 'w', encoding='utf-8').write(json.dumps(d, ensure_ascii=False))
+
+
+def _chemdb_run(db, fn):
+    from shared.adapters import chemdb
+    db = chemdb.check_db(db)
+    used, daily, wait = chemdb_quota(db)
+    if used >= daily:
+        raise ValueError(f'{db} 今天已经用了 {used} 次（上限 {daily}，按人的频率）；明天再来，或请用户在控制面板调 CHEMDB_DAILY')
+    if wait:
+        time.sleep(wait)                      # 不到 30 秒就等够再做（人的节奏），不让调用方白跑一趟
+    chemdb_charge(db)
+    r = fn(db)
+    r['quota'] = {'used_today': used + 1, 'daily_limit': daily, 'min_gap_s': CHEMDB_GAP}
+    head = '%s %s：%s' % (db, r.get('code'), r.get('why') or ('%s 条结果，第 %s 页' % (r.get('count'), r.get('page'))))
+    return _out(head, r)
+
+
+def _chemdb_search(a):
+    from shared.adapters import chemdb
+    q = (a.get('query') or '').strip()
+    mc = int(a.get('maxChars') or 30000)
+    return _chemdb_run(a.get('db'), lambda db: chemdb.search(db, q, a.get('kind') or 'references', max_chars=mc))
+
+
+def _chemdb_page(a):
+    from shared.adapters import chemdb
+    mc = int(a.get('maxChars') or 30000)
+    return _chemdb_run(a.get('db'), lambda db: chemdb.page(db, int(a.get('page') or 2), max_chars=mc))
+
+
 def cap(name, handler, limit=None, spill_dir=None):
     """包一层：结构化结果超过 MAX_OUT 字节就写成文件、只回路径（2026-10：6 篇 outline 合一次 batch，
     JSON 在 64 KB 处被截成半截）。文件在 logs/science_out/，B 机 WSL 读得到。"""
@@ -844,6 +924,15 @@ TOOLS = [
      '上次取全文的 route 与错误码。零成本，不取不解析。',
      {'dois': {'type': 'array', 'items': {'type': 'string'}},
       'itemKeys': {'type': 'array', 'items': {'type': 'string'}}}, [], _paper_status),
+    ('chemdb_search', '在 SciFinder 或 Reaxys 里搜一次（借主力机上已登录的浏览器），回结果列表第 1 页的文字：'
+     '标题 / 作者 / 刊 / 年 / 摘要片段（Reaxys 带 DOI）、结果数、左侧筛选项与计数、库自带的 AI 摘要。'
+     'kind=references（文献+专利，默认）/ substances / reactions。按人的频率：两次至少隔 30 秒，每库每天有上限。',
+     {'db': {'type': 'string', 'enum': ['scifinder', 'reaxys']}, 'query': {'type': 'string'},
+      'kind': {'type': 'string', 'enum': ['references', 'substances', 'reactions']},
+      'maxChars': {'type': 'integer', 'minimum': 1000, 'maximum': 45000}}, ['db', 'query'], _chemdb_search),
+    ('chemdb_page', '上一次 chemdb_search 的结果列表翻到第 page 页（同一个库）。频率规矩同上。',
+     {'db': {'type': 'string', 'enum': ['scifinder', 'reaxys']}, 'page': {'type': 'integer', 'minimum': 1},
+      'maxChars': {'type': 'integer', 'minimum': 1000, 'maximum': 45000}}, ['db', 'page'], _chemdb_page),
 ]
 
 
