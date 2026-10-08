@@ -43,41 +43,63 @@ What to expect (server 0.3):
 Check this platform before web search or other literature connectors: its full text and SI are
 what the user actually has.
 
-## SciFinder / Reaxys (server 0.4): `chemdb_search`, `chemdb_page`
+## SciFinder / Reaxys (server 0.5): `chemdb_status`, `chemdb_search`, `chemdb_page`
 
 The user's school subscribes to both; you can't log in, so these drive the browser on the user's main machine
-(the user logs in there once) and return the **text of one results page**. Read-only: no export, no detail pages.
+(the user logs in there once) and return **one results page as structured fields**. Read-only: no export, no detail pages.
 
 ```bash
-~/bin/litcall chemdb_search '{"db":"scifinder","query":"boron siloxane self-healing"}'
-~/bin/litcall chemdb_search '{"db":"reaxys","query":"polyborosiloxane self-healing elastomer"}'
-~/bin/litcall chemdb_page   '{"db":"scifinder","page":2}'     # next page of the last search in that db
+~/bin/litcall chemdb_status '{}'      # free: quota left, reset time, last searches, login state of the tabs, export folder
+~/bin/litcall chemdb_search '{"db":"scifinder","query":"boron siloxane self-healing","sort":"cited","filters":{"Document Type":["Journal"],"yearFrom":2018}}'
+~/bin/litcall chemdb_search '{"db":"reaxys","query":"polyborosiloxane self-healing elastomer","sort":"cited"}'
+~/bin/litcall chemdb_page   '{"db":"reaxys","page":2}'     # page n of the last search in that db
 ```
-`kind`: `references` (journal articles + patents, default) / `substances` / `reactions`. `maxChars` ≤ 45000.
-Result: `code` (`OK`, `LOGIN_REQUIRED`, `NO_RESULTS`, `NO_SEARCH`, `NAVIGATE_FAILED`, `TIMEOUT`), `count`, `page`, `text`,
-`quota` (`used_today`, `daily_limit`). Reaxys also returns `preview`: how it split your query into sub-queries, with counts.
 
-**Human pace, enforced by the server**: ≥30 s between calls (the server waits for you; a call takes ~1 min),
-and a small daily cap per database (search and page both count). CAS terms forbid scripting what is meant to be
-manual; the user knowingly accepted light, human-paced use. So plan the query first; don't trial-and-error.
-`LOGIN_REQUIRED` → ask the user to log in in the "取全文用的浏览器" on the main machine, then retry.
+Result fields: `code` (`OK`, `LOGIN_REQUIRED`, `NO_RESULTS`, `NO_SEARCH`, `NAVIGATE_FAILED`, `TIMEOUT`), `complete`, `warnings`,
+`count`, `page`, `page_size`, `pages`, `query_interpretation` (what the database actually ran), `ai_summary`, `facets`,
+`cached`, `quota`, and `items[]`:
+`rank, type (journal|review|patent|conference paper|…), title, authors (≤8, n_authors if more), source, year, doi,
+cited (Reaxys) / citing (SciFinder), snippet (≤400 chars), index_terms (Reaxys), in_library, id, tier`; for patents also
+`patent_no, assignee, office, status (SciFinder: alive/dead), family_ranks / family_members (Reaxys)`.
+- SciFinder lists carry no DOI: the server matches titles on Crossref (`doi_source: crossref_title_match`,
+  `doi_match_score`; `doi_uncertain: true` below 0.9). `in_library` / `tier` tell you what `paper_fulltext` would add.
+- A full page is often > 50 KB (Reaxys ~100 items/page, SciFinder ~80): you get `{"spilled": path}` — read that file.
+- `raw: true` adds the whole page text (debugging only).
 
-How the two behave (observed 2026-10-08, same query `polyborosiloxane self-healing elastomer`):
+Options:
+- `sort`: `relevance` (default) / `cited` / `date` (newest first). Both databases.
+- `filters` (**SciFinder only**): `{facet name: [values]}` exactly as they appear in `facets` (e.g. `"Document Type": ["Journal"]`,
+  `"Patent Status": ["Alive"]`, `"Language": ["English"]`), plus `yearFrom` / `yearTo`. Only values shown on the page
+  (top 5 per facet) can be ticked; misses go to `warnings`. Reaxys returns only facet names (`facets.available`).
+- `mode: "original"` (SciFinder): when `query_modified` is true, search the original string instead of SciFinder's rewrite.
+- Reaxys splits a sentence into sub-queries, strictest first; `preview` lists them with counts and the server opens the
+  first `documents` one. If that set is too narrow or too wide, rephrase.
+- `kind: substances | reactions` returns only `raw` text for now.
+
+**Human pace, enforced by the server**: ≥30 s between site calls (the server waits; a call takes ~1–2 min), and a daily cap
+per database (search and page both count; `chemdb_status` shows what's left). **The same search/page on the same day is
+served from cache (`cached: true`) and costs nothing** — re-run freely after context compression.
+CAS terms forbid scripting what is meant to be manual; the user knowingly accepted light, human-paced use. So plan first.
+`LOGIN_REQUIRED` (or `chemdb_status` showing `login: login_page`) → ask the user to log in in the "取全文用的浏览器" on the
+main machine, then retry.
+
+How the two behave (observed 2026-10-08):
 
 | | SciFinder | Reaxys |
 |---|---|---|
-| query parsing | ANDs every word ("Query Interpretation" in the text) | recognises substances as structures and splits the sentence into sub-queries, strictest first |
-| hits | 26 (18 journal + 8 patents) | 134 documents |
-| a results page shows | title, authors, journal/year, partial abstract, **filter facets with counts** (document type, year, language, patent office, patent status alive/dead, CPC/IPC codes, concepts), CAS Newton AI summary | title, authors, journal/year, **DOI**, times cited, hit snippets, AI summary, facet names |
-| strengths | patents (incl. Chinese), CAS-indexed concepts, patent legal status | experimental property data per substance, reaction conditions |
+| query parsing | ANDs every word (`query_interpretation`), flags it in `query_modified` | recognises substances as structures; splits into sub-queries (`preview`) |
+| same query `polyborosiloxane self-healing elastomer` | 26 hits | 134 documents |
+| page size | ~80 per page | ~100 per page (server sets the maximum) |
+| strengths | patents (incl. Chinese), CAS concepts, patent legal status, facet counts | DOIs in list, times cited, index terms, experimental property data, reaction conditions |
 
 Query tips for this user's field:
-- **Go broad, filter later.** `polyborosiloxane self-healing elastomer` → 26 in SciFinder; `boron siloxane self-healing` → 317.
-  Many papers say B–O–Si, borate / boronic ester cross-linked PDMS, borosiloxane, "silly putty", not "polyborosiloxane".
-- Both are built for small molecules: polymer property numbers (tensile strength, healing efficiency) are mostly
-  not indexed. Use them to find papers / patents and monomer or cross-linker chemistry; get the numbers from the
-  full text via `paper_fulltext` → `library_section`.
-- SciFinder lists usually lack DOIs: match by title (OpenAlex) before `paper_fulltext`. Reaxys lists include DOIs.
-- Patents: full text is not fetched by `paper_fulltext`; use the patent number with a public patent source.
-- For bulk screening, the user can also export a SciFinder result set to Excel (Result Details template, all fields:
-  abstract, concepts, substances, Claim 1, patent status, family) and hand you the file — no quota used.
+- **Go broad, filter later.** `polyborosiloxane self-healing elastomer` → 26 in SciFinder; `boron siloxane self-healing` → 317
+  (79 journal articles). Many papers say B–O–Si, borate / boronic ester cross-linked PDMS, borosiloxane, "silly putty".
+- `sort: "cited"` first to find the foundational papers, then `date` for the newest.
+- Both are built for small molecules: polymer property numbers (tensile strength, healing efficiency) are mostly not indexed.
+  Use them to find papers / patents and monomer or cross-linker chemistry; get numbers from full text via
+  `paper_fulltext` → `library_section`.
+- Patents: `paper_fulltext` doesn't fetch patents; use the patent number with a public patent source.
+- For bulk screening, ask the user to export a result set (SciFinder: Excel, "Result Details" template, all fields —
+  abstract, concepts, substances, Claim 1, patent status, family) into the export folder shown by `chemdb_status`
+  (`exports.dir`). Read it yourself — no quota used.
