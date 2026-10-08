@@ -8,7 +8,7 @@ description: The user's own literature platform (evidence library of ~1100 polym
 Run on the SSH host **zotero-b** (not locally):
 
 ```bash
-~/bin/litcall --version                    # litcall + server version (expect server 0.6.x)
+~/bin/litcall --version                    # litcall + server version (expect server 0.7.x)
 ~/bin/litcall --list                       # tools + args (one JSON per line)
 ~/bin/litcall <tool> '<json args>'         # prints JSON result; exit 1 on tool error
 ~/bin/litcall --batch < calls.jsonl        # many calls, one session: {"tool":..,"args":{..}} per line
@@ -43,7 +43,7 @@ What to expect (server 0.3):
 Check this platform before web search or other literature connectors: its full text and SI are
 what the user actually has.
 
-## SciFinder / Reaxys (server 0.6): `chemdb_status`, `chemdb_search`, `chemdb_page`
+## SciFinder / Reaxys (server 0.7): `chemdb_status`, `chemdb_search`, `chemdb_page`
 
 The user's school subscribes to both; you can't log in, so these drive the browser on the user's main machine
 (the user logs in there once) and return **one results page as structured fields**. Read-only: no export, no detail pages.
@@ -62,7 +62,9 @@ Result fields: `code` (`OK`, `LOGIN_REQUIRED`, `NO_RESULTS`, `NO_SEARCH`, `NAVIG
 cited (Reaxys) / citing (SciFinder), snippet (≤400 chars), index_terms (Reaxys), in_library, id, tier`; for patents also
 `patent_no, assignee, office, status (SciFinder: alive/dead), family_ranks / family_members (Reaxys)`.
 - SciFinder lists carry no DOI: the server matches titles on Crossref (`doi_source: crossref_title_match`,
-  `doi_match_score`; `doi_uncertain: true` below 0.9). `in_library` / `tier` tell you what `paper_fulltext` would add.
+  `doi_match_score`; `doi_uncertain: true` below 0.9), asking with the journal and preferring the candidate whose volume
+  matches; if journal/volume still disagree it leaves `doi` empty and gives `doi_candidate` + `doi_rejected_because`
+  (e.g. Angewandte German edition vs International Edition). `in_library` / `tier` tell you what `paper_fulltext` would add.
 - A full page is often > 50 KB (Reaxys ~100 items/page, SciFinder ~80): you get `{"spilled": path}` — read that file.
 - `raw: true` adds the whole page text (debugging only).
 
@@ -75,6 +77,11 @@ Options:
 - Reaxys splits a sentence into sub-queries, strictest first; `preview` lists them with counts and the server opens the
   first `documents` one. If that set is too narrow or too wide, rephrase.
 - `kind: reactions` returns only `raw` text for now.
+
+**Async (0.7).** A real search takes 40–150 s. Each call waits up to `wait_s` (default 25, ≤50); if the search
+isn't done you get `{"code": "PENDING", "job_id": …}` — poll `chemdb_result {"job_id": …, "wait_s": 45}` (free).
+Repeating the identical `chemdb_search` while it runs also just waits on the same job (no second charge).
+Only one SciFinder/Reaxys search runs at a time.
 
 **Human pace, enforced by the server**: ≥30 s between site calls (the server waits; a call takes ~1–2 min), and a daily cap
 per database (search and page both count; `chemdb_status` shows what's left). **The same search/page on the same day is
@@ -104,6 +111,17 @@ main machine, then retry.
 - `kind: "substances"` items: `cas_rn, formula (SciFinder) / formula_linear + mw + reaxys_rn (Reaxys), name,
   n_references | n_documents, n_reactions, n_suppliers` (+ Reaxys `n_preparations, n_physical_data, n_spectra,
   n_bioactivity`). SciFinder writes big counts as 51K (`counts_rounded: true`).
+- **CAS number + topic** (the most common question, e.g. "boric acid in self-healing materials"), SciFinder:
+  `{"query":"10043-35-3","kind":"references","within":["self-healing"],"filters":{"Concept":["Self-healing materials"]}}`.
+  `within` alone (133,484 → 3,035) still lets in electrocatalysis papers ("self-healing catalyst"); the CAS-indexed
+  `Concept` facet makes it exact (→ 247, all on topic: boronate dynamic networks, vitrimers, PBS elastomers). Concept values
+  only appear once they're in the top 5 of `facets.Concept` — so run `within` first, read `facets`, then add the Concept.
+- **Structure → documents** directly: `{"structure": SMILES, "match": "substructure", "kind": "references"}` — SciFinder
+  1,4-benzenediboronic acid 6,578 refs; Reaxys 5,852 documents (sorted by `cited`, DOIs for all).
+- Reaxys's CAS index is incomplete: boric acid 10043-35-3 is registered only on 7 mineral/hydrate records (max 9 docs);
+  the main record carries 11113-50-1. When a CAS number lands only on thin records, the server converts it to a structure
+  via PubChem and searches the structure as drawn (`warnings: cas_fallback_to_structure`; → 22,536 docs).
+  Candidates are listed in `substance_candidates` / `cas_candidates_reaxys`.
 - CAS number + `kind: "references"`: the server lands on that substance first, then opens its references
   (`warnings` contains `via_substance`). In SciFinder, narrow with `filters: {"Substance Role": ["Preparation"]}` etc. —
   the role names are in `facets`. Polymers are poorly indexed by structure: for the user's materials, search the

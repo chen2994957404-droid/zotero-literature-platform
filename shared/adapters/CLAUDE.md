@@ -38,6 +38,7 @@
 | `vectordb` | 向量库（当前实现 Chroma）|
 | `pdf_fetch` | 出版商全文：接管主力机「取全文用的浏览器」取 PDF |
 | `chemdb` | SciFinder / Reaxys：同一个浏览器里搜、读结果页文字（只读，人登录）|
+| `pubchem` | PubChem 公开化合物库：CAS 号 → 结构式（Reaxys 的 CAS 号登记不全时兜底）|
 
 ## 写一块新 adapter 的规矩
 
