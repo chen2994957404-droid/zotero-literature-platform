@@ -907,7 +907,11 @@ def _rx_draw(pg, structure, match, warnings):
     if not hit:
         warnings.append(f'match_not_found: {SITE["reaxys"]["match_label"][match]}（编辑器页面上没有这个选项）')
     pg.wait_for_timeout(600)
-    pg.locator('button:text-is("Transfer to query")').first.click()
+    # 按 data-e2e 在页面里点（选了 Similar 之后 text-is 找不到它，2026-10-08 实测；按钮其实在）
+    if not pg.evaluate("""() => { const b = document.querySelector('[data-e2e="structure-editor-transfer"]');
+        if (!b) return false; b.click(); return true; }"""):
+        warnings.append('transfer_button_missing: 编辑器页面上找不到 Transfer to query')
+        return None
     pg.wait_for_url(re.compile(r'#/search/quick/query'), timeout=30000)
     pg.wait_for_timeout(1500)
     return got.get('smiles')
