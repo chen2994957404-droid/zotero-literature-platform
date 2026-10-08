@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """chemdb 自测：网址换页、结果数、去样板、登录判断都用 2026-10-08 实测到的真页面样例离线验。
 真去 SciFinder / Reaxys 搜一次藏在 --live 后面（只在主力机、而且人已经登录过时有意义）。"""
+import re
 import sys
 
 try:
@@ -83,6 +84,15 @@ def main():
                               'link': 'https://lls.reaxys.com/xflink?pubno=CN109666219&pubdate=2019&kindcode=A',
                               'members': ['CN109666219 A', 'CN109666219 B'], 'assignee': 'WANHUA CHEMICAL GROUP',
                               'office': 'CN', 'source': ''})
+    rx2 = chemdb.norm_rx_item({'idx': '2', 'type': 'Article', 'title': '<hi><mark>Self-healing</mark></hi> PDMS',
+                               'index_terms': ['<mark>A</mark>', 'A', 'B'], 'snippet': 'x' * 900,
+                               'authors': ['a%d' % i for i in range(12)]})
+    check('Reaxys 去 <mark>、索引词去重、片段与作者限长', rx2['title'] == 'Self-healing PDMS'
+          and rx2['index_terms'] == ['A', 'B'] and len(rx2['snippet']) <= chemdb.MAX_SNIPPET + 1
+          and len(rx2['authors']) == chemdb.MAX_AUTHORS and rx2['n_authors'] == 12, str(rx2)[:300])
+    check('排序：SciFinder 的选项文字认得出',
+          re.search(chemdb.SORTS['cited'], 'Times Cited', re.I) and re.search(chemdb.SORTS['date'], 'Publication Date: Newest', re.I)
+          and not re.search(chemdb.SORTS['date'], 'Publication Date: Oldest', re.I) is None)
     check('Reaxys 专利族「4-5」→ rank 4、family_ranks [4,5]、号', rx['rank'] == 4 and rx['family_ranks'] == [4, 5]
           and rx['patent_no'] == 'CN109666219' and rx['assignee'] == 'WANHUA CHEMICAL GROUP' and rx['source'] is None, str(rx))
 

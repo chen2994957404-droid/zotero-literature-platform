@@ -38,7 +38,7 @@ import argparse
 import json
 import subprocess
 
-VERSION = '0.5.0'
+VERSION = '0.5.1'
 MAX_STDOUT = 48000          # 字节；留点余量给 SSH 那边的 64 KB 截断线
 
 HANDSHAKE = [

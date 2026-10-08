@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.5.0'
+VERSION = '0.5.1'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -832,7 +832,7 @@ def chemdb_key(db, params, page):
     """同一库、同一检索（词 + 类 + 排序 + 筛选 + 模式）、同一页 → 同一个缓存键。"""
     import hashlib
     sig = json.dumps({'db': db, 'p': {k: params.get(k) for k in ('query', 'kind', 'sort', 'filters', 'mode')},
-                      'page': int(page)}, sort_keys=True, ensure_ascii=False)
+                      'page': int(page), 'v': VERSION}, sort_keys=True, ensure_ascii=False)   # 升版本 = 解析变了，旧缓存作废
     return hashlib.sha1(sig.encode('utf-8')).hexdigest()[:16]
 
 
@@ -861,8 +861,9 @@ DOI_SURE = 0.9          # 标题相似度到这个数，就当是它
 DOI_MAYBE = 0.75        # 到这个数，给 DOI 但标 doi_uncertain，让调用方自己判
 
 
-def enrich(items, match=None, find=None, tier=None):
+def enrich(items, match=None, find=None, tier=None, warnings=None):
     """补 DOI（SciFinder 列表没有，按标题去 Crossref 找）+ 标出证据库里有没有、能读到哪一档。"""
+    warnings = [] if warnings is None else warnings
     if match is None:
         from shared.adapters import crossref
 
@@ -879,18 +880,24 @@ def enrich(items, match=None, find=None, tier=None):
         from concurrent.futures import ThreadPoolExecutor
 
         def _m(it):
-            try:
-                return match(it)
-            except Exception:
-                return None
-        with ThreadPoolExecutor(max_workers=5) as ex:
-            for it, got in zip(todo, ex.map(_m, todo)):
-                if got and got.get('doi') and got['score'] >= DOI_MAYBE:
-                    it['doi'] = got['doi']
-                    it['doi_source'] = 'crossref_title_match'
-                    it['doi_match_score'] = got['score']
-                    if got['score'] < DOI_SURE:
-                        it['doi_uncertain'] = True
+            for attempt in range(3):          # 2026-10-08：5 路并发被 Crossref 限流，42 条只配上 16 条
+                try:
+                    return True, match(it)
+                except Exception:
+                    time.sleep(1.5 * (attempt + 1))
+            return False, None
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            got_all = list(ex.map(_m, todo))
+        failed = sum(1 for ok, _ in got_all if not ok)
+        if failed:
+            warnings.append(f'doi_lookup_failed: {failed} 条按标题去 Crossref 查 DOI 没查成（网络 / 限流），可以自己按标题再找')
+        for it, (_, got) in zip(todo, got_all):
+            if got and got.get('doi') and got['score'] >= DOI_MAYBE:
+                it['doi'] = got['doi']
+                it['doi_source'] = 'crossref_title_match'
+                it['doi_match_score'] = got['score']
+                if got['score'] < DOI_SURE:
+                    it['doi_uncertain'] = True
     for it in items:
         if it.get('doi'):
             pid = find(it['doi'])
@@ -941,7 +948,7 @@ def _chemdb_run(db, params, page, fetch):
     chemdb_charge(db, last_search=dict(keep, url=r.get('url')) if page == 1 and r.get('url') else None)
     if r.get('items'):
         try:
-            enrich(r['items'])
+            enrich(r['items'], warnings=r.setdefault('warnings', []))
         except Exception as e:
             r.setdefault('warnings', []).append(f'enrich_failed: {type(e).__name__}: {str(e)[:80]}')
     if r.get('code') in ('OK', 'NO_RESULTS') and r.get('complete', True):

@@ -40,8 +40,9 @@ log = get_logger('chemdb')
 
 DBS = ('scifinder', 'reaxys')
 KINDS = ('references', 'substances', 'reactions')
-SORTS = {'relevance': r'relevan', 'date': r'publication|year|date|newest|latest',
-         'cited': r'cited|citing|citation'}
+# 实测（2026-10-08）SciFinder 的选项：Relevance / Times Cited / Accession Number: … / Publication Date: Newest / Oldest
+SORTS = {'relevance': r'relevan', 'date': r'newest|latest|publication (date|year)|^year|^date',
+         'cited': r'times cited|cited|citation'}
 
 # 页面在哪、长什么样 —— 网站改版只改这里
 SITE = {
@@ -71,7 +72,7 @@ SITE = {
         'login_re': r'#/login|id\.elsevier\.com',
         'item': 'ul.e2e-results-list > li',
         'page_size': '[role=combobox][aria-label="Results per page"]',
-        'sort': '[role=combobox][aria-label*="Sort" i], button:has-text("Sort by")',
+        'sort': 'button[aria-label^="Select sorting category"]',
     },
 }
 
@@ -174,7 +175,24 @@ def parse_sf_bib(bib):
 
 
 def _hi(s):
-    return re.sub(r'</?hi>', '', s or '').strip()
+    return re.sub(r'</?(?:hi|mark)>', '', s or '').strip()
+
+
+MAX_SNIPPET = 400
+MAX_AUTHORS = 8
+MAX_TERMS = 10
+
+
+def _slim(item):
+    """一页上百条时每条都得精简：摘要片段截到 400 字、作者留前 8 个（n_authors 给总数）。"""
+    sn = item.get('snippet')
+    if sn and len(sn) > MAX_SNIPPET:
+        item['snippet'] = sn[:MAX_SNIPPET].rstrip() + '…'
+    au = item.get('authors') or []
+    if len(au) > MAX_AUTHORS:
+        item['authors'] = au[:MAX_AUTHORS]
+        item['n_authors'] = len(au)
+    return item
 
 
 def norm_rx_item(x):
@@ -203,17 +221,17 @@ def norm_rx_item(x):
     item = {'rank': rank, 'type': typ, 'title': _hi(x.get('title')), 'authors': x.get('authors') or [],
             'source': None if typ == 'patent' else (x.get('source') or None), 'year': year, 'doi': doi,
             'cited': int(x['cited']) if x.get('cited') else None, 'snippet': x.get('snippet'),
-            'index_terms': [_hi(t) for t in (x.get('index_terms') or [])][:20]}
+            'index_terms': list(dict.fromkeys(_hi(t) for t in (x.get('index_terms') or []) if _hi(t)))[:MAX_TERMS]}
     if typ == 'patent':
         item.update(patent_no=pub or ((x.get('members') or [None])[0]), family_members=x.get('members') or None,
                     family_ranks=family, assignee=x.get('assignee'), office=x.get('office'))
-    return item
+    return _slim(item)
 
 
 def norm_sf_item(x):
     b = parse_sf_bib(x.get('bib'))
     authors = [a.strip() for a in (x.get('authors') or '').split(';') if a.strip()]
-    item = {'rank': x.get('rank'), 'type': b['type'], 'title': x.get('title'), 'authors': authors,
+    item = {'rank': x.get('rank'), 'type': b['type'], 'title': _hi(x.get('title')), 'authors': authors,
             'source': b.get('source'), 'year': b.get('year'), 'doi': None, 'language': b.get('language'),
             'citing': x.get('citing'), 'substances': x.get('substances'), 'reactions': x.get('reactions'),
             'snippet': (x.get('snippet') or '').strip() or None}
@@ -222,7 +240,7 @@ def norm_sf_item(x):
                     assignee=x.get('assignee'), status=(x.get('status') or '').lower() or None)
     else:
         item['citation'] = b.get('citation')
-    return item
+    return _slim(item)
 
 
 def _result(db, **kw):
@@ -333,40 +351,40 @@ def _goto(pg, url):
         return False
 
 
+_PICK_JS = r"""async ([toggle, pattern]) => {
+  const t = document.querySelector(toggle);
+  if (!t) return {got: null, seen: [], why: 'no_toggle'};
+  t.scrollIntoView({block: 'center'}); t.click();
+  await new Promise(r => setTimeout(r, 900));
+  const re = new RegExp(pattern, 'i');
+  const opts = [...document.querySelectorAll('[role=menuitem], [role=option], [role=menuitemradio], .dropdown-item, [role=listbox] li')]
+    .filter(e => e.offsetParent !== null);
+  const seen = opts.map(e => (e.innerText || '').trim()).filter(Boolean);
+  const hit = opts.find(e => re.test((e.innerText || '').trim()));
+  if (hit) { hit.click(); return {got: (hit.innerText || '').trim(), seen}; }
+  t.click();
+  return {got: null, seen};
+}"""
+
+
 def _pick(pg, toggle, pattern):
-    """点开一个下拉，选文字匹配 pattern 的那项 → (选中的文字 | None, 看到的全部选项)。"""
-    t = pg.locator(toggle)
-    if t.count() == 0:
-        return None, []
-    t.first.click()
-    pg.wait_for_timeout(800)
-    opts = pg.locator('[role=option], [role=menuitem], [role=menuitemradio], .dropdown-menu a, '
-                      '.dropdown-menu button, .dropdown-item')
-    seen = []
-    for i in range(min(opts.count(), 30)):
-        o = opts.nth(i)
-        try:
-            if not o.is_visible():
-                continue
-            txt = o.inner_text().strip()
-        except Exception:
-            continue
-        seen.append(txt)
-        if re.search(pattern, txt, re.I):
-            o.click()
-            return txt, seen
-    pg.keyboard.press('Escape')
-    return None, seen
+    """点开一个下拉，选文字匹配 pattern 的那项 → (选中的文字 | None, 看到的全部选项)。在页面里点（不怕吸顶栏挡着）。"""
+    try:
+        r = pg.evaluate(_PICK_JS, [toggle, pattern])
+    except Exception as e:
+        return None, [f'{type(e).__name__}: {str(e)[:60]}']
+    return r.get('got'), r.get('seen') or []
 
 
 # ── 页面里跑的抽取脚本（改版就改这里）──────────────────────────────────
 
 _SF_JS = r"""async () => {
-  let last = -1;
-  for (let i = 0; i < 40; i++) {
+  // 列表是滚到哪画到哪（2026-10-08 实测：79 条一页，一下子只画出 42 条）—— 滚到底，连续三次数目不变才停
+  let last = -1, same = 0;
+  for (let i = 0; i < 80 && same < 3; i++) {
+    window.scrollTo(0, document.body.scrollHeight); await new Promise(r => setTimeout(r, 500));
     const n = document.querySelectorAll('.reference-data').length;
-    if (n === last && i > 2) break;
-    last = n; window.scrollBy(0, 3000); await new Promise(r => setTimeout(r, 350));
+    same = (n === last) ? same + 1 : 0; last = n;
   }
   window.scrollTo(0, 0);
   const T = e => e ? (e.innerText || '').trim() : '';
@@ -398,7 +416,7 @@ _SF_JS = r"""async () => {
 _RX_JS = r"""() => {
   const T = e => e ? (e.innerText || '').trim() : '';
   const items = [...document.querySelectorAll('ul.e2e-results-list > li')].map(li => {
-    const b = li.querySelector('[data-tracking-citation-type]');
+    const b = li.querySelector('[data-e2e="document-title-button"], [data-e2e="patent-family-title"]') || li.querySelector('[data-tracking-citation-type]');
     const g = k => b ? b.getAttribute('data-tracking-' + k) : null;
     const txt = li.innerText;
     const m = re => { const x = txt.match(re); return x ? x[1].trim() : null; };
@@ -406,7 +424,7 @@ _RX_JS = r"""() => {
       const n = x.innerText.match(/\b([A-Z]{2}\d{5,}[A-Z]?\d*)\s*,\s*(\d{4})\s*,\s*([A-Z]\d?)/); return n ? n[1] + ' ' + n[3] : null; }).filter(Boolean);
     const doiA = li.querySelector('a.doi-link');
     return {idx: T(li.querySelector('.result-checkbox-container__index')), type: g('citation-type'),
-      title: g('title') || T(li.querySelector('h3, h4')), authors: [...li.querySelectorAll('.rx-element-authors > span')].map(T),
+      title: g('title') || T(li.querySelector('h3, h4')), authors: [...li.querySelectorAll('.rx-element-authors [data-e2e="author-link"], .rx-element-authors > span')].map(T).filter(Boolean),
       source: T(li.querySelector('.rx-element-literature')), link: g('doc-link'),
       doi: doiA ? T(doiA).replace(/\(opens in a new window\)/, '').trim() : null,
       pubdate: g('publication-date') || g('online-date'), cited: (txt.match(/Cited (\d+) times?/) || [])[1] || null,
