@@ -8,7 +8,7 @@ description: The user's own literature platform (evidence library of ~1100 polym
 Run on the SSH host **zotero-b** (not locally):
 
 ```bash
-~/bin/litcall --version                    # litcall + server version (expect server 0.4.x)
+~/bin/litcall --version                    # litcall + server version (expect server 0.6.x)
 ~/bin/litcall --list                       # tools + args (one JSON per line)
 ~/bin/litcall <tool> '<json args>'         # prints JSON result; exit 1 on tool error
 ~/bin/litcall --batch < calls.jsonl        # many calls, one session: {"tool":..,"args":{..}} per line
@@ -43,7 +43,7 @@ What to expect (server 0.3):
 Check this platform before web search or other literature connectors: its full text and SI are
 what the user actually has.
 
-## SciFinder / Reaxys (server 0.5): `chemdb_status`, `chemdb_search`, `chemdb_page`
+## SciFinder / Reaxys (server 0.6): `chemdb_status`, `chemdb_search`, `chemdb_page`
 
 The user's school subscribes to both; you can't log in, so these drive the browser on the user's main machine
 (the user logs in there once) and return **one results page as structured fields**. Read-only: no export, no detail pages.
@@ -74,7 +74,7 @@ Options:
 - `mode: "original"` (SciFinder): when `query_modified` is true, search the original string instead of SciFinder's rewrite.
 - Reaxys splits a sentence into sub-queries, strictest first; `preview` lists them with counts and the server opens the
   first `documents` one. If that set is too narrow or too wide, rephrase.
-- `kind: substances | reactions` returns only `raw` text for now.
+- `kind: reactions` returns only `raw` text for now.
 
 **Human pace, enforced by the server**: ≥30 s between site calls (the server waits; a call takes ~1–2 min), and a daily cap
 per database (search and page both count; `chemdb_status` shows what's left). **The same search/page on the same day is
@@ -82,6 +82,32 @@ served from cache (`cached: true`) and costs nothing** — re-run freely after c
 CAS terms forbid scripting what is meant to be manual; the user knowingly accepted light, human-paced use. So plan first.
 `LOGIN_REQUIRED` (or `chemdb_status` showing `login: login_page`) → ask the user to log in in the "取全文用的浏览器" on the
 main machine, then retry.
+
+### CAS numbers and structures (server 0.6) — the user's most common use
+
+```bash
+~/bin/litcall chemdb_search '{"db":"scifinder","query":"98-80-6","kind":"substances"}'              # the substance record
+~/bin/litcall chemdb_search '{"db":"scifinder","query":"98-80-6","kind":"references","sort":"cited"}' # papers/patents using it
+~/bin/litcall chemdb_search '{"db":"scifinder","structure":"OB(O)c1ccccc1","match":"substructure","kind":"substances"}'
+~/bin/litcall chemdb_search '{"db":"reaxys","structure":"OB(O)c1ccccc1","match":"similarity","kind":"substances","subset":1}'
+```
+- `structure`: SMILES (Reaxys also takes a molfile). Neither search box understands SMILES (SciFinder's treats it as an
+  exact-structure query, Reaxys's searches the literal string in titles), so the server pastes it into each site's drawing
+  editor (CAS Draw / MarvinJS). `structure_formula` (SciFinder) or `structure_smiles` (Reaxys) echoes what the editor
+  understood — check it. `query` + `structure` together = both must match.
+- `match`: `exact` (as drawn; includes isotope / salt variants), `substructure` (contains this skeleton), `similarity`.
+  SciFinder returns `structure_match` with the count for all three (e.g. As Drawn 274 / Substructure 307K / Similarity 101
+  for phenylboronic acid) — use it to decide whether to switch.
+- Reaxys similarity comes in five tiers in `preview` (tight 1 / near 17 / average 375 / wide 18,288 / widest 76,958 for
+  phenylboronic acid). The server opens the strictest non-empty one; pass `subset` (index into `preview`) to open another.
+  `subset` also picks among the sub-queries Reaxys splits a keyword sentence into.
+- `kind: "substances"` items: `cas_rn, formula (SciFinder) / formula_linear + mw + reaxys_rn (Reaxys), name,
+  n_references | n_documents, n_reactions, n_suppliers` (+ Reaxys `n_preparations, n_physical_data, n_spectra,
+  n_bioactivity`). SciFinder writes big counts as 51K (`counts_rounded: true`).
+- CAS number + `kind: "references"`: the server lands on that substance first, then opens its references
+  (`warnings` contains `via_substance`). In SciFinder, narrow with `filters: {"Substance Role": ["Preparation"]}` etc. —
+  the role names are in `facets`. Polymers are poorly indexed by structure: for the user's materials, search the
+  monomers / cross-linkers (boric acid 10043-35-3, phenylboronic acid 98-80-6, a specific diol or siloxane) by CAS number.
 
 How the two behave (observed 2026-10-08):
 

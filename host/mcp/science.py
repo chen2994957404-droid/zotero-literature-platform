@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.6.1'
+VERSION = '0.6.2'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -833,7 +833,7 @@ def _remember_search(db, search, path=None):
 def chemdb_key(db, params, page):
     """同一库、同一检索（词 + 类 + 排序 + 筛选 + 模式）、同一页 → 同一个缓存键。"""
     import hashlib
-    sig = json.dumps({'db': db, 'p': {k: params.get(k) for k in ('query', 'kind', 'sort', 'filters', 'mode', 'structure', 'match')},
+    sig = json.dumps({'db': db, 'p': {k: params.get(k) for k in ('query', 'kind', 'sort', 'filters', 'mode', 'structure', 'match', 'subset')},
                       'page': int(page), 'v': VERSION}, sort_keys=True, ensure_ascii=False)   # 升版本 = 解析变了，旧缓存作废
     return hashlib.sha1(sig.encode('utf-8')).hexdigest()[:16]
 
@@ -963,7 +963,8 @@ def _chemdb_params(a):
             'sort': a.get('sort') or None, 'filters': a.get('filters') or None,
             'mode': a.get('mode') or 'auto', 'raw': bool(a.get('raw')),
             'structure': (a.get('structure') or '').strip() or None,
-            'match': (a.get('match') or 'exact') if a.get('structure') else None}
+            'match': (a.get('match') or 'exact') if a.get('structure') else None,
+            'subset': a.get('subset') if a.get('subset') is not None else None}
 
 
 def _chemdb_search(a):
@@ -972,7 +973,7 @@ def _chemdb_search(a):
     mc = int(a.get('maxChars') or 30000)
     return _chemdb_run(a.get('db'), p, 1, lambda db: chemdb.search(
         db, p['query'], p['kind'], structure=p['structure'] or '', match=p['match'] or 'exact', sort=p['sort'],
-        filters=p['filters'], mode=p['mode'], raw=p['raw'], max_chars=mc))
+        filters=p['filters'], mode=p['mode'], raw=p['raw'], max_chars=mc, subset=p['subset']))
 
 
 def _chemdb_page(a):
@@ -1129,6 +1130,9 @@ TOOLS = [
                   '只有页面左侧显示出来的值能选（每个 facet 前 5 个），选不到会进 warnings'},
       'mode': {'type': 'string', 'enum': ['auto', 'original'],
                'description': 'original = SciFinder 改写了检索式时按原样搜（点 Search Original Query）'},
+      'subset': {'type': 'integer', 'minimum': 0, 'description': '只 Reaxys：开预览（preview）里的第几组，从 0 数。'
+                 '相似检索分 tight / near / average / wide / widest 五档（默认开第一个有结果的、最严的那档）；'
+                 '关键词会被拆成几组子检索。先不给看 preview，再按需要给 subset 重搜'},
       'raw': {'type': 'boolean', 'description': '另附整页原文 text（排查用，平时别开）'},
       'maxChars': {'type': 'integer', 'minimum': 1000, 'maximum': 45000, 'description': 'raw 原文的上限'}},
      ['db'], _chemdb_search),

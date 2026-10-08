@@ -783,7 +783,7 @@ def _sf_to_refs_of_first_substance(pg, warnings):
     return True
 
 
-def _search_scifinder(pg, query, kind, sort, filters, mode, raw, max_chars, structure='', match='exact'):
+def _search_scifinder(pg, query, kind, sort, filters, mode, raw, max_chars, structure='', match='exact', subset=None):
     s = SITE['scifinder']
     err = _sf_home(pg)
     if err:
@@ -934,7 +934,7 @@ def _rx_to_docs_of_first_substance(pg, warnings):
     return True
 
 
-def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars, structure='', match='exact'):
+def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars, structure='', match='exact', subset=None):
     s = SITE['reaxys']
     if not _goto(pg, s['home']):
         return _result('reaxys', code='NAVIGATE_FAILED', why='Reaxys 打不开')
@@ -972,7 +972,13 @@ def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars, structu
     # CAS 号要文献：文献那组是「标题里出现这串数字」的字面匹配，不对 —— 先落到物质，再取它的文献
     via = kind == 'references' and (rx_cas or (structure and match == 'exact'))
     word = 'substances' if via else s['card_word'][kind]
-    pick = next((c for c in preview if c.get('kind') == word), None)
+    if subset is not None:
+        # 调用方自己挑预览里的哪一组（相似检索分 tight / near / average / wide / widest 五档；关键词拆成几组子检索）
+        pick = preview[int(subset)] if 0 <= int(subset) < len(preview) and preview[int(subset)].get('kind') else None
+        if pick and not via:
+            word = pick['kind']
+    else:
+        pick = next((c for c in preview if c.get('kind') == word), None)
     if not pick:
         return _result('reaxys', ok=True, code='NO_RESULTS', count=0, url=pg.url, preview=preview, warnings=warnings,
                        why=f'预览里没有 {word} 这一组（preview 里是 Reaxys 拆出来的各组）', **extra)
@@ -1016,7 +1022,7 @@ def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars, structu
 # ══════════════════════════════════════════════════════════════════════
 
 def search(db, query='', kind='references', structure='', match='exact', sort=None, filters=None, mode='auto',
-           raw=False, max_chars=30000):
+           raw=False, max_chars=30000, subset=None):
     """在 SciFinder / Reaxys 里搜一次，读结果列表第 1 页。
 
     query：关键词或 CAS 号；structure：SMILES（Reaxys 也收 molfile），match = exact / substructure / similarity。
@@ -1034,7 +1040,7 @@ def search(db, query='', kind='references', structure='', match='exact', sort=No
     with _session() as (browser, ctx):
         pg = _tab(browser, ctx, db)
         try:
-            r = fn(pg, query, kind, sort, filters, mode, raw, max_chars, structure=structure, match=match)
+            r = fn(pg, query, kind, sort, filters, mode, raw, max_chars, structure=structure, match=match, subset=subset)
         except Exception as e:
             log.warn(f'{db} 搜索出错：{type(e).__name__}: {str(e)[:200]}')
             r = _result(db, code='TIMEOUT', complete=False, url=getattr(pg, 'url', ''),
