@@ -732,6 +732,11 @@ def _sf_filters(pg, filters, warnings):
                 warnings.append(f'filter_not_found: {facet}={v}（只有当前页面左侧显示的值能选）')
                 continue
             bid = box.first.get_attribute('id')
+            # 这一栏可能是收着的（2026-10-08 实测 Concept 收着时选项点不着）→ 先展开
+            head = box.first.locator('xpath=ancestor::*[contains(@class,"facet-container")][1]').locator('button.facet-header')
+            if head.count() and head.first.get_attribute('aria-expanded') == 'false':
+                head.first.click()
+                pg.wait_for_timeout(800)
             pg.locator(f'label[for="{bid}"]').first.click()
             _settle(pg, lambda t: True, timeout=20)
             applied.append(f'{facet}: {v}')
