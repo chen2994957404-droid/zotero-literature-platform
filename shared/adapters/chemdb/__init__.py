@@ -18,10 +18,17 @@
 对外接口：
   | 函数 | 说明 |
   |---|---|
-  | `search(db, query, kind='references', sort=None, filters=None, mode='auto', raw=False)` | 搜一次 → 第 1 页 |
+  | `search(db, query='', kind='references', structure='', match='exact', sort=None, filters=None, mode='auto', raw=False)` | 搜一次 → 第 1 页 |
   | `page(db, n, base_url='', raw=False)` | 结果列表第 n 页（base_url = 那次搜索回的 url；不给就用标签上停着的） |
   | `tabs()` | 两个库的标签在不在、停在不在登录页 —— 只看浏览器，不碰网站 |
   | `page_url` / `page_no` / `is_login` / `clean_text` / `count_of` / `parse_sf_bib` / `norm_rx_item` | 纯函数（自测覆盖） |
+
+检索三种入口（2026-10-08 用户：「最常用的是 CAS 号查精确结构、画大致结构查」）：
+  - 关键词：query='boron siloxane self-healing'
+  - CAS 号：query='98-80-6' —— kind=substances 回物质；kind=references 先落到这个物质，再跳「用了它的文献 / 专利」
+  - 结构式：structure='OB(O)c1ccccc1'（SMILES；Reaxys 也收 molfile）+ match=exact / substructure / similarity
+    SciFinder 走 CAS Draw 的「Add to editor」，Reaxys 走 MarvinJS 的 importStructure —— 两个库的搜索框都不能直接收 SMILES
+    （SciFinder 的框收了会当按原样结构搜，Reaxys 的框收了会当关键词去标题里找字面，2026-10-08 实测）。
 
 返回 dict：ok, code, complete, warnings, db, kind, query, query_interpretation, page, page_size, pages,
 count, items[], facets{}, ai_summary, preview（Reaxys 的子检索拆分）, url, title, text（raw=True 才有）, why。
@@ -40,6 +47,8 @@ log = get_logger('chemdb')
 
 DBS = ('scifinder', 'reaxys')
 KINDS = ('references', 'substances', 'reactions')
+MATCHES = ('exact', 'substructure', 'similarity')
+CAS_RN_RE = re.compile(r'^\d{2,7}-\d{2}-\d$')
 # 实测（2026-10-08）SciFinder 的选项：Relevance / Times Cited / Accession Number: … / Publication Date: Newest / Oldest
 SORTS = {'relevance': r'relevan', 'date': r'newest|latest|publication (date|year)|^year|^date',
          'cited': r'times cited|cited|citation'}
@@ -57,7 +66,11 @@ SITE = {
         # 结果页网址：/search/<reference|substance|reaction>/<id>/<页码>
         'page_re': r'(/search/(?:reference|substance|reaction)/[^/?#]+/)(\d+)',
         'login_re': r'sso\.cas\.org|/login',
-        'item': '.reference-data',
+        'item': '.reference-data, .substance-tile',
+        'match_btn': '.structure-match-select',
+        'match_label': {'exact': 'As Drawn', 'substructure': 'Substructure', 'similarity': 'Similarity'},
+        'draw_type': {'references': '#result-type-reference', 'substances': '#result-type-substance',
+                      'reactions': '#result-type-reaction'},
         'original': '.search-original-query-button',
         'sort': 'button[aria-label="Sort"]',
     },
@@ -72,6 +85,7 @@ SITE = {
         'login_re': r'#/login|id\.elsevier\.com',
         'item': 'ul.e2e-results-list > li',
         'page_size': '[role=combobox][aria-label="Results per page"]',
+        'match_label': {'exact': 'As drawn', 'substructure': 'As substructure', 'similarity': 'Similar'},
         'sort': 'button[aria-label^="Select sorting category"]',
     },
 }
@@ -101,6 +115,78 @@ def check_kind(kind):
     if kind not in KINDS:
         raise ValueError(f'kind 只能是 {" / ".join(KINDS)}（给了「{kind}」）')
     return kind
+
+
+def check_match(match):
+    match = (match or 'exact').strip().lower()
+    if match not in MATCHES:
+        raise ValueError(f'match 只能是 {" / ".join(MATCHES)}（给了「{match}」）')
+    return match
+
+
+def is_cas_rn(s):
+    """像不像 CAS 号（只看格式；校验位也算一下，免得把日期之类认成 CAS 号）。"""
+    s = (s or '').strip()
+    if not CAS_RN_RE.match(s):
+        return False
+    digits = s.replace('-', '')
+    body, check = digits[:-1], int(digits[-1])
+    return sum((i + 1) * int(d) for i, d in enumerate(reversed(body))) % 10 == check
+
+
+def parse_count(s):
+    """「Get51Kreferences」「1,194」「Documents - 60,242」→ 整数（K / M 是 SciFinder 的约数）。"""
+    m = re.search(r'(\d[\d,.]*)\s*([KM])?', s or '')
+    if not m:
+        return None
+    n = float(m.group(1).replace(',', ''))
+    return int(n * {'K': 1000, 'M': 1000000}.get(m.group(2) or '', 1))
+
+
+_FORMULA_RE = re.compile(r'^(?:[A-Z][a-z]?\d*(?:\.\d+)?|\(|\)|[·.]|\d)+$')
+
+
+def norm_sf_substance(x):
+    """SciFinder 物质卡片 → {rank, cas_rn, formula, name, preferred_rn, n_references, n_reactions, n_suppliers}。"""
+    lines = x.get('lines') or []
+    rn = x.get('rn') or (lines[0] if lines else None)
+    formula = next((ln for ln in lines[1:4] if _FORMULA_RE.match(ln) and any(c.isdigit() for c in ln)), None)
+    name = x.get('name') or next((ln for ln in lines[1:5] if ln not in (rn, formula) and not ln.startswith('Preferred')
+                                  and ln != 'Image Not Available'), None)
+    out = {'rank': x.get('rank'), 'type': 'substance', 'cas_rn': rn, 'formula': formula, 'name': name,
+           'n_references': parse_count(x.get('refs')), 'n_reactions': parse_count(x.get('rxns')),
+           'n_suppliers': parse_count(x.get('sup'))}
+    if x.get('preferred'):
+        out['preferred_rn'] = x['preferred']
+    if any('K' in (x.get(k) or '') or 'M' in (x.get(k) or '') for k in ('refs', 'rxns')):
+        out['counts_rounded'] = True        # SciFinder 写 51K 这种约数
+    return out
+
+
+def norm_rx_substance(x):
+    """Reaxys 物质条目（整条文字按行）→ {rank, cas_rn, reaxys_rn, name, formula_linear, mw, n_*}。"""
+    lines = [ln.strip() for ln in (x.get('lines') or []) if ln.strip()]
+
+    def after(label):
+        for i, ln in enumerate(lines[:-1]):
+            if ln.rstrip(':') == label.rstrip(':'):
+                return lines[i + 1]
+        return None
+    counts = {}
+    for ln in lines:
+        m = re.match(r'^(Preparations|Reactions|Documents|Physical Data|Spectra|Bioactivity|Other Data)\s*-\s*([\d,]+)$', ln)
+        if m:
+            counts[m.group(1)] = int(m.group(2).replace(',', ''))
+    mw = after('Molecular Weight:')
+    sup = re.search(r'Number of Suppliers:\s*([\d,]+)', ' '.join(lines))
+    return {'rank': int(lines[0]) if lines and lines[0].isdigit() else None, 'type': 'substance',
+            'cas_rn': after('CAS Registry Number:'), 'reaxys_rn': after('Reaxys Registry Number'),
+            'name': x.get('name') or None, 'formula_linear': lines[1] if len(lines) > 1 else None,
+            'mw': float(mw) if mw and re.match(r'^[\d.]+$', mw) else None,
+            'n_documents': counts.get('Documents'), 'n_reactions': counts.get('Reactions'),
+            'n_preparations': counts.get('Preparations'), 'n_physical_data': counts.get('Physical Data'),
+            'n_spectra': counts.get('Spectra'), 'n_bioactivity': counts.get('Bioactivity'),
+            'n_suppliers': int(sup.group(1).replace(',', '')) if sup else None}
 
 
 def check_sort(sort):
@@ -442,6 +528,25 @@ _RX_JS = r"""() => {
   return {items, ai, page: pg ? +pg[1] : null, pages: pg ? +pg[2] : null, page_size: ps ? +ps.getAttribute('value') : null, facet_names};
 }"""
 
+_SF_SUB_JS = r"""() => [...document.querySelectorAll('.substance-tile')].map(t => {
+  const T = e => e ? (e.innerText || '').trim() : '';
+  const lab = re => { const a = [...t.querySelectorAll('a[aria-label]')].find(a => re.test(a.getAttribute('aria-label'))); return a ? a.getAttribute('aria-label') : null; };
+  const txt = t.innerText || '';
+  const sel = t.querySelector('input[type=checkbox]');
+  const rk = ((sel && (sel.getAttribute('aria-label') || sel.title)) || '').match(/(\d+)\s*$/);
+  return {rank: rk ? +rk[1] : null, rn: T(t.querySelector('a.rn-link')), name: T(t.querySelector('.substance-name')),
+          lines: txt.split('\n').map(s => s.trim()).filter(Boolean).slice(0, 8),
+          refs: lab(/references/i), rxns: lab(/reactions/i), sup: lab(/suppliers/i),
+          preferred: (txt.match(/Preferred RN:\s*([\d-]+)/) || [])[1] || null};
+})"""
+
+_RX_SUB_JS = r"""() => [...document.querySelectorAll('ul.e2e-results-list > li')].map(li => {
+  const n = li.querySelector('.substance-image-container');
+  return {name: n ? n.getAttribute('aria-label') : null, lines: (li.innerText || '').split('\n')};
+})"""
+
+_SF_MATCH_JS = r"""() => [...document.querySelectorAll('.structure-match-select')].map(b => ({text: (b.innerText || '').trim(), active: /active|selected/.test(b.className)}))"""
+
 _RX_PREVIEW_JS = r"""() => [...document.querySelectorAll('.e2e-view-results')].map((b, i) => {
   let e = b;
   for (let up = 0; up < 8 && e; up++, e = e.parentElement) {
@@ -464,6 +569,9 @@ def _ai_pending(s):
 
 def _extract(pg, db, raw, max_chars, **kw):
     """读当前列表页 → 结构化结果。库自带的 AI 摘要还在生成，再等一会（最多 25 秒）。"""
+    subs = '/search/substance/' in pg.url or '/results/substances/' in pg.url
+    if subs:
+        return _extract_substances(pg, db, raw, max_chars, **kw)
     js = _SF_JS if db == 'scifinder' else _RX_JS
     d = pg.evaluate(js)
     end = time.time() + 25
@@ -497,6 +605,46 @@ def _extract(pg, db, raw, max_chars, **kw):
     if _ai_pending(d.get('ai')):
         r['warnings'].append('ai_summary_pending')
         r['complete'] = False
+    if r['count'] and not r['items']:
+        r['warnings'].append('no_items_parsed')
+        r['complete'] = False
+    if raw:
+        r['text'] = text[:max_chars]
+        r['truncated'] = len(text) > max_chars
+    return r
+
+
+def _extract_substances(pg, db, raw, max_chars, **kw):
+    """物质列表（CAS 号 / 结构式检索落到的那页）→ 结构化。"""
+    text = clean_text(_body(pg))
+    title = ''
+    try:
+        title = pg.title()
+    except Exception:
+        pass
+    r = _result(db, ok=True, url=pg.url, title=title, **kw)
+    r['page'] = page_no(db, pg.url) or 1
+    if db == 'scifinder':
+        if _n(pg, '.substance-tile'):
+            pg.evaluate('async () => { for (let i = 0; i < 20; i++) { window.scrollTo(0, document.body.scrollHeight); '
+                        'await new Promise(r => setTimeout(r, 400)); } window.scrollTo(0, 0); }')
+        r['items'] = [norm_sf_substance(x) for x in pg.evaluate(_SF_SUB_JS)]
+        d = pg.evaluate(_SF_JS.replace("'.reference-data'", "'.no-such-thing'"))   # 只借它读 facets / 检索式
+        r['facets'] = d.get('facets') or {}
+        r['query_interpretation'] = d.get('qi')
+        r['filters_active'] = d.get('checked') or []
+        m = re.search(r'(?m)^([\d,]+)\s+Results?$', text)
+        r['count'] = int(m.group(1).replace(',', '')) if m else None
+        r['structure_match'] = pg.evaluate(_SF_MATCH_JS) or None
+    else:
+        r['items'] = [norm_rx_substance(x) for x in pg.evaluate(_RX_SUB_JS)]
+        r['count'] = count_of(db, title, text)
+        d = pg.evaluate(_RX_JS)
+        r['pages'], r['page_size'] = d.get('pages'), d.get('page_size')
+    if r['page_size'] is None and r['items']:
+        r['page_size'] = len(r['items'])
+    if r['pages'] is None and r['count'] and r['page_size']:
+        r['pages'] = -(-r['count'] // r['page_size'])
     if r['count'] and not r['items']:
         r['warnings'].append('no_items_parsed')
         r['complete'] = False
@@ -548,7 +696,8 @@ def _wait_items(pg, db, timeout=45):
     return False
 
 
-def _search_scifinder(pg, query, kind, sort, filters, mode, raw, max_chars):
+def _sf_home(pg):
+    """回首页、等搜索框；顺手拿掉上一次留在搜索栏里的结构（不拿掉会和这次的检索叠在一起搜）。"""
     s = SITE['scifinder']
     if not _goto(pg, s['home']):
         return _result('scifinder', code='NAVIGATE_FAILED', why='SciFinder 首页打不开')
@@ -559,30 +708,121 @@ def _search_scifinder(pg, query, kind, sort, filters, mode, raw, max_chars):
             return _result('scifinder', code='LOGIN_REQUIRED', url=pg.url,
                            why='SciFinder 要登录：请人在主力机「取全文用的浏览器」里登录（勾 Stay signed in）')
         return _result('scifinder', code='TIMEOUT', url=pg.url, why='等不到搜索框')
-    pg.fill(s['input'], query)
+    for _ in range(3):
+        rm = pg.locator('a.remove-structure-query')
+        if not rm.count():
+            break
+        rm.first.click()
+        pg.wait_for_timeout(800)
+    pg.fill(s['input'], '')
+    return None
+
+
+def _sf_draw(pg, structure, kind, warnings):
+    """结构式进 CAS Draw（「Add to editor」收 SMILES / 名字），选检索什么（物质 / 文献 / 反应），确定。→ 认出的分子式或 None。"""
+    s = SITE['scifinder']
+    pg.click('#draw-btn')
+    pg.wait_for_selector('#cdAddToEditorTextBox', timeout=30000)
+    pg.wait_for_timeout(1500)
+    try:
+        pg.click('#cdFileNew')                 # 清掉画板上上一次的结构
+        pg.wait_for_timeout(500)
+    except Exception:
+        pass
+    pg.fill('#cdAddToEditorTextBox', structure)
+    pg.click('#cdAddToEditorButton')
+    pg.wait_for_timeout(2500)
+    mf = pg.evaluate("() => ((document.querySelector('.editor-modal-container') || document.body).innerText"
+                     ".match(/Molecular Formula:\\s*([^\\n]*)/) || [])[1] || ''").strip()
+    if not mf:
+        warnings.append('structure_not_recognized: CAS Draw 没认出这个结构式（看看 SMILES 写对没有）')
+    pg.click(s['draw_type'][kind])
+    pg.wait_for_timeout(500)
+    pg.locator('.editor-modal-container button:has-text("OK")').first.click()
+    pg.wait_for_timeout(1500)
+    return mf or None
+
+
+def _sf_match(pg, match, warnings):
+    """结构检索结果页上的 As Drawn / Substructure / Similarity 三个按钮，点要的那个。"""
+    label = SITE['scifinder']['match_label'][match]
+    btns = pg.locator(SITE['scifinder']['match_btn'])
+    for i in range(btns.count()):
+        t = (btns.nth(i).inner_text() or '').strip()
+        if t.startswith(label):
+            btns.nth(i).click()
+            pg.wait_for_timeout(2500)
+            _wait_items(pg, 'scifinder')
+            return t
+    warnings.append(f'match_not_found: {label}（结果页没有这个按钮）')
+    return None
+
+
+def _sf_to_refs_of_first_substance(pg, warnings):
+    """物质列表 → 第一个物质的「Get … references」→ 用了它的文献 / 专利。"""
+    a = pg.locator('.substance-tile a.btn-get-references, .substance-tile a[aria-label*="references" i]')
+    if not a.count():
+        warnings.append('no_references_link: 这个物质没有「Get references」')
+        return False
+    label = a.first.get_attribute('aria-label') or ''
+    a.first.click()
+    try:
+        pg.wait_for_url(re.compile(r'/search/reference/'), timeout=45000)
+    except Exception:
+        warnings.append('references_page_timeout')
+        return False
+    warnings.append(f'via_substance: 先落到物质，再取它的文献（{label}）')
+    return True
+
+
+def _search_scifinder(pg, query, kind, sort, filters, mode, raw, max_chars, structure='', match='exact'):
+    s = SITE['scifinder']
+    err = _sf_home(pg)
+    if err:
+        return err
+    warnings, extra = [], {}
+    if structure:
+        extra['structure_formula'] = _sf_draw(pg, structure, kind, warnings)
+        if query:
+            pg.fill(s['input'], query)
+    else:
+        pg.fill(s['input'], query)
     pg.click(s['submit'])
     try:
-        pg.wait_for_url(re.compile(r'/search/'), timeout=45000)
+        pg.wait_for_url(re.compile(r'/search/'), timeout=60000)
     except Exception:
-        return _result('scifinder', code='TIMEOUT', url=pg.url, why='提交后没跳到结果页')
-    # 总览页是分块加载的（2026-10-08 实测：物质、反应先到，文献那块晚好几秒）——
-    # 专门等要的那个「View All …」；等满了还没有才算这一类没结果
-    want = s['view_all'][kind]
-    _settle(pg, lambda t: want in t or 'No results' in t, timeout=45)
-    link = pg.locator(f'text={want}')
-    if link.count() == 0:
-        r = _result('scifinder', ok=True, code='NO_RESULTS', count=0, url=pg.url,
-                    why=f'这次搜索没有 {kind} 结果')
-        if raw:
-            r['text'] = clean_text(_body(pg))[:max_chars]
-        return r
-    link.first.click()
-    try:
-        pg.wait_for_url(re.compile(s['page_re']), timeout=45000)
-    except Exception:
-        return _result('scifinder', code='TIMEOUT', url=pg.url, why=f'点了 {want} 没跳到列表页')
+        return _result('scifinder', code='TIMEOUT', url=pg.url, why='提交后没跳到结果页', warnings=warnings)
+    want_seg = {'references': '/search/reference/', 'substances': '/search/substance/', 'reactions': '/search/reaction/'}[kind]
+    if '/search/all/' in pg.url:
+        # 总览页是分块加载的（2026-10-08 实测：物质、反应先到，文献那块晚好几秒）——
+        # 专门等要的那个「View All …」；等满了还没有才算这一类没结果
+        want = s['view_all'][kind]
+        _settle(pg, lambda t: want in t or 'No results' in t, timeout=45)
+        link = pg.locator(f'text={want}')
+        if link.count() == 0:
+            r = _result('scifinder', ok=True, code='NO_RESULTS', count=0, url=pg.url, warnings=warnings,
+                        why=f'这次搜索没有 {kind} 结果', **extra)
+            if raw:
+                r['text'] = clean_text(_body(pg))[:max_chars]
+            return r
+        link.first.click()
+        try:
+            pg.wait_for_url(re.compile(s['page_re']), timeout=45000)
+        except Exception:
+            return _result('scifinder', code='TIMEOUT', url=pg.url, why=f'点了 {want} 没跳到列表页', warnings=warnings)
     ok = _wait_items(pg, 'scifinder')
-    warnings = []
+    if structure:
+        extra['structure_match'] = _sf_match(pg, match, warnings)
+        ok = _wait_items(pg, 'scifinder')
+    if kind == 'references' and '/search/substance/' in pg.url:
+        # CAS 号（或结构式按物质落地）要文献：从物质跳到「用了它的文献」
+        if not _sf_to_refs_of_first_substance(pg, warnings):
+            r = _extract(pg, 'scifinder', raw, max_chars, **extra)
+            r['warnings'] = warnings + r['warnings']
+            return r
+        ok = _wait_items(pg, 'scifinder')
+    elif want_seg not in pg.url:
+        warnings.append(f'landed_on_other_list: 要 {kind}，落在 {pg.url.split("/search/")[-1][:20]}')
     if mode == 'original':
         b = pg.locator(s['original'])
         if b.count():
@@ -598,7 +838,7 @@ def _search_scifinder(pg, query, kind, sort, filters, mode, raw, max_chars):
             _wait_items(pg, 'scifinder')
         else:
             warnings.append(f'sort_not_found: {sort}（看到的选项：{", ".join(seen) or "无"}）')
-    r = _extract(pg, 'scifinder', raw, max_chars, filters_applied=applied, sort=sort or 'relevance', mode=mode)
+    r = _extract(pg, 'scifinder', raw, max_chars, filters_applied=applied, sort=sort or 'relevance', mode=mode, **extra)
     r['warnings'] = warnings + r['warnings']
     if not ok:
         r.update(code='TIMEOUT', complete=False, why='列表页还在加载，读到的可能不全')
@@ -629,7 +869,56 @@ def _rx_page_size_max(pg):
     return best
 
 
-def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars):
+_RX_IMPORT_JS = r"""async ([mol, fmt]) => {
+  const f = document.querySelector('iframe[src*="structure-editor"]');
+  if (!f || !f.contentWindow.marvin || !f.contentWindow.marvin.sketcherInstance) return {ok: false, why: 'no_editor'};
+  const sk = f.contentWindow.marvin.sketcherInstance;
+  try { sk.clear && sk.clear(); } catch (e) {}
+  try { await sk.importStructure(fmt, mol); } catch (e) { return {ok: false, why: String(e).slice(0, 120)}; }
+  let back = ''; try { back = await sk.exportStructure('smiles'); } catch (e) {}
+  return {ok: !!back, smiles: back};
+}"""
+
+
+def _rx_draw(pg, structure, match, warnings):
+    """结构式进 Reaxys 的 MarvinJS（importStructure）→ 选检索方式 → Transfer to query → Search。→ 编辑器里读回的 SMILES。"""
+    pg.locator('button:text-is("Draw")').first.click()
+    pg.wait_for_selector('iframe[src*="structure-editor"]', timeout=30000)
+    got = None
+    for _ in range(20):                       # 编辑器要加载一会
+        pg.wait_for_timeout(1000)
+        got = pg.evaluate(_RX_IMPORT_JS, [structure, 'mol' if 'M  END' in structure else 'smiles'])
+        if got.get('why') != 'no_editor':
+            break
+    if not got or not got.get('ok'):
+        warnings.append(f'structure_not_recognized: MarvinJS 没收下这个结构式（{(got or {}).get("why", "")}）')
+        return None
+    pg.locator(f'label:text-is("{SITE["reaxys"]["match_label"][match]}")').first.click()
+    pg.wait_for_timeout(400)
+    pg.locator('button:text-is("Transfer to query")').first.click()
+    pg.wait_for_url(re.compile(r'#/search/quick/query'), timeout=30000)
+    pg.wait_for_timeout(1500)
+    return got.get('smiles')
+
+
+def _rx_to_docs_of_first_substance(pg, warnings):
+    """Reaxys 物质列表 → 第一个物质的「Documents - N」→ 它的文献。"""
+    b = pg.locator('ul.e2e-results-list > li').first.locator('button:has-text("Documents -"), a:has-text("Documents -")')
+    if not b.count():
+        warnings.append('no_documents_link: 这个物质没有「Documents」')
+        return False
+    label = (b.first.inner_text() or '').strip()
+    b.first.click()
+    try:
+        pg.wait_for_url(re.compile(r'/results/citations/'), timeout=60000)
+    except Exception:
+        warnings.append('documents_page_timeout')
+        return False
+    warnings.append(f'via_substance: 先落到物质，再取它的文献（{label}）')
+    return True
+
+
+def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars, structure='', match='exact'):
     s = SITE['reaxys']
     if not _goto(pg, s['home']):
         return _result('reaxys', code='NAVIGATE_FAILED', why='Reaxys 打不开')
@@ -640,24 +929,48 @@ def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars):
             return _result('reaxys', code='LOGIN_REQUIRED', url=pg.url,
                            why='Reaxys 要登录：请人在主力机「取全文用的浏览器」里登录（机构登录或 Elsevier 账号）')
         return _result('reaxys', code='TIMEOUT', url=pg.url, why='等不到搜索框')
-    pg.fill(s['input'], query)
-    pg.keyboard.press('Enter')
+    warnings, extra = [], {}
+    rm = pg.locator('button[aria-label="Clear quick search structure"]')
+    if rm.count():
+        rm.first.click()                      # 上一次的结构还挂在搜索框上，不拿掉会叠在一起搜
+        pg.wait_for_timeout(800)
+    pg.fill(s['input'], '')
+    rx_cas = is_cas_rn(query) and not structure
+    if structure:
+        extra['structure_smiles'] = _rx_draw(pg, structure, match, warnings)
+        if extra['structure_smiles'] is None:
+            return _result('reaxys', code='NO_RESULTS', url=pg.url, warnings=warnings, why='结构式没收下')
+        extra['structure_match'] = match
+        if query:
+            pg.fill(s['input'], query)
+        pg.locator('button:text-is("Search")').first.click()
+    else:
+        pg.fill(s['input'], query)
+        pg.keyboard.press('Enter')
     # 预览页：Reaxys 把一句话拆成几组子查询，各给一个数和一个 View Results（从严到宽排）
     if not _settle(pg, lambda t: 'View Results' in t or 'No results' in t, timeout=60):
-        return _result('reaxys', code='TIMEOUT', url=pg.url, why='等不到结果预览')
+        return _result('reaxys', code='TIMEOUT', url=pg.url, why='等不到结果预览', warnings=warnings)
     preview = pg.evaluate(_RX_PREVIEW_JS)
-    word = s['card_word'][kind]
+    # CAS 号要文献：文献那组是「标题里出现这串数字」的字面匹配，不对 —— 先落到物质，再取它的文献
+    via = kind == 'references' and (rx_cas or (structure and match == 'exact'))
+    word = 'substances' if via else s['card_word'][kind]
     pick = next((c for c in preview if c.get('kind') == word), None)
     if not pick:
-        return _result('reaxys', ok=True, code='NO_RESULTS', count=0, url=pg.url, preview=preview,
-                       why=f'预览里没有 {word} 这一组（preview 里是 Reaxys 拆出来的各组）')
+        return _result('reaxys', ok=True, code='NO_RESULTS', count=0, url=pg.url, preview=preview, warnings=warnings,
+                       why=f'预览里没有 {word} 这一组（preview 里是 Reaxys 拆出来的各组）', **extra)
     pg.locator(s['view_results']).nth(pick['index']).click()
     try:
         pg.wait_for_url(re.compile(s['page_re']), timeout=60000)
     except Exception:
-        return _result('reaxys', code='TIMEOUT', url=pg.url, preview=preview, why='点了 View Results 没跳到列表页')
+        return _result('reaxys', code='TIMEOUT', url=pg.url, preview=preview, why='点了 View Results 没跳到列表页',
+                       warnings=warnings)
     ok = _wait_items(pg, 'reaxys', timeout=60)
-    warnings = []
+    if via:
+        if not _rx_to_docs_of_first_substance(pg, warnings):
+            r = _extract(pg, 'reaxys', raw, max_chars, preview=preview, **extra)
+            r['warnings'] = warnings + r['warnings']
+            return r
+        ok = _wait_items(pg, 'reaxys', timeout=60)
     try:
         _rx_page_size_max(pg)
     except Exception as e:
@@ -673,7 +986,7 @@ def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars):
         else:
             warnings.append(f'sort_not_found: {sort}（看到的选项：{", ".join(seen) or "无"}）')
     r = _extract(pg, 'reaxys', raw, max_chars, preview=preview, sort=sort or 'relevance', mode=mode,
-                 query_interpretation=pick.get('interpretation'))
+                 query_interpretation=pick.get('interpretation'), **extra)
     r['warnings'] = warnings + r['warnings']
     if not ok:
         r.update(code='TIMEOUT', complete=False, why='列表页还在加载，读到的可能不全')
@@ -684,28 +997,33 @@ def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars):
 # 对外
 # ══════════════════════════════════════════════════════════════════════
 
-def search(db, query, kind='references', sort=None, filters=None, mode='auto', raw=False, max_chars=30000):
+def search(db, query='', kind='references', structure='', match='exact', sort=None, filters=None, mode='auto',
+           raw=False, max_chars=30000):
     """在 SciFinder / Reaxys 里搜一次，读结果列表第 1 页。
 
+    query：关键词或 CAS 号；structure：SMILES（Reaxys 也收 molfile），match = exact / substructure / similarity。
+    CAS 号 + kind=references：先落到这个物质，再取用了它的文献 / 专利。
     sort: relevance / date / cited；filters（只 SciFinder）：{facet 名: [值]} + yearFrom / yearTo；
     mode='original'：SciFinder 改写了检索式时点「Search Original Query」按原样搜。
     """
-    db, kind, sort = check_db(db), check_kind(kind), check_sort(sort)
-    query = (query or '').strip()
-    if not query:
-        raise ValueError('query 不能是空的')
+    db, kind, sort, match = check_db(db), check_kind(kind), check_sort(sort), check_match(match)
+    query, structure = (query or '').strip(), (structure or '').strip()
+    if not query and not structure:
+        raise ValueError('query 和 structure 至少给一个')
     mode = (mode or 'auto').lower()
-    log.info(f'{db} 搜索（{kind}，sort={sort or "-"}，mode={mode}，filters={filters or "-"}）：{query}')
+    log.info(f'{db} 搜索（{kind}，structure={structure or "-"}/{match}，sort={sort or "-"}，filters={filters or "-"}）：{query}')
     fn = _search_scifinder if db == 'scifinder' else _search_reaxys
     with _session() as (browser, ctx):
         pg = _tab(browser, ctx, db)
         try:
-            r = fn(pg, query, kind, sort, filters, mode, raw, max_chars)
+            r = fn(pg, query, kind, sort, filters, mode, raw, max_chars, structure=structure, match=match)
         except Exception as e:
             log.warn(f'{db} 搜索出错：{type(e).__name__}: {str(e)[:200]}')
             r = _result(db, code='TIMEOUT', complete=False, url=getattr(pg, 'url', ''),
                         why=f'{type(e).__name__}: {str(e)[:200]}')
-    r.update(kind=kind, query=query)
+    r.update(kind=kind, query=query or None)
+    if structure:
+        r.update(structure=structure, match=match)
     return r
 
 

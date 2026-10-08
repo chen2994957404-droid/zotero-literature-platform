@@ -56,6 +56,29 @@ def main():
     check('kind 默认 references', chemdb.check_kind('') == 'references' and chemdb.check_db(' SciFinder ') == 'scifinder')
     check('sort 只认三种', chemdb.check_sort('Cited') == 'cited' and chemdb.check_sort('') == '')
 
+    # v0.6：CAS 号与结构式（样例都是 2026-10-08 页面上的原样）
+    check('CAS 号：格式 + 校验位（98-80-6 对、98-80-5 错、日期不算）',
+          chemdb.is_cas_rn('98-80-6') and chemdb.is_cas_rn('10043-35-3') and not chemdb.is_cas_rn('98-80-5')
+          and not chemdb.is_cas_rn('2024-03-29') and not chemdb.is_cas_rn('OB(O)c1ccccc1'))
+    check('match 只认三种、默认 exact', chemdb.check_match('') == 'exact' and chemdb.check_match('Substructure') == 'substructure')
+    check('计数：51K / 1,194 / Documents - 60,242',
+          chemdb.parse_count('Get51Kreferences') == 51000 and chemdb.parse_count('Get1,194references') == 1194
+          and chemdb.parse_count('Documents - 60,242') == 60242 and chemdb.parse_count('Suppliers') is None)
+    sub = chemdb.norm_sf_substance({'rank': 1, 'rn': '10043-35-3', 'name': '',
+                                    'lines': ['10043-35-3', 'BH3O3', 'Boric acid (H3BO3)', '1'],
+                                    'refs': 'Get133Kreferences', 'rxns': 'Get20Kreactions', 'sup': 'Get189Suppliers'})
+    check('SciFinder 物质卡片 → CAS 号 / 分子式 / 名字 / 计数（K 标约数）',
+          sub['cas_rn'] == '10043-35-3' and sub['formula'] == 'BH3O3' and sub['name'] == 'Boric acid (H3BO3)'
+          and sub['n_references'] == 133000 and sub['n_suppliers'] == 189 and sub['counts_rounded'], str(sub))
+    rs = chemdb.norm_rx_substance({'name': 'phenylboronic acid', 'lines': (
+        '1|(OH)2B(C6H5)|Number of Suppliers: 141|phenylboronic acid|(OH)2B(C6H5)|Molecular Weight:|121.931|'
+        'Reaxys Registry Number|970972|CAS Registry Number:|98-80-6|Preparations - 187|Reactions - 86,920|'
+        'Documents - 60,242|Physical Data - 285|Spectra - 315|Bioactivity - 3,229').split('|')})
+    check('Reaxys 物质条目 → CAS 号 / Reaxys 号 / 分子量 / 文献·反应·物性计数',
+          rs['cas_rn'] == '98-80-6' and rs['reaxys_rn'] == '970972' and rs['mw'] == 121.931
+          and rs['n_documents'] == 60242 and rs['n_reactions'] == 86920 and rs['n_physical_data'] == 285
+          and rs['n_suppliers'] == 141 and rs['rank'] == 1, str(rs))
+
     # v0.5：解析成字段（样例都是 2026-10-08 页面上的原样）
     b = chemdb.parse_sf_bib('China, CN117777727 A 2024-03-29 | Language: Chinese, Database: CAplus')
     check('SciFinder 专利出处 → 号 / 局 / 日期', b['type'] == 'patent' and b['patent_no'] == 'CN117777727 A'

@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.5.1'
+VERSION = '0.6.0'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -66,6 +66,8 @@ VERSION = '0.5.1'
 # v0.5（同日，Claude Science 用了两次后的建议）：结果解析成字段（items / facets / ai_summary / query_interpretation）·
 #   Reaxys 每页调到最大 · 当天同一检索走缓存不扣次数 · chemdb_status（不碰网站）· SciFinder 筛选 / 排序 / 按原样搜 ·
 #   SciFinder 按标题补 DOI、每条标 in_library / tier · Reaxys 预览拆成子检索列表 · AI 摘要没生成完标 complete=false
+# v0.6（同日，用户：「最常用的是 CAS 号查精确结构、画大致结构查」）：structure（SMILES）+ match（exact / substructure /
+#   similarity）走两个库的画图板；CAS 号 / 结构式回物质列表；CAS 号要文献时先落到物质再取它的文献
 
 # 原样借用的（输出本来就合适）
 BORROW = ()     # 2026-10-04 用户定：只给它做不到的（取全文）。数值库它自己会抽，不借了；ping 自己挂
@@ -831,7 +833,7 @@ def _remember_search(db, search, path=None):
 def chemdb_key(db, params, page):
     """同一库、同一检索（词 + 类 + 排序 + 筛选 + 模式）、同一页 → 同一个缓存键。"""
     import hashlib
-    sig = json.dumps({'db': db, 'p': {k: params.get(k) for k in ('query', 'kind', 'sort', 'filters', 'mode')},
+    sig = json.dumps({'db': db, 'p': {k: params.get(k) for k in ('query', 'kind', 'sort', 'filters', 'mode', 'structure', 'match')},
                       'page': int(page), 'v': VERSION}, sort_keys=True, ensure_ascii=False)   # 升版本 = 解析变了，旧缓存作废
     return hashlib.sha1(sig.encode('utf-8')).hexdigest()[:16]
 
@@ -875,7 +877,7 @@ def enrich(items, match=None, find=None, tier=None, warnings=None):
         from shared.kernel import catalog
         from tools.getpdf import fulltext as F
         find, tier = find or catalog.find, tier or F.tier_of
-    todo = [it for it in items if not it.get('doi') and it.get('type') != 'patent' and it.get('title')]
+    todo = [it for it in items if not it.get('doi') and it.get('type') not in ('patent', 'substance') and it.get('title')]
     if todo:
         from concurrent.futures import ThreadPoolExecutor
 
@@ -908,7 +910,7 @@ def enrich(items, match=None, find=None, tier=None, warnings=None):
                     it['tier'] = tier(pid)
                 except Exception:
                     it['tier'] = None
-        elif it.get('type') != 'patent':
+        elif it.get('type') not in ('patent', 'substance'):
             it['in_library'] = None
     return items
 
@@ -959,7 +961,9 @@ def _chemdb_run(db, params, page, fetch):
 def _chemdb_params(a):
     return {'query': (a.get('query') or '').strip(), 'kind': a.get('kind') or 'references',
             'sort': a.get('sort') or None, 'filters': a.get('filters') or None,
-            'mode': a.get('mode') or 'auto', 'raw': bool(a.get('raw'))}
+            'mode': a.get('mode') or 'auto', 'raw': bool(a.get('raw')),
+            'structure': (a.get('structure') or '').strip() or None,
+            'match': (a.get('match') or 'exact') if a.get('structure') else None}
 
 
 def _chemdb_search(a):
@@ -967,7 +971,8 @@ def _chemdb_search(a):
     p = _chemdb_params(a)
     mc = int(a.get('maxChars') or 30000)
     return _chemdb_run(a.get('db'), p, 1, lambda db: chemdb.search(
-        db, p['query'], p['kind'], sort=p['sort'], filters=p['filters'], mode=p['mode'], raw=p['raw'], max_chars=mc))
+        db, p['query'], p['kind'], structure=p['structure'] or '', match=p['match'] or 'exact', sort=p['sort'],
+        filters=p['filters'], mode=p['mode'], raw=p['raw'], max_chars=mc))
 
 
 def _chemdb_page(a):
@@ -1101,16 +1106,23 @@ TOOLS = [
      '上次取全文的 route 与错误码。零成本，不取不解析。',
      {'dois': {'type': 'array', 'items': {'type': 'string'}},
       'itemKeys': {'type': 'array', 'items': {'type': 'string'}}}, [], _paper_status),
-    ('chemdb_search', '在 SciFinder 或 Reaxys 里搜一次（借主力机上已登录的浏览器），回第 1 页的结构化列表：'
+    ('chemdb_search', '在 SciFinder 或 Reaxys 里搜一次（借主力机上已登录的浏览器），回第 1 页的结构化列表。'
+     '三种入口：关键词（query）、CAS 号（query="98-80-6"）、结构式（structure=SMILES + match=exact|substructure|similarity）。'
+     'CAS 号或结构式 + kind=substances → 物质列表（cas_rn / formula / name / 被多少文献、反应用到）；'
+     'CAS 号 + kind=references → 先落到这个物质再取用了它的文献 / 专利（warnings 里有 via_substance）。文献列表：'
      'items[]（rank / type=journal|review|patent / title / authors / source / year / doi / patent_no / assignee / status / '
      'cited|citing / snippet / index_terms / in_library / tier）、count、page_size、pages、facets（SciFinder 带计数）、'
      'query_interpretation（库实际执行的检索式）、ai_summary、Reaxys 的 preview（整句拆成的子检索及各自条数）、complete、warnings。'
      'SciFinder 列表没有 DOI，服务端按标题去 Crossref 补（doi_match_score；<0.9 标 doi_uncertain）。'
      '当天同一检索同一页走缓存（cached=true，不扣次数）。不在缓存时：两次至少隔 30 秒（服务端会等），每库每天有上限（quota）。',
      {'db': {'type': 'string', 'enum': ['scifinder', 'reaxys'], 'description': '哪个库'},
-      'query': {'type': 'string', 'description': '检索词（英文）。SciFinder 会把词用 and 连起来，看 query_interpretation'},
+      'query': {'type': 'string', 'description': '检索词（英文）或 CAS 号。SciFinder 会把词用 and 连起来，看 query_interpretation。'
+                '和 structure 一起给 = 结构 + 关键词同时满足'},
+      'structure': {'type': 'string', 'description': '结构式：SMILES（Reaxys 也收 molfile）。两个库的搜索框都不认 SMILES，服务端走它们的画图板'},
+      'match': {'type': 'string', 'enum': ['exact', 'substructure', 'similarity'],
+                'description': '结构怎么比：exact = 按原样（含同位素、盐等变体）/ substructure = 含这个骨架 / similarity = 相似；默认 exact'},
       'kind': {'type': 'string', 'enum': ['references', 'substances', 'reactions'],
-               'description': 'references = 文献 + 专利（默认）；substances / reactions 目前只回原样文字（用 raw=true）'},
+               'description': 'references = 文献 + 专利（默认）；substances = 物质列表；reactions 目前只回原样文字（用 raw=true）'},
       'sort': {'type': 'string', 'enum': ['relevance', 'date', 'cited'], 'description': '排序，默认 relevance'},
       'filters': {'type': 'object', 'description': '只 SciFinder：{facet 名: [值]}，名与值照 facets 里写（如 '
                   '{"Document Type": ["Journal"], "Patent Status": ["Alive"]}），另认 yearFrom / yearTo（整数年）。'
@@ -1119,7 +1131,7 @@ TOOLS = [
                'description': 'original = SciFinder 改写了检索式时按原样搜（点 Search Original Query）'},
       'raw': {'type': 'boolean', 'description': '另附整页原文 text（排查用，平时别开）'},
       'maxChars': {'type': 'integer', 'minimum': 1000, 'maximum': 45000, 'description': 'raw 原文的上限'}},
-     ['db', 'query'], _chemdb_search),
+     ['db'], _chemdb_search),
     ('chemdb_page', '这个库最近一次 chemdb_search 的第 page 页（同样的结构化字段；同一页当天走缓存）。额度与间隔规矩同上。',
      {'db': {'type': 'string', 'enum': ['scifinder', 'reaxys']},
       'page': {'type': 'integer', 'minimum': 1, 'description': '页码；pages 告诉你一共几页'},
