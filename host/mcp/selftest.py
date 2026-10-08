@@ -406,6 +406,21 @@ def main():
         check('补 DOI 核对：配到德文版（卷 131 / 刊名无 International）→ 不填，只给候选',
               S.doi_mismatch(it, {'journal': 'Angewandte Chemie', 'volume': '131'}) != ''
               and S.doi_mismatch(it, {'journal': 'Angewandte Chemie International Edition', 'volume': '58'}) == '')
+        real_oa = S.openalex_match
+        try:
+            S.openalex_match = lambda it: {'doi': '10.1126/science.1120411', 'score': 1.0, 'venue': 'Science'}                 if it['title'].startswith('Porous') else None
+            its = [{'type': 'journal', 'title': 'Porous, Crystalline, Covalent Organic Frameworks', 'year': 2005,
+                    'source': 'Science (Washington, DC, United States)'},
+                   {'type': 'journal', 'title': 'Nobody knows', 'year': 2017, 'source': 'Science'}]
+            def boom(it):
+                raise RuntimeError('429')
+            ws = []
+            S.enrich(its, match=boom, find=lambda d: None, tier=lambda pid: None, warnings=ws)
+            check('Crossref 限流没查成 → 改问 OpenAlex 补上；还不行逐条标 doi_lookup',
+                  its[0].get('doi') == '10.1126/science.1120411' and its[0]['doi_source'] == 'openalex_title_match'
+                  and its[1].get('doi_lookup') == 'not_found' and any('doi_not_found' in w for w in ws), str(its) + str(ws))
+        finally:
+            S.openalex_match = real_oa
         check('JSON 里不出 NaN', S._no_nan({'a': float('nan'), 'b': [1.0, float('inf')], 'c': 'x'}) == {'a': None, 'b': [1.0, None], 'c': 'x'})
         check('chemdb_result 挂上了', 'chemdb_result' in sn)
         check('chemdb 库内标记：in_library / id / tier',

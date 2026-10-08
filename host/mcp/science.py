@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.7.5'
+VERSION = '0.7.6'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -891,6 +891,26 @@ def doi_mismatch(it, got):
     return ''
 
 
+OPENALEX_FALLBACK = 10
+
+
+def openalex_match(it):
+    """按标题问 OpenAlex → {doi, score, venue} / None（没配上）/ False（没查成）。标题相似度 ≥0.9、年份差 ≤1 才算。"""
+    from shared.adapters import crossref, openalex
+    try:
+        found, _ = openalex.search(it['title'], limit=3)
+    except Exception:
+        return False
+    best = None
+    for w in found:
+        sc = crossref.title_similarity(it['title'], w.get('title'))
+        if it.get('year') and w.get('year') and abs(int(w['year']) - int(it['year'])) > 1:
+            continue
+        if w.get('doi') and sc >= DOI_SURE and (not best or sc > best['score']):
+            best = {'doi': w['doi'].lower(), 'score': round(sc, 3), 'venue': w.get('venue')}
+    return best
+
+
 def enrich(items, match=None, find=None, tier=None, warnings=None):
     """补 DOI（SciFinder 列表没有，按标题去 Crossref 找）+ 标出证据库里有没有、能读到哪一档。"""
     warnings = [] if warnings is None else warnings
@@ -919,10 +939,9 @@ def enrich(items, match=None, find=None, tier=None, warnings=None):
             return False, None
         with ThreadPoolExecutor(max_workers=2) as ex:
             got_all = list(ex.map(_m, todo))
-        failed = sum(1 for ok, _ in got_all if not ok)
-        if failed:
-            warnings.append(f'doi_lookup_failed: {failed} 条按标题去 Crossref 查 DOI 没查成（网络 / 限流），可以自己按标题再找')
-        for it, (_, got) in zip(todo, got_all):
+        for it, (ok, got) in zip(todo, got_all):
+            if not ok or not (got and got.get('doi') and got['score'] >= DOI_MAYBE):
+                it['_retry'] = True
             if not (got and got.get('doi') and got['score'] >= DOI_MAYBE):
                 continue
             why = doi_mismatch(it, got)
@@ -936,6 +955,20 @@ def enrich(items, match=None, find=None, tier=None, warnings=None):
             it['doi_match_score'] = got['score']
             if got['score'] < DOI_SURE:
                 it['doi_uncertain'] = True
+        # Crossref 限流没查成、或没配上的（2026-10-09 Claude Science 报：Science 2005 COF、2017 vitrimer 两篇空着、也没原因）
+        # → 改按标题问 OpenAlex（每页最多 OPENALEX_FALLBACK 条，$0.001/次量级）；还不行逐条标 doi_lookup
+        retry = [it for it in todo if it.pop('_retry', False) and not it.get('doi_candidate')]
+        for it in retry[:OPENALEX_FALLBACK]:
+            got = openalex_match(it)
+            if got and not doi_mismatch(it, {'journal': got.get('venue')}):
+                it.update(doi=got['doi'], doi_source='openalex_title_match', doi_match_score=got['score'])
+            else:
+                it['doi_lookup'] = 'not_found' if got is not False else 'failed'
+        for it in retry[OPENALEX_FALLBACK:]:
+            it['doi_lookup'] = 'skipped'
+        n_left = sum(1 for it in retry if not it.get('doi'))
+        if n_left:
+            warnings.append(f'doi_not_found: {n_left} 条 Crossref 与 OpenAlex 都没配上 DOI（条目上 doi_lookup 写了原因），可以自己按标题再找')
     for it in items:
         if it.get('doi'):
             pid = find(it['doi'])

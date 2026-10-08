@@ -136,6 +136,10 @@ def main():
     rs2 = chemdb.norm_rx_substance({'name': 'sodium borate', 'lines': ['2', 'BO3(3-)*3Na(1+)', 'CAS Registry Number:', 'Retrieve CAS RN',
                                                                         'Documents - 2,440']})
     check('Reaxys 物质没有 CAS 号 → None（不是「Retrieve CAS RN」）', rs2['cas_rn'] is None and rs2['n_documents'] == 2440, str(rs2))
+    poly = chemdb.norm_sf_substance({'rn': '25265-77-4', 'lines': ['25265-77-4', '(C6H6B2O4)x', '2',
+                                                                   'Boronic acid, B,B′-1,4-phenylenebis-, homopolymer']})
+    check('高分子分子式 (C6H6B2O4)x，不是「2」', poly['formula'] == '(C6H6B2O4)x' and poly['name'].startswith('Boronic'), str(poly))
+    check('分子式：水合物认、名字不认', bool(chemdb._FORMULA_RE.match('H3BO3·xH2O')) and not chemdb._FORMULA_RE.match('Boric acid'))
     check('Reaxys 专利族「4-5」→ rank 4、family_ranks [4,5]、号', rx['rank'] == 4 and rx['family_ranks'] == [4, 5]
           and rx['patent_no'] == 'CN109666219' and rx['assignee'] == 'WANHUA CHEMICAL GROUP' and rx['source'] is None, str(rx))
 

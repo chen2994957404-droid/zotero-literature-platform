@@ -64,7 +64,9 @@ cited (Reaxys) / citing (SciFinder), snippet (≤400 chars), index_terms (Reaxys
 - SciFinder lists carry no DOI: the server matches titles on Crossref (`doi_source: crossref_title_match`,
   `doi_match_score`; `doi_uncertain: true` below 0.9), asking with the journal and preferring the candidate whose volume
   matches; if journal/volume still disagree it leaves `doi` empty and gives `doi_candidate` + `doi_rejected_because`
-  (e.g. Angewandte German edition vs International Edition). `in_library` / `tier` tell you what `paper_fulltext` would add.
+  (e.g. Angewandte German edition vs International Edition).
+  Titles Crossref can't match (or when it's rate-limited) are retried on OpenAlex (`doi_source: openalex_title_match`);
+  anything still empty says why in `doi_lookup` (`not_found` / `failed` / `skipped`). `in_library` / `tier` tell you what `paper_fulltext` would add.
 - A full page is often > 50 KB (Reaxys ~100 items/page, SciFinder ~80): you get `{"spilled": path}` — read that file.
 - `raw: true` adds the whole page text (debugging only).
 
@@ -122,6 +124,8 @@ main machine, then retry.
   the main record carries 11113-50-1. When a CAS number lands only on thin records, the server converts it to a structure
   via PubChem and searches the structure as drawn (`warnings: cas_fallback_to_structure`; → 22,536 docs).
   Candidates are listed in `substance_candidates` / `cas_candidates_reaxys`.
+- CAS number alone, sorted by `cited`, mostly surfaces reviews that merely mention the substance (boric acid: Nobel-level
+  catalysis and toxicology reviews). Always pair a CAS number with a topic (`within` + `Concept`).
 - CAS number + `kind: "references"`: the server lands on that substance first, then opens its references
   (`warnings` contains `via_substance`). In SciFinder, narrow with `filters: {"Substance Role": ["Preparation"]}` etc. —
   the role names are in `facets`. Polymers are poorly indexed by structure: for the user's materials, search the

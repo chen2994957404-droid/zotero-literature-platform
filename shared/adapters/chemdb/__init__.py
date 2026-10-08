@@ -152,7 +152,8 @@ def facet_counts(facets):
     return {f: {k: parse_count(v) if v else None for k, v in (bins or {}).items()} for f, bins in (facets or {}).items()}
 
 
-_FORMULA_RE = re.compile(r'^(?:[A-Z][a-z]?\d*(?:\.\d+)?|\(|\)|[·.]|\d)+$')
+# 分子式：至少一个元素符号；认高分子的 (C6H6B2O4)x、水合物的 ·xH2O（2026-10-09：均聚物原来被认成「2」）
+_FORMULA_RE = re.compile(r'^(?=.*[A-Z])(?:[A-Z][a-z]?\d*(?:\.\d+)?|\(|\)|[·.]|\d|[xn](?=\s*$|\s*[·.)]|[A-Z]))+$')
 
 
 def norm_sf_substance(x):
@@ -896,6 +897,8 @@ def _search_scifinder(pg, query, kind, sort, filters, mode, raw, max_chars, stru
             r['warnings'] = warnings + r['warnings']
             return r
         ok = _wait_items(pg, 'scifinder')
+        # 经物质跳过来的文献页上没有「How we're searching」那一行 —— 自己写一句
+        extra['query_interpretation_note'] = f'references of substance {query or structure} (via its "Get references")'
     elif want_seg not in pg.url:
         warnings.append(f'landed_on_other_list: 要 {kind}，落在 {pg.url.split("/search/")[-1][:20]}')
     if mode == 'original':
@@ -915,8 +918,11 @@ def _search_scifinder(pg, query, kind, sort, filters, mode, raw, max_chars, stru
             _wait_items(pg, 'scifinder')
         else:
             warnings.append(f'sort_not_found: {sort}（看到的选项：{", ".join(seen) or "无"}）')
+    note = extra.pop('query_interpretation_note', None)
     r = _extract(pg, 'scifinder', raw, max_chars, filters_applied=applied, sort=sort or 'relevance', mode=mode, **extra)
     r['warnings'] = warnings + r['warnings']
+    if note and not r.get('query_interpretation'):
+        r['query_interpretation'] = note + (f'; within: {", ".join(extra["within_applied"])}' if extra.get('within_applied') else '')
     if not ok:
         r.update(code='TIMEOUT', complete=False, why='列表页还在加载，读到的可能不全')
     return r
