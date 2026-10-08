@@ -25,6 +25,14 @@ def main():
     ok = total = 0
 
     total += 1
+    a = crossref.title_similarity('Self-healing <i>PBS</i> elastomers', 'Self-Healing PBS Elastomers.')
+    b = crossref.title_similarity('Self-healing PBS elastomers', 'Shear stiffening gels for protection')
+    if a == 1.0 and b < 0.6:
+        print('  [PASS] 标题相似度：只比字母数字'); ok += 1
+    else:
+        print(f'  [FAIL] 标题相似度 {a} / {b}')
+
+    total += 1
     it = crossref.to_zotero_item(SAMPLE, tags=['待处理'])
     if (it['itemType'] == 'journalArticle'
             and it['title'].startswith('Shear stiffening')

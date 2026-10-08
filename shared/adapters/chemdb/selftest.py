@@ -53,6 +53,38 @@ def main():
         except ValueError:
             check(f'不认识的「{bad}」要报错', True)
     check('kind 默认 references', chemdb.check_kind('') == 'references' and chemdb.check_db(' SciFinder ') == 'scifinder')
+    check('sort 只认三种', chemdb.check_sort('Cited') == 'cited' and chemdb.check_sort('') == '')
+
+    # v0.5：解析成字段（样例都是 2026-10-08 页面上的原样）
+    b = chemdb.parse_sf_bib('China, CN117777727 A 2024-03-29 | Language: Chinese, Database: CAplus')
+    check('SciFinder 专利出处 → 号 / 局 / 日期', b['type'] == 'patent' and b['patent_no'] == 'CN117777727 A'
+          and b['office'] == 'China' and b['year'] == 2024 and b['language'] == 'Chinese', str(b))
+    b = chemdb.parse_sf_bib('World Intellectual Property Organization, WO2019084603 A1 2019-05-09 | Language: English')
+    check('SciFinder WO 专利（A1）', b['patent_no'] == 'WO2019084603 A1', str(b))
+    b = chemdb.parse_sf_bib('Smart Materials and Structures (2023), 32(7), 074004  | Language: English, Database: CAplus')
+    check('SciFinder 期刊出处 → 刊名 / 年', b['type'] == 'journal' and b['source'] == 'Smart Materials and Structures'
+          and b['year'] == 2023, str(b))
+    b = chemdb.parse_sf_bib('Langmuir | Language: English, Database: CAplus and MEDLINE')
+    check('SciFinder 在印文章（没年份）', b['source'] == 'Langmuir' and b['year'] is None, str(b))
+    it = chemdb.norm_sf_item({'rank': 3, 'title': 'T', 'authors': 'Parisi, M.; Allen, T.; ', 'citing': 5,
+                              'bib': 'China, CN117777727 A 2024-03-29 | Language: Chinese', 'assignee': 'X Inst.',
+                              'status': 'Alive', 'snippet': ' abc '})
+    check('SciFinder 一条 → 作者拆开、专利带状态', it['authors'] == ['Parisi, M.', 'Allen, T.'] and it['status'] == 'alive'
+          and it['assignee'] == 'X Inst.' and it['snippet'] == 'abc' and it['citing'] == 5, str(it))
+    rx = chemdb.norm_rx_item({'idx': '1', 'type': 'Article', 'title': 'Novel <hi>Shear</hi>-Thickening Gel',
+                              'authors': ['Pan, Fei'], 'source': 'Journal of Applied Polymer Science, 2025, vol. 142',
+                              'link': 'https://lls.reaxys.com/xflink?aulast=Pan&doi=10.1002%2Fapp.57659&issn=1097-4628',
+                              'doi': None, 'pubdate': '1754064000000', 'cited': '43',
+                              'index_terms': ['<hi>Polyborosiloxane</hi>', 'Gels']})
+    check('Reaxys 文章 → 去 <hi>、DOI 从链接取、年份、被引', rx['title'] == 'Novel Shear-Thickening Gel'
+          and rx['doi'] == '10.1002/app.57659' and rx['year'] == 2025 and rx['cited'] == 43
+          and rx['index_terms'] == ['Polyborosiloxane', 'Gels'] and rx['type'] == 'journal', str(rx))
+    rx = chemdb.norm_rx_item({'idx': '4-5', 'type': 'Patent', 'title': 'Polypropylene/ <hi>shear</hi> gel',
+                              'link': 'https://lls.reaxys.com/xflink?pubno=CN109666219&pubdate=2019&kindcode=A',
+                              'members': ['CN109666219 A', 'CN109666219 B'], 'assignee': 'WANHUA CHEMICAL GROUP',
+                              'office': 'CN', 'source': ''})
+    check('Reaxys 专利族「4-5」→ rank 4、family_ranks [4,5]、号', rx['rank'] == 4 and rx['family_ranks'] == [4, 5]
+          and rx['patent_no'] == 'CN109666219' and rx['assignee'] == 'WANHUA CHEMICAL GROUP' and rx['source'] is None, str(rx))
 
     if flag('--live'):
         for db in chemdb.DBS:

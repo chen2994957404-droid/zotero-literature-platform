@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.4.0'
+VERSION = '0.5.0'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -63,6 +63,9 @@ VERSION = '0.4.0'
 # v0.4（2026-10-08 用户定）：chemdb_search / chemdb_page —— 借主力机浏览器搜 SciFinder / Reaxys、读结果页文字。
 #   它进不去这两个库（学校订阅 + 个人登录），人一条条点开筛又太慢。按人的频率：两次至少隔 CHEMDB_GAP 秒、
 #   每个库每天至多 CHEMDB_DAILY 次（服务端强制）。CAS 条款禁止脚本代替手工 —— 用户知情后决定小量用。
+# v0.5（同日，Claude Science 用了两次后的建议）：结果解析成字段（items / facets / ai_summary / query_interpretation）·
+#   Reaxys 每页调到最大 · 当天同一检索走缓存不扣次数 · chemdb_status（不碰网站）· SciFinder 筛选 / 排序 / 按原样搜 ·
+#   SciFinder 按标题补 DOI、每条标 in_library / tier · Reaxys 预览拆成子检索列表 · AI 摘要没生成完标 complete=false
 
 # 原样借用的（输出本来就合适）
 BORROW = ()     # 2026-10-04 用户定：只给它做不到的（取全文）。数值库它自己会抽，不借了；ping 自己挂
@@ -85,8 +88,9 @@ PDF 到手几秒内先出 tier=text（本地抽字，可按节读、无表格结
 PARSE_FAILED / NETWORK_ERROR / NOT_FETCHED）与 retryable；CAPTCHA_REQUIRED 等人在主力机浏览器点完后用 fulltext_retry。
 任何返回超过 50 KB 会写成文件、只回 spilled 路径。
 文件路径是 B 机 WSL 路径（/mnt/d/...），你的 SSH 算力能直接读。
-SciFinder / Reaxys：`chemdb_search` 搜一次读结果列表第 1 页的文字，`chemdb_page` 翻页。按人的频率：两次至少隔 30 秒、
-每个库每天有上限（回复里 quota 告诉你还剩几次）—— 先想好检索词，别试错式地连搜。code=LOGIN_REQUIRED 时请人在主力机浏览器里登录。"""
+SciFinder / Reaxys：先 `chemdb_status`（不扣次数），再 `chemdb_search` 回第 1 页的结构化列表，`chemdb_page` 翻页。
+按人的频率：两次至少隔 30 秒、每个库每天有上限（quota）；当天同一检索走缓存不扣次数 —— 先想好检索词，别试错式地连搜。
+code=LOGIN_REQUIRED 时请人在主力机浏览器里登录。"""
 
 _DOI_PREFIX = re.compile(r'(?i)^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)')
 
@@ -773,67 +777,233 @@ def _chemdb_usage_path():
     return paths.runtime('chemdb_usage.json')
 
 
+def _load(path):
+    try:
+        return json.load(io.open(path, encoding='utf-8'))
+    except Exception:
+        return {}
+
+
+def _day(now):
+    return time.strftime('%Y-%m-%d', time.localtime(now))
+
+
+def chemdb_daily():
+    from shared.kernel import config
+    try:
+        return int(config.get_key('CHEMDB_DAILY', default='') or CHEMDB_DAILY)
+    except ValueError:
+        return CHEMDB_DAILY
+
+
 def chemdb_quota(db, path=None, now=None, daily=None):
     """→ (今天已用, 上限, 还要等几秒)。账本按天记，跨天自动清零。"""
     now = now or time.time()
-    path = path or _chemdb_usage_path()
-    if daily is None:
-        from shared.kernel import config
-        try:
-            daily = int(config.get_key('CHEMDB_DAILY', default='') or CHEMDB_DAILY)
-        except ValueError:
-            daily = CHEMDB_DAILY
-    try:
-        d = json.load(io.open(path, encoding='utf-8'))
-    except Exception:
-        d = {}
-    today = time.strftime('%Y-%m-%d', time.localtime(now))
-    used = d.get('days', {}).get(today, {}).get(db, 0)
+    d = _load(path or _chemdb_usage_path())
+    daily = chemdb_daily() if daily is None else daily
+    used = d.get('days', {}).get(_day(now), {}).get(db, 0)
     wait = max(0.0, CHEMDB_GAP - (now - float(d.get('last', 0))))
     return used, daily, wait
 
 
-def chemdb_charge(db, path=None, now=None):
-    """记一次（搜索或翻页）。只留最近 7 天。"""
+def chemdb_charge(db, path=None, now=None, last_search=None):
+    """记一次（搜索或翻页）。只留最近 7 天。last_search = 这个库最近一次搜索的参数 + 列表网址（翻页要用）。"""
     now = now or time.time()
     path = path or _chemdb_usage_path()
-    try:
-        d = json.load(io.open(path, encoding='utf-8'))
-    except Exception:
-        d = {}
-    today = time.strftime('%Y-%m-%d', time.localtime(now))
+    d = _load(path)
+    today = _day(now)
     days = d.get('days', {})
     days.setdefault(today, {})[db] = days.get(today, {}).get(db, 0) + 1
-    d = {'last': now, 'days': {k: days[k] for k in sorted(days)[-7:]}}
+    out = {'last': now, 'days': {k: days[k] for k in sorted(days)[-7:]}, 'searches': d.get('searches', {})}
+    if last_search is not None:
+        out['searches'][db] = last_search
+    io.open(path, 'w', encoding='utf-8').write(json.dumps(out, ensure_ascii=False))
+
+
+def _remember_search(db, search, path=None):
+    """缓存命中时也要记住「这个库现在的检索是哪次」，翻页才翻得对。不扣次数。"""
+    path = path or _chemdb_usage_path()
+    d = _load(path)
+    d.setdefault('searches', {})[db] = search
     io.open(path, 'w', encoding='utf-8').write(json.dumps(d, ensure_ascii=False))
 
 
-def _chemdb_run(db, fn):
+def chemdb_key(db, params, page):
+    """同一库、同一检索（词 + 类 + 排序 + 筛选 + 模式）、同一页 → 同一个缓存键。"""
+    import hashlib
+    sig = json.dumps({'db': db, 'p': {k: params.get(k) for k in ('query', 'kind', 'sort', 'filters', 'mode')},
+                      'page': int(page)}, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha1(sig.encode('utf-8')).hexdigest()[:16]
+
+
+def _cache_path(key, now=None, root=None):
+    from shared.kernel import paths
+    root = root or paths.runtime('chemdb_cache')
+    return os.path.join(root, _day(now or time.time()), key + '.json')
+
+
+def cache_get(key, now=None, root=None):
+    p = _cache_path(key, now, root)
+    return (_load(p) or None) if os.path.exists(p) else None
+
+
+def cache_put(key, r, now=None, root=None):
+    import shutil
+    p = _cache_path(key, now, root)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    io.open(p, 'w', encoding='utf-8').write(json.dumps(r, ensure_ascii=False))
+    base = os.path.dirname(os.path.dirname(p))
+    for old in sorted(os.listdir(base))[:-3]:          # 缓存只留最近 3 天
+        shutil.rmtree(os.path.join(base, old), ignore_errors=True)
+
+
+DOI_SURE = 0.9          # 标题相似度到这个数，就当是它
+DOI_MAYBE = 0.75        # 到这个数，给 DOI 但标 doi_uncertain，让调用方自己判
+
+
+def enrich(items, match=None, find=None, tier=None):
+    """补 DOI（SciFinder 列表没有，按标题去 Crossref 找）+ 标出证据库里有没有、能读到哪一档。"""
+    if match is None:
+        from shared.adapters import crossref
+
+        def _crossref(it):
+            first = ((it.get('authors') or [''])[0] or '').split(',')[0]
+            return crossref.match_title(it['title'], it.get('year'), first)
+        match = _crossref
+    if find is None or tier is None:
+        from shared.kernel import catalog
+        from tools.getpdf import fulltext as F
+        find, tier = find or catalog.find, tier or F.tier_of
+    todo = [it for it in items if not it.get('doi') and it.get('type') != 'patent' and it.get('title')]
+    if todo:
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _m(it):
+            try:
+                return match(it)
+            except Exception:
+                return None
+        with ThreadPoolExecutor(max_workers=5) as ex:
+            for it, got in zip(todo, ex.map(_m, todo)):
+                if got and got.get('doi') and got['score'] >= DOI_MAYBE:
+                    it['doi'] = got['doi']
+                    it['doi_source'] = 'crossref_title_match'
+                    it['doi_match_score'] = got['score']
+                    if got['score'] < DOI_SURE:
+                        it['doi_uncertain'] = True
+    for it in items:
+        if it.get('doi'):
+            pid = find(it['doi'])
+            it['in_library'] = bool(pid)
+            if pid:
+                it['id'] = pid
+                try:
+                    it['tier'] = tier(pid)
+                except Exception:
+                    it['tier'] = None
+        elif it.get('type') != 'patent':
+            it['in_library'] = None
+    return items
+
+
+def _deliver(r, db, params, cached):
+    r = dict(r)
+    used, daily, _ = chemdb_quota(db)
+    r['cached'] = cached
+    r['quota'] = {'used_today': used, 'daily_limit': daily, 'remaining': max(0, daily - used),
+                  'min_gap_s': CHEMDB_GAP}
+    if not params.get('raw'):
+        r.pop('text', None)
+    n = len(r.get('items') or [])
+    head = '%s %s%s：%s' % (db, r.get('code'), '（缓存）' if cached else '',
+                            r.get('why') or '共 %s 条，第 %s 页 %d 条' % (r.get('count'), r.get('page'), n))
+    return _out(head, r)
+
+
+def _chemdb_run(db, params, page, fetch):
+    """缓存 → 额度 → 间隔 → 去网站 → 补 DOI 与库内标记 → 存缓存。"""
     from shared.adapters import chemdb
     db = chemdb.check_db(db)
+    key = chemdb_key(db, params, page)
+    hit = cache_get(key)
+    if hit:
+        if page == 1:
+            _remember_search(db, dict(params, url=hit.get('url')))
+        return _deliver(hit, db, params, True)
     used, daily, wait = chemdb_quota(db)
     if used >= daily:
-        raise ValueError(f'{db} 今天已经用了 {used} 次（上限 {daily}，按人的频率）；明天再来，或请用户在控制面板调 CHEMDB_DAILY')
+        raise ValueError(f'{db} 今天已经用了 {used} 次（上限 {daily}，按人的频率）；明天再来，'
+                         f'或请用户在控制面板调 CHEMDB_DAILY。当天查过的检索照样能从缓存拿（不扣次数）')
     if wait:
         time.sleep(wait)                      # 不到 30 秒就等够再做（人的节奏），不让调用方白跑一趟
-    chemdb_charge(db)
-    r = fn(db)
-    r['quota'] = {'used_today': used + 1, 'daily_limit': daily, 'min_gap_s': CHEMDB_GAP}
-    head = '%s %s：%s' % (db, r.get('code'), r.get('why') or ('%s 条结果，第 %s 页' % (r.get('count'), r.get('page'))))
-    return _out(head, r)
+    r = fetch(db)
+    keep = {k: v for k, v in params.items() if k != 'raw'}
+    chemdb_charge(db, last_search=dict(keep, url=r.get('url')) if page == 1 and r.get('url') else None)
+    if r.get('items'):
+        try:
+            enrich(r['items'])
+        except Exception as e:
+            r.setdefault('warnings', []).append(f'enrich_failed: {type(e).__name__}: {str(e)[:80]}')
+    if r.get('code') in ('OK', 'NO_RESULTS') and r.get('complete', True):
+        cache_put(key, r)
+    return _deliver(r, db, params, False)
+
+
+def _chemdb_params(a):
+    return {'query': (a.get('query') or '').strip(), 'kind': a.get('kind') or 'references',
+            'sort': a.get('sort') or None, 'filters': a.get('filters') or None,
+            'mode': a.get('mode') or 'auto', 'raw': bool(a.get('raw'))}
 
 
 def _chemdb_search(a):
     from shared.adapters import chemdb
-    q = (a.get('query') or '').strip()
+    p = _chemdb_params(a)
     mc = int(a.get('maxChars') or 30000)
-    return _chemdb_run(a.get('db'), lambda db: chemdb.search(db, q, a.get('kind') or 'references', max_chars=mc))
+    return _chemdb_run(a.get('db'), p, 1, lambda db: chemdb.search(
+        db, p['query'], p['kind'], sort=p['sort'], filters=p['filters'], mode=p['mode'], raw=p['raw'], max_chars=mc))
 
 
 def _chemdb_page(a):
     from shared.adapters import chemdb
+    db = chemdb.check_db(a.get('db'))
+    n = int(a.get('page') or 2)
+    last = (_load(_chemdb_usage_path()).get('searches') or {}).get(db)
+    if not last:
+        raise ValueError(f'{db} 还没有搜过（或账本被清了），先 chemdb_search')
+    p = dict(last, raw=bool(a.get('raw')))
     mc = int(a.get('maxChars') or 30000)
-    return _chemdb_run(a.get('db'), lambda db: chemdb.page(db, int(a.get('page') or 2), max_chars=mc))
+    return _chemdb_run(db, p, n, lambda db: chemdb.page(db, n, base_url=last.get('url') or '', raw=p['raw'],
+                                                       max_chars=mc))
+
+
+def _chemdb_status(a):
+    """不碰网站：额度、几点重置、两个库最近一次检索、标签停在哪（登录页 = 要人去登录）、导出文件夹里有什么。"""
+    from shared.adapters import chemdb
+    from shared.kernel import paths
+    now = time.time()
+    d = _load(_chemdb_usage_path())
+    t = time.localtime(now)
+    reset = time.mktime((t.tm_year, t.tm_mon, t.tm_mday + 1, 0, 0, 0, 0, 0, -1))
+    out = {'quota': {}, 'reset_at': time.strftime('%Y-%m-%d %H:%M', time.localtime(reset)),
+           'min_gap_s': CHEMDB_GAP, 'last_searches': d.get('searches') or {}}
+    for db in chemdb.DBS:
+        used, daily, _ = chemdb_quota(db, now=now)
+        out['quota'][db] = {'used_today': used, 'daily_limit': daily, 'remaining': max(0, daily - used)}
+    out['wait_s'] = round(chemdb_quota('scifinder', now=now)[2], 1)
+    try:
+        tabs = chemdb.tabs()
+        for st in tabs.values():
+            st['login'] = 'login_page' if st['login_page'] else ('likely_ok' if st['tab_open'] else 'unknown')
+        out['tabs'] = tabs
+    except Exception as e:
+        out['tabs'] = {'error': f'{type(e).__name__}: {str(e)[:160]}'}
+    ex = paths.CHEMDB_EXPORTS
+    files = sorted(os.listdir(ex)) if os.path.isdir(ex) else []
+    out['exports'] = {'dir': to_wsl(ex), 'files': files[-50:],
+                      'hint': '用户手动从 SciFinder / Reaxys 导出的 Excel / RIS 放这里；你直接读（不扣次数）'}
+    q = out['quota']
+    return _out('SciFinder 今天还剩 %d 次、Reaxys 还剩 %d 次；%s 重置' % (
+        q['scifinder']['remaining'], q['reaxys']['remaining'], out['reset_at']), out)
 
 
 def cap(name, handler, limit=None, spill_dir=None):
@@ -924,15 +1094,33 @@ TOOLS = [
      '上次取全文的 route 与错误码。零成本，不取不解析。',
      {'dois': {'type': 'array', 'items': {'type': 'string'}},
       'itemKeys': {'type': 'array', 'items': {'type': 'string'}}}, [], _paper_status),
-    ('chemdb_search', '在 SciFinder 或 Reaxys 里搜一次（借主力机上已登录的浏览器），回结果列表第 1 页的文字：'
-     '标题 / 作者 / 刊 / 年 / 摘要片段（Reaxys 带 DOI）、结果数、左侧筛选项与计数、库自带的 AI 摘要。'
-     'kind=references（文献+专利，默认）/ substances / reactions。按人的频率：两次至少隔 30 秒，每库每天有上限。',
-     {'db': {'type': 'string', 'enum': ['scifinder', 'reaxys']}, 'query': {'type': 'string'},
-      'kind': {'type': 'string', 'enum': ['references', 'substances', 'reactions']},
-      'maxChars': {'type': 'integer', 'minimum': 1000, 'maximum': 45000}}, ['db', 'query'], _chemdb_search),
-    ('chemdb_page', '上一次 chemdb_search 的结果列表翻到第 page 页（同一个库）。频率规矩同上。',
-     {'db': {'type': 'string', 'enum': ['scifinder', 'reaxys']}, 'page': {'type': 'integer', 'minimum': 1},
-      'maxChars': {'type': 'integer', 'minimum': 1000, 'maximum': 45000}}, ['db', 'page'], _chemdb_page),
+    ('chemdb_search', '在 SciFinder 或 Reaxys 里搜一次（借主力机上已登录的浏览器），回第 1 页的结构化列表：'
+     'items[]（rank / type=journal|review|patent / title / authors / source / year / doi / patent_no / assignee / status / '
+     'cited|citing / snippet / index_terms / in_library / tier）、count、page_size、pages、facets（SciFinder 带计数）、'
+     'query_interpretation（库实际执行的检索式）、ai_summary、Reaxys 的 preview（整句拆成的子检索及各自条数）、complete、warnings。'
+     'SciFinder 列表没有 DOI，服务端按标题去 Crossref 补（doi_match_score；<0.9 标 doi_uncertain）。'
+     '当天同一检索同一页走缓存（cached=true，不扣次数）。不在缓存时：两次至少隔 30 秒（服务端会等），每库每天有上限（quota）。',
+     {'db': {'type': 'string', 'enum': ['scifinder', 'reaxys'], 'description': '哪个库'},
+      'query': {'type': 'string', 'description': '检索词（英文）。SciFinder 会把词用 and 连起来，看 query_interpretation'},
+      'kind': {'type': 'string', 'enum': ['references', 'substances', 'reactions'],
+               'description': 'references = 文献 + 专利（默认）；substances / reactions 目前只回原样文字（用 raw=true）'},
+      'sort': {'type': 'string', 'enum': ['relevance', 'date', 'cited'], 'description': '排序，默认 relevance'},
+      'filters': {'type': 'object', 'description': '只 SciFinder：{facet 名: [值]}，名与值照 facets 里写（如 '
+                  '{"Document Type": ["Journal"], "Patent Status": ["Alive"]}），另认 yearFrom / yearTo（整数年）。'
+                  '只有页面左侧显示出来的值能选（每个 facet 前 5 个），选不到会进 warnings'},
+      'mode': {'type': 'string', 'enum': ['auto', 'original'],
+               'description': 'original = SciFinder 改写了检索式时按原样搜（点 Search Original Query）'},
+      'raw': {'type': 'boolean', 'description': '另附整页原文 text（排查用，平时别开）'},
+      'maxChars': {'type': 'integer', 'minimum': 1000, 'maximum': 45000, 'description': 'raw 原文的上限'}},
+     ['db', 'query'], _chemdb_search),
+    ('chemdb_page', '这个库最近一次 chemdb_search 的第 page 页（同样的结构化字段；同一页当天走缓存）。额度与间隔规矩同上。',
+     {'db': {'type': 'string', 'enum': ['scifinder', 'reaxys']},
+      'page': {'type': 'integer', 'minimum': 1, 'description': '页码；pages 告诉你一共几页'},
+      'raw': {'type': 'boolean'}, 'maxChars': {'type': 'integer', 'minimum': 1000, 'maximum': 45000}},
+     ['db', 'page'], _chemdb_page),
+    ('chemdb_status', '不碰网站、不扣次数：两个库今天各剩几次、几点重置、要等几秒、最近一次检索（词 + 网址）、'
+     '浏览器标签停在哪（login=login_page 就是要人去登录）、人手动导出文件的文件夹和里面的文件。做一组检索之前先看它。',
+     {}, [], _chemdb_status),
 ]
 
 

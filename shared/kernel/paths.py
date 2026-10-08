@@ -73,6 +73,7 @@ STRUCTURED = os.path.join(SERVING, 'structured')  # 结构化抽取产物
 VECTOR_DB = os.path.join(SERVING, 'vector_db')    # Chroma 向量库（可重建）
 DIRECTION = os.path.join(SERVING, 'direction')    # 方向地图：种子/引用网络/聚类
 INCOMING = os.path.join(RAW, '_incoming')         # 临时处理区（可清空）
+CHEMDB_EXPORTS = os.path.join(RAW, '_chemdb_exports')  # 人从 SciFinder / Reaxys 手动导出的表（Excel / RIS），原样放
 
 # ── 方向地图（领域全景，非单篇文献）────────────────────────────────
 # 与 library/ 的区别：library 按「我读过的文献」组织，direction 按「领域长什么样」

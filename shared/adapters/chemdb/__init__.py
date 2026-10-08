@@ -4,32 +4,34 @@
 **为什么有这块（2026-10-08 用户定）**：SciFinder、Reaxys 一搜就是几十上百条文献和专利，
 人一条条点开筛很费时间；Claude Science 读得快，但它进不去（要学校订阅 + 个人登录）。
 
-查证过的现实（2026-10-08，见 docs/reference）：
+查证过的现实（2026-10-08）：
   - SciFinder 的官方接口只给合作软件（电子实验记录本），搜索只回一个「去网页看」的链接，
     登录必须人在浏览器前 —— 不是给程序取数据用的。
   - Reaxys 有真数据接口，但要单位另外订接口，网页订阅不含。
 所以这块的形状和 pdf_fetch 一样：**不自己发请求，接管主力机上那个「取全文用的浏览器」**，
-人在里面登录一次（SciFinder 个人账号、Reaxys 机构登录），之后按人的频率搜、读结果页文字。
+人在里面登录一次（SciFinder 个人账号、Reaxys 机构登录），之后按人的频率搜、读结果页。
 
-⚠ 只读：搜索、翻页、读文字。**不导出、不点详情批量下载、不登录**（登录永远是人做）。
-⚠ 频率（每次间隔、每天上限）由调用方管（host/mcp/science.py），这块只管「怎么在页面上搜」。
-⚠ 结果页是前端渲染的：等到结果数出现、文字不再变长才读。
+⚠ 只读：搜索、筛选、排序、翻页、读列表。**不导出、不批量点详情、不登录**（登录永远是人做）。
+⚠ 频率（每次间隔、每天上限、缓存）由调用方管（host/mcp/science.py），这块只管「怎么在页面上搜」。
+⚠ 结果页是前端渲染的：等到列表条目出现、数目不再变才读；库自带的 AI 摘要还在生成就标出来。
 
 对外接口：
   | 函数 | 说明 |
   |---|---|
-  | `search(db, query, kind='references', max_chars=30000)` | 搜一次 → dict（见下） |
-  | `page(db, n, max_chars=30000)` | 上一次搜索结果的第 n 页 → dict |
-  | `page_url(db, url, n)` | 结果页网址换页码（纯函数，自测用） |
-  | `clean_text(text)` / `count_of(db, title, text)` | 页面文字去样板 / 读结果数（纯函数） |
+  | `search(db, query, kind='references', sort=None, filters=None, mode='auto', raw=False)` | 搜一次 → 第 1 页 |
+  | `page(db, n, base_url='', raw=False)` | 结果列表第 n 页（base_url = 那次搜索回的 url；不给就用标签上停着的） |
+  | `tabs()` | 两个库的标签在不在、停在不在登录页 —— 只看浏览器，不碰网站 |
+  | `page_url` / `page_no` / `is_login` / `clean_text` / `count_of` / `parse_sf_bib` / `norm_rx_item` | 纯函数（自测覆盖） |
 
-返回 dict：ok, code, db, kind, query, page, url, title, count, text, chars, truncated, why。
+返回 dict：ok, code, complete, warnings, db, kind, query, query_interpretation, page, page_size, pages,
+count, items[], facets{}, ai_summary, preview（Reaxys 的子检索拆分）, url, title, text（raw=True 才有）, why。
 code：OK / LOGIN_REQUIRED（人去浏览器登录）/ NO_RESULTS / NO_SEARCH（翻页前没搜过）/
 NAVIGATE_FAILED / TIMEOUT。只有「浏览器连不上 / 没装 playwright」才抛异常（沿用 pdf_fetch 的两个异常）。
 """
 import contextlib
 import re
 import time
+import urllib.parse
 
 from shared.adapters import pdf_fetch
 from shared.kernel.log import get_logger
@@ -38,6 +40,8 @@ log = get_logger('chemdb')
 
 DBS = ('scifinder', 'reaxys')
 KINDS = ('references', 'substances', 'reactions')
+SORTS = {'relevance': r'relevan', 'date': r'publication|year|date|newest|latest',
+         'cited': r'cited|citing|citation'}
 
 # 页面在哪、长什么样 —— 网站改版只改这里
 SITE = {
@@ -52,16 +56,22 @@ SITE = {
         # 结果页网址：/search/<reference|substance|reaction>/<id>/<页码>
         'page_re': r'(/search/(?:reference|substance|reaction)/[^/?#]+/)(\d+)',
         'login_re': r'sso\.cas\.org|/login',
+        'item': '.reference-data',
+        'original': '.search-original-query-button',
+        'sort': 'button[aria-label="Sort"]',
     },
     'reaxys': {
         'host': 'reaxys.com',
         'home': 'https://www.reaxys.com/#/search/quick/query',
         'input': '#id-quick-search-input',
         'view_results': '.e2e-view-results',
-        'card_word': {'references': 'Documents', 'substances': 'Substances', 'reactions': 'Reactions'},
+        'card_word': {'references': 'documents', 'substances': 'substances', 'reactions': 'reactions'},
         # 结果页网址：…/list/<uuid>/<页码>/desc/…
         'page_re': r'(/list/[^/]+/)(\d+)(/)',
         'login_re': r'#/login|id\.elsevier\.com',
+        'item': 'ul.e2e-results-list > li',
+        'page_size': '[role=combobox][aria-label="Results per page"]',
+        'sort': '[role=combobox][aria-label*="Sort" i], button:has-text("Sort by")',
     },
 }
 
@@ -70,7 +80,8 @@ _BOILER = re.compile(
     r'^(Skip to .*|Copyright ©.*|All content on this site:.*|We use cookies.*|Cookie Settings|'
     r'Help Contact Us Legal|Elsevier|RELX™|Feedback|Remote access|Terms and Conditions|Privacy policy|'
     r'\(opens in a new window\)|About content|Accessibility|Contact support|History|Alerts|'
-    r'Resource Center|Draw|Return to Home|Zoom structures|Zoom out|Zoom in|Sort descending|Sort ascending)$')
+    r'Resource Center|Draw|Return to Home|Zoom structures|Zoom out|Zoom in|Sort descending|Sort ascending|'
+    r'Select Reference undefined|View More|Full Text)$')
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -89,6 +100,13 @@ def check_kind(kind):
     if kind not in KINDS:
         raise ValueError(f'kind 只能是 {" / ".join(KINDS)}（给了「{kind}」）')
     return kind
+
+
+def check_sort(sort):
+    sort = (sort or '').strip().lower()
+    if sort and sort not in SORTS:
+        raise ValueError(f'sort 只能是 {" / ".join(SORTS)}（给了「{sort}」）')
+    return sort
 
 
 def page_url(db, url, n):
@@ -130,9 +148,87 @@ def count_of(db, title, text):
     return int(m.group(1).replace(',', '')) if m else None
 
 
+_PATENT_BIB = re.compile(r'^(?P<office>[^,|]+),\s*(?P<no>[A-Z]{2}\d[\dA-Z]*)\s+(?P<kind>[A-Z]\d?)\s+(?P<date>\d{4}-\d{2}-\d{2})')
+
+
+def parse_sf_bib(bib):
+    """SciFinder 每条下面那行出处 → {type, source, year, patent_no, office, date, language}。
+
+    专利：「China, CN117777727 A 2024-03-29 | Language: Chinese, Database: CAplus」
+    期刊：「Smart Materials and Structures (2023), 32(7), 074004 | Language: English, Database: CAplus」
+    """
+    bib = (bib or '').strip()
+    head, _, tail = bib.partition('|')
+    lang = (re.search(r'Language:\s*([^,|]+)', tail) or [None, None])[1]
+    out = {'language': lang.strip() if lang else None}
+    m = _PATENT_BIB.match(head.strip())
+    if m:
+        out.update(type='patent', patent_no=f"{m['no']} {m['kind']}", office=m['office'].strip(),
+                   date=m['date'], year=int(m['date'][:4]), source=None)
+        return out
+    y = re.search(r'\((\d{4})\)', head)
+    src = re.split(r'\s*\(\d{4}\)', head)[0].strip() if y else head.strip()
+    out.update(type='journal', source=src or None, year=int(y.group(1)) if y else None,
+               citation=head.strip() or None)
+    return out
+
+
+def _hi(s):
+    return re.sub(r'</?hi>', '', s or '').strip()
+
+
+def norm_rx_item(x):
+    """Reaxys 页面上抽出来的一条 → 统一字段。序号「4-5」= 同一专利族占了两个号。"""
+    idx = (x.get('idx') or '').strip()
+    nums = [int(n) for n in re.findall(r'\d+', idx)]
+    rank = nums[0] if nums else None
+    family = list(range(nums[0], nums[-1] + 1)) if len(nums) == 2 else None
+    t = (x.get('type') or '').lower()
+    typ = {'article': 'journal', 'review': 'review', 'patent': 'patent'}.get(t, t or None)
+    link = x.get('link') or ''
+    q = urllib.parse.parse_qs(urllib.parse.urlparse(link).query)
+    doi = (x.get('doi') or (q.get('doi') or [''])[0] or '').strip().lower() or None
+    pub = (q.get('pubno') or [''])[0] or None
+    year = None
+    if x.get('pubdate'):
+        try:
+            year = time.gmtime(int(x['pubdate']) / 1000).tm_year
+        except (TypeError, ValueError):
+            pass
+    if not year:
+        y = re.search(r'\b(19|20)\d{2}\b', x.get('source') or '')
+        year = int(y.group(0)) if y else None
+    if not typ and (pub or x.get('members')):
+        typ = 'patent'
+    item = {'rank': rank, 'type': typ, 'title': _hi(x.get('title')), 'authors': x.get('authors') or [],
+            'source': None if typ == 'patent' else (x.get('source') or None), 'year': year, 'doi': doi,
+            'cited': int(x['cited']) if x.get('cited') else None, 'snippet': x.get('snippet'),
+            'index_terms': [_hi(t) for t in (x.get('index_terms') or [])][:20]}
+    if typ == 'patent':
+        item.update(patent_no=pub or ((x.get('members') or [None])[0]), family_members=x.get('members') or None,
+                    family_ranks=family, assignee=x.get('assignee'), office=x.get('office'))
+    return item
+
+
+def norm_sf_item(x):
+    b = parse_sf_bib(x.get('bib'))
+    authors = [a.strip() for a in (x.get('authors') or '').split(';') if a.strip()]
+    item = {'rank': x.get('rank'), 'type': b['type'], 'title': x.get('title'), 'authors': authors,
+            'source': b.get('source'), 'year': b.get('year'), 'doi': None, 'language': b.get('language'),
+            'citing': x.get('citing'), 'substances': x.get('substances'), 'reactions': x.get('reactions'),
+            'snippet': (x.get('snippet') or '').strip() or None}
+    if b['type'] == 'patent':
+        item.update(patent_no=b['patent_no'], office=b['office'], date=b['date'],
+                    assignee=x.get('assignee'), status=(x.get('status') or '').lower() or None)
+    else:
+        item['citation'] = b.get('citation')
+    return item
+
+
 def _result(db, **kw):
-    r = {'ok': False, 'code': 'OK', 'db': db, 'kind': None, 'query': None, 'page': 0, 'url': '',
-         'title': '', 'count': None, 'text': '', 'chars': 0, 'truncated': False, 'why': ''}
+    r = {'ok': False, 'code': 'OK', 'complete': True, 'warnings': [], 'db': db, 'kind': None, 'query': None,
+         'query_interpretation': None, 'page': 0, 'page_size': None, 'pages': None, 'count': None,
+         'items': [], 'facets': {}, 'ai_summary': None, 'url': '', 'title': '', 'why': ''}
     r.update(kw)
     return r
 
@@ -162,12 +258,17 @@ def _session():
             pass
 
 
-def _tab(browser, ctx, db):
-    """这个库专用的标签：已有就复用（登录状态、上次的结果都在上面），没有就后台开一个。"""
+def _find_tab(ctx, db):
     host = SITE[db]['host']
     mine = [p for p in ctx.pages if host in (p.url or '')]
-    if mine:
-        return mine[-1]
+    return mine[-1] if mine else None
+
+
+def _tab(browser, ctx, db):
+    """这个库专用的标签：已有就复用（登录状态、上次的结果都在上面），没有就后台开一个。"""
+    pg = _find_tab(ctx, db)
+    if pg:
+        return pg
     try:
         cdp = browser.new_browser_cdp_session()
         try:
@@ -184,11 +285,31 @@ def _tab(browser, ctx, db):
         return ctx.new_page()
 
 
+def tabs():
+    """两个库的标签现在停在哪 —— 只问浏览器，不碰网站（不算一次检索）。"""
+    out = {}
+    with _session() as (browser, ctx):
+        for db in DBS:
+            pg = _find_tab(ctx, db)
+            url = pg.url if pg else ''
+            out[db] = {'tab_open': bool(pg), 'url': url,
+                       'login_page': bool(pg) and is_login(db, url),
+                       'on_results': bool(page_url(db, url, 1))}
+    return out
+
+
 def _body(pg):
     try:
         return pg.evaluate('document.body ? document.body.innerText : ""') or ''
     except Exception:
         return ''
+
+
+def _n(pg, sel):
+    try:
+        return pg.locator(sel).count()
+    except Exception:
+        return 0
 
 
 def _settle(pg, ready, timeout=45):
@@ -203,19 +324,6 @@ def _settle(pg, ready, timeout=45):
     return False
 
 
-def _read(pg, db, max_chars, **kw):
-    text = clean_text(_body(pg))
-    title = ''
-    try:
-        title = pg.title()
-    except Exception:
-        pass
-    full = len(text)
-    return _result(db, ok=True, url=pg.url, title=title, count=count_of(db, title, text),
-                   page=page_no(db, pg.url) or 1, text=text[:max_chars], chars=full,
-                   truncated=full > max_chars, **kw)
-
-
 def _goto(pg, url):
     try:
         pg.goto(url, wait_until='domcontentloaded', timeout=60000)
@@ -225,10 +333,204 @@ def _goto(pg, url):
         return False
 
 
-_HAS_RESULTS = re.compile(r'\b\d[\d,]*\s+(Results?|Documents|Substances|Reactions)\b')
+def _pick(pg, toggle, pattern):
+    """点开一个下拉，选文字匹配 pattern 的那项 → (选中的文字 | None, 看到的全部选项)。"""
+    t = pg.locator(toggle)
+    if t.count() == 0:
+        return None, []
+    t.first.click()
+    pg.wait_for_timeout(800)
+    opts = pg.locator('[role=option], [role=menuitem], [role=menuitemradio], .dropdown-menu a, '
+                      '.dropdown-menu button, .dropdown-item')
+    seen = []
+    for i in range(min(opts.count(), 30)):
+        o = opts.nth(i)
+        try:
+            if not o.is_visible():
+                continue
+            txt = o.inner_text().strip()
+        except Exception:
+            continue
+        seen.append(txt)
+        if re.search(pattern, txt, re.I):
+            o.click()
+            return txt, seen
+    pg.keyboard.press('Escape')
+    return None, seen
 
 
-def _search_scifinder(pg, query, kind, max_chars):
+# ── 页面里跑的抽取脚本（改版就改这里）──────────────────────────────────
+
+_SF_JS = r"""async () => {
+  let last = -1;
+  for (let i = 0; i < 40; i++) {
+    const n = document.querySelectorAll('.reference-data').length;
+    if (n === last && i > 2) break;
+    last = n; window.scrollBy(0, 3000); await new Promise(r => setTimeout(r, 350));
+  }
+  window.scrollTo(0, 0);
+  const T = e => e ? (e.innerText || '').trim() : '';
+  const num = (d, sel) => { const e = d.querySelector(sel); const x = e && (e.getAttribute('aria-label') || '').match(/(\d[\d,]*)/); return x ? +x[1].replace(/,/g, '') : null; };
+  const items = [...document.querySelectorAll('.reference-data')].map(d => {
+    const a = d.querySelector('.reference-title a');
+    let rank = null; try { rank = +new URL(a.href, location.href).searchParams.get('metricsOrdinal') || null; } catch (e) {}
+    const txt = d.innerText;
+    const m = re => { const x = txt.match(re); return x ? x[1].trim() : null; };
+    return {rank, title: T(d.querySelector('.reference-title')), authors: T(d.querySelector('.authors-text')),
+      bib: T(d.querySelector('.bibliography')), assignee: m(/Assignee:\s*([^\n]+)/), status: m(/Patent Status:\s*([A-Za-z]+)/),
+      snippet: T(d.querySelector('.reference-abstract')), citing: num(d, '.btn-get-citing-references'),
+      substances: num(d, '.btn-get-substances'), reactions: num(d, '.btn-get-reactions')};
+  });
+  const facets = {};
+  document.querySelectorAll('.facet-container').forEach(f => {
+    const h = T(f.querySelector('.facet-header-title')); const bins = {};
+    f.querySelectorAll('.bin-list-item').forEach(li => { const n = T(li.querySelector('.bin-name')); const c = T(li.querySelector('.bin-freq')).replace(/[(),]/g, ''); if (n) bins[n] = c ? +c : null; });
+    if (h && Object.keys(bins).length) facets[h] = bins;
+  });
+  const body = document.body.innerText;
+  const qi = (body.match(/How we.re searching your query\s*\n+([^\n]+)/) || [])[1] || null;
+  let ai = null; const k = body.indexOf('Powered by CAS Newton');
+  if (k >= 0) ai = body.slice(k + 21).split(/\n\s*View All\b/)[0].trim();
+  return {items, facets, qi, modified: /We.ve modified your query/.test(body), ai,
+          checked: [...document.querySelectorAll('input.facet-checkbox:checked')].map(c => c.name + ': ' + c.value)};
+}"""
+
+_RX_JS = r"""() => {
+  const T = e => e ? (e.innerText || '').trim() : '';
+  const items = [...document.querySelectorAll('ul.e2e-results-list > li')].map(li => {
+    const b = li.querySelector('[data-tracking-citation-type]');
+    const g = k => b ? b.getAttribute('data-tracking-' + k) : null;
+    const txt = li.innerText;
+    const m = re => { const x = txt.match(re); return x ? x[1].trim() : null; };
+    const members = [...li.querySelectorAll('.e2e-patent-family-member-item')].map(x => {
+      const n = x.innerText.match(/\b([A-Z]{2}\d{5,}[A-Z]?\d*)\s*,\s*(\d{4})\s*,\s*([A-Z]\d?)/); return n ? n[1] + ' ' + n[3] : null; }).filter(Boolean);
+    const doiA = li.querySelector('a.doi-link');
+    return {idx: T(li.querySelector('.result-checkbox-container__index')), type: g('citation-type'),
+      title: g('title') || T(li.querySelector('h3, h4')), authors: [...li.querySelectorAll('.rx-element-authors > span')].map(T),
+      source: T(li.querySelector('.rx-element-literature')), link: g('doc-link'),
+      doi: doiA ? T(doiA).replace(/\(opens in a new window\)/, '').trim() : null,
+      pubdate: g('publication-date') || g('online-date'), cited: (txt.match(/Cited (\d+) times?/) || [])[1] || null,
+      assignee: m(/Current Patent Assignee:\s*([^\n]+)/), office: m(/Office:\s*([^\n]+)/), members,
+      snippet: m(/Abstract hit:\s*\{\.\.\.([\s\S]*?)\.\.\.\}/), index_terms: (g('index-terms') || '').split(/;\s*/).filter(Boolean)};
+  });
+  const body = document.body.innerText;
+  let ai = null; const k = body.indexOf('SummaryAI');
+  if (k >= 0) ai = body.slice(k + 9).split(/\n\s*View full summary/)[0].split(/\n\s*0\s*\n\s*selected/)[0].trim();
+  const list = document.querySelector('ul.e2e-results-list');
+  const pg = ((list && list.getAttribute('aria-label')) || '').match(/page (\d+) of (\d+)/);
+  const ps = document.querySelector('[role=combobox][aria-label="Results per page"]');
+  const f0 = body.indexOf('Search within results'), f1 = body.indexOf('Limit to');
+  const facet_names = f0 >= 0 && f1 > f0 ? body.slice(f0, f1).split('\n').map(s => s.trim()).filter(s => s && s !== 'Search within results') : [];
+  return {items, ai, page: pg ? +pg[1] : null, pages: pg ? +pg[2] : null, page_size: ps ? +ps.getAttribute('value') : null, facet_names};
+}"""
+
+_RX_PREVIEW_JS = r"""() => [...document.querySelectorAll('.e2e-view-results')].map((b, i) => {
+  let e = b;
+  for (let up = 0; up < 8 && e; up++, e = e.parentElement) {
+    const t = e.innerText || '';
+    const m = t.match(/^\s*(\d[\d,]*)\s*\n\s*(Documents|Substances|Reactions)\b/);
+    if (m) {
+      const lines = t.split('\n').map(s => s.trim()).filter(Boolean);
+      const k = lines.indexOf(m[2]); const end = lines.findIndex(l => l === 'Create Alert');
+      return {index: i, count: +m[1].replace(/,/g, ''), kind: m[2].toLowerCase(),
+              interpretation: lines.slice(k + 1, end > k ? end : undefined).join(' ')};
+    }
+  }
+  return {index: i, count: null, kind: null, interpretation: null};
+})"""
+
+
+def _ai_pending(s):
+    return bool(re.search(r'Generating|may take a few seconds', s or '', re.I))
+
+
+def _extract(pg, db, raw, max_chars, **kw):
+    """读当前列表页 → 结构化结果。库自带的 AI 摘要还在生成，再等一会（最多 25 秒）。"""
+    js = _SF_JS if db == 'scifinder' else _RX_JS
+    d = pg.evaluate(js)
+    end = time.time() + 25
+    while _ai_pending(d.get('ai')) and time.time() < end:
+        pg.wait_for_timeout(2500)
+        d = pg.evaluate(js)
+    text = clean_text(_body(pg))
+    title = ''
+    try:
+        title = pg.title()
+    except Exception:
+        pass
+    r = _result(db, ok=True, url=pg.url, title=title, count=count_of(db, title, text), **kw)
+    r['page'] = page_no(db, pg.url) or 1
+    if db == 'scifinder':
+        r['items'] = [norm_sf_item(x) for x in d.get('items') or []]
+        r['facets'] = d.get('facets') or {}
+        r['query_interpretation'] = d.get('qi')
+        r['query_modified'] = bool(d.get('modified'))
+        r['filters_active'] = d.get('checked') or []
+    else:
+        r['items'] = [norm_rx_item(x) for x in d.get('items') or []]
+        r['facets'] = {'available': d.get('facet_names') or []}
+        r['pages'] = d.get('pages')
+        r['page_size'] = d.get('page_size')
+    if r['page_size'] is None and r['items']:
+        r['page_size'] = len(r['items'])
+    if r['pages'] is None and r['count'] and r['page_size']:
+        r['pages'] = -(-r['count'] // r['page_size'])
+    r['ai_summary'] = d.get('ai')
+    if _ai_pending(d.get('ai')):
+        r['warnings'].append('ai_summary_pending')
+        r['complete'] = False
+    if r['count'] and not r['items']:
+        r['warnings'].append('no_items_parsed')
+        r['complete'] = False
+    if raw:
+        r['text'] = text[:max_chars]
+        r['truncated'] = len(text) > max_chars
+    return r
+
+
+def _sf_filters(pg, filters, warnings):
+    """SciFinder 左侧筛选：{facet 名: [值, …]}（名字与 facets 里看到的一致），另认 yearFrom / yearTo。"""
+    applied = []
+    filters = dict(filters or {})
+    y0, y1 = filters.pop('yearFrom', None), filters.pop('yearTo', None)
+    for facet, vals in filters.items():
+        for v in (vals if isinstance(vals, list) else [vals]):
+            box = pg.locator(f'input.facet-checkbox[name="{facet}"][value="{v}"]')
+            if box.count() == 0:
+                warnings.append(f'filter_not_found: {facet}={v}（只有当前页面左侧显示的值能选）')
+                continue
+            bid = box.first.get_attribute('id')
+            pg.locator(f'label[for="{bid}"]').first.click()
+            _settle(pg, lambda t: True, timeout=20)
+            applied.append(f'{facet}: {v}')
+    if y0 or y1:
+        try:
+            pg.fill('#start-date', f'{int(y0)}-01-01' if y0 else '')
+            pg.fill('#end-date', f'{int(y1)}-12-31' if y1 else '')
+            btn = pg.locator('.publication-date button:has-text("Apply"), button:has-text("Apply")')
+            btn.first.click()
+            _settle(pg, lambda t: True, timeout=25)
+            applied.append(f'Publication Date: {y0 or ""}–{y1 or ""}')
+        except Exception as e:
+            warnings.append(f'year_filter_failed: {str(e)[:80]}')
+    return applied
+
+
+def _wait_items(pg, db, timeout=45):
+    sel = SITE[db]['item']
+    end, prev = time.time() + timeout, -1
+    while time.time() < end:
+        n = _n(pg, sel)
+        if n and n == prev:
+            return True
+        if 'No results' in _body(pg)[:4000]:
+            return True
+        prev = n
+        pg.wait_for_timeout(1500)
+    return False
+
+
+def _search_scifinder(pg, query, kind, sort, filters, mode, raw, max_chars):
     s = SITE['scifinder']
     if not _goto(pg, s['home']):
         return _result('scifinder', code='NAVIGATE_FAILED', why='SciFinder 首页打不开')
@@ -251,22 +553,65 @@ def _search_scifinder(pg, query, kind, max_chars):
     _settle(pg, lambda t: want in t or 'No results' in t, timeout=45)
     link = pg.locator(f'text={want}')
     if link.count() == 0:
-        r = _read(pg, 'scifinder', max_chars)
-        r.update(ok=True, code='NO_RESULTS', count=0, why=f'这次搜索没有 {kind} 结果（总览页附在 text 里）')
+        r = _result('scifinder', ok=True, code='NO_RESULTS', count=0, url=pg.url,
+                    why=f'这次搜索没有 {kind} 结果')
+        if raw:
+            r['text'] = clean_text(_body(pg))[:max_chars]
         return r
     link.first.click()
     try:
-        pg.wait_for_url(re.compile(SITE['scifinder']['page_re']), timeout=45000)
+        pg.wait_for_url(re.compile(s['page_re']), timeout=45000)
     except Exception:
         return _result('scifinder', code='TIMEOUT', url=pg.url, why=f'点了 {want} 没跳到列表页')
-    ok = _settle(pg, lambda t: bool(_HAS_RESULTS.search(t)), timeout=45)
-    r = _read(pg, 'scifinder', max_chars)
+    ok = _wait_items(pg, 'scifinder')
+    warnings = []
+    if mode == 'original':
+        b = pg.locator(s['original'])
+        if b.count():
+            b.first.click()
+            pg.wait_for_timeout(2000)
+            ok = _wait_items(pg, 'scifinder')
+        else:
+            warnings.append('original_mode_unavailable: 这次 SciFinder 没改写检索式')
+    applied = _sf_filters(pg, filters, warnings) if filters else []
+    if sort:
+        got, seen = _pick(pg, s['sort'], SORTS[sort])
+        if got:
+            _wait_items(pg, 'scifinder')
+        else:
+            warnings.append(f'sort_not_found: {sort}（看到的选项：{", ".join(seen) or "无"}）')
+    r = _extract(pg, 'scifinder', raw, max_chars, filters_applied=applied, sort=sort or 'relevance', mode=mode)
+    r['warnings'] = warnings + r['warnings']
     if not ok:
-        r.update(code='TIMEOUT', why='列表页还在加载，读到的可能不全')
+        r.update(code='TIMEOUT', complete=False, why='列表页还在加载，读到的可能不全')
     return r
 
 
-def _search_reaxys(pg, query, kind, max_chars):
+def _rx_page_size_max(pg):
+    """Reaxys 每页条数调到最大（默认 15）。网站会记住，之后翻页也是这个数。→ 现在的每页条数。"""
+    box = pg.locator(SITE['reaxys']['page_size'])
+    if box.count() == 0:
+        return None
+    cur = box.first.get_attribute('value')
+    box.first.click()
+    pg.wait_for_timeout(800)
+    opts = pg.locator('[role=option]')
+    nums = []
+    for i in range(min(opts.count(), 12)):
+        t = (opts.nth(i).inner_text() or '').strip()
+        if t.isdigit():
+            nums.append((int(t), i))
+    if not nums or str(max(nums)[0]) == cur:
+        pg.keyboard.press('Escape')
+        return int(cur) if cur and cur.isdigit() else None
+    best, i = max(nums)
+    opts.nth(i).click()
+    pg.wait_for_timeout(1500)
+    _wait_items(pg, 'reaxys')
+    return best
+
+
+def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars):
     s = SITE['reaxys']
     if not _goto(pg, s['home']):
         return _result('reaxys', code='NAVIGATE_FAILED', why='Reaxys 打不开')
@@ -279,36 +624,41 @@ def _search_reaxys(pg, query, kind, max_chars):
         return _result('reaxys', code='TIMEOUT', url=pg.url, why='等不到搜索框')
     pg.fill(s['input'], query)
     pg.keyboard.press('Enter')
-    # 预览页：Reaxys 把一句话拆成几组子查询，各给一个数和一个 View Results
+    # 预览页：Reaxys 把一句话拆成几组子查询，各给一个数和一个 View Results（从严到宽排）
     if not _settle(pg, lambda t: 'View Results' in t or 'No results' in t, timeout=60):
         return _result('reaxys', code='TIMEOUT', url=pg.url, why='等不到结果预览')
-    preview = clean_text(_body(pg))
+    preview = pg.evaluate(_RX_PREVIEW_JS)
     word = s['card_word'][kind]
-    # 第一张「<数> <类>」的卡片 = 最贴近整句话的那组（Reaxys 按从严到宽排）
-    idx = pg.evaluate("""([sel, word]) => {
-        const bs = [...document.querySelectorAll(sel)];
-        for (let i = 0; i < bs.length; i++) {
-            let e = bs[i];
-            for (let up = 0; up < 8 && e; up++, e = e.parentElement) {
-                const t = e.innerText || '';
-                const m = t.match(/(\\d[\\d,]*)\\s*\\n?\\s*(Documents|Substances|Reactions)/);
-                if (m) { if (m[2] === word) return i; break; }
-            }
-        }
-        return -1; }""", [s['view_results'], word])
-    if idx < 0:
-        r = _result('reaxys', ok=True, code='NO_RESULTS', count=0, url=pg.url, text=preview[:max_chars],
-                    chars=len(preview), why=f'预览里没有 {word} 这一组（预览附在 text 里）')
-        return r
-    pg.locator(s['view_results']).nth(idx).click()
+    pick = next((c for c in preview if c.get('kind') == word), None)
+    if not pick:
+        return _result('reaxys', ok=True, code='NO_RESULTS', count=0, url=pg.url, preview=preview,
+                       why=f'预览里没有 {word} 这一组（preview 里是 Reaxys 拆出来的各组）')
+    pg.locator(s['view_results']).nth(pick['index']).click()
     try:
-        pg.wait_for_url(re.compile(SITE['reaxys']['page_re']), timeout=60000)
+        pg.wait_for_url(re.compile(s['page_re']), timeout=60000)
     except Exception:
-        return _result('reaxys', code='TIMEOUT', url=pg.url, why='点了 View Results 没跳到列表页')
-    ok = _settle(pg, lambda t: bool(_HAS_RESULTS.search(t)) and ('Cited' in t or 'Abstract' in t), timeout=60)
-    r = _read(pg, 'reaxys', max_chars, preview=preview[:4000])
+        return _result('reaxys', code='TIMEOUT', url=pg.url, preview=preview, why='点了 View Results 没跳到列表页')
+    ok = _wait_items(pg, 'reaxys', timeout=60)
+    warnings = []
+    try:
+        _rx_page_size_max(pg)
+    except Exception as e:
+        warnings.append(f'page_size_failed: {str(e)[:80]}')
+    if mode == 'original':
+        warnings.append('original_mode_n/a: Reaxys 不改写检索式，它把整句拆成子检索（见 preview），自己挑哪组')
+    if filters:
+        warnings.append('filters_not_supported_for_reaxys_yet: 只有 SciFinder 支持 filters；Reaxys 的筛选项名在 facets.available')
+    if sort:
+        got, seen = _pick(pg, s['sort'], SORTS[sort])
+        if got:
+            _wait_items(pg, 'reaxys')
+        else:
+            warnings.append(f'sort_not_found: {sort}（看到的选项：{", ".join(seen) or "无"}）')
+    r = _extract(pg, 'reaxys', raw, max_chars, preview=preview, sort=sort or 'relevance', mode=mode,
+                 query_interpretation=pick.get('interpretation'))
+    r['warnings'] = warnings + r['warnings']
     if not ok:
-        r.update(code='TIMEOUT', why='列表页还在加载，读到的可能不全')
+        r.update(code='TIMEOUT', complete=False, why='列表页还在加载，读到的可能不全')
     return r
 
 
@@ -316,48 +666,53 @@ def _search_reaxys(pg, query, kind, max_chars):
 # 对外
 # ══════════════════════════════════════════════════════════════════════
 
-def search(db, query, kind='references', max_chars=30000):
-    """在 SciFinder / Reaxys 里搜一次，读结果列表第 1 页的文字。"""
-    db, kind = check_db(db), check_kind(kind)
+def search(db, query, kind='references', sort=None, filters=None, mode='auto', raw=False, max_chars=30000):
+    """在 SciFinder / Reaxys 里搜一次，读结果列表第 1 页。
+
+    sort: relevance / date / cited；filters（只 SciFinder）：{facet 名: [值]} + yearFrom / yearTo；
+    mode='original'：SciFinder 改写了检索式时点「Search Original Query」按原样搜。
+    """
+    db, kind, sort = check_db(db), check_kind(kind), check_sort(sort)
     query = (query or '').strip()
     if not query:
         raise ValueError('query 不能是空的')
-    log.info(f'{db} 搜索（{kind}）：{query}')
+    mode = (mode or 'auto').lower()
+    log.info(f'{db} 搜索（{kind}，sort={sort or "-"}，mode={mode}，filters={filters or "-"}）：{query}')
     fn = _search_scifinder if db == 'scifinder' else _search_reaxys
     with _session() as (browser, ctx):
         pg = _tab(browser, ctx, db)
         try:
-            r = fn(pg, query, kind, max_chars)
+            r = fn(pg, query, kind, sort, filters, mode, raw, max_chars)
         except Exception as e:
             log.warn(f'{db} 搜索出错：{type(e).__name__}: {str(e)[:200]}')
-            r = _result(db, code='TIMEOUT', url=getattr(pg, 'url', ''), why=f'{type(e).__name__}: {str(e)[:200]}')
+            r = _result(db, code='TIMEOUT', complete=False, url=getattr(pg, 'url', ''),
+                        why=f'{type(e).__name__}: {str(e)[:200]}')
     r.update(kind=kind, query=query)
     return r
 
 
-def page(db, n, max_chars=30000):
-    """上一次搜索（这个库的标签上停着的那个结果列表）的第 n 页。"""
+def page(db, n, base_url='', raw=False, max_chars=30000):
+    """结果列表第 n 页。base_url = 那次 search 回的 url（缓存命中后标签可能停在别处，所以要带）。"""
     db = check_db(db)
     n = int(n)
     if n < 1:
         raise ValueError('页码从 1 开始')
     with _session() as (browser, ctx):
-        return _page_on(_tab(browser, ctx, db), db, n, max_chars)
-
-
-def _page_on(pg, db, n, max_chars):
-    url = page_url(db, pg.url, n)
-    if not url:
+        pg = _tab(browser, ctx, db)
+        url = page_url(db, base_url or pg.url, n)
+        if not url:
+            if is_login(db, pg.url):
+                return _result(db, code='LOGIN_REQUIRED', url=pg.url, why='要登录：请人在主力机浏览器里登录')
+            return _result(db, code='NO_SEARCH', url=pg.url, why='没有结果列表可翻，先 search')
+        if not _goto(pg, url):
+            return _result(db, code='NAVIGATE_FAILED', url=url, why='翻页打不开')
+        if db == 'reaxys':
+            # Reaxys 是 # 路由，goto 同一文档只换 hash 时不一定重画，补一次刷新
+            pg.reload(wait_until='domcontentloaded')
         if is_login(db, pg.url):
             return _result(db, code='LOGIN_REQUIRED', url=pg.url, why='要登录：请人在主力机浏览器里登录')
-        return _result(db, code='NO_SEARCH', url=pg.url, why='这个库的标签上没有结果列表，先 search')
-    if not _goto(pg, url):
-        return _result(db, code='NAVIGATE_FAILED', url=url, why='翻页打不开')
-    if db == 'reaxys':
-        # Reaxys 是 # 路由，goto 同一文档只换 hash 时不一定重画，补一次刷新
-        pg.reload(wait_until='domcontentloaded')
-    ok = _settle(pg, lambda t: bool(_HAS_RESULTS.search(t)), timeout=45)
-    r = _read(pg, db, max_chars)
-    if not ok:
-        r.update(code='TIMEOUT', why='列表页还在加载，读到的可能不全')
-    return r
+        ok = _wait_items(pg, db)
+        r = _extract(pg, db, raw, max_chars)
+        if not ok:
+            r.update(code='TIMEOUT', complete=False, why='列表页还在加载，读到的可能不全')
+        return r

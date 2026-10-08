@@ -62,6 +62,34 @@ def work(doi):
     return get('/works/' + urllib.parse.quote(doi))['message']
 
 
+def title_similarity(a, b):
+    """两个标题像不像（0–1）：只比字母数字，不管大小写、标点、<i> 标签。"""
+    import difflib
+    norm = lambda s: ' '.join(re.findall(r'[a-z0-9]+', re.sub(r'<[^>]+>', '', s or '').lower()))
+    a, b = norm(a), norm(b)
+    return difflib.SequenceMatcher(None, a, b).ratio() if a and b else 0.0
+
+
+def match_title(title, year=None, author=''):
+    """按标题（+ 年份、第一作者）找 DOI → {doi, score, title, year} 或 None。
+
+    给「只有标题没有 DOI」的列表用（SciFinder 的结果列表就是这样，2026-10-08）。
+    score = 标题相似度；年份对不上扣 0.1。调用方按 score 决定信不信（≥0.9 基本就是它）。
+    """
+    q = {'query.bibliographic': title, 'rows': '3', 'select': 'DOI,title,issued'}
+    if author:
+        q['query.author'] = author
+    items = get('/works?' + urllib.parse.urlencode(q), timeout=20)['message'].get('items') or []
+    best = None
+    for it in items:
+        t = (it.get('title') or [''])[0]
+        y = ((it.get('issued') or {}).get('date-parts') or [[None]])[0][0]
+        s = title_similarity(title, t) - (0.1 if year and y and abs(int(y) - int(year)) > 1 else 0)
+        if not best or s > best['score']:
+            best = {'doi': (it.get('DOI') or '').lower(), 'score': round(s, 3), 'title': t, 'year': y}
+    return best
+
+
 def normalize(m):
     """Crossref message → 本平台统一的文献字典（字段名对齐 `openalex.normalize`）。
 

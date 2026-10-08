@@ -380,7 +380,30 @@ def main():
         check('chemdb：刚用过 → 记 1 次、还要等够间隔', used == 1 and abs(wait - (S.CHEMDB_GAP - 10)) < 0.01, str((used, wait)))
         check('chemdb：两个库分开记次数', S.chemdb_quota('reaxys', up, t0 + 10, daily=3)[0] == 0)
         check('chemdb：隔天清零', S.chemdb_quota('scifinder', up, t0 + 86400 * 2, daily=3)[0] == 0)
-        check('chemdb：新工具挂上了', {'chemdb_search', 'chemdb_page'} <= sn)
+        check('chemdb：新工具挂上了', {'chemdb_search', 'chemdb_page', 'chemdb_status'} <= sn)
+        # v0.5：缓存、补 DOI、库内标记
+        p1 = {'query': 'a b', 'kind': 'references', 'sort': None, 'filters': None, 'mode': 'auto', 'raw': True}
+        check('chemdb 缓存键：raw 不影响、页码影响',
+              S.chemdb_key('scifinder', p1, 1) == S.chemdb_key('scifinder', dict(p1, raw=False), 1)
+              != S.chemdb_key('scifinder', p1, 2))
+        cr = os.path.join(td, 'cache')
+        S.cache_put('k1', {'code': 'OK', 'items': [1]}, now=t0, root=cr)
+        check('chemdb 缓存：当天拿得到、隔天拿不到',
+              S.cache_get('k1', now=t0, root=cr) == {'code': 'OK', 'items': [1]}
+              and S.cache_get('k1', now=t0 + 86400, root=cr) is None)
+        items = [{'type': 'journal', 'title': 'A paper', 'year': 2023, 'authors': ['Lee, K.']},
+                 {'type': 'journal', 'title': 'B paper', 'doi': '10.1/b'},
+                 {'type': 'journal', 'title': 'C paper'},
+                 {'type': 'patent', 'title': 'P'}]
+        scores = {'A paper': {'doi': '10.1/a', 'score': 0.97}, 'C paper': {'doi': '10.1/c', 'score': 0.8}}
+        S.enrich(items, match=lambda it: scores.get(it['title']),
+                 find=lambda d: 'ID_' + d[-1] if d in ('10.1/a', '10.1/b') else None, tier=lambda pid: 'structured')
+        check('chemdb 补 DOI：像就填、不太像标 uncertain、专利不查',
+              items[0]['doi'] == '10.1/a' and not items[0].get('doi_uncertain')
+              and items[2]['doi'] == '10.1/c' and items[2]['doi_uncertain'] and 'doi' not in items[3], str(items))
+        check('chemdb 库内标记：in_library / id / tier',
+              items[0]['in_library'] and items[0]['id'] == 'ID_a' and items[1]['tier'] == 'structured'
+              and items[2]['in_library'] is False, str(items))
     with tempfile.TemporaryDirectory() as td:
         pp = os.path.join(td, 'p.json')
         check('没有进度文件 → 没在跑', S.running_job(pp) == '')
