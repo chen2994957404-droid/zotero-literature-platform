@@ -995,7 +995,11 @@ def _rx_to_docs_of_first_substance(pg, warnings, extra=None):
     return True
 
 
-def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars, structure='', match='exact', subset=None):
+RX_CAS_MIN_DOCS = 50     # CAS 号落到的 Reaxys 物质文献都少于这个数 → 多半是冷门条目，改按结构搜（见 cas_smiles）
+
+
+def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars, structure='', match='exact', subset=None,
+                   cas_smiles='', force_via=False):
     s = SITE['reaxys']
     if not _goto(pg, s['home']):
         return _result('reaxys', code='NAVIGATE_FAILED', why='Reaxys 打不开')
@@ -1031,7 +1035,7 @@ def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars, structu
         return _result('reaxys', code='TIMEOUT', url=pg.url, why='等不到结果预览', warnings=warnings)
     preview = pg.evaluate(_RX_PREVIEW_JS)
     # CAS 号要文献：文献那组是「标题里出现这串数字」的字面匹配，不对 —— 先落到物质，再取它的文献
-    via = kind == 'references' and rx_cas
+    via = kind == 'references' and (rx_cas or force_via)
     word = 'substances' if via else s['card_word'][kind]
     if subset is not None:
         # 调用方自己挑预览里的哪一组（相似检索分 tight / near / average / wide / widest 五档；关键词拆成几组子检索）
@@ -1050,6 +1054,18 @@ def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars, structu
         return _result('reaxys', code='TIMEOUT', url=pg.url, preview=preview, why='点了 View Results 没跳到列表页',
                        warnings=warnings)
     ok = _wait_items(pg, 'reaxys', timeout=60)
+    if via and rx_cas and cas_smiles:
+        cands = [norm_rx_substance(x) for x in pg.evaluate(_RX_SUB_JS)]
+        top = max([c.get('n_documents') or 0 for c in cands] or [0])
+        if top < RX_CAS_MIN_DOCS:
+            # Reaxys 的 CAS 号登记不全（硼酸 10043-35-3 只挂在 7 个矿物 / 水合物条目上，最多 9 篇）→ 按结构搜主条目
+            r = _search_reaxys(pg, '', kind, sort, filters, mode, raw, max_chars, structure=cas_smiles, match='exact',
+                               force_via=True)
+            r['warnings'] = warnings + [f'cas_fallback_to_structure: Reaxys 里 {query} 只挂在文献很少的条目上'
+                                        f'（最多 {top} 篇），改按结构 {cas_smiles} 搜'] + r.get('warnings', [])
+            r['cas_candidates_reaxys'] = [{k: c.get(k) for k in ('reaxys_rn', 'name', 'formula_linear', 'n_documents')}
+                                          for c in cands[:10]]
+            return r
     if via:
         if not _rx_to_docs_of_first_substance(pg, warnings, extra):
             r = _extract(pg, 'reaxys', raw, max_chars, preview=preview, **extra)
@@ -1083,7 +1099,7 @@ def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars, structu
 # ══════════════════════════════════════════════════════════════════════
 
 def search(db, query='', kind='references', structure='', match='exact', sort=None, filters=None, mode='auto',
-           raw=False, max_chars=30000, subset=None, within=None):
+           raw=False, max_chars=30000, subset=None, within=None, cas_smiles=''):
     """在 SciFinder / Reaxys 里搜一次，读结果列表第 1 页。
 
     query：关键词或 CAS 号；structure：SMILES（Reaxys 也收 molfile），match = exact / substructure / similarity。
@@ -1097,14 +1113,15 @@ def search(db, query='', kind='references', structure='', match='exact', sort=No
         raise ValueError('query 和 structure 至少给一个')
     mode = (mode or 'auto').lower()
     log.info(f'{db} 搜索（{kind}，structure={structure or "-"}/{match}，sort={sort or "-"}，filters={filters or "-"}）：{query}')
-    fn = _search_scifinder if db == 'scifinder' else _search_reaxys
     with _session() as (browser, ctx):
         pg = _tab(browser, ctx, db)
         try:
-            kw = {'within': within} if db == 'scifinder' else {}
-            if within and db != 'scifinder':
-                log.warn('Reaxys 不支持 within，忽略')
-            r = fn(pg, query, kind, sort, filters, mode, raw, max_chars, structure=structure, match=match, subset=subset, **kw)
+            if db == 'scifinder':
+                r = _search_scifinder(pg, query, kind, sort, filters, mode, raw, max_chars, structure=structure,
+                                      match=match, subset=subset, within=within)
+            else:
+                r = _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars, structure=structure,
+                                   match=match, subset=subset, cas_smiles=cas_smiles or '')
             if within and db != 'scifinder':
                 r.setdefault('warnings', []).append('within_not_supported_for_reaxys: 把主题词并进 query 让 Reaxys 拆子检索，或用 SciFinder')
         except Exception as e:

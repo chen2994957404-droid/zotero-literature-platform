@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.7.0'
+VERSION = '0.7.1'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -71,7 +71,8 @@ VERSION = '0.7.0'
 # v0.7（同日，Claude Science 用 0.6.2 跑了 6 次后的报告）：异步（等 25 秒，没好回 job_id，chemdb_result 取）·
 #   SciFinder within（在结果内检索，CAS 号 + 主题词）· Reaxys CAS 号对应多个物质时挑文献最多的、候选全列 ·
 #   结构式要文献直接开文献集 · 分面计数不再出 NaN · 界面字（Select Substance / Retrieve CAS RN / No title）不进字段 ·
-#   Reaxys 老文献年份信出处 · 按标题补的 DOI 再对刊名与卷（德文版 / 国际版）
+#   Reaxys 老文献年份信出处 · 按标题补的 DOI 再对刊名与卷（德文版 / 国际版）·
+#   Reaxys 的 CAS 号落到冷门条目（硼酸）时，经 PubChem 换成结构式按原样搜
 
 # 原样借用的（输出本来就合适）
 BORROW = ()     # 2026-10-04 用户定：只给它做不到的（取全文）。数值库它自己会抽，不借了；ping 自己挂
@@ -1092,13 +1093,27 @@ def _chemdb_params(a):
             'within': [t for t in (a.get('within') if isinstance(a.get('within'), list) else [a.get('within')]) if t] or None}
 
 
+def _cas_smiles(db, p):
+    """Reaxys 按 CAS 号查文献时备一个结构式（PubChem），Reaxys 的 CAS 号落到冷门条目时改按结构搜。查不到就算了。"""
+    from shared.adapters import chemdb
+    if db != 'reaxys' or p['structure'] or p['kind'] != 'references' or not chemdb.is_cas_rn(p['query']):
+        return ''
+    try:
+        from shared.adapters import pubchem
+        got = pubchem.cas_to_structure(p['query'])
+        return (got or {}).get('smiles') or ''
+    except Exception:
+        return ''
+
+
 def _chemdb_search(a):
     from shared.adapters import chemdb
     p = _chemdb_params(a)
     mc = int(a.get('maxChars') or 30000)
     return _chemdb_run(a.get('db'), p, 1, lambda db: chemdb.search(
         db, p['query'], p['kind'], structure=p['structure'] or '', match=p['match'] or 'exact', sort=p['sort'],
-        filters=p['filters'], mode=p['mode'], raw=p['raw'], max_chars=mc, subset=p['subset'], within=p['within']),
+        filters=p['filters'], mode=p['mode'], raw=p['raw'], max_chars=mc, subset=p['subset'], within=p['within'],
+        cas_smiles=_cas_smiles(db, p)),
         wait_s=max(0, min(int(a.get('wait_s') if a.get('wait_s') is not None else CHEMDB_WAIT), 50)))
 
 
