@@ -469,7 +469,8 @@ def _goto(pg, url):
 
 
 _PICK_JS = r"""async ([toggle, pattern]) => {
-  const t = document.querySelector(toggle);
+  // 只点看得见的那个（加了筛选后页面上会多出一个藏着的同名按钮，2026-10-08 实测点到藏着的，菜单不出来）
+  const t = [...document.querySelectorAll(toggle)].find(e => e.offsetParent !== null) || document.querySelector(toggle);
   if (!t) return {got: null, seen: [], why: 'no_toggle'};
   t.scrollIntoView({block: 'center'}); t.click();
   await new Promise(r => setTimeout(r, 900));
