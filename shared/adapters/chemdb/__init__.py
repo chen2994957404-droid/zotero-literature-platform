@@ -245,9 +245,10 @@ def _search_scifinder(pg, query, kind, max_chars):
         pg.wait_for_url(re.compile(r'/search/'), timeout=45000)
     except Exception:
         return _result('scifinder', code='TIMEOUT', url=pg.url, why='提交后没跳到结果页')
-    # 总览页：等「View All …」或「No results」出现
+    # 总览页是分块加载的（2026-10-08 实测：物质、反应先到，文献那块晚好几秒）——
+    # 专门等要的那个「View All …」；等满了还没有才算这一类没结果
     want = s['view_all'][kind]
-    _settle(pg, lambda t: want in t or 'No results' in t or 'Showing' in t, timeout=45)
+    _settle(pg, lambda t: want in t or 'No results' in t, timeout=45)
     link = pg.locator(f'text={want}')
     if link.count() == 0:
         r = _read(pg, 'scifinder', max_chars)
