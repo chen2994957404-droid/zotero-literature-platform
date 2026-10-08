@@ -401,6 +401,13 @@ def main():
         check('chemdb 补 DOI：像就填、不太像标 uncertain、专利不查',
               items[0]['doi'] == '10.1/a' and not items[0].get('doi_uncertain')
               and items[2]['doi'] == '10.1/c' and items[2]['doi_uncertain'] and 'doi' not in items[3], str(items))
+        it = {'type': 'journal', 'title': 'T', 'source': 'Angewandte Chemie, International Edition',
+              'citation': 'Angewandte Chemie, International Edition (2019), 58(12), 3800-3804'}
+        check('补 DOI 核对：配到德文版（卷 131 / 刊名无 International）→ 不填，只给候选',
+              S.doi_mismatch(it, {'journal': 'Angewandte Chemie', 'volume': '131'}) != ''
+              and S.doi_mismatch(it, {'journal': 'Angewandte Chemie International Edition', 'volume': '58'}) == '')
+        check('JSON 里不出 NaN', S._no_nan({'a': float('nan'), 'b': [1.0, float('inf')], 'c': 'x'}) == {'a': None, 'b': [1.0, None], 'c': 'x'})
+        check('chemdb_result 挂上了', 'chemdb_result' in sn)
         check('chemdb 库内标记：in_library / id / tier',
               items[0]['in_library'] and items[0]['id'] == 'ID_a' and items[1]['tier'] == 'structured'
               and items[2]['in_library'] is False, str(items))

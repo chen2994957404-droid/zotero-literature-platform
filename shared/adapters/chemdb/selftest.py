@@ -116,6 +116,20 @@ def main():
     check('排序：SciFinder 的选项文字认得出',
           re.search(chemdb.SORTS['cited'], 'Times Cited', re.I) and re.search(chemdb.SORTS['date'], 'Publication Date: Newest', re.I)
           and not re.search(chemdb.SORTS['date'], 'Publication Date: Oldest', re.I) is None)
+    # v0.7（Claude Science 0.6.2 测试报告）
+    check('分面计数 13.4K / (247) → 整数，读不成数给 None（不出 NaN）',
+          chemdb.facet_counts({'Concept': {'Self-healing materials': '247', 'Polymers': '13.4K', 'x': 'abc', 'y': None}})
+          == {'Concept': {'Self-healing materials': 247, 'Polymers': 13400, 'x': None, 'y': None}})
+    check('检索解读：网页提示语不算', chemdb.clean_qi('Try using Advanced Search to build boolean queries.') is None
+          and chemdb.clean_qi('boron and siloxane') == 'boron and siloxane')
+    su = chemdb.norm_sf_substance({'rn': 'Retrieve CAS RN', 'name': 'Select Substance 3',
+                                   'lines': ['Retrieve CAS RN', 'C6H7BO2', 'Phenylboronic acid', 'Select Substance 3', '3']})
+    check('界面字不进字段：CAS 号 / 名字', su['cas_rn'] is None and su['name'] == 'Phenylboronic acid'
+          and su['formula'] == 'C6H7BO2', str(su))
+    old = chemdb.norm_rx_item({'idx': '3', 'type': 'Article', 'title': 'No title', 'source': 'Zeitschrift fuer Kristallographie, 1888, vol. 13',
+                               'onlinedate': '1199145600000'})
+    check('Reaxys 老文献：年份信出处（1888，不是录入日 2008）、「No title」→ None',
+          old['year'] == 1888 and old['title'] is None, str(old))
     check('Reaxys 专利族「4-5」→ rank 4、family_ranks [4,5]、号', rx['rank'] == 4 and rx['family_ranks'] == [4, 5]
           and rx['patent_no'] == 'CN109666219' and rx['assignee'] == 'WANHUA CHEMICAL GROUP' and rx['source'] is None, str(rx))
 

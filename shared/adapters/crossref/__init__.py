@@ -76,7 +76,7 @@ def match_title(title, year=None, author=''):
     给「只有标题没有 DOI」的列表用（SciFinder 的结果列表就是这样，2026-10-08）。
     score = 标题相似度；年份对不上扣 0.1。调用方按 score 决定信不信（≥0.9 基本就是它）。
     """
-    q = {'query.bibliographic': title, 'rows': '3', 'select': 'DOI,title,issued'}
+    q = {'query.bibliographic': title, 'rows': '3', 'select': 'DOI,title,issued,container-title,volume,page'}
     if author:
         q['query.author'] = author
     items = get('/works?' + urllib.parse.urlencode(q), timeout=20)['message'].get('items') or []
@@ -86,7 +86,8 @@ def match_title(title, year=None, author=''):
         y = ((it.get('issued') or {}).get('date-parts') or [[None]])[0][0]
         s = title_similarity(title, t) - (0.1 if year and y and abs(int(y) - int(year)) > 1 else 0)
         if not best or s > best['score']:
-            best = {'doi': (it.get('DOI') or '').lower(), 'score': round(s, 3), 'title': t, 'year': y}
+            best = {'doi': (it.get('DOI') or '').lower(), 'score': round(s, 3), 'title': t, 'year': y,
+                    'journal': (it.get('container-title') or [''])[0], 'volume': it.get('volume'), 'page': it.get('page')}
     return best
 
 

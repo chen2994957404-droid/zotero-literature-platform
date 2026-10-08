@@ -147,16 +147,22 @@ def parse_count(s):
     return int(n * {'K': 1000, 'M': 1000000}.get(m.group(2) or '', 1))
 
 
+def facet_counts(facets):
+    """{facet: {值: '13.4K' | '(247)' | None}} → 整数（K / M 是约数）。页面上读不成数的给 None，绝不出 NaN。"""
+    return {f: {k: parse_count(v) if v else None for k, v in (bins or {}).items()} for f, bins in (facets or {}).items()}
+
+
 _FORMULA_RE = re.compile(r'^(?:[A-Z][a-z]?\d*(?:\.\d+)?|\(|\)|[·.]|\d)+$')
 
 
 def norm_sf_substance(x):
     """SciFinder 物质卡片 → {rank, cas_rn, formula, name, preferred_rn, n_references, n_reactions, n_suppliers}。"""
-    lines = x.get('lines') or []
-    rn = x.get('rn') or (lines[0] if lines else None)
-    formula = next((ln for ln in lines[1:4] if _FORMULA_RE.match(ln) and any(c.isdigit() for c in ln)), None)
-    name = x.get('name') or next((ln for ln in lines[1:5] if ln not in (rn, formula) and not ln.startswith('Preferred')
-                                  and ln != 'Image Not Available'), None)
+    lines = [ln for ln in (x.get('lines') or []) if _no_ui(ln)]
+    rn = x.get('rn') if CAS_RN_RE.match(x.get('rn') or '') else next((ln for ln in lines[:2] if CAS_RN_RE.match(ln)), None)
+    formula = next((ln for ln in lines[:4] if _FORMULA_RE.match(ln) and any(c.isdigit() for c in ln)
+                    and not CAS_RN_RE.match(ln)), None)
+    name = _no_ui(x.get('name')) or next((ln for ln in lines[:5] if ln not in (rn, formula) and not ln.startswith('Preferred')
+                                          and not ln.isdigit() and not CAS_RN_RE.match(ln)), None)
     out = {'rank': x.get('rank'), 'type': 'substance', 'cas_rn': rn, 'formula': formula, 'name': name,
            'n_references': parse_count(x.get('refs')), 'n_reactions': parse_count(x.get('rxns')),
            'n_suppliers': parse_count(x.get('sup'))}
@@ -264,6 +270,23 @@ def parse_sf_bib(bib):
     return out
 
 
+# 网页上的按钮字、占位字（2026-10-08 Claude Science 报：名字里出现「Select Substance 3」、CAS 号是「Retrieve CAS RN」、标题「No title」）
+_UI_TEXT = re.compile(r'^(Select (Substance|Reference|result).*|Retrieve CAS RN|No title|Image Not Available|'
+                      r'View (More|All|Spectra)|Substance in Claims|Full Text|Unspecified)$', re.I)
+_BOILER_QI = re.compile(r'^(Try using Advanced Search|Learn more)', re.I)
+
+
+def _no_ui(s):
+    s = (s or '').strip()
+    return None if not s or _UI_TEXT.match(s) else s
+
+
+def clean_qi(s):
+    """SciFinder「How we're searching your query」下面那行；经物质跳转时那里只剩一句提示语 → None。"""
+    s = (s or '').strip()
+    return None if not s or _BOILER_QI.match(s) else s
+
+
 def _hi(s):
     return re.sub(r'</?(?:hi|mark)>', '', s or '').strip()
 
@@ -297,18 +320,20 @@ def norm_rx_item(x):
     q = urllib.parse.parse_qs(urllib.parse.urlparse(link).query)
     doi = (x.get('doi') or (q.get('doi') or [''])[0] or '').strip().lower() or None
     pub = (q.get('pubno') or [''])[0] or None
-    year = None
-    if x.get('pubdate'):
+    # 年份先信出处里写的（2026-10-08：19 世纪的晶体学文献 online-date 全是 2008 —— 那是 Reaxys 的录入日），
+    # 再信 publication-date，最后才是 online-date
+    y = re.search(r'\b(1[6-9]\d{2}|20\d{2})\b', x.get('source') or '')
+    year = int(y.group(0)) if y else None
+    for k in ('pubdate', 'onlinedate'):
+        if year or not x.get(k):
+            continue
         try:
-            year = time.gmtime(int(x['pubdate']) / 1000).tm_year
+            year = time.gmtime(int(x[k]) / 1000).tm_year
         except (TypeError, ValueError):
             pass
-    if not year:
-        y = re.search(r'\b(19|20)\d{2}\b', x.get('source') or '')
-        year = int(y.group(0)) if y else None
     if not typ and (pub or x.get('members')):
         typ = 'patent'
-    item = {'rank': rank, 'type': typ, 'title': _hi(x.get('title')), 'authors': x.get('authors') or [],
+    item = {'rank': rank, 'type': typ, 'title': _no_ui(_hi(x.get('title'))), 'authors': x.get('authors') or [],
             'source': None if typ == 'patent' else (x.get('source') or None), 'year': year, 'doi': doi,
             'cited': int(x['cited']) if x.get('cited') else None, 'snippet': x.get('snippet'),
             'index_terms': list(dict.fromkeys(_hi(t) for t in (x.get('index_terms') or []) if _hi(t)))[:MAX_TERMS]}
@@ -321,7 +346,7 @@ def norm_rx_item(x):
 def norm_sf_item(x):
     b = parse_sf_bib(x.get('bib'))
     authors = [a.strip() for a in (x.get('authors') or '').split(';') if a.strip()]
-    item = {'rank': x.get('rank'), 'type': b['type'], 'title': _hi(x.get('title')), 'authors': authors,
+    item = {'rank': x.get('rank'), 'type': b['type'], 'title': _no_ui(_hi(x.get('title'))), 'authors': authors,
             'source': b.get('source'), 'year': b.get('year'), 'doi': None, 'language': b.get('language'),
             'citing': x.get('citing'), 'substances': x.get('substances'), 'reactions': x.get('reactions'),
             'snippet': (x.get('snippet') or '').strip() or None}
@@ -492,7 +517,7 @@ _SF_JS = r"""async () => {
   const facets = {};
   document.querySelectorAll('.facet-container').forEach(f => {
     const h = T(f.querySelector('.facet-header-title')); const bins = {};
-    f.querySelectorAll('.bin-list-item').forEach(li => { const n = T(li.querySelector('.bin-name')); const c = T(li.querySelector('.bin-freq')).replace(/[(),]/g, ''); if (n) bins[n] = c ? +c : null; });
+    f.querySelectorAll('.bin-list-item').forEach(li => { const n = T(li.querySelector('.bin-name')); const c = T(li.querySelector('.bin-freq')).replace(/[(),]/g, ''); if (n) bins[n] = c || null; });
     if (h && Object.keys(bins).length) facets[h] = bins;
   });
   const body = document.body.innerText;
@@ -517,7 +542,7 @@ _RX_JS = r"""() => {
       title: g('title') || T(li.querySelector('h3, h4')), authors: [...li.querySelectorAll('.rx-element-authors [data-e2e="author-link"], .rx-element-authors > span')].map(T).filter(Boolean),
       source: T(li.querySelector('.rx-element-literature')), link: g('doc-link'),
       doi: doiA ? T(doiA).replace(/\(opens in a new window\)/, '').trim() : null,
-      pubdate: g('publication-date') || g('online-date'), cited: (txt.match(/Cited (\d+) times?/) || [])[1] || null,
+      pubdate: g('publication-date'), onlinedate: g('online-date'), cited: (txt.match(/Cited (\d+) times?/) || [])[1] || null,
       assignee: m(/Current Patent Assignee:\s*([^\n]+)/), office: m(/Office:\s*([^\n]+)/), members,
       snippet: m(/Abstract hit:\s*\{\.\.\.([\s\S]*?)\.\.\.\}/), index_terms: (g('index-terms') || '').split(/;\s*/).filter(Boolean)};
   });
@@ -592,8 +617,8 @@ def _extract(pg, db, raw, max_chars, **kw):
     r['page'] = page_no(db, pg.url) or 1
     if db == 'scifinder':
         r['items'] = [norm_sf_item(x) for x in d.get('items') or []]
-        r['facets'] = d.get('facets') or {}
-        r['query_interpretation'] = d.get('qi')
+        r['facets'] = facet_counts(d.get('facets'))
+        r['query_interpretation'] = clean_qi(d.get('qi'))
         r['query_modified'] = bool(d.get('modified'))
         r['filters_active'] = d.get('checked') or []
     else:
@@ -638,8 +663,8 @@ def _extract_substances(pg, db, raw, max_chars, **kw):
             if it.get('rank') is None:
                 it['rank'] = base + i + 1
         d = pg.evaluate(_SF_JS.replace("'.reference-data'", "'.no-such-thing'"))   # 只借它读 facets / 检索式
-        r['facets'] = d.get('facets') or {}
-        r['query_interpretation'] = d.get('qi')
+        r['facets'] = facet_counts(d.get('facets'))
+        r['query_interpretation'] = clean_qi(d.get('qi'))
         r['filters_active'] = d.get('checked') or []
         m = re.search(r'(?m)^([\d,]+)\s+Results?$', text)
         r['count'] = int(m.group(1).replace(',', '')) if m else None
@@ -660,6 +685,29 @@ def _extract_substances(pg, db, raw, max_chars, **kw):
         r['text'] = text[:max_chars]
         r['truncated'] = len(text) > max_chars
     return r
+
+
+def _sf_within(pg, terms, warnings):
+    """左侧「Search Within Results」：最多 3 个词，和当前结果取交集（CAS 号 + 主题词就靠它）。"""
+    terms = [t for t in (terms if isinstance(terms, list) else [terms]) if t][:3]
+    if not terms:
+        return []
+    box = pg.locator('.text-search-within-results-facet input[type=text], .text-search-within-results-facet input:not([type])')
+    if not box.count():
+        pg.locator('button:has-text("Search Within Results")').first.click()      # 收着的，先展开
+        pg.wait_for_timeout(800)
+    n = box.count()
+    if not n:
+        warnings.append('within_box_missing: 找不到「Search Within Results」的输入框')
+        return []
+    for i, t in enumerate(terms[:n]):
+        box.nth(i).fill(t)
+    if len(terms) > n:
+        warnings.append(f'within_truncated: 页面只有 {n} 个框，多出来的词没用上')
+    pg.locator('.text-search-within-results-facet button:has-text("Search")').first.click()
+    pg.wait_for_timeout(2500)
+    _wait_items(pg, 'scifinder')
+    return terms[:n]
 
 
 def _sf_filters(pg, filters, warnings):
@@ -783,7 +831,8 @@ def _sf_to_refs_of_first_substance(pg, warnings):
     return True
 
 
-def _search_scifinder(pg, query, kind, sort, filters, mode, raw, max_chars, structure='', match='exact', subset=None):
+def _search_scifinder(pg, query, kind, sort, filters, mode, raw, max_chars, structure='', match='exact', subset=None,
+                      within=None):
     s = SITE['scifinder']
     err = _sf_home(pg)
     if err:
@@ -839,6 +888,8 @@ def _search_scifinder(pg, query, kind, sort, filters, mode, raw, max_chars, stru
             ok = _wait_items(pg, 'scifinder')
         else:
             warnings.append('original_mode_unavailable: 这次 SciFinder 没改写检索式')
+    if within:
+        extra['within_applied'] = _sf_within(pg, within, warnings)
     applied = _sf_filters(pg, filters, warnings) if filters else []
     if sort:
         got, seen = _pick(pg, s['sort'], SORTS[sort])
@@ -917,9 +968,19 @@ def _rx_draw(pg, structure, match, warnings):
     return got.get('smiles')
 
 
-def _rx_to_docs_of_first_substance(pg, warnings):
-    """Reaxys 物质列表 → 第一个物质的「Documents - N」→ 它的文献。"""
-    b = pg.locator('ul.e2e-results-list > li').first.locator('button:has-text("Documents -"), a:has-text("Documents -")')
+def _rx_to_docs_of_first_substance(pg, warnings, extra=None):
+    """Reaxys 物质列表 → 文献最多的那个物质的「Documents - N」→ 它的文献。
+
+    一个 CAS 号在 Reaxys 里可以对应好几个物质（2026-10-08：硼酸 10043-35-3 对应 7 个，第一个是只有 9 篇
+    19 世纪晶体学文献的条目）—— 挑文献最多的，候选全列进 substance_candidates。
+    """
+    cands = [norm_rx_substance(x) for x in pg.evaluate(_RX_SUB_JS)]
+    best = max(range(len(cands)), key=lambda i: cands[i].get('n_documents') or 0) if cands else 0
+    if extra is not None and cands:
+        extra['substance_candidates'] = [{k: c.get(k) for k in ('rank', 'cas_rn', 'reaxys_rn', 'name', 'formula_linear',
+                                                                'n_documents')} for c in cands[:20]]
+        extra['substance_chosen'] = cands[best].get('reaxys_rn')
+    b = pg.locator('ul.e2e-results-list > li').nth(best).locator('button:has-text("Documents -"), a:has-text("Documents -")')
     if not b.count():
         warnings.append('no_documents_link: 这个物质没有「Documents」')
         return False
@@ -970,7 +1031,7 @@ def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars, structu
         return _result('reaxys', code='TIMEOUT', url=pg.url, why='等不到结果预览', warnings=warnings)
     preview = pg.evaluate(_RX_PREVIEW_JS)
     # CAS 号要文献：文献那组是「标题里出现这串数字」的字面匹配，不对 —— 先落到物质，再取它的文献
-    via = kind == 'references' and (rx_cas or (structure and match == 'exact'))
+    via = kind == 'references' and rx_cas
     word = 'substances' if via else s['card_word'][kind]
     if subset is not None:
         # 调用方自己挑预览里的哪一组（相似检索分 tight / near / average / wide / widest 五档；关键词拆成几组子检索）
@@ -990,7 +1051,7 @@ def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars, structu
                        warnings=warnings)
     ok = _wait_items(pg, 'reaxys', timeout=60)
     if via:
-        if not _rx_to_docs_of_first_substance(pg, warnings):
+        if not _rx_to_docs_of_first_substance(pg, warnings, extra):
             r = _extract(pg, 'reaxys', raw, max_chars, preview=preview, **extra)
             r['warnings'] = warnings + r['warnings']
             return r
@@ -1022,7 +1083,7 @@ def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars, structu
 # ══════════════════════════════════════════════════════════════════════
 
 def search(db, query='', kind='references', structure='', match='exact', sort=None, filters=None, mode='auto',
-           raw=False, max_chars=30000, subset=None):
+           raw=False, max_chars=30000, subset=None, within=None):
     """在 SciFinder / Reaxys 里搜一次，读结果列表第 1 页。
 
     query：关键词或 CAS 号；structure：SMILES（Reaxys 也收 molfile），match = exact / substructure / similarity。
@@ -1040,7 +1101,12 @@ def search(db, query='', kind='references', structure='', match='exact', sort=No
     with _session() as (browser, ctx):
         pg = _tab(browser, ctx, db)
         try:
-            r = fn(pg, query, kind, sort, filters, mode, raw, max_chars, structure=structure, match=match, subset=subset)
+            kw = {'within': within} if db == 'scifinder' else {}
+            if within and db != 'scifinder':
+                log.warn('Reaxys 不支持 within，忽略')
+            r = fn(pg, query, kind, sort, filters, mode, raw, max_chars, structure=structure, match=match, subset=subset, **kw)
+            if within and db != 'scifinder':
+                r.setdefault('warnings', []).append('within_not_supported_for_reaxys: 把主题词并进 query 让 Reaxys 拆子检索，或用 SciFinder')
         except Exception as e:
             log.warn(f'{db} 搜索出错：{type(e).__name__}: {str(e)[:200]}')
             r = _result(db, code='TIMEOUT', complete=False, url=getattr(pg, 'url', ''),
