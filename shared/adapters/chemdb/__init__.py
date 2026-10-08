@@ -901,8 +901,12 @@ def _rx_draw(pg, structure, match, warnings):
     if not got or not got.get('ok'):
         warnings.append(f'structure_not_recognized: MarvinJS 没收下这个结构式（{(got or {}).get("why", "")}）')
         return None
-    pg.locator(f'label:text-is("{SITE["reaxys"]["match_label"][match]}")').first.click()
-    pg.wait_for_timeout(400)
+    # 在页面里按文字点单选（Playwright 的 text-is 对这几个 label 不灵，2026-10-08 实测「Similar」找不到）
+    hit = pg.evaluate("""(t) => { const l = [...document.querySelectorAll('label')].find(x => (x.innerText || '').trim() === t);
+        if (!l) return false; l.click(); return true; }""", SITE['reaxys']['match_label'][match])
+    if not hit:
+        warnings.append(f'match_not_found: {SITE["reaxys"]["match_label"][match]}（编辑器页面上没有这个选项）')
+    pg.wait_for_timeout(600)
     pg.locator('button:text-is("Transfer to query")').first.click()
     pg.wait_for_url(re.compile(r'#/search/quick/query'), timeout=30000)
     pg.wait_for_timeout(1500)
