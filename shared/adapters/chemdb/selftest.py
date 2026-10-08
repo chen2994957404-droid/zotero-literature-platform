@@ -130,6 +130,12 @@ def main():
                                'onlinedate': '1199145600000'})
     check('Reaxys 老文献：年份信出处（1888，不是录入日 2008）、「No title」→ None',
           old['year'] == 1888 and old['title'] is None, str(old))
+    pt = chemdb.norm_rx_item({'idx': '2', 'type': 'Patent', 'title': 'Process', 'assignee': 'UBE INDUSTRIES - EP436314, 1991, A1',
+                              'link': 'https://lls.reaxys.com/xflink?pubno=EP436314&pubdate=1991&kindcode=A1'})
+    check('Reaxys 专利申请人不带专利号', pt['assignee'] == 'UBE INDUSTRIES', str(pt))
+    rs2 = chemdb.norm_rx_substance({'name': 'sodium borate', 'lines': ['2', 'BO3(3-)*3Na(1+)', 'CAS Registry Number:', 'Retrieve CAS RN',
+                                                                        'Documents - 2,440']})
+    check('Reaxys 物质没有 CAS 号 → None（不是「Retrieve CAS RN」）', rs2['cas_rn'] is None and rs2['n_documents'] == 2440, str(rs2))
     check('Reaxys 专利族「4-5」→ rank 4、family_ranks [4,5]、号', rx['rank'] == 4 and rx['family_ranks'] == [4, 5]
           and rx['patent_no'] == 'CN109666219' and rx['assignee'] == 'WANHUA CHEMICAL GROUP' and rx['source'] is None, str(rx))
 

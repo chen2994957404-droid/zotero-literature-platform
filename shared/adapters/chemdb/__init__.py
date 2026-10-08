@@ -190,7 +190,8 @@ def norm_rx_substance(x):
     mw = after('Molecular Weight:')
     sup = re.search(r'Number of Suppliers:\s*([\d,]+)', ' '.join(lines))
     return {'rank': int(lines[0]) if lines and lines[0].isdigit() else None, 'type': 'substance',
-            'cas_rn': after('CAS Registry Number:'), 'reaxys_rn': after('Reaxys Registry Number'),
+            'cas_rn': (lambda v: v if CAS_RN_RE.match(v or '') else None)(after('CAS Registry Number:')),
+            'reaxys_rn': after('Reaxys Registry Number'),
             'name': x.get('name') or None, 'formula_linear': lines[1] if len(lines) > 1 else None,
             'mw': float(mw) if mw and re.match(r'^[\d.]+$', mw) else None,
             'n_documents': counts.get('Documents'), 'n_reactions': counts.get('Reactions'),
@@ -339,7 +340,8 @@ def norm_rx_item(x):
             'index_terms': list(dict.fromkeys(_hi(t) for t in (x.get('index_terms') or []) if _hi(t)))[:MAX_TERMS]}
     if typ == 'patent':
         item.update(patent_no=pub or ((x.get('members') or [None])[0]), family_members=x.get('members') or None,
-                    family_ranks=family, assignee=x.get('assignee'), office=x.get('office'))
+                    family_ranks=family, office=x.get('office'),
+                    assignee=re.sub(r'\s+-\s+[A-Z]{2}\d[\dA-Z]*,\s*\d{4}.*$', '', x.get('assignee') or '') or None)
     return _slim(item)
 
 
@@ -692,10 +694,13 @@ def _sf_within(pg, terms, warnings):
     terms = [t for t in (terms if isinstance(terms, list) else [terms]) if t][:3]
     if not terms:
         return []
-    box = pg.locator('.text-search-within-results-facet input[type=text], .text-search-within-results-facet input:not([type])')
-    if not box.count():
-        pg.locator('button:has-text("Search Within Results")').first.click()      # 收着的，先展开
+    # 这一栏默认是收着的（aria-expanded=false）：输入框在 DOM 里、字也填得进，但「Search」点不着 ——
+    # 2026-10-08 实测填了词结果数没变。先展开再填再点。
+    head = pg.locator('.text-search-within-results-facet button.facet-header')
+    if head.count() and head.first.get_attribute('aria-expanded') == 'false':
+        head.first.click()
         pg.wait_for_timeout(800)
+    box = pg.locator('.text-search-within-results-facet input.text-query-input')
     n = box.count()
     if not n:
         warnings.append('within_box_missing: 找不到「Search Within Results」的输入框')
@@ -704,9 +709,14 @@ def _sf_within(pg, terms, warnings):
         box.nth(i).fill(t)
     if len(terms) > n:
         warnings.append(f'within_truncated: 页面只有 {n} 个框，多出来的词没用上')
-    pg.locator('.text-search-within-results-facet button:has-text("Search")').first.click()
-    pg.wait_for_timeout(2500)
+    before = _body(pg)
+    m0 = re.search(r'(?m)^([\d,]+)\s+Results?$', before)
+    pg.locator('.text-search-within-results-facet .search-button').first.click()
+    pg.wait_for_timeout(3000)
     _wait_items(pg, 'scifinder')
+    m1 = re.search(r'(?m)^([\d,]+)\s+Results?$', _body(pg))
+    if m0 and m1 and m0.group(1) == m1.group(1):
+        warnings.append(f'within_no_effect: 结果数没变（{m1.group(1)}），这个词可能没生效')
     return terms[:n]
 
 
