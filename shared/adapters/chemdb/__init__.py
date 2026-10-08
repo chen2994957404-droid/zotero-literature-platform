@@ -86,6 +86,10 @@ SITE = {
         'item': 'ul.e2e-results-list > li',
         'page_size': '[role=combobox][aria-label="Results per page"]',
         'match_label': {'exact': 'As drawn', 'substructure': 'As substructure', 'similarity': 'Similar'},
+        # 快速检索框旁边的三个按钮（data-e2e 比文字稳：挂着结构时按钮文字会带别的东西，2026-10-08 实测 text-is 找不到）
+        'clear_structure': '[data-e2e="e2e-build-query-structureDrawing-clear-button"]',
+        'draw': '[data-e2e="e2e-build-query-structuredrawing-draw"]',
+        'search': '[data-e2e="search query"], [data-testid="search query"]',
         'sort': 'button[aria-label^="Select sorting category"]',
     },
 }
@@ -629,6 +633,10 @@ def _extract_substances(pg, db, raw, max_chars, **kw):
             pg.evaluate('async () => { for (let i = 0; i < 20; i++) { window.scrollTo(0, document.body.scrollHeight); '
                         'await new Promise(r => setTimeout(r, 400)); } window.scrollTo(0, 0); }')
         r['items'] = [norm_sf_substance(x) for x in pg.evaluate(_SF_SUB_JS)]
+        base = (r['page'] - 1) * len(r['items'])
+        for i, it in enumerate(r['items']):
+            if it.get('rank') is None:
+                it['rank'] = base + i + 1
         d = pg.evaluate(_SF_JS.replace("'.reference-data'", "'.no-such-thing'"))   # 只借它读 facets / 检索式
         r['facets'] = d.get('facets') or {}
         r['query_interpretation'] = d.get('qi')
@@ -882,7 +890,7 @@ _RX_IMPORT_JS = r"""async ([mol, fmt]) => {
 
 def _rx_draw(pg, structure, match, warnings):
     """结构式进 Reaxys 的 MarvinJS（importStructure）→ 选检索方式 → Transfer to query → Search。→ 编辑器里读回的 SMILES。"""
-    pg.locator('button:text-is("Draw")').first.click()
+    pg.locator(SITE['reaxys']['draw']).first.click()
     pg.wait_for_selector('iframe[src*="structure-editor"]', timeout=30000)
     got = None
     for _ in range(20):                       # 编辑器要加载一会
@@ -930,9 +938,11 @@ def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars, structu
                            why='Reaxys 要登录：请人在主力机「取全文用的浏览器」里登录（机构登录或 Elsevier 账号）')
         return _result('reaxys', code='TIMEOUT', url=pg.url, why='等不到搜索框')
     warnings, extra = [], {}
-    rm = pg.locator('button[aria-label="Clear quick search structure"]')
-    if rm.count():
-        rm.first.click()                      # 上一次的结构还挂在搜索框上，不拿掉会叠在一起搜
+    for _ in range(3):                        # 上一次的结构还挂在搜索框上，不拿掉会叠在一起搜（2026-10-08 实测叠过）
+        rm = pg.locator(s['clear_structure'])
+        if not rm.count():
+            break
+        rm.first.click()
         pg.wait_for_timeout(800)
     pg.fill(s['input'], '')
     rx_cas = is_cas_rn(query) and not structure
@@ -943,7 +953,7 @@ def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars, structu
         extra['structure_match'] = match
         if query:
             pg.fill(s['input'], query)
-        pg.locator('button:text-is("Search")').first.click()
+        pg.locator(s['search']).first.click()
     else:
         pg.fill(s['input'], query)
         pg.keyboard.press('Enter')
