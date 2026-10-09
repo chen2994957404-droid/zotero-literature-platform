@@ -32,7 +32,7 @@ from shared.kernel.log import get_logger
 log = get_logger('jcr')
 
 HOME = 'https://jcr.clarivate.com/jcr/home'
-PROFILE = 'https://jcr.clarivate.com/jcr-jp/journal-profile?journal={j}&year={y}'
+PROFILE = 'https://jcr.clarivate.com/jcr-jp/journal-profile?journal={j}&year={y}'   # journal 收全称；year 空 = 最新一年
 _ISSN = re.compile(r'^\d{4}-\d{3}[\dXx]$')
 
 
@@ -110,6 +110,8 @@ def parse_profile(text):
     for r in _RANK.finditer(sec):
         out['ranks'].append({'category': r['cat'].strip(), 'year': int(r['year']), 'rank': r['rank2'],
                              'quartile': r['q'], 'percentile': _num(r['pct'])})
+    if re.search(r'(?m)^\s*On Hold\s*$', t) or 'this journal was ‘On Hold’' in t or "this journal was 'On Hold'" in t:
+        out['status'] = 'On Hold'          # JCR 发布时暂停评估，当年没有 JIF（2026-10-09 实测 ACS Appl. Mater. Interfaces）
     out['categories'] = [r['category'] for r in out['ranks']] or ([_after(lines, 'CATEGORY')] if _after(lines, 'CATEGORY') else [])
     return out
 
@@ -214,14 +216,12 @@ def journal(q, year=None):
         if (title.lower() != q.lower()) and not _ISSN.match(q):
             warnings.append(f'picked_suggestion: 「{q}」没有完全同名的，取了下拉里的「{title}」；其他候选：'
                             + ' / '.join(s['title'] for j, s in enumerate(sugg) if j != i)[:200])
-        if year:
-            try:
-                pg.goto(PROFILE.format(j=urllib.parse.quote(title), y=int(year)), wait_until='load', timeout=60000)
-            except Exception as e:
-                return _result(code='NAVIGATE_FAILED', url=pg.url, why=f'打不开期刊页：{str(e)[:120]}')
-        else:
-            pg.locator('li.suggestion-item p.journal-title').nth(i).click()
-        if not _wait(pg, lambda t: 'JOURNAL IMPACT FACTOR' in t, timeout=45):
+        # 不点下拉（Angular 页面上点击时灵时不灵，2026-10-09 实测）：认出正式刊名后直接开期刊页
+        try:
+            pg.goto(PROFILE.format(j=urllib.parse.quote(title), y=int(year) if year else ''), wait_until='load', timeout=60000)
+        except Exception as e:
+            return _result(code='NAVIGATE_FAILED', url=pg.url, why=f'打不开期刊页：{str(e)[:120]}')
+        if not _wait(pg, lambda t: 'JOURNAL IMPACT FACTOR' in t or 'On Hold' in t or 'Journal Citation Indicator (JCI)' in t, timeout=45):
             if is_login(pg.url):
                 return _login(pg)
             return _result(code='TIMEOUT', url=pg.url, warnings=warnings, why='期刊页 45 秒没出来')
@@ -231,9 +231,11 @@ def journal(q, year=None):
             pg.evaluate('window.scrollBy(0, Math.max(800, window.innerHeight))')
             pg.wait_for_timeout(1000)
         got = parse_profile(_body(pg))
-        if not got['ranks']:
+        if got.get('status') == 'On Hold':
+            warnings.append('on_hold: JCR 发布时这本刊处于「On Hold」（暂停评估），没有当年的 JIF —— 去 Master Journal List 看现状')
+        elif not got['ranks']:
             warnings.append('no_rank: 页面上没读到学科排名（ESCI 刊或页面没加载完）')
-        return _result(ok=True, code='OK' if got.get('jif') is not None or got.get('ranks') else 'NO_RESULTS',
+        return _result(ok=True, code='OK' if got.get('jif') is not None or got.get('ranks') or got.get('status') else 'NO_RESULTS',
                        url=pg.url, warnings=warnings, query=q, journal=got)
 
 

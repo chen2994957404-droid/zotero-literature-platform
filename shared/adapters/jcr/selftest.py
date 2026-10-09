@@ -47,6 +47,11 @@ def main():
     check('期刊页：学科排名只取最近一年、不混进 2023 年前的分版排名',
           p['ranks'] == [{'category': 'POLYMER SCIENCE', 'year': 2025, 'rank': '19/96', 'quartile': 'Q1', 'percentile': 80.7}], p['ranks'])
     check('期刊页：学科列表', p['categories'] == ['POLYMER SCIENCE'])
+    h = jcr.parse_profile('\n'.join(['ACS Applied Materials & Interfaces', '', 'ISSN', '', '1944-8244', '',
+                                     'Journal’s performance', ' On Hold', '',
+                                     'At the point of JCR release in June 1, this journal was ‘On Hold’. Please check the Master Journal List.']))
+    check('期刊页：On Hold 的刊标出来、没有 JIF', h.get('status') == 'On Hold' and h['jif'] is None and h['issn'] == '1944-8244', h)
+    check('期刊页：正常的刊没有 status', 'status' not in p)
 
     sugg = [{'title': 'MACROMOLECULES', 'issns': ['0024-9297', '1520-5835']},
             {'title': 'BIOMACROMOLECULES', 'issns': ['1525-7797', '1526-4602']}]
