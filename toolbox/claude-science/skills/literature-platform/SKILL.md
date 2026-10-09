@@ -1,6 +1,6 @@
 ---
 name: literature-platform
-description: The user's own literature platform (evidence library of ~1100 polymer / materials papers with parsed full text, SI, tables, figures, plus institutional full-text download, plus read-only SciFinder / Reaxys / PoLyInfo searching through the user's logged-in browser). Use it FIRST whenever the task involves papers, literature, references, a DOI, full text, SI, or "what does the literature say" — 文献、论文、全文、SI、DOI、证据库、库里有没有、取全文、读原文、参考文献、SciFinder、Reaxys、专利、CAS、PoLyInfo、聚合物性质、Tg、密度. Reach it with the `litcall` command on the SSH host zotero-b.
+description: The user's own literature platform (evidence library of ~1100 polymer / materials papers with parsed full text, SI, tables, figures, plus institutional full-text download, plus read-only SciFinder / Reaxys / PoLyInfo / CNKI (中国知网) searching through the user's logged-in browser). Use it FIRST whenever the task involves papers, literature, references, a DOI, full text, SI, or "what does the literature say" — 文献、论文、全文、SI、DOI、证据库、库里有没有、取全文、读原文、参考文献、SciFinder、Reaxys、专利、CAS、PoLyInfo、聚合物性质、Tg、密度、知网、学位论文、硕博论文、中国专利. Reach it with the `litcall` command on the SSH host zotero-b.
 ---
 
 # Literature platform (via `litcall` on SSH host `zotero-b`)
@@ -8,7 +8,7 @@ description: The user's own literature platform (evidence library of ~1100 polym
 Run on the SSH host **zotero-b** (not locally):
 
 ```bash
-~/bin/litcall --version                    # litcall + server version (expect server 0.8.x)
+~/bin/litcall --version                    # litcall + server version (expect server 0.9.x)
 ~/bin/litcall --list                       # tools + args (one JSON per line)
 ~/bin/litcall <tool> '<json args>'         # prints JSON result; exit 1 on tool error
 ~/bin/litcall --batch < calls.jsonl        # many calls, one session: {"tool":..,"args":{..}} per line
@@ -197,3 +197,29 @@ PIDs or samples. For a systematic survey, tell the user what to look at instead.
 `code: "CAPTCHA_REQUIRED"`; the server has popped a reminder on the user's desktop. Tell the user, wait for them to say it's
 done, then call `polyinfo_current` (free) to read the page — do **not** call `polyinfo_sample` again.
 `LOGIN_REQUIRED` → ask the user to log in to PoLyInfo with the DICE account in the "取全文用的浏览器".
+
+## CNKI 中国知网 (server 0.9): `cnki_status`, `cnki_search`, `cnki_page`, `cnki_detail`, `cnki_current`
+
+Chinese master's / PhD theses, Chinese journals, conferences and **Chinese patents**. The school's IP licence covers it
+(no login). Chinese theses on polyborosiloxanes are numerous and much more detailed than the journal papers
+(full synthesis, raw data, every characterisation) — check here when English literature is thin.
+
+```bash
+~/bin/litcall cnki_search '{"query":"聚硼硅氧烷","kind":"thesis"}'       # thesis = PhD + master; phd / master / journal / conference / patent / all
+~/bin/litcall cnki_search '{"query":"硼酸酯 动态共价 自修复 弹性体","kind":"patent","sort":"date"}'
+~/bin/litcall cnki_page   '{"page":2}'                                     # 20 per page
+~/bin/litcall cnki_detail '{"n":2}'                                        # rank on the current results page (or {"url": ...})
+```
+
+- `cnki_search` → `items[]`: rank, title, authors, source (journal, or degree-granting university), date, type (期刊 / 硕士 /
+  博士 / 中国专利 …), cited, downloads, url; patents: inventors, applicants, date_applied, date_published, patent_no.
+  Plus `count`, `pages`, and `counts` per database for that query (e.g. `{学术期刊: 47, 学位论文: 36, 博士: 4, 硕士: 32}`).
+- `cnki_detail` → `detail.fields` (摘要 abstract, 关键词, DOI, 分类号, 导师 supervisor, 学科专业, 基金; patents: 申请号, 申请人,
+  主权项 main claim, 法律状态) and `detail.outline`: **the thesis's whole table of contents** (e.g. 77 lines) — use it to
+  decide which thesis is worth the user downloading.
+- Search is by topic (主题). Chinese terms work best (聚硼硅氧烷, 硼硅氧烷, 硼酸酯键, 动态共价键, 自修复, 剪切增稠); English
+  terms hit the English abstracts of Chinese papers.
+- **Rules:** ≥30 s between calls, 30 calls/day; same search/page/detail on the same day is cached (free).
+  CNKI shows a slider CAPTCHA when used a lot → `CAPTCHA_REQUIRED` + desktop reminder; tell the user, then `cnki_current`.
+- **No downloading.** CNKI bans the whole university IP for bulk downloads. If a thesis is worth reading in full, tell the
+  user which one; they click "PDF下载" themselves.
