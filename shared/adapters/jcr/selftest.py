@@ -58,6 +58,7 @@ def main():
     check('下拉：同名优先', jcr.pick_suggestion('Macromolecules', sugg) == 0)
     check('下拉：ISSN 对得上优先', jcr.pick_suggestion('1525-7797', sugg) == 1)
     check('下拉：没同名取第一个、没建议给 None', jcr.pick_suggestion('Macromol', sugg) == 0 and jcr.pick_suggestion('x', []) is None)
+    check('最新 JCR 年份：7 月起是去年、之前是前年', jcr.latest_year((2026, 10)) == 2025 and jcr.latest_year((2026, 3)) == 2024)
     check('登录页认得出', jcr.is_login('https://access.clarivate.com/login?app=jcr&detectSession=true')
           and not jcr.is_login('https://jcr.clarivate.com/jcr/home'))
 

@@ -32,13 +32,21 @@ from shared.kernel.log import get_logger
 log = get_logger('jcr')
 
 HOME = 'https://jcr.clarivate.com/jcr/home'
-PROFILE = 'https://jcr.clarivate.com/jcr-jp/journal-profile?journal={j}&year={y}'   # journal 收全称；year 空 = 最新一年
+PROFILE = 'https://jcr.clarivate.com/jcr-jp/journal-profile?journal={j}&year={y}'   # journal 收全称；year 必须给（空的会出一个假的「On Hold」占位页）
 _ISSN = re.compile(r'^\d{4}-\d{3}[\dXx]$')
 
 
 # ══════════════════════════════════════════════════════════════════════
 # 纯函数（自测覆盖）
 # ══════════════════════════════════════════════════════════════════════
+
+def latest_year(today=None):
+    """JCR 每年 6 月发布上一年的数据：7 月起最新是去年，之前是前年。
+    年份**不能留空**：留空时期刊页是一个对任何刊都一样的「On Hold」占位页（2026-10-09 实测，差点把它当成真的）。"""
+    t = today or time.localtime()
+    y, m = (t.tm_year, t.tm_mon) if hasattr(t, 'tm_year') else (t[0], t[1])
+    return y - 1 if m >= 7 else y - 2
+
 
 def is_login(url):
     return 'access.clarivate.com/login' in (url or '') or '/login?' in (url or '')
@@ -220,7 +228,7 @@ def journal(q, year=None):
         # 先清空再开：同一个前端应用里换刊，旧页面的字会留一会儿（2026-10-09 实测把上一本的「On Hold」读成了这一本的）
         try:
             pg.goto('about:blank', timeout=15000)
-            pg.goto(PROFILE.format(j=urllib.parse.quote(title), y=int(year) if year else ''), wait_until='load', timeout=60000)
+            pg.goto(PROFILE.format(j=urllib.parse.quote(title), y=int(year) if year else latest_year()), wait_until='load', timeout=60000)
         except Exception as e:
             return _result(code='NAVIGATE_FAILED', url=pg.url, why=f'打不开期刊页：{str(e)[:120]}')
         want = title.lower()
