@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.10.1'
+VERSION = '0.10.2'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -1137,7 +1137,14 @@ def _from_job(job_id, d, params=None):
         return _deliver(d['result'], d.get('db'), params or d.get('params') or {}, False)
     if d.get('state') == 'failed':
         raise ValueError('这次检索出错了：%s' % d.get('error'))
+    if _stale(d):
+        raise ValueError('这次检索被打断了（服务中途重启过，作业记录停在「运行中」超过 10 分钟）；同样的参数重交一次即可')
     return _pending(job_id, d.get('db'), d)
+
+
+def _stale(d, now=None):
+    """作业记录停在 running 却超过 STALE_SECS 没完：线程已经随服务重启没了（2026-10-09 实测留下过一条）。"""
+    return d.get('state') == 'running' and (now or time.time()) - float(d.get('started') or 0) > STALE_SECS
 
 
 def _chemdb_run(db, params, page, fetch, wait_s=CHEMDB_WAIT):
@@ -1159,7 +1166,8 @@ def _chemdb_run(db, params, page, fetch, wait_s=CHEMDB_WAIT):
                          f'当天查过的检索照样能从缓存拿（不扣次数）')
     if not _chemdb_lock.acquire(blocking=False):
         busy = [f for f in os.listdir(os.path.dirname(_job_path('x')))
-                if _load(os.path.join(os.path.dirname(_job_path('x')), f)).get('state') == 'running']
+                if _load(os.path.join(os.path.dirname(_job_path('x')), f)).get('state') == 'running'
+                and not _stale(_load(os.path.join(os.path.dirname(_job_path('x')), f)))]
         raise ValueError('另一个借浏览器的检索正在跑（%s）；等它跑完（chemdb_result）再交' %
                          ', '.join(b[:-5] for b in busy) or '?')
     _job_write(key, {'state': 'running', 'db': db, 'params': params, 'page': page, 'started': time.time()})
