@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.8.0'
+VERSION = '0.9.0'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -77,6 +77,9 @@ VERSION = '0.8.0'
 #   用户原话「不是要批量抓取数据，只是省去我截图的过程，需要我点的时候我点一下」。条款禁止抓取、网站自带人机验证，
 #   所以比 SciFinder 更保守：两次至少隔 POLYINFO_GAP 秒、每天 POLYINFO_DAILY 次；撞验证码回 CAPTCHA_REQUIRED +
 #   主力机桌面弹提醒，人点完用 polyinfo_current 读那一页（不重查、不扣次数）。验证码永远是人填。
+# v0.9（同日，用户「需要的都可以用起来」）：cnki_* —— 中国知网（学位论文 / 期刊 / 会议 / 中国专利），学校按 IP 授权。
+#   同一套账本 / 缓存 / 作业；两次至少隔 CNKI_GAP 秒、每天 CNKI_DAILY 次；拼图验证码同 PoLyInfo 的处理（人拖、cnki_current 读）。
+#   只读：检索、翻页、摘要页（含学位论文的章节目录）。不下载全文 —— 知网对批量下载封整个学校的出口 IP。
 
 # 原样借用的（输出本来就合适）
 BORROW = ()     # 2026-10-04 用户定：只给它做不到的（取全文）。数值库它自己会抽，不借了；ping 自己挂
@@ -89,6 +92,8 @@ CHEMDB_GAP = 30        # SciFinder / Reaxys 两次操作至少隔几秒（人的
 CHEMDB_DAILY = 20      # 每个库每天最多几次（搜索和翻页都算）；控制面板 CHEMDB_DAILY 可改
 POLYINFO_GAP = 45      # PoLyInfo 两次至少隔几秒：2026-10-09 隔 30 秒连查 5 次就弹了验证码
 POLYINFO_DAILY = 15    # PoLyInfo 每天最多几次（检索 / 样品列表 / 样品详情各算一次）；控制面板 POLYINFO_DAILY 可改
+CNKI_GAP = 30          # 知网两次至少隔几秒
+CNKI_DAILY = 30        # 知网每天最多几次（检索 / 翻页 / 摘要页各算一次）；控制面板 CNKI_DAILY 可改
 MAX_OUT = 50000        # 一次返回的结构化数据上限（字节）：调用方的远程命令输出过 64 KB 就被截断（2026-10 实测）
 
 INSTRUCTIONS = """\
@@ -106,7 +111,10 @@ SciFinder / Reaxys：先 `chemdb_status`（不扣次数），再 `chemdb_search`
 code=LOGIN_REQUIRED 时请人在主力机浏览器里登录。
 PoLyInfo（聚合物实测性质）：`polyinfo_search` → `polyinfo_samples` → `polyinfo_sample`（组成、出处、原文的组成–性质表）。
 更保守：两次至少隔 45 秒、每天 15 次。样品详情页网站每次要人机验证：回 CAPTCHA_REQUIRED 时等人在主力机浏览器点完，
-再用 `polyinfo_current` 读那一页（不扣次数）。它的条款禁止批量获取 —— 只查回答眼前问题需要的那几条。"""
+再用 `polyinfo_current` 读那一页（不扣次数）。它的条款禁止批量获取 —— 只查回答眼前问题需要的那几条。
+中国知网（中文硕博论文、中文期刊、中国专利）：`cnki_search`（kind=thesis/phd/master/journal/patent…）→ `cnki_page` 翻页 →
+`cnki_detail`（摘要、关键词、导师、学位论文的整本目录、专利主权项）。两次至少隔 30 秒、每天 30 次；拼图验证码同上（cnki_current）。
+不下载全文：要哪本论文的全文，告诉用户去点「PDF下载」。"""
 
 _DOI_PREFIX = re.compile(r'(?i)^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)')
 
@@ -804,7 +812,7 @@ def _day(now):
     return time.strftime('%Y-%m-%d', time.localtime(now))
 
 
-WEB_DBS = ('scifinder', 'reaxys', 'polyinfo')      # 借浏览器查的库；共用一份账本、一把锁
+WEB_DBS = ('scifinder', 'reaxys', 'polyinfo', 'cnki')      # 借浏览器查的库；共用一份账本、一把锁
 
 
 def check_web_db(db):
@@ -815,12 +823,15 @@ def check_web_db(db):
 
 
 def gap_of(db):
-    return POLYINFO_GAP if db == 'polyinfo' else CHEMDB_GAP
+    return {'polyinfo': POLYINFO_GAP, 'cnki': CNKI_GAP}.get(db, CHEMDB_GAP)
+
+
+_DAILY = {'polyinfo': ('POLYINFO_DAILY', POLYINFO_DAILY), 'cnki': ('CNKI_DAILY', CNKI_DAILY)}
 
 
 def chemdb_daily(db='scifinder'):
     from shared.kernel import config
-    name, default = ('POLYINFO_DAILY', POLYINFO_DAILY) if db == 'polyinfo' else ('CHEMDB_DAILY', CHEMDB_DAILY)
+    name, default = _DAILY.get(db, ('CHEMDB_DAILY', CHEMDB_DAILY))
     try:
         return int(config.get_key(name, default='') or default)
     except ValueError:
@@ -863,7 +874,7 @@ def chemdb_key(db, params, page):
     """同一库、同一检索（词 + 类 + 排序 + 筛选 + 模式）、同一页 → 同一个缓存键。"""
     import hashlib
     sig = json.dumps({'db': db, 'p': {k: params.get(k) for k in ('query', 'kind', 'sort', 'filters', 'mode', 'structure', 'match', 'subset', 'within',
-                                                                  'op', 'name', 'pid', 'formula', 'prop', 'atoms_only', 'n')},
+                                                                  'op', 'name', 'pid', 'formula', 'prop', 'atoms_only', 'n', 'url')},
                       'page': int(page), 'v': VERSION}, sort_keys=True, ensure_ascii=False)   # 升版本 = 解析变了，旧缓存作废
     return hashlib.sha1(sig.encode('utf-8')).hexdigest()[:16]
 
@@ -1073,10 +1084,11 @@ def _chemdb_work(db, params, page, fetch, key):
             time.sleep(wait)                  # 不到 30 秒就等够再做（人的节奏）
         r = fetch(db)
         keep = {k: v for k, v in params.items() if k != 'raw'}
-        chemdb_charge(db, last_search=dict(keep, url=r.get('url')) if page == 1 and r.get('url') else None)
+        is_search = page == 1 and r.get('url') and params.get('op') in (None, 'search')   # 看详情不算「最近一次检索」
+        chemdb_charge(db, last_search=dict(keep, url=r.get('url')) if is_search else None)
         if r.get('code') in ('CAPTCHA_REQUIRED', 'LOGIN_REQUIRED'):
             _call_human(db, r)
-        if r.get('items') and db != 'polyinfo':      # PoLyInfo 的条目是聚合物不是文献，不补 DOI
+        if r.get('items') and db not in ('polyinfo', 'cnki'):   # 聚合物条目 / 中文文献：不去 Crossref 补 DOI
             try:
                 enrich(r['items'], warnings=r.setdefault('warnings', []))
             except Exception as e:
@@ -1123,7 +1135,7 @@ def _chemdb_run(db, params, page, fetch, wait_s=CHEMDB_WAIT):
     key = chemdb_key(db, params, page)
     hit = cache_get(key)
     if hit:
-        if page == 1:
+        if page == 1 and params.get('op') in (None, 'search'):
             _remember_search(db, dict(params, url=hit.get('url')))
         return _deliver(hit, db, params, True)
     d = _load(_job_path(key))
@@ -1132,12 +1144,12 @@ def _chemdb_run(db, params, page, fetch, wait_s=CHEMDB_WAIT):
     used, daily, _ = chemdb_quota(db)
     if used >= daily:
         raise ValueError(f'{db} 今天已经用了 {used} 次（上限 {daily}，按人的频率）；明天再来，'
-                         f'或请用户在控制面板调 {"POLYINFO_DAILY" if db == "polyinfo" else "CHEMDB_DAILY"}。'
+                         f'或请用户在控制面板调 {_DAILY.get(db, ("CHEMDB_DAILY",))[0]}。'
                          f'当天查过的检索照样能从缓存拿（不扣次数）')
     if not _chemdb_lock.acquire(blocking=False):
         busy = [f for f in os.listdir(os.path.dirname(_job_path('x')))
                 if _load(os.path.join(os.path.dirname(_job_path('x')), f)).get('state') == 'running']
-        raise ValueError('另一个 SciFinder / Reaxys / PoLyInfo 检索正在跑（%s）；等它跑完（chemdb_result）再交' %
+        raise ValueError('另一个 SciFinder / Reaxys / PoLyInfo / 知网检索正在跑（%s）；等它跑完（chemdb_result）再交' %
                          ', '.join(b[:-5] for b in busy) or '?')
     _job_write(key, {'state': 'running', 'db': db, 'params': params, 'page': page, 'started': time.time()})
     import threading
@@ -1291,6 +1303,69 @@ def _polyinfo_status(a):
     state = ('要人登录' if t.get('login_page') else '验证码挡着，等人点' if t.get('captcha')
              else '标签没开（第一次查会自己开，但要人先登录过）' if not t.get('tab_open') else '可以查')
     return _out('PoLyInfo 今天还剩 %d 次；%s' % (out['quota']['remaining'], state), out)
+
+
+def _cnki_search(a):
+    from shared.adapters import cnki
+    p = {'op': 'search', 'query': (a.get('query') or '').strip(), 'kind': cnki.check_kind(a.get('kind')),
+         'sort': cnki.check_sort(a.get('sort')) or None}
+    if not p['query']:
+        raise ValueError('query 不能空')
+    return _chemdb_run('cnki', p, 1, lambda db: cnki.search(p['query'], p['kind'], p['sort']), wait_s=_pi_wait(a))
+
+
+def _cnki_page(a):
+    from shared.adapters import cnki
+    n = int(a.get('page') or 2)
+    last = (_load(_chemdb_usage_path()).get('searches') or {}).get('cnki')
+    if not last:
+        raise ValueError('知网还没有搜过（或账本被清了），先 cnki_search')
+    p = {k: last.get(k) for k in ('query', 'kind', 'sort')}
+    p['op'] = 'page'
+    return _chemdb_run('cnki', p, n, lambda db: cnki.page(n), wait_s=_pi_wait(a))
+
+
+def _cnki_detail(a):
+    from shared.adapters import cnki
+    url = (a.get('url') or '').strip()
+    if not url:
+        if not a.get('n'):
+            raise ValueError('给 n（结果页上的序号 rank）或 url')
+        if not _chemdb_lock.acquire(blocking=False):
+            raise ValueError('有一个检索正在用浏览器；等它跑完（chemdb_result）再交')
+        try:
+            url = cnki.row_url(int(a['n'])) or ''
+        finally:
+            _chemdb_lock.release()
+        if not url:
+            raise ValueError(f'知网结果页上没有第 {a["n"]} 条（先 cnki_search / cnki_page 到那一页）')
+    return _chemdb_run('cnki', {'op': 'detail', 'url': url}, 1, lambda db: cnki.detail(url=url), wait_s=_pi_wait(a))
+
+
+def _cnki_current(a):
+    """不导航：读知网标签上现在那一页（人拖完拼图后用）。不扣次数。"""
+    from shared.adapters import cnki
+    if not _chemdb_lock.acquire(blocking=False):
+        raise ValueError('有一个检索正在用浏览器；等它跑完（chemdb_result）再读')
+    try:
+        r = _clean(cnki.current())
+    finally:
+        _chemdb_lock.release()
+    return _out('cnki %s：%s' % (r.get('code'), r.get('why') or 'OK'), r)
+
+
+def _cnki_status(a):
+    from shared.adapters import cnki
+    used, daily, wait = chemdb_quota('cnki')
+    out = {'quota': {'used_today': used, 'daily_limit': daily, 'remaining': max(0, daily - used)},
+           'min_gap_s': CNKI_GAP, 'wait_s': round(wait, 1),
+           'last_search': (_load(_chemdb_usage_path()).get('searches') or {}).get('cnki')}
+    try:
+        out['tab'] = cnki.status()
+    except Exception as e:
+        out['tab'] = {'error': f'{type(e).__name__}: {str(e)[:160]}'}
+    state = '拼图验证码挡着，等人拖' if out['tab'].get('captcha') else '可以查'
+    return _out('知网今天还剩 %d 次；%s' % (out['quota']['remaining'], state), out)
 
 
 def cap(name, handler, limit=None, spill_dir=None):
@@ -1455,6 +1530,26 @@ TOOLS = [
      {}, [], _polyinfo_current),
     ('polyinfo_status', '不碰网站、不扣次数：PoLyInfo 今天还剩几次、要等几秒、标签停在哪（login_page / captcha）。',
      {}, [], _polyinfo_status),
+    ('cnki_search', '在中国知网检索一次（学校按 IP 授权，借主力机浏览器），回第 1 页：items[]（rank / title / authors / '
+     'source（刊名或学位授予单位）/ date / type（期刊 / 硕士 / 博士 / 中国专利…）/ cited / downloads / url；专利是 inventors / '
+     'applicants / date_applied / date_published / patent_no）、count、pages、counts（各库条数，如 {学术期刊: 47, 学位论文: 34, 博士: 4}）。'
+     '按「主题」检索，中文词最好（如「聚硼硅氧烷」「硼酸酯 动态共价 弹性体」）。当天同一检索走缓存。两次至少隔 30 秒、每天 30 次。',
+     {'query': {'type': 'string'},
+      'kind': {'type': 'string', 'enum': ['all', 'journal', 'thesis', 'phd', 'master', 'conference', 'patent'],
+               'description': 'thesis = 博硕都要；patent = 中国专利；默认 all'},
+      'sort': {'type': 'string', 'enum': ['relevance', 'date', 'cited', 'downloads']},
+      'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50}}, ['query'], _cnki_search),
+    ('cnki_page', '知网最近一次 cnki_search 的第 page 页（每页 20 条；同一页当天走缓存）。规矩同上。',
+     {'page': {'type': 'integer', 'minimum': 1}, 'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50}},
+     ['page'], _cnki_page),
+    ('cnki_detail', '知网一篇的摘要页：detail.fields（摘要、关键词、DOI、分类号、导师、学科专业、基金；专利：申请号、申请人、'
+     '主权项、法律状态…）、detail.outline（学位论文的整本章节目录）、title / authors_line / institution。'
+     'n = 当前结果页上的序号（rank），或直接给 url。同一篇当天走缓存。撞拼图验证码回 CAPTCHA_REQUIRED，人拖完用 cnki_current。',
+     {'n': {'type': 'integer', 'minimum': 1}, 'url': {'type': 'string'},
+      'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50}}, [], _cnki_detail),
+    ('cnki_current', '不导航、不扣次数：读知网最新那个标签现在的页面（结果页 / 摘要页）。人拖完拼图验证码之后用。',
+     {}, [], _cnki_current),
+    ('cnki_status', '不碰网站、不扣次数：知网今天还剩几次、要等几秒、最近一次检索、验证码挡没挡着。', {}, [], _cnki_status),
 ]
 
 
