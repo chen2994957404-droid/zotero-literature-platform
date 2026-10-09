@@ -199,8 +199,8 @@ def journal(q, year=None):
     warnings = []
     with _session() as (browser, ctx):
         pg = _find_tab(ctx)
-        if not pg:
-            return _result(code='LOGIN_REQUIRED', why='浏览器里没有 JCR 的标签：请人在主力机浏览器打开 jcr.clarivate.com 并登录')
+        if not pg:               # 标签被关掉过：自己开一个（登录状态在浏览器里；真掉了会落到登录页）
+            pg = ctx.new_page()
         if is_login(pg.url):
             return _login(pg)
         if pg.locator('#search-bar').count() == 0:

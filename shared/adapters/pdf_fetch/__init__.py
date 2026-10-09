@@ -517,10 +517,17 @@ def _new_page(browser, ctx):
         return ctx.new_page()
 
 
+# 同一个浏览器里还住着人登录好的数据库标签（chemdb / polyinfo / cnki / ccdc / jcr / scopus 各借一个）——
+# 清扫只收出版商的落地页，这些一个都不许关（2026-10-09：取全文一跑，Scopus 的标签被当成多余的关了）
+KEEP_HOSTS = ('scifinder-n.cas.org', 'sso.cas.org', 'reaxys.com', 'id.elsevier.com', 'polymer.nims.go.jp', 'nims.go.jp',
+              'b2clogin.com', 'cnki.net', 'ccdc.cam.ac.uk', 'clarivate.com', 'scopus.com')
+
+
 def _sweep(ctx, keep=3):
-    """连上时顺手关掉上次漏下的出版商标签（超过 keep 个才动手；edge:// 之类不碰）。"""
+    """连上时顺手关掉上次漏下的出版商标签（超过 keep 个才动手；edge:// 之类、数据库标签不碰）。"""
     try:
-        pages = [pg for pg in ctx.pages if (pg.url or '').startswith('http')]
+        pages = [pg for pg in ctx.pages if (pg.url or '').startswith('http')
+                 and not any(h in (pg.url or '') for h in KEEP_HOSTS)]
         # ⚠ 第一个标签（启动时的 sciencedirect 首页）永远不动：它是浏览器的「压舱石」——
         # Edge 关掉最后一个标签就整个退出，取件的调试口跟着没了（2026-09-15 实测：
         # 清扫把首页关了，后面我们自己的标签一关，浏览器直接退出，整批 160 篇全报连不上）。

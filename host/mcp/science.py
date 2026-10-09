@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.10.7'
+VERSION = '0.10.8'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -97,6 +97,7 @@ POLYINFO_GAP = 45      # PoLyInfo 两次至少隔几秒：2026-10-09 隔 30 秒�
 POLYINFO_DAILY = 15    # PoLyInfo 每天最多几次（检索 / 样品列表 / 样品详情各算一次）；控制面板 POLYINFO_DAILY 可改
 CNKI_GAP = 30          # 知网两次至少隔几秒
 CNKI_DAILY = 30        # 知网每天最多几次（检索 / 翻页 / 摘要页各算一次）；控制面板 CNKI_DAILY 可改
+NO_CHARGE = ('NOT_FOUND', 'NO_SEARCH', 'LOGIN_REQUIRED')   # 这几种结果没真去网站查，不扣次数
 CCDC_GAP, CCDC_DAILY = 45, 15        # CCDC：条款明禁程序访问，用户知情后定小量用 —— 最保守
 JCR_GAP, JCR_DAILY = 20, 30          # JCR：一次只查一本刊
 SCOPUS_GAP, SCOPUS_DAILY = 30, 20    # Scopus：一次一页
@@ -1096,7 +1097,8 @@ def _chemdb_work(db, params, page, fetch, key):
         r = fetch(db)
         keep = {k: v for k, v in params.items() if k != 'raw'}
         is_search = page == 1 and r.get('url') and params.get('op') in (None, 'search', 'citing')   # 看详情不算「最近一次检索」；被引列表算（翻页翻的是它）
-        chemdb_charge(db, last_search=dict(keep, url=r.get('url')) if is_search else None)
+        if r.get('code') not in NO_CHARGE:     # 标签不在、列表里没有第 n 条…… 没碰网站的失败不扣次数
+            chemdb_charge(db, last_search=dict(keep, url=r.get('url')) if is_search else None)
         if r.get('code') in ('CAPTCHA_REQUIRED', 'LOGIN_REQUIRED'):
             _call_human(db, r)
         if r.get('items') and db not in ('polyinfo', 'cnki', 'ccdc', 'jcr'):   # 聚合物 / 中文文献 / 晶体结构：不去 Crossref 补 DOI

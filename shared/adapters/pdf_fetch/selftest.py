@@ -130,6 +130,28 @@ def main():
     else:
         print('  [FAIL] SI/正文的格式判断不对')
 
+    total += 1
+
+    class _Pg:
+        def __init__(self, url):
+            self.url, self.closed = url, False
+
+        def close(self):
+            self.closed = True
+
+    class _Ctx:
+        pages = [_Pg('https://www.sciencedirect.com/'), _Pg('https://www.scopus.com/results/results.uri?s=x'),
+                 _Pg('https://pubs.acs.org/doi/10.1/a'), _Pg('https://jcr.clarivate.com/jcr/home'),
+                 _Pg('https://pubs.rsc.org/b'), _Pg('https://kns.cnki.net/kns8s/'), _Pg('https://onlinelibrary.wiley.com/c'),
+                 _Pg('https://link.springer.com/d'), _Pg('https://www.nature.com/e')]
+    pdf_fetch._sweep(_Ctx())
+    closed = [p.url for p in _Ctx.pages if p.closed]
+    kept_db = not any(p.closed for p in _Ctx.pages if any(h in p.url for h in pdf_fetch.KEEP_HOSTS))
+    if kept_db and not _Ctx.pages[0].closed and closed == ['https://pubs.acs.org/doi/10.1/a', 'https://pubs.rsc.org/b']:
+        print('  [PASS] 清扫只关多余的出版商标签：数据库标签（Scopus / JCR / 知网……）和第一个标签不碰'); ok += 1
+    else:
+        print(f'  [FAIL] 清扫关错了：{closed}')
+
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)
 

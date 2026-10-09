@@ -182,13 +182,28 @@ def _list(pg, warnings):
                    count=parse_count(t), pages=pages, page_size=len(items))
 
 
+def _new_tab(browser, ctx):
+    try:
+        cdp = browser.new_browser_cdp_session()
+        try:
+            with ctx.expect_page(timeout=10000) as ev:
+                cdp.send('Target.createTarget', {'url': 'about:blank', 'background': True})
+            return ev.value
+        finally:
+            try:
+                cdp.detach()
+            except Exception:
+                pass
+    except Exception:
+        return ctx.new_page()
+
+
 def _go(url):
     warnings = []
     with _session() as (browser, ctx):
-        pg = _find_tab(ctx)
-        if not pg:
-            return _result(code='LOGIN_REQUIRED', why='浏览器里没有 Scopus 的标签：请人在主力机浏览器打开 scopus.com 并登录')
-        bad = _gate(pg, warnings)
+        # 标签没了（被关掉过）就自己开一个：登录状态存在浏览器里，不用重登；真掉了登录会落到登录页 → LOGIN_REQUIRED
+        pg = _find_tab(ctx) or _new_tab(browser, ctx)
+        bad = _gate(pg, warnings) if 'scopus.com' in (pg.url or '') else None
         if bad:
             return bad
         try:
