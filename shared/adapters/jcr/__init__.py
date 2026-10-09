@@ -159,8 +159,10 @@ def _session():
 
 
 def _find_tab(ctx):
+    """JCR 的标签：优先首页 / 检索页那个（期刊页是点出来的新标签，读完就关）。"""
     mine = [p for p in ctx.pages if 'jcr.clarivate.com' in (p.url or '') or 'access.clarivate.com' in (p.url or '')]
-    return mine[-1] if mine else None
+    home = [p for p in mine if 'journal-profile' not in (p.url or '')]
+    return (home or mine)[-1] if mine else None
 
 
 def _body(pg):
@@ -224,34 +226,52 @@ def journal(q, year=None):
         if (title.lower() != q.lower()) and not _ISSN.match(q):
             warnings.append(f'picked_suggestion: 「{q}」没有完全同名的，取了下拉里的「{title}」；其他候选：'
                             + ' / '.join(s['title'] for j, s in enumerate(sugg) if j != i)[:200])
-        # 不点下拉（Angular 页面上点击时灵时不灵，2026-10-09 实测）：认出正式刊名后直接开期刊页
-        # 先清空再开：同一个前端应用里换刊，旧页面的字会留一会儿（2026-10-09 实测把上一本的「On Hold」读成了这一本的）
+        # 点下拉里的刊名会在**新标签**里开期刊页，网址里是 JCR 内部的缩写（ACS APPL MATER INTER）——
+        # 期刊页只认这个缩写（用全称开是一个全是 N/A 的空页），年份也不能空（空的是对任何刊都一样的 On Hold 占位页）。
+        # 所以：点 → 接住新标签 → 从它的网址取缩写 → 带上年份打开 → 读完关掉（2026-10-09 实测）
         try:
-            pg.goto('about:blank', timeout=15000)
-            pg.goto(PROFILE.format(j=urllib.parse.quote(title), y=int(year) if year else latest_year()), wait_until='load', timeout=60000)
+            with ctx.expect_page(timeout=20000) as ev:
+                pg.locator('li.suggestion-item p.journal-title').nth(i).click()
+            prof = ev.value
         except Exception as e:
-            return _result(code='NAVIGATE_FAILED', url=pg.url, why=f'打不开期刊页：{str(e)[:120]}')
-        want = title.lower()
+            return _result(code='NAVIGATE_FAILED', url=pg.url, warnings=warnings, why=f'点了刊名没有打开期刊页：{str(e)[:100]}')
+        try:
+            prof.wait_for_load_state('load', timeout=30000)
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(prof.url).query)
+            abbr = (qs.get('journal') or [title])[0]
+            want_year = int(year) if year else latest_year()
+            if str(want_year) != (qs.get('year') or [''])[0]:
+                prof.goto(PROFILE.format(j=urllib.parse.quote(abbr), y=want_year), wait_until='load', timeout=60000)
+            return _read_profile(prof, q, title, abbr, warnings)
+        finally:
+            try:
+                prof.close()
+            except Exception:
+                pass
 
-        def _ready(t):
-            head = t[:4000].lower()
-            return want in head and ('JOURNAL IMPACT FACTOR' in t or 'On Hold' in t or 'Journal Citation Indicator (JCI)' in t)
-        if not _wait(pg, _ready, timeout=45):
-            if is_login(pg.url):
-                return _login(pg)
-            return _result(code='TIMEOUT', url=pg.url, warnings=warnings, why='期刊页 45 秒没出来')
-        # 学科排名那段是滚到才加载的（2026-10-09 实测：不滚就一直没有「Rank by Journal Impact Factor」）
-        end = time.time() + 25
-        while time.time() < end and 'Rank by Journal Impact Factor' not in _body(pg):
-            pg.evaluate('window.scrollBy(0, Math.max(800, window.innerHeight))')
-            pg.wait_for_timeout(1000)
-        got = parse_profile(_body(pg))
-        if got.get('status') == 'On Hold':
-            warnings.append('on_hold: JCR 发布时这本刊处于「On Hold」（暂停评估），没有当年的 JIF —— 去 Master Journal List 看现状')
-        elif not got['ranks']:
-            warnings.append('no_rank: 页面上没读到学科排名（ESCI 刊或页面没加载完）')
-        return _result(ok=True, code='OK' if got.get('jif') is not None or got.get('ranks') or got.get('status') else 'NO_RESULTS',
-                       url=pg.url, warnings=warnings, query=q, journal=got)
+
+def _read_profile(pg, q, title, abbr, warnings):
+    want = {title.lower(), abbr.lower()}
+
+    def _ready(t):
+        head = t[:4000].lower()
+        return any(w in head for w in want) and ('JOURNAL IMPACT FACTOR' in t or 'On Hold' in t)
+    if not _wait(pg, _ready, timeout=45):
+        if is_login(pg.url):
+            return _login(pg)
+        return _result(code='TIMEOUT', url=pg.url, warnings=warnings, why='期刊页 45 秒没出来')
+    # 学科排名那段是滚到才加载的（2026-10-09 实测：不滚就一直没有「Rank by Journal Impact Factor」）
+    end = time.time() + 25
+    while time.time() < end and 'Rank by Journal Impact Factor' not in _body(pg):
+        pg.evaluate('window.scrollBy(0, Math.max(800, window.innerHeight))')
+        pg.wait_for_timeout(1000)
+    got = parse_profile(_body(pg))
+    if got.get('status') == 'On Hold':
+        warnings.append('on_hold: JCR 发布时这本刊处于「On Hold」（暂停评估），没有当年的 JIF —— 去 Master Journal List 看现状')
+    elif not got['ranks']:
+        warnings.append('no_rank: 页面上没读到学科排名（ESCI 刊或页面没加载完）')
+    return _result(ok=True, code='OK' if got.get('jif') is not None or got.get('ranks') or got.get('status') else 'NO_RESULTS',
+                   url=pg.url, warnings=warnings, query=q, journal=got)
 
 
 def status():
