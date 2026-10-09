@@ -217,11 +217,18 @@ def journal(q, year=None):
             warnings.append(f'picked_suggestion: 「{q}」没有完全同名的，取了下拉里的「{title}」；其他候选：'
                             + ' / '.join(s['title'] for j, s in enumerate(sugg) if j != i)[:200])
         # 不点下拉（Angular 页面上点击时灵时不灵，2026-10-09 实测）：认出正式刊名后直接开期刊页
+        # 先清空再开：同一个前端应用里换刊，旧页面的字会留一会儿（2026-10-09 实测把上一本的「On Hold」读成了这一本的）
         try:
+            pg.goto('about:blank', timeout=15000)
             pg.goto(PROFILE.format(j=urllib.parse.quote(title), y=int(year) if year else ''), wait_until='load', timeout=60000)
         except Exception as e:
             return _result(code='NAVIGATE_FAILED', url=pg.url, why=f'打不开期刊页：{str(e)[:120]}')
-        if not _wait(pg, lambda t: 'JOURNAL IMPACT FACTOR' in t or 'On Hold' in t or 'Journal Citation Indicator (JCI)' in t, timeout=45):
+        want = title.lower()
+
+        def _ready(t):
+            head = t[:4000].lower()
+            return want in head and ('JOURNAL IMPACT FACTOR' in t or 'On Hold' in t or 'Journal Citation Indicator (JCI)' in t)
+        if not _wait(pg, _ready, timeout=45):
             if is_login(pg.url):
                 return _login(pg)
             return _result(code='TIMEOUT', url=pg.url, warnings=warnings, why='期刊页 45 秒没出来')
