@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.7.8'
+VERSION = '0.8.0'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -73,6 +73,10 @@ VERSION = '0.7.8'
 #   结构式要文献直接开文献集 · 分面计数不再出 NaN · 界面字（Select Substance / Retrieve CAS RN / No title）不进字段 ·
 #   Reaxys 老文献年份信出处 · 按标题补的 DOI 再对刊名与卷（德文版 / 国际版）·
 #   Reaxys 的 CAS 号落到冷门条目（硼酸）时，经 PubChem 换成结构式按原样搜
+# v0.8（2026-10-09 用户定）：polyinfo_* —— NIMS 聚合物数据库 PoLyInfo，同一个浏览器、同一套额度 / 缓存 / 作业。
+#   用户原话「不是要批量抓取数据，只是省去我截图的过程，需要我点的时候我点一下」。条款禁止抓取、网站自带人机验证，
+#   所以比 SciFinder 更保守：两次至少隔 POLYINFO_GAP 秒、每天 POLYINFO_DAILY 次；撞验证码回 CAPTCHA_REQUIRED +
+#   主力机桌面弹提醒，人点完用 polyinfo_current 读那一页（不重查、不扣次数）。验证码永远是人填。
 
 # 原样借用的（输出本来就合适）
 BORROW = ()     # 2026-10-04 用户定：只给它做不到的（取全文）。数值库它自己会抽，不借了；ping 自己挂
@@ -83,6 +87,8 @@ STALE_SECS = 600       # 进度文件多久没动就当那个作业已经死了
 STALL_SECS = 300       # 同一篇处理超过这么久没进展 → 状态里标 stalled（下载各步自带超时，正常到不了这么久）
 CHEMDB_GAP = 30        # SciFinder / Reaxys 两次操作至少隔几秒（人的速度；不够就等，最多等这么久）
 CHEMDB_DAILY = 20      # 每个库每天最多几次（搜索和翻页都算）；控制面板 CHEMDB_DAILY 可改
+POLYINFO_GAP = 45      # PoLyInfo 两次至少隔几秒：2026-10-09 隔 30 秒连查 5 次就弹了验证码
+POLYINFO_DAILY = 15    # PoLyInfo 每天最多几次（检索 / 样品列表 / 样品详情各算一次）；控制面板 POLYINFO_DAILY 可改
 MAX_OUT = 50000        # 一次返回的结构化数据上限（字节）：调用方的远程命令输出过 64 KB 就被截断（2026-10 实测）
 
 INSTRUCTIONS = """\
@@ -97,7 +103,10 @@ PARSE_FAILED / NETWORK_ERROR / NOT_FETCHED）与 retryable；CAPTCHA_REQUIRED �
 文件路径是 B 机 WSL 路径（/mnt/d/...），你的 SSH 算力能直接读。
 SciFinder / Reaxys：先 `chemdb_status`（不扣次数），再 `chemdb_search` 回第 1 页的结构化列表，`chemdb_page` 翻页。
 按人的频率：两次至少隔 30 秒、每个库每天有上限（quota）；当天同一检索走缓存不扣次数 —— 先想好检索词，别试错式地连搜。
-code=LOGIN_REQUIRED 时请人在主力机浏览器里登录。"""
+code=LOGIN_REQUIRED 时请人在主力机浏览器里登录。
+PoLyInfo（聚合物实测性质）：`polyinfo_search` → `polyinfo_samples` → `polyinfo_sample`（组成、出处、原文的组成–性质表）。
+更保守：两次至少隔 45 秒、每天 15 次。样品详情页网站每次要人机验证：回 CAPTCHA_REQUIRED 时等人在主力机浏览器点完，
+再用 `polyinfo_current` 读那一页（不扣次数）。它的条款禁止批量获取 —— 只查回答眼前问题需要的那几条。"""
 
 _DOI_PREFIX = re.compile(r'(?i)^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)')
 
@@ -795,21 +804,36 @@ def _day(now):
     return time.strftime('%Y-%m-%d', time.localtime(now))
 
 
-def chemdb_daily():
+WEB_DBS = ('scifinder', 'reaxys', 'polyinfo')      # 借浏览器查的库；共用一份账本、一把锁
+
+
+def check_web_db(db):
+    db = (db or '').strip().lower()
+    if db not in WEB_DBS:
+        raise ValueError(f'db 只能是 {" / ".join(WEB_DBS)}（给了「{db}」）')
+    return db
+
+
+def gap_of(db):
+    return POLYINFO_GAP if db == 'polyinfo' else CHEMDB_GAP
+
+
+def chemdb_daily(db='scifinder'):
     from shared.kernel import config
+    name, default = ('POLYINFO_DAILY', POLYINFO_DAILY) if db == 'polyinfo' else ('CHEMDB_DAILY', CHEMDB_DAILY)
     try:
-        return int(config.get_key('CHEMDB_DAILY', default='') or CHEMDB_DAILY)
+        return int(config.get_key(name, default='') or default)
     except ValueError:
-        return CHEMDB_DAILY
+        return default
 
 
 def chemdb_quota(db, path=None, now=None, daily=None):
-    """→ (今天已用, 上限, 还要等几秒)。账本按天记，跨天自动清零。"""
+    """→ (今天已用, 上限, 还要等几秒)。账本按天记，跨天自动清零。间隔按库（PoLyInfo 更长），从上一次碰任何库算起。"""
     now = now or time.time()
     d = _load(path or _chemdb_usage_path())
-    daily = chemdb_daily() if daily is None else daily
+    daily = chemdb_daily(db) if daily is None else daily
     used = d.get('days', {}).get(_day(now), {}).get(db, 0)
-    wait = max(0.0, CHEMDB_GAP - (now - float(d.get('last', 0))))
+    wait = max(0.0, gap_of(db) - (now - float(d.get('last', 0))))
     return used, daily, wait
 
 
@@ -838,7 +862,8 @@ def _remember_search(db, search, path=None):
 def chemdb_key(db, params, page):
     """同一库、同一检索（词 + 类 + 排序 + 筛选 + 模式）、同一页 → 同一个缓存键。"""
     import hashlib
-    sig = json.dumps({'db': db, 'p': {k: params.get(k) for k in ('query', 'kind', 'sort', 'filters', 'mode', 'structure', 'match', 'subset', 'within')},
+    sig = json.dumps({'db': db, 'p': {k: params.get(k) for k in ('query', 'kind', 'sort', 'filters', 'mode', 'structure', 'match', 'subset', 'within',
+                                                                  'op', 'name', 'pid', 'formula', 'prop', 'atoms_only', 'n')},
                       'page': int(page), 'v': VERSION}, sort_keys=True, ensure_ascii=False)   # 升版本 = 解析变了，旧缓存作废
     return hashlib.sha1(sig.encode('utf-8')).hexdigest()[:16]
 
@@ -1031,7 +1056,7 @@ def _deliver(r, db, params, cached):
     used, daily, _ = chemdb_quota(db)
     r['cached'] = cached
     r['quota'] = {'used_today': used, 'daily_limit': daily, 'remaining': max(0, daily - used),
-                  'min_gap_s': CHEMDB_GAP}
+                  'min_gap_s': gap_of(db)}
     if not params.get('raw'):
         r.pop('text', None)
     n = len(r.get('items') or [])
@@ -1049,7 +1074,9 @@ def _chemdb_work(db, params, page, fetch, key):
         r = fetch(db)
         keep = {k: v for k, v in params.items() if k != 'raw'}
         chemdb_charge(db, last_search=dict(keep, url=r.get('url')) if page == 1 and r.get('url') else None)
-        if r.get('items'):
+        if r.get('code') in ('CAPTCHA_REQUIRED', 'LOGIN_REQUIRED'):
+            _call_human(db, r)
+        if r.get('items') and db != 'polyinfo':      # PoLyInfo 的条目是聚合物不是文献，不补 DOI
             try:
                 enrich(r['items'], warnings=r.setdefault('warnings', []))
             except Exception as e:
@@ -1063,6 +1090,16 @@ def _chemdb_work(db, params, page, fetch, key):
                          'error': f'{type(e).__name__}: {str(e)[:300]}', 'finished': time.time()})
     finally:
         _chemdb_lock.release()
+
+
+def _call_human(db, r):
+    """要人去浏览器点（验证码 / 登录）：主力机桌面弹一条提醒。弹不出来就算了，不许让检索本身失败。"""
+    try:
+        from tools.getpdf import notify
+        what = '输入验证码' if r.get('code') == 'CAPTCHA_REQUIRED' else '重新登录'
+        notify.desktop(f'{db} 要你{what}', f'在「取全文用的浏览器」的 {db} 标签里{what}；Claude Science 在等。')
+    except Exception:
+        pass
 
 
 def _pending(job_id, db, d):
@@ -1082,8 +1119,7 @@ def _from_job(job_id, d, params=None):
 
 def _chemdb_run(db, params, page, fetch, wait_s=CHEMDB_WAIT):
     """缓存 → 额度 → 放到后台线程去网站 → 陪着等最多 wait_s 秒；没好回 PENDING + job_id（chemdb_result 取）。"""
-    from shared.adapters import chemdb
-    db = chemdb.check_db(db)
+    db = check_web_db(db)
     key = chemdb_key(db, params, page)
     hit = cache_get(key)
     if hit:
@@ -1096,11 +1132,12 @@ def _chemdb_run(db, params, page, fetch, wait_s=CHEMDB_WAIT):
     used, daily, _ = chemdb_quota(db)
     if used >= daily:
         raise ValueError(f'{db} 今天已经用了 {used} 次（上限 {daily}，按人的频率）；明天再来，'
-                         f'或请用户在控制面板调 CHEMDB_DAILY。当天查过的检索照样能从缓存拿（不扣次数）')
+                         f'或请用户在控制面板调 {"POLYINFO_DAILY" if db == "polyinfo" else "CHEMDB_DAILY"}。'
+                         f'当天查过的检索照样能从缓存拿（不扣次数）')
     if not _chemdb_lock.acquire(blocking=False):
         busy = [f for f in os.listdir(os.path.dirname(_job_path('x')))
                 if _load(os.path.join(os.path.dirname(_job_path('x')), f)).get('state') == 'running']
-        raise ValueError('另一个 SciFinder / Reaxys 检索正在跑（%s）；等它跑完（chemdb_result）再交' %
+        raise ValueError('另一个 SciFinder / Reaxys / PoLyInfo 检索正在跑（%s）；等它跑完（chemdb_result）再交' %
                          ', '.join(b[:-5] for b in busy) or '?')
     _job_write(key, {'state': 'running', 'db': db, 'params': params, 'page': page, 'started': time.time()})
     import threading
@@ -1193,6 +1230,67 @@ def _chemdb_status(a):
     q = out['quota']
     return _out('SciFinder 今天还剩 %d 次、Reaxys 还剩 %d 次；%s 重置' % (
         q['scifinder']['remaining'], q['reaxys']['remaining'], out['reset_at']), out)
+
+
+def _pi_wait(a):
+    return max(0, min(int(a.get('wait_s') if a.get('wait_s') is not None else CHEMDB_WAIT), 50))
+
+
+def _polyinfo_search(a):
+    from shared.adapters import polyinfo
+    p = {'op': 'search', 'name': (a.get('name') or '').strip() or None, 'pid': (a.get('pid') or '').strip().upper() or None,
+         'formula': a.get('formula') or None, 'prop': (a.get('prop') or '').strip() or None,
+         'atoms_only': bool(a.get('atoms_only'))}
+    if p['pid']:
+        polyinfo.check_id(p['pid'])
+    if not (p['name'] or p['pid'] or p['formula']):
+        raise ValueError('name / pid / formula 至少给一个')
+    polyinfo.formula_counts(p['formula'])            # 不合法当场报，不扣次数
+    return _chemdb_run('polyinfo', p, 1, lambda db: polyinfo.search(
+        name=p['name'] or '', pid=p['pid'] or '', formula=p['formula'], prop=p['prop'] or '',
+        atoms_only=p['atoms_only']), wait_s=_pi_wait(a))
+
+
+def _polyinfo_samples(a):
+    from shared.adapters import polyinfo
+    pid = polyinfo.check_id(a.get('pid'))
+    return _chemdb_run('polyinfo', {'op': 'samples', 'pid': pid}, 1, lambda db: polyinfo.samples(pid), wait_s=_pi_wait(a))
+
+
+def _polyinfo_sample(a):
+    from shared.adapters import polyinfo
+    pid = polyinfo.check_id(a.get('pid'))
+    n = int(a.get('n') or 1)
+    return _chemdb_run('polyinfo', {'op': 'sample', 'pid': pid, 'n': n}, 1, lambda db: polyinfo.sample(pid, n),
+                       wait_s=_pi_wait(a))
+
+
+def _polyinfo_current(a):
+    """不导航：读 PoLyInfo 标签上现在那一页（人点完验证码后用）。不扣次数；有检索在跑就别碰浏览器。"""
+    from shared.adapters import polyinfo
+    if not _chemdb_lock.acquire(blocking=False):
+        raise ValueError('有一个检索正在用浏览器；等它跑完（chemdb_result）再读')
+    try:
+        r = _clean(polyinfo.current())
+    finally:
+        _chemdb_lock.release()
+    return _out('polyinfo %s（%s）：%s' % (r.get('code'), r.get('page_kind'), r.get('why') or 'OK'), r)
+
+
+def _polyinfo_status(a):
+    """不碰网站：额度、要等几秒、标签停在哪（登录页 / 验证码挡着）。"""
+    from shared.adapters import polyinfo
+    used, daily, wait = chemdb_quota('polyinfo')
+    out = {'quota': {'used_today': used, 'daily_limit': daily, 'remaining': max(0, daily - used)},
+           'min_gap_s': POLYINFO_GAP, 'wait_s': round(wait, 1)}
+    try:
+        out['tab'] = polyinfo.status()
+    except Exception as e:
+        out['tab'] = {'error': f'{type(e).__name__}: {str(e)[:160]}'}
+    t = out['tab']
+    state = ('要人登录' if t.get('login_page') else '验证码挡着，等人点' if t.get('captcha')
+             else '标签没开（第一次查会自己开，但要人先登录过）' if not t.get('tab_open') else '可以查')
+    return _out('PoLyInfo 今天还剩 %d 次；%s' % (out['quota']['remaining'], state), out)
 
 
 def cap(name, handler, limit=None, spill_dir=None):
@@ -1331,6 +1429,32 @@ TOOLS = [
     ('chemdb_status', '不碰网站、不扣次数：两个库今天各剩几次、几点重置、要等几秒、最近一次检索（词 + 网址）、'
      '浏览器标签停在哪（login=login_page 就是要人去登录）、人手动导出文件的文件夹和里面的文件。做一组检索之前先看它。',
      {}, [], _chemdb_status),
+    ('polyinfo_search', '在 NIMS 聚合物数据库 PoLyInfo 里检索一次（借主力机上已登录的浏览器），回结果列表第 1 页：'
+     'items[]（rank / name / id_type=PID|COID|BDID / id / cu_formula / n_samples / properties[{name, unit, median, mode, '
+     'variance, points}]）、count、n_homopolymer / n_copolymer / n_blend。三种入口可组合：name（聚合物名子串，英文，'
+     '如 "poly(methyl methacrylate)"）、pid（P040048 / P905362 / BD000088）、formula（一个重复单元的分子式，如 "C16H38O5Si4"，'
+     '查含这种单元的均聚物与共聚物）。prop 选一种性质只回它的统计（写法照网站下拉框，如 "Glass transition temperature"、'
+     '"Density"、"Tensile modulus"；写错会回 NOT_FOUND 并列出全部可选值）。'
+     '当天同一检索走缓存（不扣次数）。两次至少隔 45 秒、每天 15 次（服务端强制）。网站条款禁止批量获取：只查眼前问题需要的。',
+     {'name': {'type': 'string'}, 'pid': {'type': 'string'},
+      'formula': {'type': 'string', 'description': '重复单元分子式；只认 C H B Br Cl D F Fe Si Ge I N Na O P S Sn，最多 6 种元素'},
+      'prop': {'type': 'string'},
+      'atoms_only': {'type': 'boolean', 'description': '只要「只由这些元素组成」的（配合 formula）'},
+      'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50}}, [], _polyinfo_search),
+    ('polyinfo_samples', 'PoLyInfo 一种聚合物（pid）的样品列表：samples[]（no / sample_id / material_type / additives / '
+     'polymer_type / properties[{name, value, unit}]）。没有组成与出处 —— 那在 polyinfo_sample。额度规矩同上。',
+     {'pid': {'type': 'string'}, 'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50}}, ['pid'], _polyinfo_samples),
+    ('polyinfo_sample', 'PoLyInfo 第 n 个样品（照 polyinfo_samples 的 no）的详情：sample.info（聚合信息、分子量…）、'
+     'reference / doi、components、composition（mol% 等）、properties（值 + 测量条件 / 方法）、'
+     'related_tables（原文的「组成 vs 性质」整张表：title / header / rows —— 常含进料与聚合物组成，可估竞聚率）。'
+     '这一页网站每次要人机验证：回 code=CAPTCHA_REQUIRED（主力机已弹提醒），等人点完再调 polyinfo_current，别重调这个。',
+     {'pid': {'type': 'string'}, 'n': {'type': 'integer', 'minimum': 1},
+      'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50}}, ['pid'], _polyinfo_sample),
+    ('polyinfo_current', '不导航、不扣次数：读 PoLyInfo 标签上现在那一页（结果列表 / 样品列表 / 样品详情各按各的字段）。'
+     '人在浏览器里点完验证码之后用；还挡着会再回 CAPTCHA_REQUIRED。',
+     {}, [], _polyinfo_current),
+    ('polyinfo_status', '不碰网站、不扣次数：PoLyInfo 今天还剩几次、要等几秒、标签停在哪（login_page / captcha）。',
+     {}, [], _polyinfo_status),
 ]
 
 

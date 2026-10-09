@@ -1,6 +1,6 @@
 ---
 name: literature-platform
-description: The user's own literature platform (evidence library of ~1100 polymer / materials papers with parsed full text, SI, tables, figures, plus institutional full-text download, plus read-only SciFinder / Reaxys searching through the user's logged-in browser). Use it FIRST whenever the task involves papers, literature, references, a DOI, full text, SI, or "what does the literature say" — 文献、论文、全文、SI、DOI、证据库、库里有没有、取全文、读原文、参考文献、SciFinder、Reaxys、专利、CAS. Reach it with the `litcall` command on the SSH host zotero-b.
+description: The user's own literature platform (evidence library of ~1100 polymer / materials papers with parsed full text, SI, tables, figures, plus institutional full-text download, plus read-only SciFinder / Reaxys / PoLyInfo searching through the user's logged-in browser). Use it FIRST whenever the task involves papers, literature, references, a DOI, full text, SI, or "what does the literature say" — 文献、论文、全文、SI、DOI、证据库、库里有没有、取全文、读原文、参考文献、SciFinder、Reaxys、专利、CAS、PoLyInfo、聚合物性质、Tg、密度. Reach it with the `litcall` command on the SSH host zotero-b.
 ---
 
 # Literature platform (via `litcall` on SSH host `zotero-b`)
@@ -8,7 +8,7 @@ description: The user's own literature platform (evidence library of ~1100 polym
 Run on the SSH host **zotero-b** (not locally):
 
 ```bash
-~/bin/litcall --version                    # litcall + server version (expect server 0.7.x)
+~/bin/litcall --version                    # litcall + server version (expect server 0.8.x)
 ~/bin/litcall --list                       # tools + args (one JSON per line)
 ~/bin/litcall <tool> '<json args>'         # prints JSON result; exit 1 on tool error
 ~/bin/litcall --batch < calls.jsonl        # many calls, one session: {"tool":..,"args":{..}} per line
@@ -157,3 +157,43 @@ Query tips for this user's field:
 - For bulk screening, ask the user to export a result set (SciFinder: Excel, "Result Details" template, all fields —
   abstract, concepts, substances, Claim 1, patent status, family) into the export folder shown by `chemdb_status`
   (`exports.dir`). Read it yourself — no quota used.
+
+## PoLyInfo (server 0.8): `polyinfo_status`, `polyinfo_search`, `polyinfo_samples`, `polyinfo_sample`, `polyinfo_current`
+
+NIMS's polymer property database (measured Tg, density, moduli, gas permeability, solubility parameters …, each value
+with its sample, composition, conditions and source paper). The user has a DICE account approved for MatNavi and is
+logged in in the same browser. Same machinery as chemdb (cache, PENDING + `chemdb_result`, one browser job at a time).
+
+```bash
+~/bin/litcall polyinfo_status '{}'     # free: quota, wait, whether a login page / CAPTCHA is blocking the tab
+~/bin/litcall polyinfo_search '{"name":"poly(methyl methacrylate)","prop":"Glass transition temperature"}'
+~/bin/litcall polyinfo_search '{"formula":"C16H38O5Si4","prop":"Glass transition temperature"}'   # by repeat unit (TRIS)
+~/bin/litcall polyinfo_samples '{"pid":"P905362"}'       # every sample of that polymer with its values
+~/bin/litcall polyinfo_sample  '{"pid":"P905362","n":1}' # one sample: composition, conditions, reference/DOI, source tables
+~/bin/litcall polyinfo_current '{}'    # free: read whatever page the PoLyInfo tab shows now (after the user solved a CAPTCHA)
+```
+
+Three levels (observed 2026-10-09):
+1. `polyinfo_search` → polymers matching name / PID / repeat-unit formula, with the chosen property's **median, mode,
+   variance and number of points** (e.g. PMMA P040048: Tg median 108 °C over 1124 samples; density 1.190 g/cm³ over 208).
+   Names are IUPAC-ish English; if a name finds nothing, search by `formula` (one repeat unit, ≤6 elements, only
+   C H B Br Cl D F Fe Si Ge I N Na O P S Sn). IDs: `P0xxxxx` homopolymer, `P9xxxxx` copolymer (COID), `BDxxxxxx` blend.
+   A wrong `prop` returns `NOT_FOUND` listing every valid property name.
+2. `polyinfo_samples` → each sample's property values (no composition yet).
+3. `polyinfo_sample` → the full sample record: `info` (polymerization: monomers + feed ratio, initiator, solvent,
+   conditions; Mn/Mw), `reference` + `doi`, `components`, `composition` (mol%), `properties` with measurement method /
+   conditions, and **`related_tables`: the source paper's composition-vs-property table** (feed vs copolymer composition,
+   Mn, Tg, permeability …). Feed vs copolymer composition across a series is what you need to estimate reactivity ratios.
+   Example: P905362 (MMA-ran-TRIS methacrylate, Inoue & Matsukawa, J. Macromol. Sci. A 1992, 29(6), 415) lists feed /
+   copolymer MTTS mol% 7.4/7.4, 19/19.7, 28/28.4, 41.5/42.6, 62.4/63.8 and Tg 101 → 27 °C, PTRIS homopolymer −7 °C.
+   Check the DOI it gives against Crossref before citing (that record printed 10.1080/10101329208052172).
+
+**Rules (server-enforced, stricter than chemdb):** at least 45 s between calls, 15 calls per day (search, samples and
+sample each count; cached repeats are free). PoLyInfo's terms forbid bulk acquisition and scraping, manual or
+mechanical, and it suspends accounts — so query only what the question in front of you needs; never loop over many
+PIDs or samples. For a systematic survey, tell the user what to look at instead.
+
+**CAPTCHA:** the sample-detail page (level 3) asks for a CAPTCHA every time, and searches can too when used often. You get
+`code: "CAPTCHA_REQUIRED"`; the server has popped a reminder on the user's desktop. Tell the user, wait for them to say it's
+done, then call `polyinfo_current` (free) to read the page — do **not** call `polyinfo_sample` again.
+`LOGIN_REQUIRED` → ask the user to log in to PoLyInfo with the DICE account in the "取全文用的浏览器".
