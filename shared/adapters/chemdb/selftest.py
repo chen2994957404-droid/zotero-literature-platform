@@ -140,6 +140,19 @@ def main():
                                                                    'Boronic acid, B,B′-1,4-phenylenebis-, homopolymer']})
     check('高分子分子式 (C6H6B2O4)x，不是「2」', poly['formula'] == '(C6H6B2O4)x' and poly['name'].startswith('Boronic'), str(poly))
     check('分子式：水合物认、名字不认', bool(chemdb._FORMULA_RE.match('H3BO3·xH2O')) and not chemdb._FORMULA_RE.match('Boric acid'))
+    mc = chemdb.norm_sf_substance({'rn': '2488884-13-3', 'formula': '(C6H6B2O4.C6H4Br2.C6H2Br4…',
+                                   'name': 'Boronic acid, B,B′-1,4-phenylenebis-, polymer with 1,4-dibromobenzene and 1,2,4,…',
+                                   'lines': ['2488884-13-3', 'Images of a multi component structure including C A S RNs: '
+                                             '4612-26-4, 636-28-2, and 106-37-6.', '(C6H6B2O4.C6H4Br2.C6H2Br4…', 'Components: 3']})
+    check('多组分：截断的分子式标出来、组分 CAS 号与组分数', mc['formula'] == '(C6H6B2O4.C6H4Br2.C6H2Br4'
+          and mc['formula_truncated'] and mc['component_cas_rns'] == ['4612-26-4', '636-28-2', '106-37-6']
+          and mc['n_components'] == 3, str(mc))
+    fr = chemdb.norm_sf_substance({'rn': '1144113-62-1', 'formula': 'C9H7NO.1/4C6H8B2O4', 'name': '',
+                                   'lines': ['1144113-62-1', 'Images of a multi component structure including C A S RNs: '
+                                             '4612-26-4 and 1532-72-5.', 'C9H7NO.1/4C6H8B2O4', 'Components: 2',
+                                             'Boronic acid, B,B′-1,4-phenylenebis-, compd. with isoquinoline 2-oxide (1:1)']})
+    check('分数配比的分子式照原样、名字跳过「Images of…」那行', fr['formula'] == 'C9H7NO.1/4C6H8B2O4'
+          and fr['name'].startswith('Boronic acid') and 'formula_truncated' not in fr, str(fr))
     check('Reaxys 专利族「4-5」→ rank 4、family_ranks [4,5]、号', rx['rank'] == 4 and rx['family_ranks'] == [4, 5]
           and rx['patent_no'] == 'CN109666219' and rx['assignee'] == 'WANHUA CHEMICAL GROUP' and rx['source'] is None, str(rx))
 

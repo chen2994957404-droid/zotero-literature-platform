@@ -160,15 +160,30 @@ def norm_sf_substance(x):
     """SciFinder 物质卡片 → {rank, cas_rn, formula, name, preferred_rn, n_references, n_reactions, n_suppliers}。"""
     lines = [ln for ln in (x.get('lines') or []) if _no_ui(ln)]
     rn = x.get('rn') if CAS_RN_RE.match(x.get('rn') or '') else next((ln for ln in lines[:2] if CAS_RN_RE.match(ln)), None)
-    formula = next((ln for ln in lines[:4] if _FORMULA_RE.match(ln) and any(c.isdigit() for c in ln)
-                    and not CAS_RN_RE.match(ln)), None)
-    name = _no_ui(x.get('name')) or next((ln for ln in lines[:5] if ln not in (rn, formula) and not ln.startswith('Preferred')
-                                          and not ln.isdigit() and not CAS_RN_RE.match(ln)), None)
+    # 分子式先读页面上专门的那个元素（.molecular-formula）：多组分的写法规则猜不全 ——
+    # 分数配比「C9H7NO.1/4C6H8B2O4」、太长被列表页截断「(C6H8B2O4.C6H4Br2.C6H2Br4…」（全文只在详情页，2026-10-09 实测）
+    formula = (x.get('formula') or '').strip() or next(
+        (ln for ln in lines[:4] if _FORMULA_RE.match(ln) and any(c.isdigit() for c in ln) and not CAS_RN_RE.match(ln)), None)
+    truncated = bool(formula) and formula.endswith('…')
+    if truncated and formula:
+        formula = formula.rstrip('…').rstrip()
+    comps = re.search(r'multi component structure including C A S RNs:\s*(.+?)\.?(?:\s+Components:|\s+[A-Z(]|$)',
+                      ' '.join(lines))
+    n_comp = re.search(r'Components:\s*(\d+)', ' '.join(lines))
+    name = _no_ui(x.get('name')) or next((ln for ln in lines[:6] if ln not in (rn, formula) and not ln.startswith('Preferred')
+                                          and not ln.isdigit() and not CAS_RN_RE.match(ln) and not ln.startswith('Images of')
+                                          and not ln.startswith('Components:') and not ln.rstrip('…') == formula), None)
     out = {'rank': x.get('rank'), 'type': 'substance', 'cas_rn': rn, 'formula': formula, 'name': name,
            'n_references': parse_count(x.get('refs')), 'n_reactions': parse_count(x.get('rxns')),
            'n_suppliers': parse_count(x.get('sup'))}
     if x.get('preferred'):
         out['preferred_rn'] = x['preferred']
+    if truncated:
+        out['formula_truncated'] = True        # 列表页只给这么长；全文在 SciFinder 详情页
+    if comps:
+        out['component_cas_rns'] = re.findall(r'\d{2,7}-\d{2}-\d', comps.group(1))   # 共聚物 = 它的单体
+    if n_comp:
+        out['n_components'] = int(n_comp.group(1))
     if any('K' in (x.get(k) or '') or 'M' in (x.get(k) or '') for k in ('refs', 'rxns')):
         out['counts_rounded'] = True        # SciFinder 写 51K 这种约数
     return out
@@ -570,6 +585,7 @@ _SF_SUB_JS = r"""() => [...document.querySelectorAll('.substance-tile')].map(t =
   const sel = t.querySelector('input[type=checkbox]');
   const rk = ((sel && (sel.getAttribute('aria-label') || sel.title)) || '').match(/(\d+)\s*$/);
   return {rank: rk ? +rk[1] : null, rn: T(t.querySelector('a.rn-link')), name: T(t.querySelector('.substance-name')),
+          formula: T(t.querySelector('.molecular-formula')) || null,
           lines: txt.split('\n').map(s => s.trim()).filter(Boolean).slice(0, 8),
           refs: lab(/references/i), rxns: lab(/reactions/i), sup: lab(/suppliers/i),
           preferred: (txt.match(/Preferred RN:\s*([\d-]+)/) || [])[1] || null};
