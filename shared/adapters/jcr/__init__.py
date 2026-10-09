@@ -113,7 +113,8 @@ def parse_profile(text):
     if m:
         out['oa_pct'] = _num(m.group(1))
     sec = t[t.find('Rank by Journal Impact Factor'):] if 'Rank by Journal Impact Factor' in t else ''
-    end = re.search(r'Rank by JIF before 2023|Rank by Journal Citation Indicator', sec)
+    # 多学科的刊每个学科一段，中间夹着各自的「Rank by JIF before 2023」（不匹配 _RANK，自然跳过）—— 读到 JCI 排名为止
+    end = re.search(r'Rank by Journal Citation Indicator', sec)
     sec = sec[:end.start()] if end else sec
     for r in _RANK.finditer(sec):
         out['ranks'].append({'category': r['cat'].strip(), 'year': int(r['year']), 'rank': r['rank2'],

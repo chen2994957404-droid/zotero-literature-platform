@@ -47,6 +47,11 @@ def main():
     check('期刊页：学科排名只取最近一年、不混进 2023 年前的分版排名',
           p['ranks'] == [{'category': 'POLYMER SCIENCE', 'year': 2025, 'rank': '19/96', 'quartile': 'Q1', 'percentile': 80.7}], p['ranks'])
     check('期刊页：学科列表', p['categories'] == ['POLYMER SCIENCE'])
+    two = jcr.parse_profile(PROFILE + '\n' + '\n'.join([
+        '', 'CATEGORY', 'NANOSCIENCE & NANOTECHNOLOGY', '40/150', 'JCR YEAR\tJIF RANK\tJIF QUARTILE\tJIF PERCENTILE',
+        '2025\t40/150\tQ2\t', '73.7', '', 'Rank by Journal Citation Indicator (JCI)']))
+    check('期刊页：多学科的刊每个学科都读到（中间夹着 2023 年前的分版排名）',
+          [r['category'] for r in two['ranks']] == ['POLYMER SCIENCE', 'NANOSCIENCE & NANOTECHNOLOGY'], two['ranks'])
     h = jcr.parse_profile('\n'.join(['ACS Applied Materials & Interfaces', '', 'ISSN', '', '1944-8244', '',
                                      'Journal’s performance', ' On Hold', '',
                                      'At the point of JCR release in June 1, this journal was ‘On Hold’. Please check the Master Journal List.']))

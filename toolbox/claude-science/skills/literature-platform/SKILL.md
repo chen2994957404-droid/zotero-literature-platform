@@ -1,6 +1,6 @@
 ---
 name: literature-platform
-description: The user's own literature platform (evidence library of ~1100 polymer / materials papers with parsed full text, SI, tables, figures, plus institutional full-text download, plus read-only SciFinder / Reaxys / PoLyInfo / CNKI (中国知网) searching through the user's logged-in browser). Use it FIRST whenever the task involves papers, literature, references, a DOI, full text, SI, or "what does the literature say" — 文献、论文、全文、SI、DOI、证据库、库里有没有、取全文、读原文、参考文献、SciFinder、Reaxys、专利、CAS、PoLyInfo、聚合物性质、Tg、密度、知网、学位论文、硕博论文、中国专利. Reach it with the `litcall` command on the SSH host zotero-b.
+description: The user's own literature platform (evidence library of ~1100 polymer / materials papers with parsed full text, SI, tables, figures, plus institutional full-text download, plus read-only SciFinder / Reaxys / PoLyInfo / CNKI (中国知网) / CCDC / JCR / Scopus look-ups through the user's logged-in browser). Use it FIRST whenever the task involves papers, literature, references, a DOI, full text, SI, or "what does the literature say" — 文献、论文、全文、SI、DOI、证据库、库里有没有、取全文、读原文、参考文献、SciFinder、Reaxys、专利、CAS、PoLyInfo、聚合物性质、Tg、密度、知网、学位论文、硕博论文、中国专利、晶体结构、CCDC、CSD、影响因子、JCR、分区、Scopus、被引. Reach it with the `litcall` command on the SSH host zotero-b.
 ---
 
 # Literature platform (via `litcall` on SSH host `zotero-b`)
@@ -8,7 +8,7 @@ description: The user's own literature platform (evidence library of ~1100 polym
 Run on the SSH host **zotero-b** (not locally):
 
 ```bash
-~/bin/litcall --version                    # litcall + server version (expect server 0.9.x)
+~/bin/litcall --version                    # litcall + server version (expect server 0.10.x)
 ~/bin/litcall --list                       # tools + args (one JSON per line)
 ~/bin/litcall <tool> '<json args>'         # prints JSON result; exit 1 on tool error
 ~/bin/litcall --batch < calls.jsonl        # many calls, one session: {"tool":..,"args":{..}} per line
@@ -223,3 +223,34 @@ Chinese master's / PhD theses, Chinese journals, conferences and **Chinese paten
   CNKI shows a slider CAPTCHA when used a lot → `CAPTCHA_REQUIRED` + desktop reminder; tell the user, then `cnki_current`.
 - **No downloading.** CNKI bans the whole university IP for bulk downloads. If a thesis is worth reading in full, tell the
   user which one; they click "PDF下载" themselves.
+
+## CCDC, JCR, Scopus (server 0.10): `ccdc_search`, `ccdc_detail`, `ccdc_current`, `jcr_journal`, `scopus_search`, `scopus_citing`, `scopus_page`, `webdb_status`
+
+All three forbid programmatic access or feeding their data to AI in their terms; the user decided, knowing that, to use
+them at a human pace in place of taking screenshots for you. **So: one look-up for the question in front of you, never a
+loop.** Quotas are low and server-enforced (`webdb_status`, free): CCDC 15/day ≥45 s apart, JCR 30/day ≥20 s, Scopus 20/day ≥30 s.
+A call that isn't finished within `wait_s` returns `PENDING` + `job_id` → `chemdb_result`.
+
+```bash
+~/bin/litcall ccdc_search '{"compound":"phenylboronic acid"}'      # or ident (CCDC number / refcode), doi, author
+~/bin/litcall ccdc_detail '{"n":3}'                                  # n = rank in the current list
+~/bin/litcall jcr_journal '{"journal":"Macromolecules"}'             # name, JCR abbreviation or ISSN; optional year
+~/bin/litcall scopus_search '{"query":"polyborosiloxane","sort":"cited"}'
+~/bin/litcall scopus_citing '{"n":1}'                                # who cites item 1 of the current page
+~/bin/litcall scopus_page   '{"page":2}'
+```
+
+- **CCDC** (Access Structures, CSD + ICSD published entries): list ≤30 per search (`truncated: true` if more —
+  be more specific): refcode, deposition (CCDC number), space_group, cell, name. `ccdc_detail` adds data_doi
+  (10.5517/…), deposited_on and the associated paper(s) with DOI. **No CIF / geometry** — if bond lengths are needed,
+  ask the user to download that one CIF; the platform's COD statistics on organic B–O structures live in
+  `data/serving/cod_boron/结论.md`. CCDC sometimes shows a validation page → `CAPTCHA_REQUIRED`; the user fills it,
+  then `ccdc_current`.
+- **JCR**: `journal` = title, issn, eissn, publisher, edition, year, jif, jif_no_self, jci, oa_pct and
+  `ranks[{category, year, rank, quartile, percentile}]`. Example: Macromolecules 2025 JIF 5.7 (4.9 w/o self-cites),
+  POLYMER SCIENCE 19/96 Q1. A journal "On Hold" at release has `status: "On Hold"` and no JIF. Results are not written
+  into the platform's journal tiers (those use open OpenAlex data only).
+- **Scopus**: items with eid, title, authors, source + citation, year, cited, type, open_access; DOIs are matched on
+  Crossref by title (`doi_match_score`) and each item says `in_library` / `tier`. `query` may be plain words (searched in
+  title/abstract/keywords) or a Scopus query (`TITLE-ABS-KEY(borosiloxane) AND PUBYEAR > 2019`, `DOI(...)`).
+  For bulk citation work prefer OpenAlex (open data, no limits on use).
