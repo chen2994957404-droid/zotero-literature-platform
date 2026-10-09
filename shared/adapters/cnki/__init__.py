@@ -51,7 +51,7 @@ KINDS = {
     'patent': 'a[name=classify][data-chs="SCPD"]',
 }
 SORTS = {'relevance': r'相关度', 'date': r'发表时间|公开日|出版时间|日期', 'cited': r'被引', 'downloads': r'下载'}
-_TOTAL = re.compile(r'共找到\s*([\d,]+)\s*条结果\s*(\d+)\s*/\s*(\d+)')
+_TOTAL = re.compile(r'共找到\s*([\d,]+)\s*条结果(?:\s*(\d+)\s*/\s*(\d+))?')   # 只有一页时不带页码
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -89,11 +89,14 @@ def captcha_active(geo):
 
 
 def parse_total(text):
-    """「共找到 498 条结果 1/25」→ (498, 1, 25)；读不到 (None, None, None)。"""
+    """「共找到 498 条结果 1/25」→ (498, 1, 25)；只有一页时页面不写页码：「共找到 4 条结果」→ (4, 1, 1)。读不到 (None, None, None)。"""
     m = _TOTAL.search(text or '')
     if not m:
         return None, None, None
-    return int(m.group(1).replace(',', '')), int(m.group(2)), int(m.group(3))
+    n = int(m.group(1).replace(',', ''))
+    if m.group(2):
+        return n, int(m.group(2)), int(m.group(3))
+    return n, 1, 1 if n else 0
 
 
 def _int(s):

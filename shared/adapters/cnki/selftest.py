@@ -74,6 +74,7 @@ def main():
                                        {'name': '博士', 'n': '4'}, {'name': '专利', 'n': ''}]) ==
           {'学术期刊': 47, '学位论文': 34, '博士': 4})
     check('总数与页码', cnki.parse_total('共找到 498 条结果 1/25 >> 全选') == (498, 1, 25)
+          and cnki.parse_total('共找到 4 条结果  全选') == (4, 1, 1)
           and cnki.parse_total('没有') == (None, None, None))
 
     d = cnki.parse_detail(DETAIL)
