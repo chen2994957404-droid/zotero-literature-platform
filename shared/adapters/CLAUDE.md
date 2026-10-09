@@ -41,6 +41,9 @@
 | `pubchem` | PubChem 公开化合物库：CAS 号 → 结构式（Reaxys 的 CAS 号登记不全时兜底）|
 | `polyinfo` | NIMS 聚合物数据库 PoLyInfo：同一个浏览器里查、读页面（只读，人登录，验证码人点）|
 | `cnki` | 中国知网（学位论文 / 期刊 / 会议 / 中国专利）：同一个浏览器里检索、读摘要页（只读，学校 IP 授权，拼图人拖）|
+| `ccdc` | CCDC Access Structures：单个晶体结构检索与详情（只读、不下 CIF，人登录，验证页人填）|
+| `jcr` | Journal Citation Reports：一次查一本刊的 JIF / 分区（只读，不进期刊分级表）|
+| `scopus` | Scopus：检索与「谁引用了它」列表（只读，一次一页）|
 
 ## 写一块新 adapter 的规矩
 

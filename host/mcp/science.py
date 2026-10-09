@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.9.2'
+VERSION = '0.10.0'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -80,6 +80,9 @@ VERSION = '0.9.2'
 # v0.9（同日，用户「需要的都可以用起来」）：cnki_* —— 中国知网（学位论文 / 期刊 / 会议 / 中国专利），学校按 IP 授权。
 #   同一套账本 / 缓存 / 作业；两次至少隔 CNKI_GAP 秒、每天 CNKI_DAILY 次；拼图验证码同 PoLyInfo 的处理（人拖、cnki_current 读）。
 #   只读：检索、翻页、摘要页（含学位论文的章节目录）。不下载全文 —— 知网对批量下载封整个学校的出口 IP。
+# v0.10（同日）：ccdc_* / jcr_journal / scopus_* —— CCDC Access Structures、JCR、Scopus。三家条款都禁程序访问或把数据交给 AI
+#   （原文见 docs/变更记录.md 2026-10-09）；用户知情后定：「跟 SciFinder 一样省去截图……遇到人机验证我都会来点，也只做少量需要的检索」。
+#   所以一次一页、只读、不下载、额度更低；JCR 结果不写进期刊分级表。
 
 # 原样借用的（输出本来就合适）
 BORROW = ()     # 2026-10-04 用户定：只给它做不到的（取全文）。数值库它自己会抽，不借了；ping 自己挂
@@ -94,6 +97,9 @@ POLYINFO_GAP = 45      # PoLyInfo 两次至少隔几秒：2026-10-09 隔 30 秒�
 POLYINFO_DAILY = 15    # PoLyInfo 每天最多几次（检索 / 样品列表 / 样品详情各算一次）；控制面板 POLYINFO_DAILY 可改
 CNKI_GAP = 30          # 知网两次至少隔几秒
 CNKI_DAILY = 30        # 知网每天最多几次（检索 / 翻页 / 摘要页各算一次）；控制面板 CNKI_DAILY 可改
+CCDC_GAP, CCDC_DAILY = 45, 15        # CCDC：条款明禁程序访问，用户知情后定小量用 —— 最保守
+JCR_GAP, JCR_DAILY = 20, 30          # JCR：一次只查一本刊
+SCOPUS_GAP, SCOPUS_DAILY = 30, 20    # Scopus：一次一页
 MAX_OUT = 50000        # 一次返回的结构化数据上限（字节）：调用方的远程命令输出过 64 KB 就被截断（2026-10 实测）
 
 INSTRUCTIONS = """\
@@ -114,7 +120,9 @@ PoLyInfo（聚合物实测性质）：`polyinfo_search` → `polyinfo_samples` �
 再用 `polyinfo_current` 读那一页（不扣次数）。它的条款禁止批量获取 —— 只查回答眼前问题需要的那几条。
 中国知网（中文硕博论文、中文期刊、中国专利）：`cnki_search`（kind=thesis/phd/master/journal/patent…）→ `cnki_page` 翻页 →
 `cnki_detail`（摘要、关键词、导师、学位论文的整本目录、专利主权项）。两次至少隔 30 秒、每天 30 次；拼图验证码同上（cnki_current）。
-不下载全文：要哪本论文的全文，告诉用户去点「PDF下载」。"""
+不下载全文：要哪本论文的全文，告诉用户去点「PDF下载」。
+CCDC（单个晶体结构）`ccdc_search` / `ccdc_detail`；JCR（一本刊的 JIF 与分区）`jcr_journal`；Scopus（检索、被引列表）`scopus_search` /
+`scopus_citing` / `scopus_page`。这三家条款都不许程序批量取 —— 只查眼前问题需要的那一两条；额度见 `webdb_status`。"""
 
 _DOI_PREFIX = re.compile(r'(?i)^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)')
 
@@ -812,7 +820,7 @@ def _day(now):
     return time.strftime('%Y-%m-%d', time.localtime(now))
 
 
-WEB_DBS = ('scifinder', 'reaxys', 'polyinfo', 'cnki')      # 借浏览器查的库；共用一份账本、一把锁
+WEB_DBS = ('scifinder', 'reaxys', 'polyinfo', 'cnki', 'ccdc', 'jcr', 'scopus')   # 借浏览器查的库；共用一份账本、一把锁
 
 
 def check_web_db(db):
@@ -823,10 +831,11 @@ def check_web_db(db):
 
 
 def gap_of(db):
-    return {'polyinfo': POLYINFO_GAP, 'cnki': CNKI_GAP}.get(db, CHEMDB_GAP)
+    return {'polyinfo': POLYINFO_GAP, 'cnki': CNKI_GAP, 'ccdc': CCDC_GAP, 'jcr': JCR_GAP, 'scopus': SCOPUS_GAP}.get(db, CHEMDB_GAP)
 
 
-_DAILY = {'polyinfo': ('POLYINFO_DAILY', POLYINFO_DAILY), 'cnki': ('CNKI_DAILY', CNKI_DAILY)}
+_DAILY = {'polyinfo': ('POLYINFO_DAILY', POLYINFO_DAILY), 'cnki': ('CNKI_DAILY', CNKI_DAILY),
+          'ccdc': ('CCDC_DAILY', CCDC_DAILY), 'jcr': ('JCR_DAILY', JCR_DAILY), 'scopus': ('SCOPUS_DAILY', SCOPUS_DAILY)}
 
 
 def chemdb_daily(db='scifinder'):
@@ -874,7 +883,9 @@ def chemdb_key(db, params, page):
     """同一库、同一检索（词 + 类 + 排序 + 筛选 + 模式）、同一页 → 同一个缓存键。"""
     import hashlib
     sig = json.dumps({'db': db, 'p': {k: params.get(k) for k in ('query', 'kind', 'sort', 'filters', 'mode', 'structure', 'match', 'subset', 'within',
-                                                                  'op', 'name', 'pid', 'formula', 'prop', 'atoms_only', 'n', 'url')},
+                                                                  'op', 'name', 'pid', 'formula', 'prop', 'atoms_only', 'n', 'url',
+                                                                  'compound', 'ident', 'doi', 'author', 'database', 'journal', 'year',
+                                                                  'eid')},
                       'page': int(page), 'v': VERSION}, sort_keys=True, ensure_ascii=False)   # 升版本 = 解析变了，旧缓存作废
     return hashlib.sha1(sig.encode('utf-8')).hexdigest()[:16]
 
@@ -1084,11 +1095,11 @@ def _chemdb_work(db, params, page, fetch, key):
             time.sleep(wait)                  # 不到 30 秒就等够再做（人的节奏）
         r = fetch(db)
         keep = {k: v for k, v in params.items() if k != 'raw'}
-        is_search = page == 1 and r.get('url') and params.get('op') in (None, 'search')   # 看详情不算「最近一次检索」
+        is_search = page == 1 and r.get('url') and params.get('op') in (None, 'search', 'citing')   # 看详情不算「最近一次检索」；被引列表算（翻页翻的是它）
         chemdb_charge(db, last_search=dict(keep, url=r.get('url')) if is_search else None)
         if r.get('code') in ('CAPTCHA_REQUIRED', 'LOGIN_REQUIRED'):
             _call_human(db, r)
-        if r.get('items') and db not in ('polyinfo', 'cnki'):   # 聚合物条目 / 中文文献：不去 Crossref 补 DOI
+        if r.get('items') and db not in ('polyinfo', 'cnki', 'ccdc', 'jcr'):   # 聚合物 / 中文文献 / 晶体结构：不去 Crossref 补 DOI
             try:
                 enrich(r['items'], warnings=r.setdefault('warnings', []))
             except Exception as e:
@@ -1149,7 +1160,7 @@ def _chemdb_run(db, params, page, fetch, wait_s=CHEMDB_WAIT):
     if not _chemdb_lock.acquire(blocking=False):
         busy = [f for f in os.listdir(os.path.dirname(_job_path('x')))
                 if _load(os.path.join(os.path.dirname(_job_path('x')), f)).get('state') == 'running']
-        raise ValueError('另一个 SciFinder / Reaxys / PoLyInfo / 知网检索正在跑（%s）；等它跑完（chemdb_result）再交' %
+        raise ValueError('另一个借浏览器的检索正在跑（%s）；等它跑完（chemdb_result）再交' %
                          ', '.join(b[:-5] for b in busy) or '?')
     _job_write(key, {'state': 'running', 'db': db, 'params': params, 'page': page, 'started': time.time()})
     import threading
@@ -1368,6 +1379,89 @@ def _cnki_status(a):
     return _out('知网今天还剩 %d 次；%s' % (out['quota']['remaining'], state), out)
 
 
+def _ccdc_search(a):
+    from shared.adapters import ccdc
+    p = {'op': 'search', **{k: (a.get(k) or '').strip() or None for k in ('compound', 'ident', 'doi', 'author')},
+         'database': a.get('database') or 'Published'}
+    ccdc.search_url(p['compound'] or '', p['ident'] or '', p['doi'] or '', p['author'] or '', p['database'])  # 参数不对当场报
+    return _chemdb_run('ccdc', p, 1, lambda db: ccdc.search(p['compound'] or '', p['ident'] or '', p['doi'] or '',
+                                                            p['author'] or '', p['database']), wait_s=_pi_wait(a))
+
+
+def _ccdc_detail(a):
+    from shared.adapters import ccdc
+    n = int(a.get('n') or 0)
+    if n < 1:
+        raise ValueError('给 n（当前结果列表上的序号，从 1 数）')
+    last = (_load(_chemdb_usage_path()).get('searches') or {}).get('ccdc') or {}
+    p = {'op': 'detail', 'n': n, **{k: last.get(k) for k in ('compound', 'ident', 'doi', 'author', 'database')}}
+    return _chemdb_run('ccdc', p, 1, lambda db: ccdc.detail(n), wait_s=_pi_wait(a))
+
+
+def _ccdc_current(a):
+    from shared.adapters import ccdc
+    if not _chemdb_lock.acquire(blocking=False):
+        raise ValueError('有一个检索正在用浏览器；等它跑完（chemdb_result）再读')
+    try:
+        r = _clean(ccdc.current())
+    finally:
+        _chemdb_lock.release()
+    return _out('ccdc %s：%s' % (r.get('code'), r.get('why') or 'OK'), r)
+
+
+def _jcr_journal(a):
+    from shared.adapters import jcr
+    q = (a.get('journal') or '').strip()
+    if not q:
+        raise ValueError('给 journal（刊名 / JCR 缩写 / ISSN）')
+    p = {'op': 'journal', 'journal': q.upper(), 'year': int(a['year']) if a.get('year') else None}
+    return _chemdb_run('jcr', p, 1, lambda db: jcr.journal(q, p['year']), wait_s=_pi_wait(a))
+
+
+def _scopus_search(a):
+    from shared.adapters import scopus
+    p = {'op': 'search', 'query': scopus.build_query(a.get('query')), 'sort': (a.get('sort') or 'relevance').lower()}
+    scopus.results_url(p['query'], p['sort'])
+    return _chemdb_run('scopus', p, 1, lambda db: scopus.search(p['query'], p['sort']), wait_s=_pi_wait(a))
+
+
+def _scopus_citing(a):
+    from shared.adapters import scopus
+    n = int(a.get('n') or 0)
+    if n < 1:
+        raise ValueError('给 n（当前 Scopus 结果页上的序号）')
+    last = (_load(_chemdb_usage_path()).get('searches') or {}).get('scopus') or {}
+    p = {'op': 'citing', 'n': n, 'query': last.get('query'), 'sort': last.get('sort')}
+    return _chemdb_run('scopus', p, 1, lambda db: scopus.citing(n), wait_s=_pi_wait(a))
+
+
+def _scopus_page(a):
+    from shared.adapters import scopus
+    n = int(a.get('page') or 2)
+    last = (_load(_chemdb_usage_path()).get('searches') or {}).get('scopus')
+    if not last:
+        raise ValueError('Scopus 还没有搜过，先 scopus_search')
+    p = {'op': 'page', 'query': last.get('query'), 'sort': last.get('sort'),
+         'n': last.get('n') if last.get('op') == 'citing' else None}   # 被引列表的翻页和原检索的翻页分开缓存
+    return _chemdb_run('scopus', p, n, lambda db: scopus.page(n), wait_s=_pi_wait(a))
+
+
+def _webdb_status(a):
+    """不碰网站：CCDC / JCR / Scopus 今天各剩几次、要等几秒、标签状态（登录页 / 验证页）。"""
+    from shared.adapters import ccdc, jcr, scopus
+    out = {}
+    for db, mod in (('ccdc', ccdc), ('jcr', jcr), ('scopus', scopus)):
+        used, daily, wait = chemdb_quota(db)
+        st = {'quota': {'used_today': used, 'daily_limit': daily, 'remaining': max(0, daily - used)},
+              'min_gap_s': gap_of(db), 'wait_s': round(wait, 1)}
+        try:
+            st['tab'] = mod.status()
+        except Exception as e:
+            st['tab'] = {'error': f'{type(e).__name__}: {str(e)[:120]}'}
+        out[db] = st
+    return _out('CCDC 剩 %d、JCR 剩 %d、Scopus 剩 %d 次' % tuple(out[d]['quota']['remaining'] for d in ('ccdc', 'jcr', 'scopus')), out)
+
+
 def cap(name, handler, limit=None, spill_dir=None):
     """包一层：结构化结果超过 MAX_OUT 字节就写成文件、只回路径（2026-10：6 篇 outline 合一次 batch，
     JSON 在 64 KB 处被截成半截）。文件在 logs/science_out/，B 机 WSL 读得到。"""
@@ -1550,6 +1644,35 @@ TOOLS = [
     ('cnki_current', '不导航、不扣次数：读知网最新那个标签现在的页面（结果页 / 摘要页）。人拖完拼图验证码之后用。',
      {}, [], _cnki_current),
     ('cnki_status', '不碰网站、不扣次数：知网今天还剩几次、要等几秒、最近一次检索、验证码挡没挡着。', {}, [], _cnki_status),
+    ('ccdc_search', '在 CCDC Access Structures 检索晶体结构（CSD + ICSD 已发表的），回列表（最多 30 条）：items[]（rank / refcode / '
+     'deposition（CCDC 号）/ icsd / space_group / cell / name / synonyms），超过 30 条标 truncated。按 compound（英文化合物名）、'
+     'ident（CCDC 号或结构代码，可多个空格隔开）、doi（一篇论文的 DOI → 它的全部结构）、author 检索。'
+     '条款不许程序批量取：两次至少隔 45 秒、每天 15 次。只读、不下载 CIF（要 CIF 请用户自己点 Download）。',
+     {'compound': {'type': 'string'}, 'ident': {'type': 'string'}, 'doi': {'type': 'string'}, 'author': {'type': 'string'},
+      'database': {'type': 'string', 'enum': ['Published', 'CSD', 'ICSD']},
+      'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50}}, [], _ccdc_search),
+    ('ccdc_detail', 'CCDC 当前结果列表第 n 条的详情：detail（refcode / name / space_group / cell / deposition / data_doi（10.5517/…）/ '
+     'deposited_on / synonyms / publications[{citation, doi}]）。键长等几何数据只在 CIF 里，这里没有。规矩同上。'
+     '撞验证页回 CAPTCHA_REQUIRED（主力机已弹提醒），人填完用 ccdc_current。',
+     {'n': {'type': 'integer', 'minimum': 1}, 'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50}}, ['n'], _ccdc_detail),
+    ('ccdc_current', '不导航、不扣次数：读 CCDC 标签上现在那一页（列表 / 详情）。人填完验证页之后用。', {}, [], _ccdc_current),
+    ('jcr_journal', '查一本刊在 JCR（Clarivate）的期刊页：journal（title / issn / eissn / publisher / edition / year / jif / jif_no_self / '
+     'jci / oa_pct / ranks[{category, year, rank, quartile, percentile}] / categories）。journal 参数给刊名、JCR 缩写或 ISSN；'
+     '没有完全同名的会取下拉第一个并写进 warnings（核对 title）。year 不给 = 最新一年。同一本当天走缓存。'
+     '两次至少隔 20 秒、每天 30 次；一次一本，别批量查一串刊。',
+     {'journal': {'type': 'string'}, 'year': {'type': 'integer', 'minimum': 1997},
+      'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50}}, ['journal'], _jcr_journal),
+    ('scopus_search', '在 Scopus 检索一次，回第 1 页：items[]（rank / eid / title / authors / source / citation（卷期页）/ year / cited / '
+     'type / open_access / doi（按标题去 Crossref 补，doi_match_score）/ in_library / tier）、count、pages。query：普通词（按题名 / 摘要 / '
+     '关键词）或 Scopus 检索式（TITLE-ABS-KEY(…) AND PUBYEAR > 2019、DOI(…)、AUTH(…)…）。sort：relevance / cited / date。'
+     '两次至少隔 30 秒、每天 20 次；同一检索同一页当天走缓存。',
+     {'query': {'type': 'string'}, 'sort': {'type': 'string', 'enum': ['relevance', 'cited', 'date']},
+      'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50}}, ['query'], _scopus_search),
+    ('scopus_citing', 'Scopus 当前结果页第 n 条「谁引用了它」的列表第 1 页（字段同 scopus_search，另有 citing_of）。规矩同上。',
+     {'n': {'type': 'integer', 'minimum': 1}, 'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50}}, ['n'], _scopus_citing),
+    ('scopus_page', 'Scopus 当前列表（最近一次 scopus_search 或 scopus_citing）的第 page 页。规矩同上。',
+     {'page': {'type': 'integer', 'minimum': 1}, 'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50}}, ['page'], _scopus_page),
+    ('webdb_status', '不碰网站、不扣次数：CCDC / JCR / Scopus 今天各剩几次、要等几秒、标签停在哪（登录页 / 验证页）。', {}, [], _webdb_status),
 ]
 
 
