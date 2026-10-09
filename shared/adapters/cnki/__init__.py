@@ -51,6 +51,7 @@ KINDS = {
     'patent': 'a[name=classify][data-chs="SCPD"]',
 }
 SORTS = {'relevance': r'相关度', 'date': r'发表时间|公开日|出版时间|日期', 'cited': r'被引', 'downloads': r'下载'}
+_DB_TYPE = {'CDFD': '博士', 'CMFD': '硕士', 'SCPD': '中国专利', 'CJFQ': '期刊', 'CPFD': '会议'}
 _TOTAL = re.compile(r'共找到\s*([\d,]+)\s*条结果(?:\s*(\d+)\s*/\s*(\d+))?')   # 只有一页时不带页码
 
 
@@ -123,7 +124,7 @@ def parse_rows(rows):
             elif cls in ('author', 'inventor', 'applicant'):
                 names = links or [x.strip() for x in re.split(r'[;；]', text) if x.strip()]
                 it[{'author': 'authors', 'inventor': 'inventors', 'applicant': 'applicants'}[cls]] = names
-            elif cls == 'source':
+            elif cls in ('source', 'unit'):        # 博士 / 硕士单库的表里「学位授予单位」列叫 unit
                 it['source'] = text or None
             elif cls == 'date':
                 dates.append(text or None)
@@ -133,6 +134,8 @@ def parse_rows(rows):
                 it['cited'] = _int(text) or 0
             elif cls == 'download':
                 it['downloads'] = _int(text)
+        if not it.get('type') and it.get('db') in _DB_TYPE:     # 单库的表没有「类型」列，按库名补
+            it['type'] = _DB_TYPE[it['db']]
         if 'inventors' in it or 'applicants' in it or (it.get('type') or '').endswith('专利'):
             it['date_applied'] = dates[0] if dates else None
             it['date_published'] = dates[1] if len(dates) > 1 else None
@@ -184,21 +187,22 @@ def parse_detail(text):
             fields[k] = re.sub(r'\s*\.\.\.\s*更多$|\s*更多$', '', fields[k]).strip()
     if '关键词' in fields:
         fields['关键词'] = [x.strip() for x in re.split(r'[;；]', fields['关键词']) if x.strip()]
+    # 目录在页面最前面：「文章目录」之后，到 AI 提问（以「？」结尾的句子）/ 服务推荐为止（2026-10-09 实测）
     outline = []
-    try:
-        i = next(j for j, ln in enumerate(lines) if ln.strip() == '目录')
+    i = next((j for j, ln in enumerate(lines) if ln.strip() in ('文章目录', '目录')), None)
+    if i is not None:
         for ln in lines[i + 1:]:
-            if not ln.strip():
+            s = ln.replace('\xa0', ' ').replace('\t', '    ').rstrip()
+            if not s.strip():
                 continue
-            if re.match(r'^(服务推荐|推广|相似文献|.+\？)$', ln.strip()):
+            if s.strip() in ('服务推荐', '推广 X') or s.strip().endswith('？') or re.match(r'^\s*摘要[：:]', s):
                 break
-            outline.append(ln.replace('\t', '    ').rstrip())
-    except StopIteration:
-        pass
+            outline.append(s)
+    # 标题 / 作者 / 学校 = 「摘要：」那一行之前最后三行非空的（「文章目录」下面也有一行「摘要」，别认错）
     head = None
-    idx = next((j for j, ln in enumerate(lines) if ln.strip().startswith('摘要')), None)
+    idx = next((j for j, ln in enumerate(lines) if re.match(r'^\s*摘要[：:]', ln)), None)
     if idx and idx >= 3:
-        head = [ln.strip() for ln in lines[max(0, idx - 6):idx] if ln.strip()]
+        head = [h for h in (ln.replace('\xa0', ' ').strip() for ln in lines[max(0, idx - 8):idx]) if h]
     out = {'fields': fields, 'outline': outline[:300]}
     if head:
         out['title'], out['authors_line'] = head[-3] if len(head) >= 3 else None, head[-2] if len(head) >= 2 else None

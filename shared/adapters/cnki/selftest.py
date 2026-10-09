@@ -25,18 +25,26 @@ PATENT_ROW = {'href': 'https://kns.cnki.net/kcms2/article/abstract?v=def', 'db':
                         cell('inventor', '张三;李四', ['张三', '李四']), cell('applicant', '某某大学', ['某某大学']),
                         cell('data', '中国专利'), cell('date', '2026-03-01'), cell('date', '2026-08-26'), cell('operat', '')]}
 
+PHD_ROW = {'href': 'https://kns.cnki.net/kcms2/article/abstract?v=xyz', 'db': 'CDFD', 'fn': '1024103233.nh',
+           'cells': [cell('seq', '2'), cell('name', '聚硼硅氧烷及其抗冲击防护材料的制备与性能研究'), cell('author', '刘芳', ['刘芳']),
+                     cell('unit', '中国科学技术大学'), cell('date', '2023'), cell('quote', '4'), cell('download', '693'),
+                     cell('operat', '原版阅读')]}
+
+# 2026-10-09 实测的摘要页：目录在最前面（「文章目录」下还有一行「摘要」），标题 / 作者 / 学校在「摘要：」正上方
 DETAIL = '\n'.join([
-    '目录',
+    ' 总库', ' 四川大学图书馆 个人登录', '', '文献知网节', '',
+    '文章目录', '摘要', 'ABSTRACT',
     '第五章 含Si-O-B键的聚硼硅氧烷的水解性能电化学高灵敏检测',
-    '\t5.1 前言',
-    '\t5.2 实验部分',
+    '\xa0\xa0\xa0\xa05.1 前言',
+    '\xa0\xa0\xa0\xa05.2 实验部分',
     '第七章 总结与展望',
     '附录',
     '',
     '苯并噁嗪树脂与聚硼硅氧烷杂化对材料性能有何影响？',
     '服务推荐',
-    '推广 X',
+    '推广\xa0X',
     '山东大学山东省211工程院校985工程院校教育部直属院校一流大学',
+    ' ', ' ', ' ',
     '含Si、B和Ti的苯并噁嗪树脂的合成及其性能研究',
     '刘宝良',
     '山东大学',
@@ -68,6 +76,8 @@ def main():
     check('专利行：发明人、申请人、申请日与公开日分开、专利号',
           (pa['inventors'], pa['applicants'], pa['date_applied'], pa['date_published'], pa['patent_no']) ==
           (['张三', '李四'], ['某某大学'], '2026-03-01', '2026-08-26', 'CN122788335A'), pa)
+    phd = cnki.parse_rows([PHD_ROW])[0]
+    check('博士单库的行：单位列叫 unit、类型按库名补', (phd['source'], phd['type'], phd['cited']) == ('中国科学技术大学', '博士', 4), phd)
     check('没有标题的行丢掉', cnki.parse_rows([{'cells': [cell('seq', '1')]}]) == [])
 
     check('各库条数', cnki.parse_counts([{'name': '学术期刊', 'n': '47'}, {'name': '学位论文', 'n': '34'},
@@ -85,8 +95,9 @@ def main():
     check('摘要页：关键词拆成列表', f.get('关键词') == ['苯并噁嗪树脂', 'Si-O-C键', 'Si-O-B键', 'Si-O-Ti键'], f.get('关键词'))
     check('摘要页：DOI / 导师 / 学科专业', (f.get('DOI'), f.get('导师'), f.get('学科专业')) ==
           ('10.27272/d.cnki.gshdu.2024.000361', '鲁在君', '高分子化学与物理'), f)
-    check('摘要页：章节目录到问答推荐之前为止', d['outline'][0].startswith('第五章') and d['outline'][-1] == '附录'
-          and len(d['outline']) == 5, d['outline'])
+    check('摘要页：章节目录从「文章目录」起、到 AI 提问之前为止，缩进保留',
+          d['outline'][2].startswith('第五章') and d['outline'][3] == '    5.1 前言' and d['outline'][-1] == '附录'
+          and len(d['outline']) == 7, d['outline'])
 
     check('验证码：挂在屏幕外、透明 → 没弹',
           not cnki.captcha_active({'top': -1000000, 'w': 218, 'h': 279, 'op': '0', 'disp': 'block', 'vis': 'visible'}))
