@@ -184,6 +184,10 @@ def norm_sf_substance(x):
         out['component_cas_rns'] = re.findall(r'\d{2,7}-\d{2}-\d', comps.group(1))   # 共聚物 = 它的单体
     if n_comp:
         out['n_components'] = int(n_comp.group(1))
+        # SciFinder 自己只列有 CAS 号的组分（2026-10-09 实测第 96 名：3 个组分只列 2 个号，第三个是分子式里的 2ClH）
+        listed = len(out.get('component_cas_rns') or [])
+        if comps and out['n_components'] > listed:
+            out['components_unlisted'] = out['n_components'] - listed
     if any('K' in (x.get(k) or '') or 'M' in (x.get(k) or '') for k in ('refs', 'rxns')):
         out['counts_rounded'] = True        # SciFinder 写 51K 这种约数
     return out

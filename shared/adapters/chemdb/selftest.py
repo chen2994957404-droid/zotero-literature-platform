@@ -147,6 +147,11 @@ def main():
     check('多组分：截断的分子式标出来、组分 CAS 号与组分数', mc['formula'] == '(C6H6B2O4.C6H4Br2.C6H2Br4'
           and mc['formula_truncated'] and mc['component_cas_rns'] == ['4612-26-4', '636-28-2', '106-37-6']
           and mc['n_components'] == 3, str(mc))
+    hcl = chemdb.norm_sf_substance({'rn': '1822335-11-4', 'formula': '(C6H16N2O2.C6H8B2O4.2ClH)…', 'lines': [
+        '1822335-11-4', 'Images of a multi component structure including C A S RNs: 80685-25-2 and 4612-26-4.',
+        '(C6H16N2O2.C6H8B2O4.2ClH)…', 'Components: 3']})
+    check('组分比列出的 CAS 号多 → components_unlisted（盐酸没列号）', hcl['component_cas_rns'] == ['80685-25-2', '4612-26-4']
+          and hcl.get('components_unlisted') == 1 and hcl['name'] is None, str(hcl))
     fr = chemdb.norm_sf_substance({'rn': '1144113-62-1', 'formula': 'C9H7NO.1/4C6H8B2O4', 'name': '',
                                    'lines': ['1144113-62-1', 'Images of a multi component structure including C A S RNs: '
                                              '4612-26-4 and 1532-72-5.', 'C9H7NO.1/4C6H8B2O4', 'Components: 2',

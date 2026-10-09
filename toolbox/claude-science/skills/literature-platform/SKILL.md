@@ -116,6 +116,9 @@ main machine, then retry.
   Multi-component substances (salts, 1:1 complexes, copolymers) also give `n_components` and `component_cas_rns`
   (for a copolymer: its monomers). Long formulas are cut by SciFinder's list page: `formula_truncated: true`
   (the full one is only on the substance detail page).
+  SciFinder's list page gives **no name** for many multi-component entries (only "Images of a multi component structure
+  including CAS RNs …"), so `name` is null there — identify them by `component_cas_rns`. SciFinder lists only components
+  that have a CAS number (e.g. HCl in a salt is not listed): `components_unlisted` says how many are missing.
 - **CAS number + topic** (the most common question, e.g. "boric acid in self-healing materials"), SciFinder:
   `{"query":"10043-35-3","kind":"references","within":["self-healing"],"filters":{"Concept":["Self-healing materials"]}}`.
   `within` alone (133,484 → 3,035) still lets in electrocatalysis papers ("self-healing catalyst"); the CAS-indexed
