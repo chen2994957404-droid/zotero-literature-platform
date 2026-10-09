@@ -221,11 +221,18 @@ def journal(q, year=None):
                 return _result(code='NAVIGATE_FAILED', url=pg.url, why=f'打不开期刊页：{str(e)[:120]}')
         else:
             pg.locator('li.suggestion-item p.journal-title').nth(i).click()
-        if not _wait(pg, lambda t: 'JOURNAL IMPACT FACTOR' in t and ('Rank by Journal Impact Factor' in t or 'ESCI' in t), timeout=45):
+        if not _wait(pg, lambda t: 'JOURNAL IMPACT FACTOR' in t, timeout=45):
             if is_login(pg.url):
                 return _login(pg)
             return _result(code='TIMEOUT', url=pg.url, warnings=warnings, why='期刊页 45 秒没出来')
+        # 学科排名那段是滚到才加载的（2026-10-09 实测：不滚就一直没有「Rank by Journal Impact Factor」）
+        end = time.time() + 25
+        while time.time() < end and 'Rank by Journal Impact Factor' not in _body(pg):
+            pg.evaluate('window.scrollBy(0, Math.max(800, window.innerHeight))')
+            pg.wait_for_timeout(1000)
         got = parse_profile(_body(pg))
+        if not got['ranks']:
+            warnings.append('no_rank: 页面上没读到学科排名（ESCI 刊或页面没加载完）')
         return _result(ok=True, code='OK' if got.get('jif') is not None or got.get('ranks') else 'NO_RESULTS',
                        url=pg.url, warnings=warnings, query=q, journal=got)
 
