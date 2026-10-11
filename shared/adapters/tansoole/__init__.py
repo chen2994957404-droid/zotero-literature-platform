@@ -214,7 +214,8 @@ _ROWS_JS = r"""() => {
   const T = e => e ? (e.innerText || '').replace(/\s+/g, ' ').trim() : '';
   const out = {compounds: [], rows: []};
   let cur = null;
-  const box = document.querySelector('.product-show') || document.body;
+  // 页面上有两个 .product-show，第一个是空的（2026-10-11 实测）—— 挑装着结果行的那个
+  const box = [...document.querySelectorAll('.product-show')].find(e => e.querySelector('ul.show-list-con')) || document.body;
   box.querySelectorAll('.list-reagent-info, ul.show-list.show-list-con').forEach(el => {
     if (el.classList.contains('list-reagent-info')) {
       const lis = [...el.querySelectorAll('dd li')];
@@ -277,7 +278,11 @@ def _extract(pg, query, warnings, page_no=None):
     if d.get('others'):
         r['other_categories'] = d['others']          # 「抑制剂・激动剂2条, 分析试剂·标准品11条」—— 别的品类里还有
     r['note'] = '价格不读（网站用特制字体防程序抄价格）；价格查 SciFinder：chemdb_search kind=suppliers'
-    if not r['items']:
+    if not r['items'] and r['count']:
+        # 页面说有 N 条却一行没读出来 = 页面改版或还没画完；不当「没结果」（会被缓存一整天，2026-10-11 踩过）
+        r.update(code='TIMEOUT', complete=False, why=f'页面显示 {r["count"]} 条，但一行也没读出来（页面可能改版了）')
+        r['warnings'].append('no_items_parsed')
+    elif not r['items']:
         r.update(code='NO_RESULTS', why='探索平台里没搜到（换中文名 / 英文名 / CAS 号试试）')
     if r['logged_in'] is False:
         r['warnings'].append('not_logged_in: 探索平台标签没登录，货期可能不全；请人在主力机浏览器里登录')
