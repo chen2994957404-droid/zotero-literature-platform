@@ -37,6 +37,7 @@
 |---|---|---|
 | 8778 | MCP HTTP 服务 `host/mcp/server.py --http`（`/mcp` + `/science`） | Claude Science（经 B 机 WSL 的 litplatform）、Antigravity |
 | 9333 | 取全文用的浏览器（`launch/取全文用的浏览器.bat`） | 取全文（机构订阅 + 人机验证通行证都在它身上） |
+| 8780 | 文献库应用 `python -m host.app.server`（2026-10-11） | 用户检索证据库（编程机经 SSH 隧道打开） |
 
 它们没有心跳，**端口在监听就算活着**；不在就拉起来（同样有 GRACE 宽限，不会连着拉）。
 不受 AUTO_BUILD 管：它们只是「有人来要才干活」的服务，不自己去建库。
@@ -91,6 +92,8 @@ def port_services():
          'cmd': [sys.executable, os.path.join(ROOT, 'host', 'mcp', 'server.py'), '--http']},
         {'name': 'getpdf_browser', 'port': urlparse(pdf_fetch.cdp_url()).port or 9333,
          'cmd': ['cmd', '/c', os.path.join(ROOT, 'launch', '取全文用的浏览器.bat')]},
+        {'name': 'library_app', 'port': 8780,      # 文献库应用（host/app/server.py 的 PORT）
+         'cmd': [sys.executable, os.path.join(ROOT, 'host', 'app', 'server.py')]},
     ]
 
 

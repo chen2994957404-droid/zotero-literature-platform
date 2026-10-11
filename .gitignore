@@ -106,3 +106,7 @@ llm_routing.json.tmp
 # Windows 上 git 顺着软链接把 6600 个第三方文件当成本仓库的文件提交了进去。
 /outputs/
 /scratch/
+
+# --- 文献库应用前台（host/app/web）：依赖与打包产物不进版本库，打包在编程机做、传到主力机 ---
+host/app/web/node_modules/
+host/app/web/dist/

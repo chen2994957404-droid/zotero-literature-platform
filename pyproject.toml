@@ -32,11 +32,13 @@ dependencies = [
     "pysbd==0.3.4",             # 句子切分（shared/adapters/sentences）
     "json-repair==0.63.4",      # 本地模型吐的坏 JSON 修一修（shared/adapters/llm_client）
     "gliner==0.2.29",    # 零样本 NER：样品 / 材料名（shared/adapters/ner）；会带上 torch(CPU)
+    "fastapi==0.143.0",  # 文献库应用的后台（host/app/server.py）
+    "uvicorn==0.52.4",   # 跑 fastapi 的服务器
 ]
 
 [project.optional-dependencies]
 # 开发期依赖，用户日常运行不需要
-dev = ["pytest>=8.0", "pyright>=1.1.400"]   # pyright：类型检查棘轮（host/doctor/typecheck.py），改代码的机器必须装
+dev = ["pytest>=8.0", "pyright>=1.1.400", "httpx>=0.27"]   # httpx：fastapi 的测试客户端要它；pyright：类型检查棘轮（host/doctor/typecheck.py），改代码的机器必须装
 
 [tool.setuptools.packages.find]
 # 重构后的三个顶层包（见 REBUILD.md 第一节）：

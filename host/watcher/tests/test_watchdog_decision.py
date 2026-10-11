@@ -171,7 +171,7 @@ def test_端口服务表指向真实存在的入口(wd):
         names.add(s['name'])
         assert isinstance(s['port'], int) and s['port'] > 0
         assert os.path.exists(s['cmd'][-1] if s['name'] == 'getpdf_browser' else s['cmd'][1]), s
-    assert names == {'mcp_http', 'getpdf_browser'}
+    assert names == {'mcp_http', 'getpdf_browser', 'library_app'}
 
 
 def test_没人监听的端口判为不通(wd):

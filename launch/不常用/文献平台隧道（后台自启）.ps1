@@ -8,13 +8,14 @@
 
 $key  = Join-Path $env:USERPROFILE '.ssh\id_ed25519_zotero_b'
 $port = 8778
+$app  = 8780   # 文献库应用（host/app/server.py，2026-10-11）：编程机浏览器开 http://127.0.0.1:8780
 $hosts = @('100.85.251.62', '211.83.153.16', '192.168.123.216')   # 先 Tailscale（在家也通）、再校园网公网、再局域网；哪个通用哪个
 
 while ($true) {
     foreach ($h in $hosts) {
         & ssh -i $key -N -o BatchMode=yes -o ExitOnForwardFailure=yes `
             -o ConnectTimeout=8 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 `
-            -L "${port}:127.0.0.1:${port}" "Administrator@$h"
+            -L "${port}:127.0.0.1:${port}" -L "${app}:127.0.0.1:${app}" "Administrator@$h"
         # 走到这里说明连接结束了（成功连上过、后来断了；或者压根没连上）。换下一个地址再试。
     }
     Start-Sleep -Seconds 20

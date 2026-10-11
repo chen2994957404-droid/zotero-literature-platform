@@ -15,8 +15,10 @@
 |---|---|
 | `find(q='', corr='', author='', team='', year_from=None, year_to=None, journal='', has=(), abstract=False, limit=30)` | 检索，返回结果列表 |
 | `render(rows, total)` | 渲染给人看 |
+| `detail(pid)` | 一篇的完整卡片（作者 / 单位 / 摘要 / 团队 / 文件）|
 | `norm(text)` / `tokens(text)` / `is_doi(text)` | 纯函数（测试用）|
 """
+import os
 import re
 import unicodedata
 
@@ -166,3 +168,30 @@ def render(rows, total):
                      f"   {r['journal']} · 通讯：{', '.join(r['corr']) or '?'}{team}{coop} {tags}\n"
                      f"   {r['doi'] or ''} · {r['id']}")
     return '\n'.join(lines)
+
+
+def detail(pid):
+    """一篇的完整卡片：目录卡 + 全部作者（通讯 / 单位）+ 摘要 + 团队 + 手上有哪些文件。找不到返回 None。"""
+    from shared.kernel import paths
+    from tools.library import oaindex, teams
+    try:
+        r = catalog.record(pid)
+    except paths.BadKeyError:
+        return None
+    if not (r.get('title') or r.get('doi') or r.get('pdf')):
+        return None
+    e = ((oaindex.load() or {}).get('papers') or {}).get(r['id'], {})
+    roster = teams.load_roster()
+    lk = ((teams.load_links() or {}).get('papers') or {}).get(r['id']) or {}
+    files = {'pdf': os.path.isfile(paths.local_pdf(r['id'])),
+             'si': bool(paths.find_local_si(r['id'])),
+             'summary': os.path.isfile(paths.summary(r['id'])),
+             'si_summary': os.path.isfile(paths.si_summary(r['id'])),
+             'summary_full': os.path.isfile(paths.summary_full(r['id']))}
+    return {'id': r['id'], 'title': ' '.join((r.get('title') or '').split()), 'doi': r.get('doi') or '',
+            'year': r.get('year') or e.get('year'), 'journal': r.get('journal') or e.get('venue') or '',
+            'authors': e.get('authors') or [], 'abstract': e.get('abstract') or '',
+            'team': _team_label(roster, lk['primary']) if lk.get('primary') is not None else '',
+            'coop': [_team_label(roster, i) for i in (lk.get('others') or [])],
+            'has': {k: bool(r.get(k)) for k in ('pdf', 'si', 'fulltext', 'summary', 'structured')},
+            'files': files, 'in_zotero': bool(r.get('in_zotero'))}
