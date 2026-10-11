@@ -219,10 +219,11 @@ _ROWS_JS = r"""() => {
   box.querySelectorAll('.list-reagent-info, ul.show-list.show-list-con').forEach(el => {
     if (el.classList.contains('list-reagent-info')) {
       const lis = [...el.querySelectorAll('dd li')];
-      const mes = T(el.querySelector('li.mes'));
+      // 几个 span 挨着、中间没空格（innerText 会连成「98-80-6MDL号：…」，2026-10-11 实测）—— 逐个取再用 | 隔开
+      const mes = [...el.querySelectorAll('li.mes > span')].map(T).join(' | ');
       const g = re => (mes.match(re) || [])[1] || null;
       cur = {name_cn: T(el.querySelector('li.name')) || null, name_en: lis[1] ? T(lis[1]) : null,
-             cas_rn: g(/CAS号：\s*(\S+)/), mdl: g(/MDL号：\s*(\S+)/), formula: g(/分子式：\s*(\S+)/), mw: g(/分子量：\s*([\d.]+)/)};
+             cas_rn: g(/CAS号：\s*([^\s|]+)/), mdl: g(/MDL号：\s*([^\s|]+)/), formula: g(/分子式：\s*([^\s|]+)/), mw: g(/分子量：\s*([\d.]+)/)};
       out.compounds.push(cur);
       return;
     }
