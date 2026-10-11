@@ -8,6 +8,12 @@
     python -m tools.library 找 "boronic ester hydrogen bond competition"   # 库内向量检索（零成本）
     python -m tools.library 找 "配比" --si                # 只搜补充材料
     python -m tools.library 引文 ABCD1234                 # 参考文献，标出库里已有的
+    python -m tools.library 检索 10.1021/jacs.3c13392              # DOI 直接定位
+    python -m tools.library 检索 "ionic skin"                       # 标题 / 作者 / 期刊里的词（每个词都要命中）
+    python -m tools.library 检索 --通讯 武培怡 --年 2024-2026        # 通讯作者（中文名走团队名单，拼音不管顺序）
+    python -m tools.library 检索 boronic --摘要 --有 精读             # 连摘要一起搜；只要已精读的
+    python -m tools.library 检索 --团队 龚兴龙 --刊 "Adv"            # 某团队（含合作）、期刊名里带 Adv
+    python -m tools.library 检索 --建索引                            # 从 OpenAlex 取作者 + 摘要（免费额度约 25 次）
     python -m tools.library 团队                         # 研究团队名单 + 每组挂了几篇（读缓存，不联网）
     python -m tools.library 团队 武培怡                   # 一个组：大导 / 小导 / 已独立 + 本组与合作文章
     python -m tools.library 团队 --重建                   # 重新取作者、挂组（OpenAlex 免费额度约 25 次）
@@ -46,6 +52,27 @@ def main():
     if action in ('盘点', 'census'):
         from tools.library import census
         return census.main()
+
+    if action in ('检索', 'find'):
+        from tools.library import dbsearch
+        if flag('--建索引') or flag('--reindex'):
+            from tools.library import oaindex, teams
+            out = oaindex.build(on_progress=lambda i, n, got: print(f'  取作者与摘要 {i}/{n}（拿到 {got}）'))
+            print(f"作者索引：{out['n_found']} / {out['n_catalog_doi']} 篇")
+            teams.build()
+            print('团队对照已按新索引重挂')
+            if not pos(1):
+                return 0
+        yr = opt('--年', '') or opt('--year', '')
+        y1, _, y2 = yr.partition('-')
+        rows, total = dbsearch.find(
+            q=pos(1) or '', corr=opt('--通讯', '') or opt('--corr', ''), author=opt('--作者', '') or opt('--author', ''),
+            team=opt('--团队', '') or opt('--team', ''), year_from=y1 or None, year_to=(y2 if '-' in yr else y1) or None,
+            journal=opt('--刊', '') or opt('--journal', ''),
+            has=[h for h in (opt('--有', '') or opt('--has', '')).replace('，', ',').split(',') if h],
+            abstract=flag('--摘要') or flag('--abstract'), limit=int(opt('--n', 30)))
+        print(dbsearch.render(rows, total))
+        return 0
 
     if action in ('团队', 'teams'):
         from tools.library import teams

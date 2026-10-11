@@ -584,6 +584,14 @@ def teams():
     return os.path.join(STATE, 'teams.json')
 
 
+def oa_index():
+    """serving/oa_index.json —— 证据库每篇的作者（含通讯标记、单位）+ 摘要，从 OpenAlex 取一次。
+
+    **可重建**（tools.library.oaindex）。目录卡里没有作者，按通讯作者检索、挂团队都读它。
+    """
+    return os.path.join(SERVING, 'oa_index.json')
+
+
 def team_links():
     """serving/team_links.json —— 文章 → 研究团队的对照（tools.library.teams 生成）。
 

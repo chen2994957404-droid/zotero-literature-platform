@@ -12,7 +12,7 @@
 3. 小导的文章归他所在的组；**已独立的人**（alumni）`since` 年起不再算老组，之前的照算。
 4. 一篇可以挂多个组：一个主组 + 若干合作组。
 
-作者身份用 OpenAlex 编号（名单里每人收了同名碎片编号）。取作者走 `shared.adapters.openalex`，
+作者身份用 OpenAlex 编号（名单里每人收了同名碎片编号）。作者来自 `tools.library.oaindex`（本地索引），
 结果缓存进 `paths.team_links()`（可重建），页面和命令行都读缓存、零网络。
 
 | 函数 | 干什么 |
@@ -20,7 +20,7 @@
 | `load_roster()` | 读名单 |
 | `person_index(roster)` | OpenAlex 编号 → [(团队序号, 角色, since)] |
 | `link_work(work, index)` | 一篇 OpenAlex work → {primary, others, via} |
-| `build(on_progress=None)` | 全库取作者、挂组、写缓存（联网，免费额度约 25 次查询）|
+| `build(on_progress=None, refresh=False)` | 名单 × 作者索引 → 挂组、写缓存（没有索引时先联网建一次）|
 | `load_links()` | 读缓存 |
 | `summary(roster, links)` | 每个团队挂了几篇 |
 | `render_list` / `render_team` | 渲染给人看 |
@@ -31,9 +31,6 @@ import os
 from datetime import datetime
 
 from shared.kernel import catalog, paths
-
-SELECT = 'id,doi,publication_year,authorships'
-
 
 def _sid(u):
     return (u or '').rsplit('/', 1)[-1]
@@ -99,29 +96,31 @@ def link_work(work, idx):
     return {'primary': primary, 'others': others, 'via': via}
 
 
-def build(on_progress=None):
-    """全库取作者 → 挂组 → 写 `paths.team_links()`。返回缓存内容。"""
-    from shared.adapters import openalex
+def as_work(entry):
+    """oaindex 的一条 → link_work 认的 OpenAlex work 形状。"""
+    return {'publication_year': entry.get('year'),
+            'authorships': [{'author': {'id': a['id'], 'display_name': a['n']},
+                             'is_corresponding': a['c'], 'author_position': a['p']}
+                            for a in entry.get('authors') or []]}
+
+
+def build(on_progress=None, refresh=False):
+    """名单 × 作者索引 → 挂组 → 写 `paths.team_links()`。
+
+    作者来自 `oaindex`（本地）；没有索引或 refresh=True 时先联网建一次。"""
+    from tools.library import oaindex
+    index = None if refresh else oaindex.load()
+    if index is None:
+        index = oaindex.build(on_progress=on_progress)
     roster = load_roster()
     idx = person_index(roster)
-    pid_by_doi = {}
-    for r in catalog.scan():
-        d = catalog.norm_doi(r.get('doi'))
-        if d:
-            pid_by_doi[d] = r['id']
-    works = openalex.works_by_dois(list(pid_by_doi), select=SELECT, on_progress=on_progress)
     papers = {}
-    for w in works.values():
-        d = catalog.norm_doi(w.get('doi'))
-        pid = pid_by_doi.get(d)
-        if not pid:
-            continue
-        lk = link_work(w, idx)
-        papers[pid] = {'doi': d, 'year': w.get('publication_year'), **lk}
+    for pid, e in index['papers'].items():
+        papers[pid] = {'doi': e['doi'], 'year': e.get('year'), **link_work(as_work(e), idx)}
     out = {'说明': '文章 → 研究团队（tools.library.teams 生成，可重建；团队序号对应 teams.json 里 teams 的顺序）',
            'built_at': datetime.now().isoformat(timespec='seconds'),
-           'roster_updated': roster.get('updated'),
-           'n_catalog_doi': len(pid_by_doi), 'n_openalex': len(works), 'papers': papers}
+           'roster_updated': roster.get('updated'), 'index_built_at': index.get('built_at'),
+           'papers': papers}
     p = paths.team_links()
     os.makedirs(os.path.dirname(p), exist_ok=True)
     json.dump(out, io.open(p, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
