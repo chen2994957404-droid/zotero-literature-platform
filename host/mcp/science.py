@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.11.0'
+VERSION = '0.12.0'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -86,6 +86,8 @@ VERSION = '0.11.0'
 # v0.11（2026-10-11 用户定）：chemdb_search kind=suppliers —— SciFinder 的 CAS 商业来源（几百家试剂商目录）：
 #   每家的规格与价格、纯度、库存、几周发货、国家、供应商商品页网址，另给 summary（各币种最便宜每克价、国家分布）。
 #   设计实验时比药品价格、好不好买、找同类替代品，不再凭记忆。同一套额度 / 间隔 / 缓存（SciFinder 条款用户 10-08 已知情）。
+# v0.12（同日，用户定）：tansoole_search / tansoole_page —— 探索平台（泰坦科技，他实际买药的地方）：品牌、规格、纯度、
+#   货期（现货 / 几个工作日 / 期货）、能买还是要询价。价格是网站的防抓取字体，用户知情后定不读（价格走 kind=suppliers）。
 
 # 原样借用的（输出本来就合适）
 BORROW = ()     # 2026-10-04 用户定：只给它做不到的（取全文）。数值库它自己会抽，不借了；ping 自己挂
@@ -104,6 +106,7 @@ NO_CHARGE = ('NOT_FOUND', 'NO_SEARCH', 'LOGIN_REQUIRED')   # 这几种结果没�
 CCDC_GAP, CCDC_DAILY = 45, 15        # CCDC：条款明禁程序访问，用户知情后定小量用 —— 最保守
 JCR_GAP, JCR_DAILY = 20, 30          # JCR：一次只查一本刊
 SCOPUS_GAP, SCOPUS_DAILY = 30, 20    # Scopus：一次一页
+TANSOOLE_GAP, TANSOOLE_DAILY = 30, 30   # 探索平台：一次一页、只读明文栏（价格不读）；控制面板 TANSOOLE_DAILY 可改
 MAX_OUT = 50000        # 一次返回的结构化数据上限（字节）：调用方的远程命令输出过 64 KB 就被截断（2026-10 实测）
 
 INSTRUCTIONS = """\
@@ -118,6 +121,7 @@ PARSE_FAILED / NETWORK_ERROR / NOT_FETCHED）与 retryable；CAPTCHA_REQUIRED �
 文件路径是 B 机 WSL 路径（/mnt/d/...），你的 SSH 算力能直接读。
 SciFinder / Reaxys：先 `chemdb_status`（不扣次数），再 `chemdb_search` 回第 1 页的结构化列表，`chemdb_page` 翻页。
 药品价格 / 好不好买 / 替代品：`chemdb_search` db=scifinder kind=suppliers（CAS 号最准），回各家规格价格、纯度、库存、发货、国家。
+用户实际在探索平台（泰坦）买药：`tansoole_search` 看那里有哪些品牌、规格、纯度、现货还是要等几个工作日（不含价格）。
 按人的频率：两次至少隔 30 秒、每个库每天有上限（quota）；当天同一检索走缓存不扣次数 —— 先想好检索词，别试错式地连搜。
 code=LOGIN_REQUIRED 时请人在主力机浏览器里登录。
 PoLyInfo（聚合物实测性质）：`polyinfo_search` → `polyinfo_samples` → `polyinfo_sample`（组成、出处、原文的组成–性质表）。
@@ -825,7 +829,7 @@ def _day(now):
     return time.strftime('%Y-%m-%d', time.localtime(now))
 
 
-WEB_DBS = ('scifinder', 'reaxys', 'polyinfo', 'cnki', 'ccdc', 'jcr', 'scopus')   # 借浏览器查的库；共用一份账本、一把锁
+WEB_DBS = ('scifinder', 'reaxys', 'polyinfo', 'cnki', 'ccdc', 'jcr', 'scopus', 'tansoole')   # 借浏览器查的库；共用一份账本、一把锁
 
 
 def check_web_db(db):
@@ -836,11 +840,13 @@ def check_web_db(db):
 
 
 def gap_of(db):
-    return {'polyinfo': POLYINFO_GAP, 'cnki': CNKI_GAP, 'ccdc': CCDC_GAP, 'jcr': JCR_GAP, 'scopus': SCOPUS_GAP}.get(db, CHEMDB_GAP)
+    return {'polyinfo': POLYINFO_GAP, 'cnki': CNKI_GAP, 'ccdc': CCDC_GAP, 'jcr': JCR_GAP, 'scopus': SCOPUS_GAP,
+            'tansoole': TANSOOLE_GAP}.get(db, CHEMDB_GAP)
 
 
 _DAILY = {'polyinfo': ('POLYINFO_DAILY', POLYINFO_DAILY), 'cnki': ('CNKI_DAILY', CNKI_DAILY),
-          'ccdc': ('CCDC_DAILY', CCDC_DAILY), 'jcr': ('JCR_DAILY', JCR_DAILY), 'scopus': ('SCOPUS_DAILY', SCOPUS_DAILY)}
+          'ccdc': ('CCDC_DAILY', CCDC_DAILY), 'jcr': ('JCR_DAILY', JCR_DAILY), 'scopus': ('SCOPUS_DAILY', SCOPUS_DAILY),
+          'tansoole': ('TANSOOLE_DAILY', TANSOOLE_DAILY)}
 
 
 def chemdb_daily(db='scifinder'):
@@ -1105,7 +1111,7 @@ def _chemdb_work(db, params, page, fetch, key):
             chemdb_charge(db, last_search=dict(keep, url=r.get('url')) if is_search else None)
         if r.get('code') in ('CAPTCHA_REQUIRED', 'LOGIN_REQUIRED'):
             _call_human(db, r)
-        if r.get('items') and db not in ('polyinfo', 'cnki', 'ccdc', 'jcr'):   # 聚合物 / 中文文献 / 晶体结构：不去 Crossref 补 DOI
+        if r.get('items') and db not in ('polyinfo', 'cnki', 'ccdc', 'jcr', 'tansoole'):   # 聚合物 / 中文文献 / 晶体结构：不去 Crossref 补 DOI
             try:
                 enrich(r['items'], warnings=r.setdefault('warnings', []))
             except Exception as e:
@@ -1460,11 +1466,28 @@ def _scopus_page(a):
     return _chemdb_run('scopus', p, n, lambda db: scopus.page(n), wait_s=_pi_wait(a))
 
 
+def _tansoole_search(a):
+    from shared.adapters import tansoole
+    q = (a.get('query') or '').strip()
+    if not q:
+        raise ValueError('query 不能空')
+    return _chemdb_run('tansoole', {'op': 'search', 'query': q}, 1, lambda db: tansoole.search(q), wait_s=_pi_wait(a))
+
+
+def _tansoole_page(a):
+    from shared.adapters import tansoole
+    n = int(a.get('page') or 2)
+    last = (_load(_chemdb_usage_path()).get('searches') or {}).get('tansoole')
+    if not last:
+        raise ValueError('探索平台还没有搜过（或账本被清了），先 tansoole_search')
+    return _chemdb_run('tansoole', {'op': 'page', 'query': last.get('query')}, n, lambda db: tansoole.page(n), wait_s=_pi_wait(a))
+
+
 def _webdb_status(a):
-    """不碰网站：CCDC / JCR / Scopus 今天各剩几次、要等几秒、标签状态（登录页 / 验证页）。"""
-    from shared.adapters import ccdc, jcr, scopus
+    """不碰网站：CCDC / JCR / Scopus / 探索平台 今天各剩几次、要等几秒、标签状态（登录页 / 验证页）。"""
+    from shared.adapters import ccdc, jcr, scopus, tansoole
     out = {}
-    for db, mod in (('ccdc', ccdc), ('jcr', jcr), ('scopus', scopus)):
+    for db, mod in (('ccdc', ccdc), ('jcr', jcr), ('scopus', scopus), ('tansoole', tansoole)):
         used, daily, wait = chemdb_quota(db)
         st = {'quota': {'used_today': used, 'daily_limit': daily, 'remaining': max(0, daily - used)},
               'min_gap_s': gap_of(db), 'wait_s': round(wait, 1)}
@@ -1473,7 +1496,8 @@ def _webdb_status(a):
         except Exception as e:
             st['tab'] = {'error': f'{type(e).__name__}: {str(e)[:120]}'}
         out[db] = st
-    return _out('CCDC 剩 %d、JCR 剩 %d、Scopus 剩 %d 次' % tuple(out[d]['quota']['remaining'] for d in ('ccdc', 'jcr', 'scopus')), out)
+    return _out('CCDC 剩 %d、JCR 剩 %d、Scopus 剩 %d、探索平台剩 %d 次' % tuple(
+        out[d]['quota']['remaining'] for d in ('ccdc', 'jcr', 'scopus', 'tansoole')), out)
 
 
 def cap(name, handler, limit=None, spill_dir=None):
@@ -1690,7 +1714,19 @@ TOOLS = [
      {'n': {'type': 'integer', 'minimum': 1}, 'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50}}, ['n'], _scopus_citing),
     ('scopus_page', 'Scopus 当前列表（最近一次 scopus_search 或 scopus_citing）的第 page 页。规矩同上。',
      {'page': {'type': 'integer', 'minimum': 1}, 'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50}}, ['page'], _scopus_page),
-    ('webdb_status', '不碰网站、不扣次数：CCDC / JCR / Scopus 今天各剩几次、要等几秒、标签停在哪（登录页 / 验证页）。', {}, [], _webdb_status),
+    ('webdb_status', '不碰网站、不扣次数：CCDC / JCR / Scopus / 探索平台 今天各剩几次、要等几秒、标签停在哪（登录页 / 验证页）。', {}, [], _webdb_status),
+    ('tansoole_search', '在探索平台（泰坦科技，用户实际买药品的地方，借主力机上已登录的浏览器）搜一个药品，回第 1 页（每页 100 条）：'
+     'compounds[]（name_cn / name_en / cas_rn / mdl / formula / mw）、items[]（rank / brand / catalog_no / product_no / spec / qty / unit / '
+     'grams / purity / grade / lead_time / in_stock / lead_days[min,max]（工作日）/ futures（期货）/ on_sale / action（购买 | 询价）/ '
+     'compound / url）、summary（各品牌条数、现货条数、现货里最大包装克数、纯度、最快的非现货要几天）、other_categories、count、pages。'
+     '**不含价格**（网站用防抓取字体，用户定不读）—— 价格用 chemdb_search db=scifinder kind=suppliers。'
+     '设计实验时用它判断：哪些品牌有货、要不要等几周、有没有现货的替代规格 / 纯度。CAS 号最准，中文名、英文名也行。'
+     '当天同一检索走缓存。两次至少隔 30 秒、每天 30 次。',
+     {'query': {'type': 'string', 'description': 'CAS 号（如 98-80-6）、中文名、英文名或货号'},
+      'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50}}, ['query'], _tansoole_search),
+    ('tansoole_page', '探索平台最近一次 tansoole_search 的第 page 页（同一页当天走缓存）。规矩同上。',
+     {'page': {'type': 'integer', 'minimum': 1}, 'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50}},
+     ['page'], _tansoole_page),
 ]
 
 

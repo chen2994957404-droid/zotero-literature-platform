@@ -44,6 +44,7 @@
 | `ccdc` | CCDC Access Structures：单个晶体结构检索与详情（只读、不下 CIF，人登录，验证页人填）|
 | `jcr` | Journal Citation Reports：一次查一本刊的 JIF / 分区（只读，不进期刊分级表）|
 | `scopus` | Scopus：检索与「谁引用了它」列表（只读，一次一页）|
+| `tansoole` | 探索平台（泰坦科技）：药品的品牌 / 规格 / 纯度 / 货期（只读，人登录；价格是防抓取字体，不读）|
 
 ## 写一块新 adapter 的规矩
 
