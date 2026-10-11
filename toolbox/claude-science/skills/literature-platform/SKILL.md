@@ -1,6 +1,6 @@
 ---
 name: literature-platform
-description: The user's own literature platform (evidence library of ~1100 polymer / materials papers with parsed full text, SI, tables, figures, plus institutional full-text download, plus read-only SciFinder / Reaxys / PoLyInfo / CNKI (中国知网) / CCDC / JCR / Scopus look-ups through the user's logged-in browser). Use it FIRST whenever the task involves papers, literature, references, a DOI, full text, SI, or "what does the literature say" — 文献、论文、全文、SI、DOI、证据库、库里有没有、取全文、读原文、参考文献、SciFinder、Reaxys、专利、CAS、药品价格、试剂、供应商、买得到吗、替代品、price、supplier、PoLyInfo、聚合物性质、Tg、密度、知网、学位论文、硕博论文、中国专利、晶体结构、CCDC、CSD、影响因子、JCR、分区、Scopus、被引. Reach it with the `litcall` command on the SSH host zotero-b.
+description: The user's own literature platform (evidence library of ~1100 polymer / materials papers with parsed full text, SI, tables, figures, plus institutional full-text download, plus read-only SciFinder / Reaxys / PoLyInfo / CNKI (中国知网) / CCDC / JCR / Scopus look-ups through the user's logged-in browser). Use it FIRST whenever the task involves papers, literature, references, a DOI, full text, SI, or "what does the literature say" — 文献、论文、全文、SI、DOI、证据库、库里有没有、取全文、读原文、参考文献、SciFinder、Reaxys、专利、CAS、药品价格、试剂、供应商、探索平台、泰坦、现货、货期、买得到吗、替代品、price、supplier、PoLyInfo、聚合物性质、Tg、密度、知网、学位论文、硕博论文、中国专利、晶体结构、CCDC、CSD、影响因子、JCR、分区、Scopus、被引. Reach it with the `litcall` command on the SSH host zotero-b.
 ---
 
 # Literature platform (via `litcall` on SSH host `zotero-b`)
@@ -129,6 +129,13 @@ main machine, then retry.
   (Aladdin, BLD/毕得, TCI Shanghai… are there; the filter is by company, `country` on an item is where that catalog
   ships from). Prices come from supplier catalogs collected by CAS — tell the user to confirm on the supplier page.
   To compare alternatives, run it for each candidate CAS number (each costs one search of the daily quota).
+- **What the user can actually buy, and how fast** (server 0.12): the user orders from 探索平台 (Tansoole / 泰坦科技).
+  `~/bin/litcall tansoole_search '{"query":"98-80-6"}'` (CAS number best; Chinese or English names work) →
+  `compounds[]` and `items[]`: `brand, catalog_no, spec, grams, purity, grade, lead_time, in_stock, lead_days [min,max]
+  (working days), futures (期货 = not stocked), action (购买 | 询价), url`; `summary` per brand (in-stock count, largest
+  in-stock pack, purities) and `fastest_non_stock_days`. **No prices** (the site scrambles them on purpose) — prices come
+  from `kind: "suppliers"` above. Use it to flag reagents that would stall an experiment (only 期货 or 40+ days) and to
+  pick an in-stock brand / pack size instead. 30 s between calls, 30 per day; `tansoole_page` for page 2.
 - **CAS number + topic** (the most common question, e.g. "boric acid in self-healing materials"), SciFinder:
   `{"query":"10043-35-3","kind":"references","within":["self-healing"],"filters":{"Concept":["Self-healing materials"]}}`.
   `within` alone (133,484 → 3,035) still lets in electrocatalysis papers ("self-healing catalyst"); the CAS-indexed
