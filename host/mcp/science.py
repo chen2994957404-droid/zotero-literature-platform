@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.10.8'
+VERSION = '0.11.0'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -83,6 +83,9 @@ VERSION = '0.10.8'
 # v0.10（同日）：ccdc_* / jcr_journal / scopus_* —— CCDC Access Structures、JCR、Scopus。三家条款都禁程序访问或把数据交给 AI
 #   （原文见 docs/变更记录.md 2026-10-09）；用户知情后定：「跟 SciFinder 一样省去截图……遇到人机验证我都会来点，也只做少量需要的检索」。
 #   所以一次一页、只读、不下载、额度更低；JCR 结果不写进期刊分级表。
+# v0.11（2026-10-11 用户定）：chemdb_search kind=suppliers —— SciFinder 的 CAS 商业来源（几百家试剂商目录）：
+#   每家的规格与价格、纯度、库存、几周发货、国家、供应商商品页网址，另给 summary（各币种最便宜每克价、国家分布）。
+#   设计实验时比药品价格、好不好买、找同类替代品，不再凭记忆。同一套额度 / 间隔 / 缓存（SciFinder 条款用户 10-08 已知情）。
 
 # 原样借用的（输出本来就合适）
 BORROW = ()     # 2026-10-04 用户定：只给它做不到的（取全文）。数值库它自己会抽，不借了；ping 自己挂
@@ -114,6 +117,7 @@ PARSE_FAILED / NETWORK_ERROR / NOT_FETCHED）与 retryable；CAPTCHA_REQUIRED �
 任何返回超过 50 KB 会写成文件、只回 spilled 路径。
 文件路径是 B 机 WSL 路径（/mnt/d/...），你的 SSH 算力能直接读。
 SciFinder / Reaxys：先 `chemdb_status`（不扣次数），再 `chemdb_search` 回第 1 页的结构化列表，`chemdb_page` 翻页。
+药品价格 / 好不好买 / 替代品：`chemdb_search` db=scifinder kind=suppliers（CAS 号最准），回各家规格价格、纯度、库存、发货、国家。
 按人的频率：两次至少隔 30 秒、每个库每天有上限（quota）；当天同一检索走缓存不扣次数 —— 先想好检索词，别试错式地连搜。
 code=LOGIN_REQUIRED 时请人在主力机浏览器里登录。
 PoLyInfo（聚合物实测性质）：`polyinfo_search` → `polyinfo_samples` → `polyinfo_sample`（组成、出处、原文的组成–性质表）。
@@ -1027,7 +1031,7 @@ def enrich(items, match=None, find=None, tier=None, warnings=None):
                     it['tier'] = tier(pid)
                 except Exception:
                     it['tier'] = None
-        elif it.get('type') not in ('patent', 'substance'):
+        elif it.get('type') not in ('patent', 'substance', 'supplier'):
             it['in_library'] = None
     return items
 
@@ -1575,8 +1579,12 @@ TOOLS = [
       'structure': {'type': 'string', 'description': '结构式：SMILES（Reaxys 也收 molfile）。两个库的搜索框都不认 SMILES，服务端走它们的画图板'},
       'match': {'type': 'string', 'enum': ['exact', 'substructure', 'similarity'],
                 'description': '结构怎么比：exact = 按原样（含同位素、盐等变体）/ substructure = 含这个骨架 / similarity = 相似；默认 exact'},
-      'kind': {'type': 'string', 'enum': ['references', 'substances', 'reactions'],
-               'description': 'references = 文献 + 专利（默认）；substances = 物质列表；reactions 目前只回原样文字（用 raw=true）'},
+      'kind': {'type': 'string', 'enum': ['references', 'substances', 'reactions', 'suppliers'],
+               'description': 'references = 文献 + 专利（默认）；substances = 物质列表；reactions 目前只回原样文字（用 raw=true）；'
+                              'suppliers = 只 SciFinder：这个物质（CAS 号 / 名字 / 结构式，取物质列表第一个）在哪些试剂商有卖：'
+                              'items[]（supplier / purity / prices[{qty, unit, currency, price, per_g}] / stock / ships_within / '
+                              'country / order_number / url / orderable）+ summary（各币种最便宜每克价、国家分布）。'
+                              '每页 100 家；只要国内的给 filters={"Country/Region": ["China"]}'},
       'sort': {'type': 'string', 'enum': ['relevance', 'date', 'cited'], 'description': '排序，默认 relevance'},
       'filters': {'type': 'object', 'description': '只 SciFinder：{facet 名: [值]}，名与值照 facets 里写（如 '
                   '{"Document Type": ["Journal"], "Patent Status": ["Alive"]}），另认 yearFrom / yearTo（整数年）。'

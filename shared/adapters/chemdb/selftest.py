@@ -161,6 +161,42 @@ def main():
     check('Reaxys 专利族「4-5」→ rank 4、family_ranks [4,5]、号', rx['rank'] == 4 and rx['family_ranks'] == [4, 5]
           and rx['patent_no'] == 'CN109666219' and rx['assignee'] == 'WANHUA CHEMICAL GROUP' and rx['source'] is None, str(rx))
 
+    # 供应商（2026-10-11 苯硼酸 98-80-6 实测页面上的三种行）
+    check('规格价：5 g, USD 10.00 → 每克 2 美元', chemdb.parse_qty_price('5 g, USD 10.00')
+          == {'qty': 5, 'unit': 'g', 'currency': 'USD', 'price': 10.0, 'per_g': 2.0})
+    pm = chemdb.parse_qty_price('500 mg, USD 19.00')
+    check('毫克换算成每克、只有规格没价 → price None', pm['per_g'] == 38.0
+          and chemdb.parse_qty_price('500 g')['price'] is None and 'per_g' not in chemdb.parse_qty_price('500 g'), str(pm))
+    check('日元没有小数、千分位', chemdb.parse_qty_price('1,000 g, JPY 64200')['per_g'] == 64.2)
+    sol = chemdb.parse_qty_price('10mM/1mL, USD 35.00')
+    check('溶液写法认不出 → 原样 text，价格照取', sol.get('text') == '10mM/1mL, USD 35.00' and sol['price'] == 35.0, str(sol))
+    ext = ('/navigate/?answersPerPage=1&externalLink=https%253A%252F%252Fwww.chemscene.com%252F98-80-6.html&linkType=808')
+    sup = chemdb.norm_sf_supplier({'supplier': 'AbaChemScene-US Stock', 'rn': '98-80-6', 'name': 'Phenylboronic acid',
+                                   'purity': '95-98%', 'prices': ['5 g, USD 10.00', '500 g, USD 81.00'], 'more_prices': True,
+                                   'tags': ['Bulk', 'Screening'], 'stock': 'Maintained in stock', 'ships': 'Ships within 1 week',
+                                   'country': 'United States', 'order_no': 'Order Number: CS-W001090', 'order_href': ext}, 1)
+    check('供应商一行 → 名字 / 纯度 / 价格 / 发货 / 国家 / 货号 / 真网址（两层编码解开）',
+          sup['supplier'] == 'AbaChemScene-US Stock' and sup['ships_within'] == '1 week' and sup['order_number'] == 'CS-W001090'
+          and sup['url'] == 'https://www.chemscene.com/98-80-6.html' and sup['orderable'] and sup['offers'] == ['Bulk', 'Screening']
+          and sup['prices'][1]['per_g'] == 0.162 and sup['more_prices'], str(sup))
+    wako = chemdb.norm_sf_supplier({'supplier': 'FUJIFILM Wako', 'purity': '', 'prices': ['500 g'], 'stock': '',
+                                    'country': 'Japan', 'order_no': 'Order Number: 512-24095',
+                                    'info_href': '/navigate/?externalLink=https%253A%252F%252Flabchem-wako.fujifilm.com%252Fx.html'})
+    check('只有「Product Information」的行：不可直接下单、纯度空 → None', not wako['orderable'] and wako['purity'] is None
+          and wako['url'] == 'https://labchem-wako.fujifilm.com/x.html' and 'offers' not in wako, str(wako))
+    sm = chemdb.supplier_summary([sup, wako, dict(sup, supplier='BLD-China', country='China',
+                                                  prices=[chemdb.parse_qty_price('100 g, CNY 50.00')])])
+    check('汇总：家数、国家、各币种最便宜每克价', sm['n_suppliers'] == 3 and sm['countries']['United States'] == 1
+          and sm['cheapest_per_g']['USD']['per_g'] == 0.162 and sm['cheapest_per_g']['CNY']['supplier'] == 'BLD-China'
+          and sm['n_in_stock'] == 2, str(sm))
+    check('供应商页能翻页', chemdb.page_url('scifinder', 'https://scifinder-n.cas.org/search/catalogItem/6acbb098/1', 2)
+          .endswith('/catalogItem/6acbb098/2'))
+    try:
+        chemdb.search('reaxys', '98-80-6', kind='suppliers')
+        check('Reaxys 不收 kind=suppliers', False)
+    except ValueError:
+        check('Reaxys 不收 kind=suppliers', True)
+
     if flag('--live'):
         for db in chemdb.DBS:
             try:

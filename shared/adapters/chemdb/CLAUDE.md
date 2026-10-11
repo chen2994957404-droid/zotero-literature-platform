@@ -31,7 +31,9 @@
 |---|---|
 | `search(db, query, kind='references', max_chars=30000)` | 搜一次，读结果列表第 1 页 |
 | `page(db, n, max_chars=30000)` | 这个库标签上停着的结果列表的第 n 页 |
+| `search(db, query, kind='suppliers')` | 只 SciFinder：这个物质在哪些试剂商有卖（规格价格 / 纯度 / 库存 / 发货 / 国家 / 商品页网址）+ `summary` |
 | `page_url` / `page_no` / `is_login` / `clean_text` / `count_of` | 纯函数（自测覆盖） |
+| `parse_qty_price` / `norm_sf_supplier` / `supplier_summary` | 供应商行的纯函数（「5 g, USD 10.00」→ 每克价） |
 
 返回 dict 的 `code`：`OK` / `LOGIN_REQUIRED` / `NO_RESULTS` / `NO_SEARCH` / `NAVIGATE_FAILED` / `TIMEOUT`。
 浏览器连不上、没装 playwright 才抛异常（沿用 `pdf_fetch.BrowserUnavailable` / `PlaywrightMissing`）。
@@ -45,6 +47,12 @@
 | 列表页 | `/search/reference/<id>/<页码>` | `…/list/<uuid>/<页码>/desc/WEIGHT` |
 | 结果数 | 正文 `26 Results` | 标题 `134 Documents for …` |
 | 列表里有 | 标题、作者、刊、年、摘要片段、左侧筛选项计数、CAS Newton 的 AI 摘要 | 标题、作者、刊、年、**DOI**、被引数、命中片段、AI 摘要、筛选项名 |
+
+**SciFinder 供应商页**（2026-10-11 实测，苯硼酸 128 家）：物质卡片上 `a[aria-label*=Suppliers]`（「Get128Suppliers」）→
+`/search/catalogItem/<id>/<页码>`，每页 100 家；每家一个 `<table>`：`.company-name` · `.purity-category` · `.quantity-price`（前 5 个规格，
+多的有 `.view-all-quantity-prices`）· `.stock-availability` · `.shipping` · `.country-name` · `.order-number` ·
+`a.order-from-supplier` / `a.product-information`（真网址在 `externalLink=`，编码两层）。左侧 Country/Region 能筛 China
+（阿拉丁 Aladdin Scientific、毕得 BLD-China、TCI 上海都在）。
 
 ⚠ 浏览器开了网页翻译时，读到的是**译文**（Edge 直接改写页面文字）。2026-10-08 用户已对 Reaxys 关掉。
 

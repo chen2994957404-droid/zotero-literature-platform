@@ -26,6 +26,8 @@
 检索三种入口（2026-10-08 用户：「最常用的是 CAS 号查精确结构、画大致结构查」）：
   - 关键词：query='boron siloxane self-healing'
   - CAS 号：query='98-80-6' —— kind=substances 回物质；kind=references 先落到这个物质，再跳「用了它的文献 / 专利」
+    kind=suppliers（只 SciFinder，2026-10-11 加）：先落到物质，再跳它的「Get N Suppliers」——
+    CAS 商业来源（几百家试剂商目录）：每家规格与价格、纯度、库存、几周发货、国家、供应商商品页网址
   - 结构式：structure='OB(O)c1ccccc1'（SMILES；Reaxys 也收 molfile）+ match=exact / substructure / similarity
     SciFinder 走 CAS Draw 的「Add to editor」，Reaxys 走 MarvinJS 的 importStructure —— 两个库的搜索框都不能直接收 SMILES
     （SciFinder 的框收了会当按原样结构搜，Reaxys 的框收了会当关键词去标题里找字面，2026-10-08 实测）。
@@ -46,7 +48,7 @@ from shared.kernel.log import get_logger
 log = get_logger('chemdb')
 
 DBS = ('scifinder', 'reaxys')
-KINDS = ('references', 'substances', 'reactions')
+KINDS = ('references', 'substances', 'reactions', 'suppliers')   # suppliers 只 SciFinder（CAS 商业来源，价格 / 纯度 / 库存）
 MATCHES = ('exact', 'substructure', 'similarity')
 CAS_RN_RE = re.compile(r'^\d{2,7}-\d{2}-\d$')
 # 实测（2026-10-08）SciFinder 的选项：Relevance / Times Cited / Accession Number: … / Publication Date: Newest / Oldest
@@ -62,15 +64,15 @@ SITE = {
         'submit': '#submit-search-button',
         # 总览页（/search/all/…）上各类各有一个「View All …」
         'view_all': {'references': 'View All References', 'substances': 'View All Substances',
-                     'reactions': 'View All Reactions'},
+                     'reactions': 'View All Reactions', 'suppliers': 'View All Substances'},
         # 结果页网址：/search/<reference|substance|reaction>/<id>/<页码>
-        'page_re': r'(/search/(?:reference|substance|reaction)/[^/?#]+/)(\d+)',
+        'page_re': r'(/search/(?:reference|substance|reaction|catalogItem)/[^/?#]+/)(\d+)',
         'login_re': r'sso\.cas\.org|/login',
-        'item': '.reference-data, .substance-tile',
+        'item': '.reference-data, .substance-tile, .supplier-name-row',
         'match_btn': '.structure-match-select',
         'match_label': {'exact': 'As Drawn', 'substructure': 'Substructure', 'similarity': 'Similarity'},
         'draw_type': {'references': '#result-type-reference', 'substances': '#result-type-substance',
-                      'reactions': '#result-type-reaction'},
+                      'reactions': '#result-type-reaction', 'suppliers': '#result-type-substance'},
         'original': '.search-original-query-button',
         'sort': 'button[aria-label="Sort"]',
     },
@@ -220,6 +222,80 @@ def norm_rx_substance(x):
             'n_suppliers': int(sup.group(1).replace(',', '')) if sup else None}
 
 
+_QTY_PRICE_RE = re.compile(r'^\s*(?P<qty>\d[\d,]*(?:\.\d+)?)\s*(?P<unit>[a-zA-Zµμ]+)\s*(?:,\s*(?P<cur>[A-Z]{3})\s*(?P<price>\d[\d,]*(?:\.\d+)?))?\s*$')
+_TO_BASE = {'mg': ('g', 0.001), 'g': ('g', 1), 'kg': ('g', 1000), 'ug': ('g', 1e-6), 'µg': ('g', 1e-6), 'μg': ('g', 1e-6),
+            'ml': ('mL', 1), 'l': ('mL', 1000), 'ul': ('mL', 0.001), 'µl': ('mL', 0.001), 'μl': ('mL', 0.001)}
+
+
+def parse_qty_price(s):
+    """「5 g, USD 10.00」→ {qty, unit, currency, price, per_g}；只有规格没价「500 g」→ price=None；
+    认不出的写法（「10mM/1mL, USD 35.00」溶液）原样放 text。"""
+    s = (s or '').strip()
+    m = _QTY_PRICE_RE.match(s)
+    if not m:
+        cur = re.search(r'\b([A-Z]{3})\s*(\d[\d,]*(?:\.\d+)?)\s*$', s)
+        return {'text': s, 'currency': cur.group(1) if cur else None,
+                'price': float(cur.group(2).replace(',', '')) if cur else None}
+    qty, unit = float(m['qty'].replace(',', '')), m['unit']
+    out = {'qty': int(qty) if qty.is_integer() else qty, 'unit': unit,
+           'currency': m['cur'], 'price': float(m['price'].replace(',', '')) if m['price'] else None}
+    base = _TO_BASE.get(unit.lower())
+    if base and out['price'] is not None and qty > 0:
+        out['per_' + base[0]] = round(out['price'] / (qty * base[1]), 4)     # 每克（每毫升）多少钱，原币种
+    return out
+
+
+def _supplier_link(href):
+    """SciFinder 的「Order From Supplier / Product Information」是它自己的跳转，真网址在 externalLink（编码了两层）。"""
+    q = urllib.parse.parse_qs(urllib.parse.urlparse(href or '').query)
+    ext = (q.get('externalLink') or [''])[0]
+    for _ in range(2):
+        if '%' in ext:
+            ext = urllib.parse.unquote(ext)
+    return ext or None
+
+
+def norm_sf_supplier(x, rank=None):
+    """SciFinder 供应商列表的一行（_SF_SUP_JS 抽的）→ {rank, supplier, cas_rn, name, purity, prices[], …}。"""
+    prices = [parse_qty_price(p) for p in x.get('prices') or [] if (p or '').strip()]
+    ships = re.sub(r'^Ships within\s*', '', (x.get('ships') or '').strip(), flags=re.I) or None
+    out = {'rank': rank, 'type': 'supplier', 'supplier': (x.get('supplier') or '').strip() or None,
+           'cas_rn': (x.get('rn') or '').strip() or None, 'name': (x.get('name') or '').strip() or None,
+           'purity': (x.get('purity') or '').strip() or None, 'prices': prices,
+           'stock': (x.get('stock') or '').strip() or None, 'ships_within': ships,
+           'country': (x.get('country') or '').strip() or None,
+           'order_number': re.sub(r'^Order Number:\s*', '', (x.get('order_no') or '').strip()) or None,
+           'url': _supplier_link(x.get('order_href') or x.get('info_href')),
+           'orderable': bool(x.get('order_href'))}       # 有「Order From Supplier」= 供应商页上能看到现价并下单（CAS 的收录标准）
+    if x.get('more_prices'):
+        out['more_prices'] = True                         # 还有更多规格，列表页只给前 5 个
+    tags = [t for t in ('Bulk', 'Screening') if t in (x.get('tags') or [])]
+    if tags:
+        out['offers'] = tags                              # Bulk = 可整桶 / 大包装；Screening = 筛选用小样
+    return out
+
+
+def supplier_summary(items):
+    """一页供应商 → 一眼看得出的几件事：几家、哪些国家、有现价的最便宜每克价（按币种分开，不换汇）。"""
+    best = {}
+    for it in items:
+        for p in it.get('prices') or []:
+            v = p.get('per_g')
+            if v is None or not p.get('currency'):
+                continue
+            cur = best.get(p['currency'])
+            if cur is None or v < cur['per_g']:
+                best[p['currency']] = {'per_g': v, 'supplier': it.get('supplier'), 'pack': f"{p['qty']} {p['unit']}",
+                                       'price': p['price']}
+    countries = {}
+    for it in items:
+        if it.get('country'):
+            countries[it['country']] = countries.get(it['country'], 0) + 1
+    return {'n_listings': len(items), 'n_suppliers': len({it.get('supplier') for it in items if it.get('supplier')}),
+            'countries': dict(sorted(countries.items(), key=lambda kv: -kv[1])),
+            'cheapest_per_g': best, 'n_in_stock': sum(1 for it in items if 'stock' in (it.get('stock') or '').lower())}
+
+
 def check_sort(sort):
     sort = (sort or '').strip().lower()
     if sort and sort not in SORTS:
@@ -313,6 +389,7 @@ def _hi(s):
 
 
 MAX_SNIPPET = 400
+SF_SUPPLIERS_PER_PAGE = 100     # 2026-10-11 实测：苯硼酸 128 条，第 1 页 100 条
 MAX_AUTHORS = 8
 MAX_TERMS = 10
 
@@ -595,6 +672,18 @@ _SF_SUB_JS = r"""() => [...document.querySelectorAll('.substance-tile')].map(t =
           preferred: (txt.match(/Preferred RN:\s*([\d-]+)/) || [])[1] || null};
 })"""
 
+_SF_SUP_JS = r"""() => [...document.querySelectorAll('.supplier-name-row')].map(row => {
+  const t = row.closest('table') || row.parentElement;
+  const T = sel => { const e = t.querySelector(sel); return e ? (e.innerText || '').trim() : ''; };
+  const A = sel => { const e = t.querySelector(sel); return e ? e.getAttribute('href') : null; };
+  return {supplier: T('.company-name'), rn: T('.component-rn'), name: T('.substance-name'), purity: T('.purity-category'),
+          prices: [...t.querySelectorAll('.quantity-price')].map(e => (e.innerText || '').trim()),
+          more_prices: !!t.querySelector('.view-all-quantity-prices'),
+          tags: [...t.querySelectorAll('.bulk-screening > *')].map(e => (e.innerText || '').trim()),
+          stock: T('.stock-availability'), ships: T('.shipping'), country: T('.country-name'), order_no: T('.order-number'),
+          order_href: A('a.order-from-supplier'), info_href: A('a.product-information')};
+})"""
+
 _RX_SUB_JS = r"""() => [...document.querySelectorAll('ul.e2e-results-list > li')].map(li => {
   const n = li.querySelector('.substance-image-container');
   return {name: n ? n.getAttribute('aria-label') : null, lines: (li.innerText || '').split('\n')};
@@ -624,6 +713,8 @@ def _ai_pending(s):
 
 def _extract(pg, db, raw, max_chars, **kw):
     """读当前列表页 → 结构化结果。库自带的 AI 摘要还在生成，再等一会（最多 25 秒）。"""
+    if '/search/catalogItem/' in pg.url:
+        return _extract_suppliers(pg, raw, max_chars, **kw)
     subs = '/search/substance/' in pg.url or '/results/substances/' in pg.url
     if subs:
         return _extract_substances(pg, db, raw, max_chars, **kw)
@@ -711,6 +802,65 @@ def _extract_substances(pg, db, raw, max_chars, **kw):
         r['text'] = text[:max_chars]
         r['truncated'] = len(text) > max_chars
     return r
+
+
+def _extract_suppliers(pg, raw, max_chars, **kw):
+    """SciFinder 供应商列表（CAS 商业来源）→ 每家一行：规格与价格、纯度、库存、几周发货、国家、供应商商品页网址。"""
+    pg.evaluate('async () => { for (let i = 0; i < 12; i++) { window.scrollTo(0, document.body.scrollHeight); '
+                'await new Promise(r => setTimeout(r, 400)); } window.scrollTo(0, 0); }')
+    text = clean_text(_body(pg))
+    title = ''
+    try:
+        title = pg.title()
+    except Exception:
+        pass
+    r = _result('scifinder', ok=True, url=pg.url, title=title, count=count_of('scifinder', title, text), **kw)
+    r['page'] = page_no('scifinder', pg.url) or 1
+    rows = pg.evaluate(_SF_SUP_JS) or []
+    base = (r['page'] - 1) * SF_SUPPLIERS_PER_PAGE
+    r['items'] = [norm_sf_supplier(x, base + i + 1) for i, x in enumerate(rows)]
+    r['page_size'] = SF_SUPPLIERS_PER_PAGE
+    if r['count']:
+        r['pages'] = -(-r['count'] // SF_SUPPLIERS_PER_PAGE)
+    d = pg.evaluate(_SF_JS.replace("'.reference-data'", "'.no-such-thing'"))   # 只借它读 facets
+    r['facets'] = facet_counts(d.get('facets'))
+    r['filters_active'] = d.get('checked') or []
+    r['summary'] = supplier_summary(r['items'])
+    r['note'] = ('价格来自各家目录（CAS 收录），以供应商页为准；per_g 是原币种每克价，不换汇。'
+                 '国内的几家看 facets 的 Country/Region，或 filters={"Country/Region": ["China"]}')
+    if r['count'] and not r['items']:
+        r['warnings'].append('no_items_parsed')
+        r['complete'] = False
+    if raw:
+        r['text'] = text[:max_chars]
+        r['truncated'] = len(text) > max_chars
+    return r
+
+
+def _sf_to_suppliers_of_first_substance(pg, warnings, extra):
+    """物质列表 → 第一个物质的「Get N Suppliers」→ 它的供应商列表。第一个没有供应商就说清楚。"""
+    tiles = [norm_sf_substance(x) for x in pg.evaluate(_SF_SUB_JS)]
+    if tiles:
+        extra['substance'] = {k: tiles[0].get(k) for k in ('cas_rn', 'name', 'formula', 'n_suppliers')}
+        if len(tiles) > 1:
+            extra['substance_candidates'] = [{k: t.get(k) for k in ('rank', 'cas_rn', 'name', 'n_suppliers')} for t in tiles[:10]]
+    a = pg.locator('.substance-tile').first.locator('a[aria-label*="Suppliers" i]')
+    if not a.count():
+        warnings.append('no_suppliers_link: 第一个物质在 CAS 商业来源里没有供应商（可能要买前体或找定制合成）')
+        return False
+    label, href = a.first.get_attribute('aria-label') or '', a.first.get_attribute('href') or ''
+    # 按网址走，不点：点可能开新标签（2026-10-11 探针按 href 走，实测落到 /search/catalogItem/<id>/1）
+    if href:
+        _goto(pg, urllib.parse.urljoin(pg.url, href))
+    else:
+        a.first.click()
+    try:
+        pg.wait_for_url(re.compile(r'/search/catalogItem/'), timeout=45000)
+    except Exception:
+        warnings.append('suppliers_page_timeout')
+        return False
+    warnings.append(f'via_substance: 先落到物质，再取它的供应商（{label}）')
+    return True
 
 
 def _sf_within(pg, terms, warnings):
@@ -888,7 +1038,8 @@ def _search_scifinder(pg, query, kind, sort, filters, mode, raw, max_chars, stru
         pg.wait_for_url(re.compile(r'/search/'), timeout=60000)
     except Exception:
         return _result('scifinder', code='TIMEOUT', url=pg.url, why='提交后没跳到结果页', warnings=warnings)
-    want_seg = {'references': '/search/reference/', 'substances': '/search/substance/', 'reactions': '/search/reaction/'}[kind]
+    want_seg = {'references': '/search/reference/', 'substances': '/search/substance/', 'reactions': '/search/reaction/',
+                'suppliers': '/search/catalogItem/'}[kind]
     if '/search/all/' in pg.url:
         # 总览页是分块加载的（2026-10-08 实测：物质、反应先到，文献那块晚好几秒）——
         # 专门等要的那个「View All …」；等满了还没有才算这一类没结果
@@ -919,6 +1070,14 @@ def _search_scifinder(pg, query, kind, sort, filters, mode, raw, max_chars, stru
         ok = _wait_items(pg, 'scifinder')
         # 经物质跳过来的文献页上没有「How we're searching」那一行 —— 自己写一句
         extra['query_interpretation_note'] = f'references of substance {query or structure} (via its "Get references")'
+    elif kind == 'suppliers' and '/search/substance/' in pg.url:
+        # 供应商挂在物质上：落到物质列表后点第一个的「Get N Suppliers」
+        if not _sf_to_suppliers_of_first_substance(pg, warnings, extra):
+            r = _extract(pg, 'scifinder', raw, max_chars, **extra)
+            r['warnings'] = warnings + r['warnings']
+            r.update(code='NO_RESULTS', why='没进到供应商列表（见 warnings；items 是物质列表）')
+            return r
+        ok = _wait_items(pg, 'scifinder')
     elif want_seg not in pg.url:
         warnings.append(f'landed_on_other_list: 要 {kind}，落在 {pg.url.split("/search/")[-1][:20]}')
     if mode == 'original':
@@ -1152,6 +1311,8 @@ def search(db, query='', kind='references', structure='', match='exact', sort=No
     mode='original'：SciFinder 改写了检索式时点「Search Original Query」按原样搜。
     """
     db, kind, sort, match = check_db(db), check_kind(kind), check_sort(sort), check_match(match)
+    if kind == 'suppliers' and db != 'scifinder':
+        raise ValueError('kind=suppliers 只有 SciFinder 有（CAS 商业来源）；Reaxys 的物质列表里只有 n_suppliers 一个数')
     query, structure = (query or '').strip(), (structure or '').strip()
     if not query and not structure:
         raise ValueError('query 和 structure 至少给一个')
