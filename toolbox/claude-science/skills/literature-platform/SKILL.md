@@ -1,6 +1,6 @@
 ---
 name: literature-platform
-description: The user's own literature platform (evidence library of ~1100 polymer / materials papers with parsed full text, SI, tables, figures, plus institutional full-text download, plus read-only SciFinder / Reaxys / PoLyInfo / CNKI (中国知网) / CCDC / JCR / Scopus look-ups through the user's logged-in browser). Use it FIRST whenever the task involves papers, literature, references, a DOI, full text, SI, or "what does the literature say" — 文献、论文、全文、SI、DOI、证据库、库里有没有、取全文、读原文、参考文献、SciFinder、Reaxys、专利、CAS、PoLyInfo、聚合物性质、Tg、密度、知网、学位论文、硕博论文、中国专利、晶体结构、CCDC、CSD、影响因子、JCR、分区、Scopus、被引. Reach it with the `litcall` command on the SSH host zotero-b.
+description: The user's own literature platform (evidence library of ~1100 polymer / materials papers with parsed full text, SI, tables, figures, plus institutional full-text download, plus read-only SciFinder / Reaxys / PoLyInfo / CNKI (中国知网) / CCDC / JCR / Scopus look-ups through the user's logged-in browser). Use it FIRST whenever the task involves papers, literature, references, a DOI, full text, SI, or "what does the literature say" — 文献、论文、全文、SI、DOI、证据库、库里有没有、取全文、读原文、参考文献、SciFinder、Reaxys、专利、CAS、药品价格、试剂、供应商、买得到吗、替代品、price、supplier、PoLyInfo、聚合物性质、Tg、密度、知网、学位论文、硕博论文、中国专利、晶体结构、CCDC、CSD、影响因子、JCR、分区、Scopus、被引. Reach it with the `litcall` command on the SSH host zotero-b.
 ---
 
 # Literature platform (via `litcall` on SSH host `zotero-b`)
@@ -119,6 +119,16 @@ main machine, then retry.
   SciFinder's list page gives **no name** for many multi-component entries (only "Images of a multi component structure
   including CAS RNs …"), so `name` is null there — identify them by `component_cas_rns`. SciFinder lists only components
   that have a CAS number (e.g. HCl in a salt is not listed): `components_unlisted` says how many are missing.
+- **Reagent price / availability / alternatives** (server 0.11) — use this instead of guessing prices when designing
+  experiments: `{"db":"scifinder","query":"98-80-6","kind":"suppliers"}` (CAS number is most precise; a name or a
+  `structure` also works — the first substance in the list is used, see `substance` / `substance_candidates`).
+  Items: `supplier, purity, prices[{qty, unit, currency, price, per_g}], stock, ships_within, country, order_number, url,
+  orderable` (`price_on_request` when the catalog says "Contact supplier"; `more_prices` = more pack sizes on the
+  supplier page). `summary`: number of suppliers, countries, cheapest price per gram per currency (no FX conversion).
+  100 per page (`chemdb_page` for more). The user buys in China: add `"filters": {"Country/Region": ["China"]}`
+  (Aladdin, BLD/毕得, TCI Shanghai… are there; the filter is by company, `country` on an item is where that catalog
+  ships from). Prices come from supplier catalogs collected by CAS — tell the user to confirm on the supplier page.
+  To compare alternatives, run it for each candidate CAS number (each costs one search of the daily quota).
 - **CAS number + topic** (the most common question, e.g. "boric acid in self-healing materials"), SciFinder:
   `{"query":"10043-35-3","kind":"references","within":["self-healing"],"filters":{"Concept":["Self-healing materials"]}}`.
   `within` alone (133,484 → 3,035) still lets in electrocatalysis papers ("self-healing catalyst"); the CAS-indexed
