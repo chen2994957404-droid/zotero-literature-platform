@@ -194,7 +194,7 @@ def render_team(roster, links, i):
                       reverse=True)
         coop = sorted(((v['year'] or 0, pid, v) for pid, v in links['papers'].items() if i in v['others']),
                       reverse=True)
-        titles = {r['id']: r.get('title') or '' for r in catalog.scan()}
+        titles = {r['id']: ' '.join((r.get('title') or '').split()) for r in catalog.scan()}
         lines += ['', f"## 本组文章 {len(main)} 篇"]
         lines += [f"- {y or '?'} · {titles.get(pid, '')[:90]} · {pid}（{v['via']}）" for y, pid, v in main]
         if coop:
