@@ -20,13 +20,61 @@
 """
 import os
 import re
+import time
 import unicodedata
 
-from shared.kernel import catalog
+from shared.kernel import catalog, paths
 
 HAS = {'正文': 'pdf', 'pdf': 'pdf', 'si': 'si', 'SI': 'si', '精读': 'summary', 'summary': 'summary',
        '解析': 'fulltext', 'fulltext': 'fulltext', '结构化': 'structured', 'structured': 'structured'}
 _DOI = re.compile(r'10\.\d{4,9}/\S+', re.I)
+
+# ── 进程内缓存（2026-10-11）：应用后台是常驻进程，每次检索都现扫 1207 张目录卡要 1.2 秒 ──
+# 目录卡：有文献增删（两层目录的 mtime 变）立刻重扫；否则最多 SCAN_TTL 秒重扫一次 ——
+# 单篇里新出了精读 / SI 不改顶层目录的 mtime，靠这个上限兜住，最多晚一分钟看到。
+# 索引文件（作者 / 名单 / 团队对照）按文件 mtime：重建了就重读，读一次不到 0.1 秒。
+SCAN_TTL = 60
+_CACHE = {}
+
+
+def _catalog_dirs_stamp():
+    try:
+        return tuple(os.stat(d).st_mtime_ns for d in (paths.CURATED, paths.RAW))
+    except OSError:
+        return None
+
+
+def _scan():
+    st, now = _catalog_dirs_stamp(), time.time()
+    hit = _CACHE.get('scan')
+    if hit and st is not None and hit[0] == st and now - hit[1] < SCAN_TTL:
+        return hit[2]
+    rows = catalog.scan()
+    _CACHE['scan'] = (st, now, rows)
+    return rows
+
+
+def _by_mtime(name, path_fn, loader):
+    p = path_fn()
+    try:
+        m = os.stat(p).st_mtime_ns
+    except OSError:
+        m = None
+    hit = _CACHE.get(name)
+    if hit and hit[0] == m:
+        return hit[1]
+    v = loader()
+    _CACHE[name] = (m, v)
+    return v
+
+
+def _data():
+    """(作者索引的 papers, 名单, 团队对照的 papers) —— 都走缓存。"""
+    from tools.library import oaindex, teams
+    index = _by_mtime('oaindex', paths.oa_index, oaindex.load) or {}
+    roster = _by_mtime('roster', paths.teams, teams.load_roster)
+    links = _by_mtime('links', paths.team_links, teams.load_links) or {}
+    return index.get('papers') or {}, roster, links.get('papers') or {}
 
 
 def norm(text):
@@ -77,10 +125,8 @@ def _person_match(q, authors, roster):
 
 def find(q='', corr='', author='', team='', year_from=None, year_to=None, journal='',
          has=(), abstract=False, limit=30):
-    from tools.library import oaindex, teams
-    index = (oaindex.load() or {}).get('papers', {})
-    roster = teams.load_roster()
-    links = (teams.load_links() or {}).get('papers', {})
+    from tools.library import teams
+    index, roster, links = _data()
     team_i = teams.find_team(roster, team) if team else None
     if team and team_i is None:
         return [], 0
@@ -90,7 +136,7 @@ def find(q='', corr='', author='', team='', year_from=None, year_to=None, journa
     doi_q = catalog.norm_doi(m.group(0)) if m else ''
     qtoks = [] if doi_q else tokens(q)
     rows = []
-    for r in catalog.scan():
+    for r in _scan():
         pid = r['id']
         e = index.get(pid, {})
         authors = e.get('authors') or []
@@ -172,17 +218,15 @@ def render(rows, total):
 
 def detail(pid):
     """一篇的完整卡片：目录卡 + 全部作者（通讯 / 单位）+ 摘要 + 团队 + 手上有哪些文件。找不到返回 None。"""
-    from shared.kernel import paths
-    from tools.library import oaindex, teams
     try:
         r = catalog.record(pid)
     except paths.BadKeyError:
         return None
     if not (r.get('title') or r.get('doi') or r.get('pdf')):
         return None
-    e = ((oaindex.load() or {}).get('papers') or {}).get(r['id'], {})
-    roster = teams.load_roster()
-    lk = ((teams.load_links() or {}).get('papers') or {}).get(r['id']) or {}
+    index, roster, links = _data()
+    e = index.get(r['id'], {})
+    lk = links.get(r['id']) or {}
     files = {'pdf': os.path.isfile(paths.local_pdf(r['id'])),
              'si': bool(paths.find_local_si(r['id'])),
              'summary': os.path.isfile(paths.summary(r['id'])),

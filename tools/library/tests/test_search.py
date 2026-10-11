@@ -29,3 +29,20 @@ def test_中文名经名单换编号():
     assert search._person_match('武培怡', authors, roster)
     assert not search._person_match('孙胜童', authors, roster)
     assert search._person_match('Wu Peiyi', authors, roster)
+
+
+def test_目录卡缓存_没变化不重扫_过期或增删才重扫(monkeypatch):
+    calls = []
+    monkeypatch.setattr(search.catalog, 'scan', lambda: calls.append(1) or [{'id': 'X'}])
+    stamp = [(1, 1)]
+    monkeypatch.setattr(search, '_catalog_dirs_stamp', lambda: stamp[0])
+    search._CACHE.clear()
+    search._scan(); search._scan()
+    assert len(calls) == 1                      # 第二次走缓存
+    stamp[0] = (1, 2)                           # 有文献增删
+    search._scan()
+    assert len(calls) == 2
+    monkeypatch.setattr(search, 'SCAN_TTL', -1) # 过期
+    search._scan()
+    assert len(calls) == 3
+    search._CACHE.clear()
