@@ -584,6 +584,14 @@ def teams():
     return os.path.join(STATE, 'teams.json')
 
 
+def team_links():
+    """serving/team_links.json —— 文章 → 研究团队的对照（tools.library.teams 生成）。
+
+    **可重建**：名单（teams.json）× 每篇的 OpenAlex 作者，重跑一次就有；页面与命令行读它、零网络。
+    """
+    return os.path.join(SERVING, 'team_links.json')
+
+
 def unit_study_dir(tag):
     """state/unit_study/<tag>/ —— 单元拆解研究的产物（每篇一份单元 JSON + summary.json + report.md）。可重建。"""
     return os.path.join(STATE, 'unit_study', re.sub(r'[^A-Za-z0-9._-]+', '-', str(tag)))

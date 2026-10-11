@@ -8,6 +8,9 @@
     python -m tools.library 找 "boronic ester hydrogen bond competition"   # 库内向量检索（零成本）
     python -m tools.library 找 "配比" --si                # 只搜补充材料
     python -m tools.library 引文 ABCD1234                 # 参考文献，标出库里已有的
+    python -m tools.library 团队                         # 研究团队名单 + 每组挂了几篇（读缓存，不联网）
+    python -m tools.library 团队 武培怡                   # 一个组：大导 / 小导 / 已独立 + 本组与合作文章
+    python -m tools.library 团队 --重建                   # 重新取作者、挂组（OpenAlex 免费额度约 25 次）
     python -m tools.library stats                       # Zotero 统计 + 通不通
     python -m tools.library 盘点 [--明细]                # 库里有什么：类型 / 正文 / SI 三态 / 精读，两边对上
     python -m tools.library search 聚硼硅氧烷 --limit 10  # 搜标题作者年份
@@ -43,6 +46,24 @@ def main():
     if action in ('盘点', 'census'):
         from tools.library import census
         return census.main()
+
+    if action in ('团队', 'teams'):
+        from tools.library import teams
+        roster = teams.load_roster()
+        if flag('--重建') or flag('--rebuild'):
+            out = teams.build(on_progress=lambda i, n, got: print(f'  取作者 {i}/{n}（拿到 {got}）'))
+            print(f"写好 {len(out['papers'])} 篇的团队对照")
+        links = teams.load_links()
+        q = pos(1)
+        if q:
+            i = teams.find_team(roster, q)
+            if i is None:
+                print(f'名单里没有「{q}」（名单：data/state/teams.json）')
+                return 1
+            print(teams.render_team(roster, links, i))
+        else:
+            print(teams.render_list(roster, links))
+        return 0
 
     if action in ('找', 'retrieve'):
         q = pos(1)
