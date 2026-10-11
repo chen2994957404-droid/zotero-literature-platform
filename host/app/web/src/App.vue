@@ -130,7 +130,7 @@ onMounted(async () => {
 .row { display: flex; gap: 8px; }
 .row > label { flex: 1; min-width: 0; }
 .chk { flex-direction: row !important; align-items: center; gap: 6px !important; color: var(--text) !important; font-size: 14px !important; white-space: nowrap; }
-button { padding: 7px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); cursor: pointer; }
+button { white-space: nowrap; padding: 7px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); cursor: pointer; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .results { overflow: auto; padding: 8px 16px; border-right: 1px solid var(--line); }
 .results ul { list-style: none; margin: 0; padding: 0; }
