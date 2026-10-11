@@ -574,6 +574,16 @@ def evalset():
     return os.path.join(STATE, 'evalset.json')
 
 
+def teams():
+    """state/teams.json —— 研究团队名单（大导 / 小导 / 已独立，每条带依据，**不可重建**）。
+
+    跟 evalset 同类：人工查证 + 用户纠正得来的真相，必须进版本库（2026-10-11 用户定：
+    不做自动化流程，由 Claude 查证定名单、用户发现错的再改）。人看的版本在
+    docs/reference/团队名单_2026-10-11.md。
+    """
+    return os.path.join(STATE, 'teams.json')
+
+
 def unit_study_dir(tag):
     """state/unit_study/<tag>/ —— 单元拆解研究的产物（每篇一份单元 JSON + summary.json + report.md）。可重建。"""
     return os.path.join(STATE, 'unit_study', re.sub(r'[^A-Za-z0-9._-]+', '-', str(tag)))

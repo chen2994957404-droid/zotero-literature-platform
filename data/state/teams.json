@@ -1,0 +1,1282 @@
+{
+ "说明": "研究团队名单。人工查证 + 用户纠正，不可重建。status: verified=有网页依据，inferred=只有论文数据推断。members=小导（在组里）；alumni=已独立（since 年起归他自己的新组）；pending=共同通讯但身份没查清。规则（用户 2026-10-08 定）：团队=大导+小导；学生博士后不进结构；小导独立后归新组。人看的版本：docs/reference/团队名单_2026-10-11.md",
+ "updated": "2026-10-11",
+ "scope": "证据库里篇数 ≥3 的组（48 个，3 个假组已拆）",
+ "teams": [
+  {
+   "leader": {
+    "name": "Jinrong Wu",
+    "name_zh": "吴锦荣",
+    "openalex": [
+     "A5085193875"
+    ],
+    "status": "verified",
+    "evidence": [
+     "https://cpse.scu.edu.cn/info/1061/2754.htm",
+     "https://www.stdaily.com/web/gdxw/2026-06/08/content_529288.html"
+    ],
+    "note": ""
+   },
+   "inst": "四川大学",
+   "n_in_library": 43,
+   "members": [
+    {
+     "name": "Zhengtian Xie",
+     "name_zh": "谢正田",
+     "openalex": [
+      "A5001634434"
+     ],
+     "status": "verified",
+     "evidence": [
+      "https://cpse.scu.edu.cn/info/1061/2754.htm"
+     ],
+     "note": "学院页写可联系吴锦荣或谢正田老师",
+     "role": "小导"
+    }
+   ],
+   "alumni": [],
+   "pending": [
+    {
+     "name": "Qi Wu",
+     "name_zh": "",
+     "openalex": [
+      "A5070420565",
+      "A5074358022",
+      "A5101907262",
+      "A5102728775",
+      "A5141102971"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": "共同通讯 8 篇；OpenAlex 拆成五六个编号、单位乱"
+    },
+    {
+     "name": "Guangwu Zhou",
+     "name_zh": "",
+     "openalex": [
+      "A5018640403"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": ""
+    },
+    {
+     "name": "Zhan Liu",
+     "name_zh": "",
+     "openalex": [
+      "A5100349183"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": ""
+    }
+   ],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Junqi Sun",
+    "name_zh": "孙俊奇",
+    "openalex": [
+     "A5032829548"
+    ],
+    "status": "verified",
+    "evidence": [
+     "https://supramol.jlu.edu.cn/info/1231/4873.htm"
+    ],
+    "note": ""
+   },
+   "inst": "吉林大学",
+   "n_in_library": 15,
+   "members": [
+    {
+     "name": "Xiaokong Liu",
+     "name_zh": "刘晓空",
+     "openalex": [
+      "A5028866307"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": "导师线索 3 篇",
+     "role": "小导"
+    }
+   ],
+   "alumni": [],
+   "pending": [],
+   "notes": [
+    "OpenAlex 把单位标成延边大学，是错的"
+   ]
+  },
+  {
+   "leader": {
+    "name": "Peiyi Wu",
+    "name_zh": "武培怡",
+    "openalex": [
+     "A5027324209"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "东华大学",
+   "n_in_library": 13,
+   "members": [
+    {
+     "name": "Shengtong Sun",
+     "name_zh": "孙胜童",
+     "openalex": [
+      "A5025978277"
+     ],
+     "status": "verified",
+     "evidence": [
+      "https://ma.x-mol.com/university/faculty/184145"
+     ],
+     "note": "博士导师武培怡（复旦 2007–2012），2017 起东华研究员",
+     "role": "小导"
+    },
+    {
+     "name": "Zhouyue Lei",
+     "name_zh": "雷周玥",
+     "openalex": [
+      "A5061504204"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": "导师线索 6 篇，共同通讯 3 篇",
+     "role": "小导"
+    }
+   ],
+   "alumni": [
+    {
+     "name": "Zhenchuan Yu",
+     "name_zh": "",
+     "openalex": [
+      "A5041668852"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": "导师线索 4 篇，现青岛大学",
+     "now": "青岛大学"
+    }
+   ],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Feng Yan",
+    "name_zh": "严锋",
+    "openalex": [
+     "A5031254443"
+    ],
+    "status": "verified",
+    "evidence": [
+     "https://chemistry.suda.edu.cn/6d/46/c35711a683334/page.htm",
+     "https://cmse.dhu.edu.cn/2024/0418/c14707a342967/page.htm"
+    ],
+    "note": ""
+   },
+   "inst": "苏州大学",
+   "n_in_library": 11,
+   "members": [],
+   "alumni": [],
+   "pending": [
+    {
+     "name": "Chang-Cun Yan",
+     "name_zh": "闫长存",
+     "openalex": [
+      "A5085082514"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": ""
+    },
+    {
+     "name": "Ji Pan",
+     "name_zh": "",
+     "openalex": [
+      "A5135957809"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": ""
+    }
+   ],
+   "notes": [
+    "东华大学 2024 年页面也列了他，单位变动待确认"
+   ]
+  },
+  {
+   "leader": {
+    "name": "Xinglong Gong",
+    "name_zh": "龚兴龙",
+    "openalex": [
+     "A5078908602"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "中国科学技术大学",
+   "n_in_library": 9,
+   "members": [
+    {
+     "name": "Shouhu Xuan",
+     "name_zh": "宣守虎",
+     "openalex": [
+      "A5042761809"
+     ],
+     "status": "verified",
+     "evidence": [
+      "https://gong.ustc.edu.cn/2021/0707/c21269a516353/page.htm"
+     ],
+     "note": "实验室网站「实验室教师」",
+     "role": "小导"
+    },
+    {
+     "name": "Min Sang",
+     "name_zh": "桑敏",
+     "openalex": [
+      "A5104173172"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": "导师线索 6 篇",
+     "role": "小导"
+    }
+   ],
+   "alumni": [],
+   "pending": [
+    {
+     "name": "Wanquan Jiang",
+     "name_zh": "江万权",
+     "openalex": [
+      "A5013447917"
+     ],
+     "status": "inferred",
+     "evidence": [
+      "https://chem.ustc.edu.cn/2012/1023/c2470a17180/page.htm"
+     ],
+     "note": "中国科大化学系副教授，方向相同；组内还是同校合作未查到"
+    }
+   ],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Guangzhao Zhang",
+    "name_zh": "张广照",
+    "openalex": [
+     "A5091201988"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "华南理工大学",
+   "n_in_library": 6,
+   "members": [
+    {
+     "name": "Chunfeng Ma",
+     "name_zh": "马春风",
+     "openalex": [
+      "A5035354999"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": "导师线索 8 篇，共同通讯 4 篇",
+     "role": "小导"
+    }
+   ],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Shu-Hong Yu",
+    "name_zh": "俞书宏",
+    "openalex": [
+     "A5074891139"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "中国科学技术大学",
+   "n_in_library": 6,
+   "members": [],
+   "alumni": [
+    {
+     "name": "Huai-Ping Cong",
+     "name_zh": "从怀萍",
+     "openalex": [
+      "A5015551238"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": "",
+     "now": "合肥工业大学"
+    }
+   ],
+   "pending": [
+    {
+     "name": "Qing-Fang Guan",
+     "name_zh": "管庆方",
+     "openalex": [
+      "A5008541270"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": ""
+    }
+   ],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Xuzhou Yan",
+    "name_zh": "颜徐州",
+    "openalex": [
+     "A5026734322"
+    ],
+    "status": "verified",
+    "evidence": [
+     "https://fsctm.sjtu.edu.cn/info/1011/1153.htm"
+    ],
+    "note": ""
+   },
+   "inst": "上海交通大学",
+   "n_in_library": 6,
+   "members": [],
+   "alumni": [
+    {
+     "name": "Ruixue Bai",
+     "name_zh": "白瑞雪",
+     "openalex": [
+      "A5074167594"
+     ],
+     "status": "verified",
+     "evidence": [
+      "https://faculty.xjtu.edu.cn/rxbai/en/index.htm"
+     ],
+     "note": "博士 2020–2023 + 博士后 2023–2025 跟颜徐州",
+     "now": "西安交通大学",
+     "since": 2025
+    }
+   ],
+   "pending": [
+    {
+     "name": "Wei Hua Yu",
+     "name_zh": "",
+     "openalex": [
+      "A5100770993"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": ""
+    },
+    {
+     "name": "Zhaoming Zhang",
+     "name_zh": "",
+     "openalex": [
+      "A5136714237"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": ""
+    }
+   ],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Hongbo Zeng",
+    "name_zh": "曾宏波",
+    "openalex": [
+     "A5053655509"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "阿尔伯塔大学",
+   "n_in_library": 5,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": [
+    "Zhuohong Yang（华南农业大学）更像独立带组、与曾宏波合作；他当末位的那篇归他"
+   ]
+  },
+  {
+   "leader": {
+    "name": "Haipeng Yu",
+    "name_zh": "于海鹏",
+    "openalex": [
+     "A5081082423"
+    ],
+    "status": "verified",
+    "evidence": [
+     "https://teacher.nefu.edu.cn/liuyongzhuang/en/index.htm"
+    ],
+    "note": ""
+   },
+   "inst": "东北林业大学",
+   "n_in_library": 5,
+   "members": [
+    {
+     "name": "Yongzhuang Liu",
+     "name_zh": "刘永壮",
+     "openalex": [
+      "A5028848960"
+     ],
+     "status": "verified",
+     "evidence": [
+      "https://teacher.nefu.edu.cn/liuyongzhuang/en/index.htm"
+     ],
+     "note": "主页写团队带头人是于海鹏",
+     "role": "小导"
+    }
+   ],
+   "alumni": [
+    {
+     "name": "Dawei Zhao",
+     "name_zh": "赵大伟",
+     "openalex": [
+      "A5007248608"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": "导师线索 5 篇；论文单位四川大学，疑已独立",
+     "now": "四川大学"
+    }
+   ],
+   "pending": [],
+   "notes": [
+    "OpenAlex 标成东华大学，待确认是否调动"
+   ]
+  },
+  {
+   "leader": {
+    "name": "Jian Ping Gong",
+    "name_zh": "龚剑萍",
+    "openalex": [
+     "A5022764544"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "北海道大学",
+   "n_in_library": 5,
+   "members": [
+    {
+     "name": "Tasuku Nakajima",
+     "name_zh": "",
+     "openalex": [
+      "A5009137307"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": "导师线索 5 篇",
+     "role": "小导"
+    }
+   ],
+   "alumni": [],
+   "pending": [],
+   "notes": [
+    "OpenAlex 标成吉林大学，是错的"
+   ]
+  },
+  {
+   "leader": {
+    "name": "Qiang Fu",
+    "name_zh": "傅强",
+    "openalex": [
+     "A5100612034"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "四川大学",
+   "n_in_library": 3,
+   "members": [
+    {
+     "name": "Kai Wu",
+     "name_zh": "吴凯",
+     "openalex": [
+      "A5020561518"
+     ],
+     "status": "verified",
+     "evidence": [
+      "https://cpse.scu.edu.cn/info/1062/4716.htm"
+     ],
+     "note": "川大副研究员，2020 入职",
+     "role": "小导"
+    }
+   ],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Jianzhang Li",
+    "name_zh": "李建章",
+    "openalex": [
+     "A5114145482",
+     "A5121029990"
+    ],
+    "status": "verified",
+    "evidence": [
+     "https://x-mol.com/university/faculty/77059"
+    ],
+    "note": ""
+   },
+   "inst": "北京林业大学",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [],
+   "pending": [
+    {
+     "name": "Meng Yao",
+     "name_zh": "",
+     "openalex": [
+      "A5100350907"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": "共同通讯 3 篇，待查"
+    }
+   ],
+   "notes": [
+    "姜帅成 Shuaicheng Jiang 是博士后、共同通讯，按规则不进结构",
+    "原先被错挂在 Meng Yao 名下：李建章在 OpenAlex 被拆成多个编号"
+   ]
+  },
+  {
+   "leader": {
+    "name": "Tao Xie",
+    "name_zh": "谢涛",
+    "openalex": [
+     "A5055015997"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "浙江大学",
+   "n_in_library": 3,
+   "members": [
+    {
+     "name": "Ning Zheng",
+     "name_zh": "郑宁",
+     "openalex": [
+      "A5021249170"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": "导师线索 8 篇，共同通讯 2 篇",
+     "role": "小导"
+    }
+   ],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Haibo Zhao",
+    "name_zh": "赵海波",
+    "openalex": [
+     "A5014916492"
+    ],
+    "status": "inferred",
+    "evidence": [
+     "https://teacher.xhu.edu.cn/lxy/wt6/list.psp?"
+    ],
+    "note": ""
+   },
+   "inst": "四川大学",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": [
+    "疑属王玉忠团队的小导（合署多项专利）；库里这 3 篇他当末位，先单列"
+   ]
+  },
+  {
+   "leader": {
+    "name": "Chuanling Si",
+    "name_zh": "司传领",
+    "openalex": [
+     "A5071794451"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "天津科技大学",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [],
+   "pending": [
+    {
+     "name": "Guanhua Wang",
+     "name_zh": "王冠华",
+     "openalex": [
+      "A5004981804"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": "合署多项木质素专利"
+    },
+    {
+     "name": "Lin Dai",
+     "name_zh": "戴林",
+     "openalex": [
+      "A5102793712"
+     ],
+     "status": "inferred",
+     "evidence": [
+      "https://qgxy.tust.edu.cn/szdw/jsyjy/3fbf254b19d34eedbd6e9df66c64a632.htm"
+     ],
+     "note": ""
+    },
+    {
+     "name": "Tairan Pang",
+     "name_zh": "",
+     "openalex": [
+      "A5032633943"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": ""
+    },
+    {
+     "name": "Liyu Zhu",
+     "name_zh": "",
+     "openalex": [
+      "A5112761703"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": ""
+    }
+   ],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Shaohua Jiang",
+    "name_zh": "蒋少华",
+    "openalex": [
+     "A5031570704"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "南京林业大学",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [],
+   "pending": [
+    {
+     "name": "Xiaoshuai Han",
+     "name_zh": "韩小帅",
+     "openalex": [
+      "A5101577126"
+     ],
+     "status": "inferred",
+     "evidence": [
+      "https://wood.njfu.edu.cn/szdw/qzjs/fjs/20211125/i245811.html"
+     ],
+     "note": ""
+    },
+    {
+     "name": "Jingquan Han",
+     "name_zh": "韩景泉",
+     "openalex": [
+      "A5014018584"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": ""
+    }
+   ],
+   "notes": [
+    "3 篇末位作者各不相同，可能是松散合作而不是一个组"
+   ]
+  },
+  {
+   "leader": {
+    "name": "Zhengwei You",
+    "name_zh": "游正伟",
+    "openalex": [
+     "A5002698983"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "东华大学",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [
+    {
+     "name": "Hongfei Huang",
+     "name_zh": "",
+     "openalex": [
+      "A5001354484"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": "导师线索 3 篇",
+     "now": "同济大学"
+    }
+   ],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Faai Zhang",
+    "name_zh": "张发爱",
+    "openalex": [
+     "A5004265726"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "桂林理工大学",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [
+    {
+     "name": "Zhongqun Zhou",
+     "name_zh": "",
+     "openalex": [
+      "A5039445608"
+     ],
+     "status": "inferred",
+     "evidence": [],
+     "note": "导师线索 7 篇",
+     "now": "广东石油化工学院"
+    }
+   ],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Shutao Wang",
+    "name_zh": "王树涛",
+    "openalex": [
+     "A5100441327"
+    ],
+    "status": "verified",
+    "evidence": [
+     "https://www.cell-symposia.com/bio-inspired-materials-2023/bio-tao.asp"
+    ],
+    "note": ""
+   },
+   "inst": "中科院理化技术研究所",
+   "n_in_library": 4,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Pingan Song",
+    "name_zh": "宋平安",
+    "openalex": [
+     "A5044707487"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "南昆士兰大学",
+   "n_in_library": 4,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Zhigang Suo",
+    "name_zh": "锁志刚",
+    "openalex": [
+     "A5005162492"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "哈佛大学",
+   "n_in_library": 4,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Shiguo Zhang",
+    "name_zh": "张世国",
+    "openalex": [
+     "A5031159142"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "湖南大学",
+   "n_in_library": 4,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Da-Hui Qu",
+    "name_zh": "曲大辉",
+    "openalex": [
+     "A5046170466"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "华东理工大学",
+   "n_in_library": 4,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Songqi Ma",
+    "name_zh": "马松琪",
+    "openalex": [
+     "A5047761731"
+    ],
+    "status": "verified",
+    "evidence": [
+     "https://www.iikx.com/news/progress/2502.html"
+    ],
+    "note": ""
+   },
+   "inst": "中科院宁波材料所（可能已调动）",
+   "n_in_library": 4,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Xinli Jing",
+    "name_zh": "",
+    "openalex": [
+     "A5081367643"
+    ],
+    "status": "inferred",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "西安交通大学",
+   "n_in_library": 4,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Takuzo Aida",
+    "name_zh": "相田卓三",
+    "openalex": [
+     "A5063217261"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "RIKEN / 东京大学",
+   "n_in_library": 4,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Cheng-Hui Li",
+    "name_zh": "李承辉",
+    "openalex": [
+     "A5083398238"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "南京大学",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Kai Zhang",
+    "name_zh": "张凯",
+    "openalex": [
+     "A5100323978"
+    ],
+    "status": "verified",
+    "evidence": [
+     "https://uni-goettingen.de/en/67098.html"
+    ],
+    "note": ""
+   },
+   "inst": "哥廷根大学",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Long Yang",
+    "name_zh": "",
+    "openalex": [
+     "A5002360303"
+    ],
+    "status": "inferred",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "西南林业大学",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Zunfeng Liu",
+    "name_zh": "刘遵峰",
+    "openalex": [
+     "A5027216220"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "南开大学",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Shifang Luan",
+    "name_zh": "栾世方",
+    "openalex": [
+     "A5080419769"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "中科院长春应化所（待确认）",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Jiaxi Cui",
+    "name_zh": "崔家喜",
+    "openalex": [
+     "A5070944532"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "电子科技大学",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Jiajun Fu",
+    "name_zh": "",
+    "openalex": [
+     "A5101925655"
+    ],
+    "status": "inferred",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "南京工业大学",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Chaobin He",
+    "name_zh": "何超斌",
+    "openalex": [
+     "A5100618246"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "新加坡国立大学 / A*STAR",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Wei Zhai",
+    "name_zh": "翟薇",
+    "openalex": [
+     "A5004219448"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "新加坡国立大学",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Panchao Yin",
+    "name_zh": "殷盘超",
+    "openalex": [
+     "A5044464889"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "华南理工大学",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Eugene Y.-X. Chen",
+    "name_zh": "",
+    "openalex": [
+     "A5018137652"
+    ],
+    "status": "inferred",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "科罗拉多州立大学",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Feihe Huang",
+    "name_zh": "黄飞鹤",
+    "openalex": [
+     "A5074785478"
+    ],
+    "status": "verified",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "浙江大学",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Richard Hoogenboom",
+    "name_zh": "",
+    "openalex": [
+     "A5066976932"
+    ],
+    "status": "inferred",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "根特大学",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Steven P. Armes",
+    "name_zh": "",
+    "openalex": [
+     "A5069717843"
+    ],
+    "status": "inferred",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "谢菲尔德大学",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Filip Du Prez",
+    "name_zh": "",
+    "openalex": [
+     "A5072050950"
+    ],
+    "status": "inferred",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "根特大学",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Stephen L. Craig",
+    "name_zh": "",
+    "openalex": [
+     "A5081394467"
+    ],
+    "status": "inferred",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "杜克大学",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Brent S. Sumerlin",
+    "name_zh": "",
+    "openalex": [
+     "A5081764848"
+    ],
+    "status": "inferred",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "佛罗里达大学",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "John A. Rogers",
+    "name_zh": "",
+    "openalex": [
+     "A5045551635"
+    ],
+    "status": "inferred",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "西北大学",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  },
+  {
+   "leader": {
+    "name": "Qi Zhang",
+    "name_zh": "",
+    "openalex": [
+     "A5100360323",
+     "A5100685243"
+    ],
+    "status": "inferred",
+    "evidence": [],
+    "note": ""
+   },
+   "inst": "香港中文大学（待确认）",
+   "n_in_library": 3,
+   "members": [],
+   "alumni": [],
+   "pending": [],
+   "notes": []
+  }
+ ],
+ "not_teams": [
+  {
+   "name": "Krzysztof Matyjaszewski",
+   "reason": "3 篇末位分别是 Patrick Mather、Xiangcheng Pan、Zhijun Chen，他只是共同通讯 → 各归末位作者"
+  },
+  {
+   "name": "Craig J. Hawker",
+   "reason": "3 篇末位分别是 Christopher Bates（UCSB 独立带组）、Javier Read de Alaniz、Cyrille Boyer → 各归末位作者",
+   "evidence": [
+    "https://www.chemengr.ucsb.edu/people/christopher-m-bates"
+   ]
+  }
+ ]
+}
