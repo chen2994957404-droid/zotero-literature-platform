@@ -231,6 +231,11 @@ def parse_qty_price(s):
     """「5 g, USD 10.00」→ {qty, unit, currency, price, per_g}；只有规格没价「500 g」→ price=None；
     认不出的写法（「10mM/1mL, USD 35.00」溶液）原样放 text。"""
     s = (s or '').strip()
+    ask = re.match(r'^(.*?),\s*Contact supplier\s*$', s, re.I)      # 「1 g, Contact supplier」= 要询价（2026-10-11 实测）
+    if ask:
+        out = parse_qty_price(ask.group(1))
+        out['price_on_request'] = True
+        return out
     m = _QTY_PRICE_RE.match(s)
     if not m:
         cur = re.search(r'\b([A-Z]{3})\s*(\d[\d,]*(?:\.\d+)?)\s*$', s)
@@ -827,7 +832,8 @@ def _extract_suppliers(pg, raw, max_chars, **kw):
     r['filters_active'] = d.get('checked') or []
     r['summary'] = supplier_summary(r['items'])
     r['note'] = ('价格来自各家目录（CAS 收录），以供应商页为准；per_g 是原币种每克价，不换汇。'
-                 '国内的几家看 facets 的 Country/Region，或 filters={"Country/Region": ["China"]}')
+                 '只要国内的：filters={"Country/Region": ["China"]}（按公司所在地筛；条目上的 country 是那份目录的发货地，'
+                 '国内公司的美国仓会写 United States）')
     if r['count'] and not r['items']:
         r['warnings'].append('no_items_parsed')
         r['complete'] = False

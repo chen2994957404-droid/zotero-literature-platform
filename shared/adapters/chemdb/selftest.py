@@ -170,6 +170,8 @@ def main():
     check('日元没有小数、千分位', chemdb.parse_qty_price('1,000 g, JPY 64200')['per_g'] == 64.2)
     sol = chemdb.parse_qty_price('10mM/1mL, USD 35.00')
     check('溶液写法认不出 → 原样 text，价格照取', sol.get('text') == '10mM/1mL, USD 35.00' and sol['price'] == 35.0, str(sol))
+    cs = chemdb.parse_qty_price('5 g, Contact supplier')
+    check('「Contact supplier」→ 规格照取、标询价', cs['qty'] == 5 and cs['price'] is None and cs['price_on_request'], str(cs))
     ext = ('/navigate/?answersPerPage=1&externalLink=https%253A%252F%252Fwww.chemscene.com%252F98-80-6.html&linkType=808')
     sup = chemdb.norm_sf_supplier({'supplier': 'AbaChemScene-US Stock', 'rn': '98-80-6', 'name': 'Phenylboronic acid',
                                    'purity': '95-98%', 'prices': ['5 g, USD 10.00', '500 g, USD 81.00'], 'more_prices': True,
