@@ -111,6 +111,14 @@ def main():
             print(f'  [FAIL] existing_keys 不对: {store.existing_keys()}')
 
         total += 1
+        n1 = store.rekey('AAAAAAAA', 'doi_10.1-x')
+        n0 = store.rekey('NOSUCHKEY', 'doi_10.1-y')
+        if n1 == 1 and n0 == 0 and store.existing_keys() == {'doi_10.1-x', 'BBBBBBBB'}:
+            print('  [PASS] rekey 只改元数据里的编号（Zotero 编号 → doi_）'); ok += 1
+        else:
+            print(f'  [FAIL] rekey 不对: {n1} {n0} {store.existing_keys()}')
+
+        total += 1
         again = vectordb.open_store(path=os.path.join(tmp, 'db'),
                                     name='selftest_coll', rebuild=True)
         if again.count() == 0:

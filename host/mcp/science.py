@@ -205,7 +205,7 @@ def _resolve(k):
             raise ValueError(f'证据库里没有 DOI {doi}（用 paper_fulltext 把它拿进来）')
         return pid
     try:
-        return paths.check_key(k)
+        return catalog.resolve(k)          # 旧的 Zotero 编号也认（2026-10-12 起目录改成 doi_ 编号）
     except paths.BadKeyError:
         raise ValueError(f'「{k}」既不是证据库 id 也不是 DOI')
 

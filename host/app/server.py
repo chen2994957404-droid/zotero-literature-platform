@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from shared.kernel import paths
+from shared.kernel import catalog, paths
 from shared.kernel.cli import opt
 from tools.library import dbsearch, oaindex, teams
 
@@ -87,7 +87,7 @@ def files(pid: str, kind: str):
     if kind not in _FILES:
         raise HTTPException(404, '没有这种文件')
     try:
-        p = _FILES[kind](paths.check_key(pid))
+        p = _FILES[kind](catalog.resolve(pid))     # 旧的 Zotero 编号也认
     except paths.BadKeyError:
         raise HTTPException(404, 'id 不合法')
     if not p or not os.path.isfile(p):

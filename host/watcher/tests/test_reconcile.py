@@ -40,10 +40,14 @@ def test_按DOI认出已落地的同一篇(env):
     assert catalog.read_meta(pid).get('zotero_key') == 'ABCD1234'      # Zotero 编号成了属性
 
 
-def test_证据库没有就用Zotero编号(env):
+def test_证据库没有就按DOI起名_Zotero编号只登记成属性(env):
+    # 2026-10-12 起跟 Zotero 拆开：新文献一律按 DOI 命名
     item = {'key': 'ABCD1234', 'data': {'DOI': '10.1000/new', 'title': 'y'}}
-    assert w.paper_id_for(item) == 'ABCD1234'
-    assert w.paper_id_for({'key': 'EFGH5678', 'data': {}}) == 'EFGH5678'   # 没 DOI 也不炸
+    pid = w.paper_id_for(item)
+    assert pid == paths.paper_id_from_doi('10.1000/new')
+    assert catalog.read_meta(pid).get('zotero_key') == 'ABCD1234'
+    assert catalog.resolve('ABCD1234') == pid                               # 旧编号也认得
+    assert w.paper_id_for({'key': 'EFGH5678', 'data': {}}) == 'EFGH5678'   # 没 DOI 只好用 Zotero 编号
 
 
 def test_有范文就当正文精读_没范文不动(env):

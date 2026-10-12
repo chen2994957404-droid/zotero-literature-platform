@@ -182,6 +182,24 @@ class Store:
             get_logger('vectordb').warning('删块失败 %s：%s', fields, e)
             return -1
 
+    def rekey(self, old, new, field='key'):
+        """把元数据里 `field == old` 的块改成 `new`（2026-10-12：文献编号从 Zotero 编号改成 doi_ 编号）。
+
+        只改元数据，不动向量和块 id —— 块 id 只要唯一，里面带的旧编号无所谓；
+        增量向量化、精层替换粗层都按元数据认篇（`existing_keys` / `delete_by`）。
+        返回改了几块；失败抛 ExternalServiceError（改编号是迁移的一步，失败必须让迁移停下）。"""
+        try:
+            got = self._coll.get(where={field: {'$eq': old}}, include=['metadatas']) or {}
+            ids = got.get('ids') or []
+            if not ids:
+                return 0
+            metas = [dict(m or {}, **{field: new}) for m in (got.get('metadatas') or [])]
+            for i in range(0, len(ids), PAGE):
+                self._coll.update(ids=ids[i:i + PAGE], metadatas=metas[i:i + PAGE])
+            return len(ids)
+        except Exception as e:
+            raise errors.ExternalServiceError(f'向量库改编号失败 {old}→{new}：{e}', service='vectordb') from e
+
     def existing_keys(self, field='key'):
         """已入库的文献 key 集合（增量向量化的核心判断）。"""
         return {m[field] for m in self.all_metadatas() if m.get(field)}

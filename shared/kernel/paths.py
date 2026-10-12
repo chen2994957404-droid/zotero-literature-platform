@@ -584,6 +584,11 @@ def teams():
     return os.path.join(STATE, 'teams.json')
 
 
+def rekey_backup(stamp):
+    """backup/rekey_<stamp>/ —— 文献编号从 Zotero 编号改成 doi_ 那一次的备份与对照日志（撤回靠它）。"""
+    return os.path.join(BACKUP, 'rekey_' + re.sub(r'[^0-9A-Za-z_-]+', '-', str(stamp)))
+
+
 def oa_index():
     """serving/oa_index.json —— 证据库每篇的作者（含通讯标记、单位）+ 摘要，从 OpenAlex 取一次。
 

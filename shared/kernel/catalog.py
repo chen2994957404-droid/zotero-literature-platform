@@ -202,7 +202,7 @@ def scan():
     return [record(p) for p in ids()]
 
 
-_CACHE = {'stamp': None, 'by_doi': None}
+_CACHE: dict = {'stamp': None, 'by_doi': None, 'zstamp': None, 'by_zkey': None}
 
 
 def _stamp():
@@ -216,6 +216,8 @@ def _stamp():
 def _cache_clear():
     _CACHE['stamp'] = None
     _CACHE['by_doi'] = None
+    _CACHE['zstamp'] = None
+    _CACHE['by_zkey'] = None
 
 
 def by_doi():
@@ -246,6 +248,35 @@ def find(doi):
     if not d:
         return ''
     return by_doi().get(d, '')
+
+
+def by_zotero_key():
+    """Zotero 编号 → 现在的文献 id（目录卡里登记的 zotero_key 属性）。进程内缓存，同 by_doi 的印章。"""
+    st = _stamp()
+    if st is not None and _CACHE.get('zstamp') == st and _CACHE.get('by_zkey') is not None:
+        return dict(_CACHE['by_zkey'])
+    out = {}
+    for pid in ids():
+        z = (read_meta(pid).get('zotero_key') or '').strip()
+        if z and (z not in out or z == pid):
+            out[z] = pid
+    if st is not None:
+        _CACHE['zstamp'], _CACHE['by_zkey'] = st, dict(out)
+    return out
+
+
+def resolve(pid):
+    """旧编号 → 现在的编号（2026-10-12 起 Zotero 编号目录改名成 doi_ 编号，跟 Zotero 拆开）。
+
+    目录还在 → 原样返回；是 Zotero 编号但目录已改名 → 按目录卡里登记的 zotero_key 找到新 id；
+    都不是 → 原样返回（交给调用方按「没有」处理）。不合法的 id 抛 BadKeyError。
+    对照表不另存一份：目录卡里的 zotero_key 就是它，单一正本。"""
+    pid = paths.check_key(pid)
+    if os.path.isdir(paths.paper_dir(pid)) or os.path.isdir(paths.paper_raw_dir(pid)):
+        return pid
+    if paths.is_zotero_key(pid):
+        return by_zotero_key().get(pid, pid)
+    return pid
 
 
 def have_index():

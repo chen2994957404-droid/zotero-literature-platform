@@ -73,8 +73,16 @@ def paper_id_for(item):
     if existing and existing != key:
         catalog.register(existing, zotero_key=key)
         return existing
-    catalog.register(key, doi=doi, zotero_key=key)
-    return key
+    if existing == key:
+        return key                       # 老目录（还没改名的 Zotero 编号目录）照用
+    # 2026-10-12 起新文献一律按 DOI 命名（跟 Zotero 拆开）；Zotero 编号只登记成属性
+    from shared.kernel import paths
+    try:
+        pid = paths.paper_id_from_doi(doi)
+    except paths.BadKeyError:
+        return key
+    catalog.register(pid, doi=doi, zotero_key=key)
+    return pid
 
 
 def adopt_reference(pid, log=print):

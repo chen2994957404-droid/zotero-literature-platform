@@ -237,7 +237,7 @@ def render(rows, total):
 def detail(pid):
     """一篇的完整卡片：目录卡 + 全部作者（通讯 / 单位）+ 摘要 + 团队 + 手上有哪些文件。找不到返回 None。"""
     try:
-        r = catalog.record(pid)
+        r = catalog.record(catalog.resolve(pid))     # 旧的 Zotero 编号也认
     except paths.BadKeyError:
         return None
     if not (r.get('title') or r.get('doi') or r.get('pdf')):

@@ -157,6 +157,7 @@ def refs(key):
     直接拿去 `outline()` 就能读。模型读到 "[12]" 时用它知道 12 是谁、能不能立刻读。
     没有参考文献节返回空列表。
     """
+    key = catalog.resolve(key)        # 旧的 Zotero 编号也认（2026-10-12 起目录改成 doi_ 编号）
     import re
     from shared.domain.schema import outline as _outline, scan
     o = outline(key)
@@ -316,6 +317,7 @@ def units(key, type_=None, limit=200):
 
     抽取 / 精读 / 审稿都往里写，这里只读。`type_` 限定一类；没有文件返回空。
     """
+    key = catalog.resolve(key)        # 旧的 Zotero 编号也认（2026-10-12 起目录改成 doi_ 编号）
     from shared.kernel import units_store
     rows = units_store.load(key)
     if type_:
@@ -341,6 +343,7 @@ def outline(key, refresh=False):
     结果缓存在 `curated/<key>/outline.json`：算一次几十毫秒，但一天要被点很多次。
     缓存带签名（`outline.signature`：文本 + 算法版本），对不上就重算。
     """
+    key = catalog.resolve(key)        # 旧的 Zotero 编号也认（2026-10-12 起目录改成 doi_ 编号）
     from shared.domain.schema import outline as _outline
     md_path = paths.fulltext(key)
     if not os.path.exists(md_path):
@@ -376,6 +379,7 @@ def section(key, sec_id, max_chars=MAX_CHARS, si=False):
     **这是「点菜」的那一口**：模型看完菜单只取它要的两三节，
     而不是把 5 万字符的全文塞进上下文。
     """
+    key = catalog.resolve(key)        # 旧的 Zotero 编号也认（2026-10-12 起目录改成 doi_ 编号）
     from shared.domain.schema import outline as _outline
     o = outline(key)
     if not o.get('available'):

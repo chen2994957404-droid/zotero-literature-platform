@@ -32,15 +32,36 @@ def _meta_from_item(d):
                 zotero_key=d.get('key') or '')
 
 
+def target_id(d):
+    """这条 Zotero 条目在证据库里该用哪个 id（2026-10-12 起跟 Zotero 拆开）：
+    DOI 已在库 → 那个 id；Zotero 编号目录已改名 → 改名后的 id；新的 → 按 DOI 起名；没 DOI → 只好用 Zotero 编号。"""
+    key = paths.check_key(d['key'])
+    doi = d.get('DOI') or ''
+    pid = catalog.find(doi) if doi else ''
+    if pid:
+        return pid
+    pid = catalog.resolve(key)
+    if pid != key or os.path.isdir(paths.paper_dir(key)) or os.path.isdir(paths.paper_raw_dir(key)):
+        return pid
+    if doi:
+        try:
+            return paths.paper_id_from_doi(doi)
+        except paths.BadKeyError:
+            pass
+    return key
+
+
 def land_one(item):
-    """一条 Zotero 条目 → dict(key, pdf, si, action)。action ∈ landed / exists / nopdf。"""
+    """一条 Zotero 条目 → dict(key, pid, pdf, si, action)。action ∈ landed / exists / nopdf。
+    key 是 Zotero 编号（向 Zotero 取附件用），pid 是证据库里的 id（落盘用）。"""
     from tools.getpdf import _copy                  # 同一个工具包内
     d = item.get('data') or item
     key = paths.check_key(d['key'])
-    out = {'key': key, 'pdf': '', 'si': '', 'action': 'nopdf', 'title': d.get('title') or ''}
+    pid = target_id(d)
+    out = {'key': key, 'pid': pid, 'pdf': '', 'si': '', 'action': 'nopdf', 'title': d.get('title') or ''}
     changed = False
 
-    main = paths.local_pdf(key)
+    main = paths.local_pdf(pid)
     if not os.path.exists(main):
         att = zc.find_pdf(key)
         if att and os.path.exists(att):
@@ -48,21 +69,19 @@ def land_one(item):
     if os.path.exists(main):
         out['pdf'] = main
 
-    si = paths.find_local_si(key)
+    si = paths.find_local_si(pid)
     if not si:
         src, kind = zc.find_si(key)
         if src and os.path.exists(src):
-            dst = paths.local_si(key, kind or 'pdf')
+            dst = paths.local_si(pid, kind or 'pdf')
             changed |= _copy(src, dst)
             si = dst
     out['si'] = si or ''
 
+    # 有没有附件都登记元数据：它仍是用户库里的一篇，目录里该有名字
+    catalog.register(pid, **_meta_from_item(d))
     if out['pdf'] or out['si']:
-        catalog.register(key, **_meta_from_item(d))
         out['action'] = 'landed' if changed else 'exists'
-    else:
-        # 没附件的也登记元数据：它仍是用户库里的一篇，目录里该有名字
-        catalog.register(key, **_meta_from_item(d))
     return out
 
 
@@ -87,7 +106,7 @@ def land_all(limit=None, log_fn=print, quiet=False):
                 counts[r['action']] += 1
                 if r['action'] == 'landed' or not quiet:
                     mark = {'landed': '✓', 'exists': '=', 'nopdf': '·'}[r['action']]
-                    log_fn(f'  {mark} {r["key"]}  {r["title"][:60]}'
+                    log_fn(f'  {mark} {r["pid"]}  {r["title"][:60]}'
                            + ('  +SI' if r['si'] else ''))
             except Exception as e:
                 counts['failed'] += 1
