@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.14.0'
+VERSION = '0.14.1'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -97,6 +97,8 @@ VERSION = '0.14.0'
 #   连着 3 篇网络失败就先停手，整批跑完歇 3 分钟统一补试。World Scientific「No Access」、T&F「Purchase options」认成 NOT_SUBSCRIBED。
 # v0.14（2026-10-12 用户定「放开」）：cnki_download —— 知网一篇的 PDF（摘要页点「PDF下载」），存进导出文件夹回路径。
 #   一次一篇、两次至少隔 CNKI_PDF_GAP 秒、每天 CNKI_PDF_DAILY 篇（默认 5，控制面板可改），撞拼图就停等人拖。
+# v0.14.1（同日，Claude Science 头一回用就 4 篇全挡）：知网整页「安全验证」认成 CAPTCHA_REQUIRED（原来报 NO_PDF_LINK、不弹提醒）；
+#   下载额度只数真下到的（ONLY_OK_COUNTS），没下到的只占间隔、不扣篇数。
 
 # 原样借用的（输出本来就合适）
 BORROW = ()     # 2026-10-04 用户定：只给它做不到的（取全文）。数值库它自己会抽，不借了；ping 自己挂
@@ -114,6 +116,7 @@ CNKI_DAILY = 30        # 知网每天最多几次（检索 / 翻页 / 摘要页�
 CNKI_PDF_GAP = 60      # 知网下载全文两次至少隔几秒（比检索慢：下载是知网最盯的动作）
 CNKI_PDF_DAILY = 5     # 知网每天最多下几篇全文；控制面板 CNKI_PDF_DAILY 可改（2026-10-12 用户定放开，量小）
 NO_CHARGE = ('NOT_FOUND', 'NO_SEARCH', 'LOGIN_REQUIRED')   # 这几种结果没真去网站查，不扣次数
+ONLY_OK_COUNTS = ('cnki_pdf',)   # 额度数的是「下到了几篇」：没下到（验证页挡住、只有 CAJ……）只占间隔，不扣篇数
 CCDC_GAP, CCDC_DAILY = 45, 15        # CCDC：条款明禁程序访问，用户知情后定小量用 —— 最保守
 JCR_GAP, JCR_DAILY = 20, 30          # JCR：一次只查一本刊
 SCOPUS_GAP, SCOPUS_DAILY = 30, 20    # Scopus：一次一页
@@ -882,14 +885,15 @@ def chemdb_quota(db, path=None, now=None, daily=None):
     return used, daily, wait
 
 
-def chemdb_charge(db, path=None, now=None, last_search=None):
-    """记一次（搜索或翻页）。只留最近 7 天。last_search = 这个库最近一次搜索的参数 + 列表网址（翻页要用）。"""
+def chemdb_charge(db, path=None, now=None, last_search=None, count=True):
+    """记一次（搜索或翻页）。只留最近 7 天。last_search = 这个库最近一次搜索的参数 + 列表网址（翻页要用）。
+    count=False：只记时间（下一次照样要隔够），不算进当天次数。"""
     now = now or time.time()
     path = path or _chemdb_usage_path()
     d = _load(path)
     today = _day(now)
     days = d.get('days', {})
-    days.setdefault(today, {})[db] = days.get(today, {}).get(db, 0) + 1
+    days.setdefault(today, {})[db] = days.get(today, {}).get(db, 0) + (1 if count else 0)
     out = {'last': now, 'days': {k: days[k] for k in sorted(days)[-7:]}, 'searches': d.get('searches', {})}
     if last_search is not None:
         out['searches'][db] = last_search
@@ -1127,7 +1131,8 @@ def _chemdb_work(db, params, page, fetch, key):
         keep = {k: v for k, v in params.items() if k != 'raw'}
         is_search = page == 1 and r.get('url') and params.get('op') in (None, 'search', 'citing')   # 看详情不算「最近一次检索」；被引列表算（翻页翻的是它）
         if r.get('code') not in NO_CHARGE:     # 标签不在、列表里没有第 n 条…… 没碰网站的失败不扣次数
-            chemdb_charge(db, last_search=dict(keep, url=r.get('url')) if is_search else None)
+            chemdb_charge(db, last_search=dict(keep, url=r.get('url')) if is_search else None,
+                          count=db not in ONLY_OK_COUNTS or r.get('code') == 'OK')
         if r.get('code') in ('CAPTCHA_REQUIRED', 'LOGIN_REQUIRED'):
             _call_human(db, r)
         if r.get('items') and db not in ('polyinfo', 'cnki', 'ccdc', 'jcr', 'tansoole'):   # 聚合物 / 中文文献 / 晶体结构：不去 Crossref 补 DOI

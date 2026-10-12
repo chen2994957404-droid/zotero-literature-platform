@@ -112,6 +112,9 @@ def main():
         except ValueError:
             check(f'不认的参数「{bad}」要拒', True)
 
+    check('整页「安全验证」也算验证码（2026-10-12：4 次下载都被它挡住，却报成「没有 PDF 下载」）',
+          cnki.is_verify_page('安全验证') and cnki.is_verify_page('', '安全验证 请拖动滑块完成拼图')
+          and not cnki.is_verify_page('聚硼硅氧烷的制备 - 中国知网', '摘要：…… 本站已通过安全验证'))
     check('PDF 文件名：去掉不许的字、截长', cnki.pdf_name('聚硼硅氧烷/硅橡胶: "综述"?') == '聚硼硅氧烷 硅橡胶 综述.pdf'
           and len(cnki.pdf_name('长' * 200)) == 84 and cnki.pdf_name('', 'https://x/abc?v=Zz9') .startswith('cnki_'))
     try:

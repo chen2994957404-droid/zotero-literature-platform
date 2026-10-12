@@ -272,6 +272,9 @@ Chinese master's / PhD theses, Chinese journals, conferences and **Chinese paten
   → `path` (a PDF you can read directly), `filename`, `title`, `bytes`. One paper per call, at least 60 s apart, **5 per day**
   (separate from the search quota; `cnki_status` → `pdf_quota`). Only download what you are about to read and cite.
   `NO_PDF_LINK` = CNKI only offers CAJ for it (common for theses) — ask the user; `CAPTCHA_REQUIRED` = the user drags the slider, then call again.
+  Since 0.14.1 CNKI's full-page 「安全验证」 is `CAPTCHA_REQUIRED` (it was misreported as `NO_PDF_LINK` before): the tab is
+  brought to the front and the user gets a desktop reminder — stop, tell the user, and only retry after they say it's done.
+  Only successful downloads count toward the 5 per day; blocked attempts only take the 60 s spacing.
 
 ## CCDC, JCR, Scopus (server 0.10): `ccdc_search`, `ccdc_detail`, `ccdc_current`, `jcr_journal`, `scopus_search`, `scopus_citing`, `scopus_page`, `webdb_status`
 

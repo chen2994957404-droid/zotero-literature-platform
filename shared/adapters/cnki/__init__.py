@@ -91,6 +91,18 @@ def captcha_active(geo):
     return top > -1000 and w > 0 and h > 0 and op > 0 and geo.get('disp') != 'none' and geo.get('vis') != 'hidden'
 
 
+def is_verify_page(title, body=''):
+    """整页的「安全验证」（2026-10-12 实测：摘要页整页换成它，标题就叫「安全验证」）。
+
+    跟拼图弹层（`captcha_active`）是两回事：弹层盖在正常页面上，这个是页面本身被换掉了 ——
+    只看弹层位置会漏掉它，于是被当成「摘要页上没有 PDF 下载」。
+    """
+    if '安全验证' in (title or ''):
+        return True
+    b = (body or '').strip()
+    return bool(b) and len(b) < 1500 and '安全验证' in b and '摘要' not in b
+
+
 def parse_total(text):
     """「共找到 498 条结果 1/25」→ (498, 1, 25)；只有一页时页面不写页码：「共找到 4 条结果」→ (4, 1, 1)。读不到 (None, None, None)。"""
     m = _TOTAL.search(text or '')
@@ -293,10 +305,25 @@ def _body(pg):
 
 
 def _captcha(pg):
+    """拼图弹层挪进了屏幕，或者整页被换成了「安全验证」—— 两种都要人去点。"""
     try:
-        return captcha_active(pg.evaluate(_CAP_JS))
+        if captcha_active(pg.evaluate(_CAP_JS)):
+            return True
+    except Exception:
+        pass
+    try:
+        return is_verify_page(pg.title(), _body(pg)[:2000])
     except Exception:
         return False
+
+
+def _hold(pg):
+    """撞上验证：标签留着、拉到最前面，人到浏览器前一眼就看见（取件那边 2026-10-05 踩过：后台标签被关了，人只看到首页）。"""
+    try:
+        pg.bring_to_front()
+    except Exception:
+        pass
+    return True
 
 
 def _gate(pg, warnings):
@@ -443,9 +470,9 @@ def detail(n=0, url=''):
                 tab.goto(url, wait_until='load', timeout=60000)
             except Exception as e:
                 return _result(code='NAVIGATE_FAILED', url=url, warnings=warnings, why=f'打不开摘要页：{str(e)[:120]}')
-            _settle(tab, lambda t: '摘要' in t or '主权项' in t, timeout=40)
+            _settle(tab, lambda t: '摘要' in t or '主权项' in t or '安全验证' in t, timeout=40)
             if _captcha(tab):
-                keep = True   # 人拖完后 current() 会读到它（它是最后一个知网标签）
+                keep = _hold(tab)   # 人拖完后 current() 会读到它（它是最后一个知网标签）
                 return _result(code='CAPTCHA_REQUIRED', url=tab.url, warnings=warnings,
                                why='知网摘要页弹了拼图验证码：请人在主力机浏览器里拖好，之后用 cnki_current 读')
             got = parse_detail(_body(tab))
@@ -530,10 +557,11 @@ def download(url):
                 tab.goto(url, wait_until='load', timeout=60000)
             except Exception as e:
                 return _result(code='NAVIGATE_FAILED', url=url, why=f'打不开摘要页：{str(e)[:120]}')
-            _settle(tab, lambda t: '摘要' in t or '主权项' in t, timeout=40)
+            _settle(tab, lambda t: '摘要' in t or '主权项' in t or '安全验证' in t, timeout=40)
             if _captcha(tab):
-                keep = True
-                return _result(code='CAPTCHA_REQUIRED', url=tab.url, why='知网摘要页弹了拼图验证码：请人在主力机浏览器里拖好，再交一次')
+                keep = _hold(tab)
+                return _result(code='CAPTCHA_REQUIRED', url=tab.url,
+                               why='知网弹了安全验证（拼图）：请人在主力机「取全文用的浏览器」里过一下（那个标签已切到最前面），再交一次')
             link = tab.evaluate(_PDF_LINK_JS)
             title = link.get('title') or ''
             if not link.get('href'):
@@ -553,7 +581,7 @@ def download(url):
                 return _result(code='NOT_PDF', url=url, title=title, why='文件超过上限，没往回传')
             if cap.raw is None:
                 if _captcha(tab):
-                    keep = True
+                    keep = _hold(tab)
                     return _result(code='CAPTCHA_REQUIRED', url=tab.url, title=title,
                                    why='点下载后知网弹了拼图验证码：请人在主力机浏览器里拖好，再交一次')
                 page_text = re.sub(r'\s+', ' ', _body(tab))[:160]

@@ -424,6 +424,11 @@ def main():
         check('JSON 里不出 NaN', S._no_nan({'a': float('nan'), 'b': [1.0, float('inf')], 'c': 'x'}) == {'a': None, 'b': [1.0, None], 'c': 'x'})
         check('chemdb_result 挂上了', 'chemdb_result' in sn)
         check('chemdb_substance 挂上了（Reaxys 物质的物性表，v0.13）', 'chemdb_substance' in sn)
+        with tempfile.TemporaryDirectory() as tdq:
+            qp = os.path.join(tdq, 'u.json')
+            S.chemdb_charge('cnki_pdf', path=qp, count=False)
+            used, _d, wait = S.chemdb_quota('cnki_pdf', path=qp)
+            check('知网下载没下到：不扣篇数，但照样要隔够 60 秒', used == 0 and wait > 50)
         try:
             S._chemdb_substance({'query': '105-83-9', 'section': 'spectra'})
             check('chemdb_substance：section 只收 physical / other', False)
