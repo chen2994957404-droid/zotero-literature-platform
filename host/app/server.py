@@ -23,6 +23,8 @@ from fastapi.staticfiles import StaticFiles
 
 from shared.kernel import catalog, paths
 from shared.kernel.cli import opt
+from host.app import jobs
+from tools import deepread
 from tools.library import dbsearch, oaindex, teams
 
 HOST = '127.0.0.1'
@@ -76,6 +78,46 @@ def team_list():
         out.append({'label': t['leader'].get('name_zh') or t['leader']['name'], 'name': t['leader']['name'],
                     'inst': t.get('inst', ''), 'n_main': m, 'n_coop': c})
     return out
+
+
+# ── 作业（目前只有单篇精读）。会花钱的动作只认本应用页面发来的请求：
+#    必须带自定义头 X-Literature-App（别的网页带不了，浏览器会先发预检，而我们不答 CORS），
+#    带了 Origin 的还必须是本机本端口。
+def _from_app(request: Request):
+    if request.headers.get('x-literature-app') != '1':
+        raise HTTPException(403, '只接受文献库应用页面发来的请求')
+    origin = request.headers.get('origin')
+    if origin and origin.split('://', 1)[-1] not in ALLOWED_HOSTS:
+        raise HTTPException(403, '来源不对')
+
+
+@app.get('/api/deepread/{pid}')
+def deepread_status(pid: str):
+    try:
+        pid = catalog.resolve(pid)
+    except paths.BadKeyError:
+        raise HTTPException(404, 'id 不合法')
+    return {'plan': deepread.plan(pid), 'job': jobs.of(pid)}
+
+
+@app.post('/api/deepread/{pid}')
+def deepread_start(pid: str, request: Request):
+    _from_app(request)
+    try:
+        pid = catalog.resolve(pid)
+    except paths.BadKeyError:
+        raise HTTPException(404, 'id 不合法')
+    p = deepread.plan(pid)
+    if not p['can']:
+        raise HTTPException(409, p['note'])
+    job, new = jobs.enqueue(pid, 'deepread', note=p['note'])
+    jobs.ensure_runner()
+    return {'job': job, 'new': new}
+
+
+@app.get('/api/jobs')
+def job_list(n: int = 20):
+    return jobs.recent(max(1, min(n, 200)))
 
 
 _FILES = {'pdf': paths.local_pdf, 'summary': paths.summary, 'si_summary': paths.si_summary,

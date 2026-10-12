@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { api } from '../api.js'
 
 const props = defineProps({ id: { type: String, default: '' } })
@@ -7,15 +7,63 @@ const emit = defineEmits(['team'])
 const d = ref(null)
 const error = ref('')
 
+// ── 精读（2026-10-12：单篇、不回写 Zotero；排队在主力机上一篇一篇跑）──
+const dr = ref(null)
+const drBusy = ref(false)
+const drError = ref('')
+let timer = null
+const STATE = { queued: '排队中', running: '精读中（一篇几分钟）', done: '完成', failed: '没做成' }
+
+async function loadDeepread(id) {
+  try {
+    dr.value = await api.deepread(id)
+  } catch (e) {
+    drError.value = String(e.message || e)
+  }
+  clearTimeout(timer)
+  const st = dr.value?.job?.state
+  if (st === 'queued' || st === 'running') timer = setTimeout(() => refresh(id), 5000)
+}
+
+async function refresh(id) {
+  if (id !== props.id) return
+  const before = dr.value?.job?.state
+  await loadDeepread(id)
+  if (before !== dr.value?.job?.state && dr.value?.job?.state === 'done') d.value = await api.paper(id)
+}
+
+async function startDeepread() {
+  if (!confirm(`要精读这篇吗？
+
+${dr.value.plan.note}
+
+会调用大模型、要花钱（每天的花费上限照样管着）。`)) return
+  drBusy.value = true
+  drError.value = ''
+  try {
+    await api.startDeepread(props.id)
+    await loadDeepread(props.id)
+  } catch (e) {
+    drError.value = String(e.message || e)
+  } finally {
+    drBusy.value = false
+  }
+}
+onUnmounted(() => clearTimeout(timer))
+
 watch(() => props.id, async (id) => {
   d.value = null
+  dr.value = null
   error.value = ''
+  drError.value = ''
+  clearTimeout(timer)
   if (!id) return
   try {
     d.value = await api.paper(id)
   } catch (e) {
     error.value = String(e.message || e)
   }
+  loadDeepread(id)
 }, { immediate: true })
 
 // 单位按出现顺序编号，作者后面标上标号（论文抬头的样子）
@@ -56,6 +104,18 @@ const links = computed(() => {
         <span v-if="!links.length" class="muted small">本地还没有正文 / 精读</span>
       </div>
 
+      <div v-if="dr" class="deepread">
+        <template v-if="dr.job && (dr.job.state === 'queued' || dr.job.state === 'running')">
+          <span class="badge run">{{ STATE[dr.job.state] }}</span><span class="muted small">{{ dr.job.note }}</span>
+        </template>
+        <template v-else>
+          <button v-if="dr.plan.can" class="go" :disabled="drBusy" @click="startDeepread">精读这篇</button>
+          <span class="muted small">{{ dr.plan.note }}</span>
+          <span v-if="dr.job && dr.job.state !== 'done'" class="badge bad">上次：{{ dr.job.note }}</span>
+        </template>
+        <span v-if="drError" class="error small">{{ drError }}</span>
+      </div>
+
       <div v-if="d.team || d.coop.length" class="teams">
         <span v-if="d.team" class="tag team" @click="emit('team', d.team)">组：{{ d.team }}</span>
         <span v-for="c in d.coop" :key="c" class="tag team" @click="emit('team', c)">合作：{{ c }}</span>
@@ -88,6 +148,12 @@ h3 { font-size: 14px; margin: 18px 0 6px; }
 .sub { color: var(--muted); font-size: 13px; margin: 0; word-break: break-all; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 4px; }
 .btn { padding: 6px 12px; border-radius: 6px; background: var(--accent); color: #fff; text-decoration: none; font-size: 14px; }
+.deepread { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 8px; }
+.go { padding: 5px 12px; border-radius: 6px; border: 1px solid var(--accent); background: var(--panel); color: var(--accent); cursor: pointer; white-space: nowrap; }
+.go:disabled { opacity: .5; cursor: default; }
+.badge { font-size: 12px; padding: 1px 8px; border-radius: 10px; }
+.badge.run { background: var(--accent-soft); color: var(--accent); }
+.badge.bad { background: transparent; color: var(--warn); border: 1px solid var(--warn); }
 .teams { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .tag { font-size: 12px; padding: 1px 7px; border-radius: 10px; border: 1px solid var(--accent); color: var(--accent); cursor: pointer; }
 .authors { line-height: 1.7; margin: 0; }

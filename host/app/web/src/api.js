@@ -18,4 +18,11 @@ export const api = {
     return get('/api/search?' + p)
   },
   file: (id, kind) => `/files/${encodeURIComponent(id)}/${kind}`,
+  deepread: (id) => get('/api/deepread/' + encodeURIComponent(id)),
+  async startDeepread(id) {
+    // 会花钱的动作：带上自定义头，后台只认本页面发来的
+    const r = await fetch('/api/deepread/' + encodeURIComponent(id), { method: 'POST', headers: { 'X-Literature-App': '1' } })
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText)
+    return r.json()
+  },
 }

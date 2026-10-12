@@ -584,6 +584,13 @@ def teams():
     return os.path.join(STATE, 'teams.json')
 
 
+def app_jobs_db():
+    """state/app_jobs.db —— 文献库应用发起的作业（目前只有单篇精读）的队列与结果。
+
+    索引性质：删了只丢「谁什么时候点过」，产物（精读 HTML）照样在各自目录里。"""
+    return os.path.join(STATE, 'app_jobs.db')
+
+
 def rekey_backup(stamp):
     """backup/rekey_<stamp>/ —— 文献编号从 Zotero 编号改成 doi_ 那一次的备份与对照日志（撤回靠它）。"""
     return os.path.join(BACKUP, 'rekey_' + re.sub(r'[^0-9A-Za-z_-]+', '-', str(stamp)))

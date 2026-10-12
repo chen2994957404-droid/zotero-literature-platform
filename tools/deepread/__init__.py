@@ -327,3 +327,28 @@ def status(item_key):
     elif out['tag'] in T.TRIGGER_TAGS and not out['summary']:
         out['note'] = '在队列里，还没轮到或正在跑。'
     return out
+
+
+def plan(key):
+    """这篇如果现在点「精读」会做什么 —— **只看本地，不联网、不花钱**（2026-10-12，给文献库应用的按钮用）。
+
+    返回 dict(can, action, note)：
+        action ∈ 'full'（正文 + SI 一起）/ 'main'（只有正文；会先试着取一次 SI）/ 'si_only'（正文精读过，只补 SI）/
+                 'done'（都精读过了）/ 'nothing'（本地没有正文也没有 SI）
+    与 `run()` 的判断同源：正文 / SI 有没有看本地正本，精读过没有看状态库 + 产物。"""
+    import os
+    pdf = os.path.exists(paths.local_pdf(key))
+    si = bool(paths.find_local_si(key))
+    main_done = jobs.is_done(key, STEP_MAIN, require='summary', prompt_ver=main_text.PROMPT_VER) \
+        or os.path.exists(paths.summary(key))
+    si_done = jobs.is_done(key, STEP_SI, require='si_summary', prompt_ver=_si.PROMPT_VER) \
+        or os.path.exists(paths.si_summary(key))
+    if not pdf and not si:
+        return {'can': False, 'action': 'nothing', 'note': '本地没有正文 PDF 也没有 SI，没法精读（先取全文）'}
+    if (not pdf or main_done) and (not si or si_done):
+        return {'can': False, 'action': 'done', 'note': '能精读的都精读过了'}
+    if main_done and si and not si_done:
+        return {'can': True, 'action': 'si_only', 'note': '正文已精读，只补 SI 精读'}
+    if pdf and si:
+        return {'can': True, 'action': 'full', 'note': '正文 + SI 一起精读（全文精读）'}
+    return {'can': True, 'action': 'main', 'note': '只有正文：先试着取一次 SI，取不到就只做正文精读'}
