@@ -189,3 +189,8 @@ MineRU 云端一篇 pending 半小时，而「解析成功才算拿到」，于�
 
 `not_pdf` 原来一律映射成 CAPTCHA_REQUIRED。Springer 没订的文章也挂 `citation_pdf_url`，取回来是网页 → 被当成验证码，叫人去点一个不存在的验证页。
 现在 `pdf_fetch` 取完看页面：验证页 → captcha，付费墙字样 → no_access，都没有 → not_pdf（码 NOT_PDF，不可重试）。
+
+## 取全文：网断了被报成「找不到」（2026-10-12，踩坑 #200 #201）
+
+`navigate_failed`（打不开页面）原来映射成 NOT_FOUND（不可重试），doi.org 断网 18 分钟时 10 篇连着中。现在是 NETWORK_ERROR，
+批内连着 3 篇就先停手、跑完歇 3 分钟补试。另：World Scientific「No Access」、T&F「Purchase options」认成没订阅。
