@@ -46,3 +46,11 @@ def test_目录卡缓存_没变化不重扫_过期或增删才重扫(monkeypatch
     search._scan()
     assert len(calls) == 3
     search._CACHE.clear()
+
+
+def test_DOI各种写法归成同一串():
+    k = search.doi_key('10.1021/acs.macromol.5b00210')
+    assert search.doi_key('https://doi.org/10.1021/ACS.Macromol.5b00210') == k
+    assert search.doi_key('doi_10.1021-acs.macromol.5b00210') == k
+    assert search.doi_key('10.1021-acs.macromol') in k            # 文件夹名写法 + 只写前半截
+    assert search.doi_key('10.1021/acs.macromol') in k

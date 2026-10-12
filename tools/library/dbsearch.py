@@ -5,11 +5,12 @@
 一千多篇现扫是毫秒级，不另建全文索引（同 catalog 的判据：索引和文件不同步的 bug 比省的时间贵）。
 
 匹配规则：
-- 输入像 DOI（含 `10.xxxx/`）→ 按 DOI 精确找；
+- 输入像 DOI（含 `10.xxxx/`）→ 按 DOI 找，**可以只写前半截**，完整的排最前；
+  文件夹名写法（`10.1021-acs.macromol…`、`doi_10.1021-…`）也认 —— 斜杠、连字符、下划线都不计较；
 - 否则把输入拆成词，**每个词都要命中**（标题 / 作者 / 期刊，勾了 abstract 再加摘要），
   不分大小写、不管连字符与重音（Shu-Hong = Shuhong）；
 - 人名不管顺序：「Wu Peiyi」「Peiyi Wu」都能找到；中文名经团队名单换成编号再找（「武培怡」）。
-排序：标题命中 > 作者命中 > 期刊 > 摘要，同分按年份新的在前。
+排序：标题命中 > DOI / 编号命中 > 作者命中 > 期刊 > 摘要，同分按年份新的在前。
 
 | 函数 | 干什么 |
 |---|---|
@@ -90,6 +91,16 @@ def tokens(text):
     return [w for w in re.split(r'[\s,;，；]+', norm(text)) if w]
 
 
+def doi_key(text):
+    """DOI / 文献 id 归成可比的一串：小写，去掉 / - _ 和 doi_ 前缀。
+
+    这样「10.1021/acs.macromol」「10.1021-acs.macromol」（data/raw 里的文件夹名写法）、
+    「doi_10.1021-acs.macromol.5b00210」都能互相命中，也可以只写前半截。"""
+    t = (text or '').lower().strip()
+    t = re.sub(r'^(?:https?://(?:dx\.)?doi\.org/|doi:\s*|doi_)', '', t)
+    return re.sub(r'[\s/_\-‐-―]', '', t)
+
+
 def is_doi(text):
     return bool(_DOI.search(text or ''))
 
@@ -133,7 +144,7 @@ def find(q='', corr='', author='', team='', year_from=None, year_to=None, journa
     need = [HAS.get(h) or h for h in has if h]
     q = (q or '').strip()
     m = _DOI.search(q)
-    doi_q = catalog.norm_doi(m.group(0)) if m else ''
+    doi_q = doi_key(catalog.norm_doi(m.group(0))) if m else ''
     qtoks = [] if doi_q else tokens(q)
     rows = []
     for r in _scan():
@@ -142,8 +153,13 @@ def find(q='', corr='', author='', team='', year_from=None, year_to=None, journa
         authors = e.get('authors') or []
         year = r.get('year') or e.get('year')
         venue = r.get('journal') or e.get('venue') or ''
-        if doi_q and catalog.norm_doi(r.get('doi')) != doi_q:
-            continue
+        did = doi_key(r.get('doi')) + ' ' + doi_key(pid)
+        if doi_q:
+            if doi_q not in did:
+                continue
+            score_doi = 100 if doi_key(r.get('doi')) == doi_q else 50   # 完整 DOI 排在前缀命中前面
+        else:
+            score_doi = 0
         if year_from and (not year or int(year) < int(year_from)):
             continue
         if year_to and (not year or int(year) > int(year_to)):
@@ -161,7 +177,7 @@ def find(q='', corr='', author='', team='', year_from=None, year_to=None, journa
         lk = links.get(pid) or {}
         if team_i is not None and lk.get('primary') != team_i and team_i not in (lk.get('others') or []):
             continue
-        score = 0
+        score = score_doi
         if qtoks:
             t, v = norm(r.get('title')), norm(venue)
             names = ' '.join(norm(a['n']) for a in authors)
@@ -174,6 +190,8 @@ def find(q='', corr='', author='', team='', year_from=None, year_to=None, journa
                     score += 6
                 elif w in v:
                     score += 3
+                elif w in did:
+                    score += 8
                 elif ab and w in ab:
                     score += 1
                 else:
