@@ -12,7 +12,8 @@
 所以这块的形状和 chemdb / polyinfo 一样：**不自己发请求，接管「取全文用的浏览器」里知网的标签**，
 **碰到拼图验证码立刻停、回 CAPTCHA_REQUIRED，由人去拖**。这里没有、也不许有任何拖拼图的代码。
 
-⚠ 只读：检索、翻页、读摘要页。**不下载全文**（知网对批量下载封整个学校的出口 IP；要全文请人点「PDF下载」）。
+⚠ 检索、翻页、读摘要页；**下载全文一次一篇**（2026-10-12 用户定放开：原来完全不下 —— 知网对批量下载有封整个学校出口 IP 的说法；
+   现在照人的做法点「PDF下载」，由调用方管每天几篇、两次隔多久，撞拼图就停）。
 ⚠ 频率（间隔、每天上限、缓存）由调用方管（host/mcp/science.py）。
 
 对外接口：
@@ -22,12 +23,13 @@
   | `page(n)` | 结果页上停着的那次检索的第 n 页 |
   | `detail(n=0, url='')` | 结果页第 n 条（或给 url）的摘要页：摘要、关键词、DOI、导师、学科、章节目录、专利主权项…… |
   | `row_url(n)` | 结果页第 n 条的摘要页链接（不导航）|
+  | `download(url)` | 摘要页的「PDF下载」→ PDF 字节（网络层截住，不弹下载框）；只有 CAJ 的回 NO_PDF_LINK |
   | `current()` | 不导航：读知网标签上现在那一页 |
   | `status()` | 标签在不在、验证码挡没挡着 —— 只看浏览器 |
-  | `parse_rows` / `parse_detail` / `parse_counts` / `captcha_active` / `kind_selector` | 纯函数（自测覆盖） |
+  | `parse_rows` / `parse_detail` / `parse_counts` / `captcha_active` / `kind_selector` / `pdf_name` | 纯函数（自测覆盖） |
 
 返回 dict：ok, code, kind, count, counts{各库条数}, page, pages, items[], url, why, warnings。
-code：OK / NO_RESULTS / CAPTCHA_REQUIRED / NAVIGATE_FAILED / TIMEOUT / NOT_FOUND。
+code：OK / NO_RESULTS / CAPTCHA_REQUIRED / NAVIGATE_FAILED / TIMEOUT / NOT_FOUND（download 另有 NO_PDF_LINK / NOT_PDF）。
 """
 import contextlib
 import re
@@ -494,3 +496,78 @@ def status():
         pg = tabs[-1]
         return {'tab_open': True, 'url': pg.url, 'captcha': _captcha(pg),
                 'on_results': bool(_TOTAL.search(_body(pg))), 'tabs': len(tabs)}
+
+
+# ── 下载一篇的 PDF（2026-10-12 用户定：放开，一次一篇、每天限量、撞验证码就停）──────────────
+_PDF_LINK_JS = r"""() => { const a = document.querySelector('#pdfDown');
+  const t = document.querySelector('.wx-tit h1') || document.querySelector('h1');
+  return {href: a && a.href && a.href.startsWith('http') ? a.href : '', title: t ? t.innerText.trim() : document.title,
+          caj: !!document.querySelector('#cajDown')}; }"""
+
+
+def pdf_name(title, url=''):
+    """文件名：标题去掉文件名里不许的字、截到 80 字；没标题用网址里的一段。"""
+    t = re.sub(r'[\\/:*?"<>|\r\n\t]+', ' ', title or '').strip()
+    t = re.sub(r'\s+', ' ', t)[:80].strip(' .')
+    return (t or 'cnki_' + re.sub(r'\W+', '', url)[-16:]) + '.pdf'
+
+
+def download(url):
+    """摘要页 url → 这篇的 PDF（字节）。在新标签里开摘要页、点「PDF下载」的链接、在网络层截住文件；读完就关标签。
+
+    返回 dict：ok, code, url, title, filename, pdf（bytes，成功才有）, bytes, why, warnings。
+    code：OK / CAPTCHA_REQUIRED（拼图 —— 标签留给人拖，拖完再交一次）/ NO_PDF_LINK（只有 CAJ，或页面没给下载）/
+    NOT_PDF（点了下载拿回来的不是 PDF：要登录、没权限或改版）/ NAVIGATE_FAILED。
+    """
+    warnings = []
+    if 'cnki.net' not in (url or ''):
+        raise ValueError('url 要是知网的摘要页（kns.cnki.net/kcms2/…）')
+    with _session() as (browser, ctx):
+        tab = _new_tab(browser, ctx)
+        keep = False
+        try:
+            try:
+                tab.goto(url, wait_until='load', timeout=60000)
+            except Exception as e:
+                return _result(code='NAVIGATE_FAILED', url=url, why=f'打不开摘要页：{str(e)[:120]}')
+            _settle(tab, lambda t: '摘要' in t or '主权项' in t, timeout=40)
+            if _captcha(tab):
+                keep = True
+                return _result(code='CAPTCHA_REQUIRED', url=tab.url, why='知网摘要页弹了拼图验证码：请人在主力机浏览器里拖好，再交一次')
+            link = tab.evaluate(_PDF_LINK_JS)
+            title = link.get('title') or ''
+            if not link.get('href'):
+                return _result(code='NO_PDF_LINK', url=url, title=title,
+                               why='摘要页上没有「PDF下载」' + ('（只有 CAJ 格式）' if link.get('caj') else ''))
+            with pdf_fetch._Intercept(tab) as cap:
+                try:
+                    # 必须带上摘要页当来源：直接跳过去，知网回「来源应用不正确(01)」（2026-10-12 实测）
+                    tab.goto(link['href'], wait_until='domcontentloaded', timeout=90000, referer=tab.url)
+                except Exception:
+                    pass        # 落到文件时导航被作废（ERR_ABORTED），正常
+                for _ in range(40):
+                    if cap.raw is not None or cap.too_big or _captcha(tab):
+                        break
+                    tab.wait_for_timeout(750)
+            if cap.too_big:
+                return _result(code='NOT_PDF', url=url, title=title, why='文件超过上限，没往回传')
+            if cap.raw is None:
+                if _captcha(tab):
+                    keep = True
+                    return _result(code='CAPTCHA_REQUIRED', url=tab.url, title=title,
+                                   why='点下载后知网弹了拼图验证码：请人在主力机浏览器里拖好，再交一次')
+                page_text = re.sub(r'\s+', ' ', _body(tab))[:160]
+                return _result(code='NOT_PDF', url=tab.url, title=title,
+                               why=f'点了下载没拿到文件，停在：{page_text or tab.url[:120]}')
+            raw = cap.raw
+            if not raw.startswith(b'%PDF'):
+                return _result(code='NOT_PDF', url=url, title=title,
+                               why=f'拿回来的不是 PDF（{cap.mime or "?"}，{len(raw)} 字节，开头 {raw[:12]!r}）')
+            return _result(ok=True, code='OK', url=url, title=title, filename=pdf_name(title, url),
+                           pdf=raw, bytes=len(raw), warnings=warnings)
+        finally:
+            if not keep:
+                try:
+                    tab.close()
+                except Exception:
+                    pass

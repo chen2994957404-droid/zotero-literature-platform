@@ -112,6 +112,14 @@ def main():
         except ValueError:
             check(f'不认的参数「{bad}」要拒', True)
 
+    check('PDF 文件名：去掉不许的字、截长', cnki.pdf_name('聚硼硅氧烷/硅橡胶: "综述"?') == '聚硼硅氧烷 硅橡胶 综述.pdf'
+          and len(cnki.pdf_name('长' * 200)) == 84 and cnki.pdf_name('', 'https://x/abc?v=Zz9') .startswith('cnki_'))
+    try:
+        cnki.download('https://example.com/x')
+        check('download 只收知网的摘要页', False)
+    except ValueError:
+        check('download 只收知网的摘要页', True)
+
     if flag('--live'):
         st = cnki.status()
         print('  [LIVE] status:', st)

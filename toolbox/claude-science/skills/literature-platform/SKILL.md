@@ -8,7 +8,7 @@ description: The user's own literature platform (evidence library of ~1100 polym
 Run on the SSH host **zotero-b** (not locally):
 
 ```bash
-~/bin/litcall --version                    # litcall + server version (expect server 0.13.x)
+~/bin/litcall --version                    # litcall + server version (expect server 0.14.x)
 ~/bin/litcall --list                       # tools + args (one JSON per line)
 ~/bin/litcall <tool> '<json args>'         # prints JSON result; exit 1 on tool error
 ~/bin/litcall --batch < calls.jsonl        # many calls, one session: {"tool":..,"args":{..}} per line
@@ -265,8 +265,13 @@ Chinese master's / PhD theses, Chinese journals, conferences and **Chinese paten
   terms hit the English abstracts of Chinese papers.
 - **Rules:** ≥30 s between calls, 30 calls/day; same search/page/detail on the same day is cached (free).
   CNKI shows a slider CAPTCHA when used a lot → `CAPTCHA_REQUIRED` + desktop reminder; tell the user, then `cnki_current`.
-- **No downloading.** CNKI bans the whole university IP for bulk downloads. If a thesis is worth reading in full, tell the
-  user which one; they click "PDF下载" themselves.
+- **Downloading: one at a time only** (`cnki_download`, below). CNKI is known to block the whole university's IP for bulk
+  downloads, so the server caps it at 5 papers a day, 60 s apart. Never loop it over a result list.
+
+- **Full text** (server 0.14): `~/bin/litcall cnki_download '{"n": 3}'` (rank on the current result page) or `{"url": "<abstract page>"}`
+  → `path` (a PDF you can read directly), `filename`, `title`, `bytes`. One paper per call, at least 60 s apart, **5 per day**
+  (separate from the search quota; `cnki_status` → `pdf_quota`). Only download what you are about to read and cite.
+  `NO_PDF_LINK` = CNKI only offers CAJ for it (common for theses) — ask the user; `CAPTCHA_REQUIRED` = the user drags the slider, then call again.
 
 ## CCDC, JCR, Scopus (server 0.10): `ccdc_search`, `ccdc_detail`, `ccdc_current`, `jcr_journal`, `scopus_search`, `scopus_citing`, `scopus_page`, `webdb_status`
 

@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.13.2'
+VERSION = '0.14.0'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -95,6 +95,8 @@ VERSION = '0.13.2'
 # v0.13.1（同日实测）：物性表一组超过 7 行时点「Show all」（BAPMA 的 pKa 组 15 条只读到 7 行）；读不全的组标 group_partial、complete=false。
 # v0.13.2（同日，58 篇批量取全文的报告）：页面打不开（断连 / 90 秒超时）改报 NETWORK_ERROR（可重试），不再是 NOT_FOUND；
 #   连着 3 篇网络失败就先停手，整批跑完歇 3 分钟统一补试。World Scientific「No Access」、T&F「Purchase options」认成 NOT_SUBSCRIBED。
+# v0.14（2026-10-12 用户定「放开」）：cnki_download —— 知网一篇的 PDF（摘要页点「PDF下载」），存进导出文件夹回路径。
+#   一次一篇、两次至少隔 CNKI_PDF_GAP 秒、每天 CNKI_PDF_DAILY 篇（默认 5，控制面板可改），撞拼图就停等人拖。
 
 # 原样借用的（输出本来就合适）
 BORROW = ()     # 2026-10-04 用户定：只给它做不到的（取全文）。数值库它自己会抽，不借了；ping 自己挂
@@ -109,6 +111,8 @@ POLYINFO_GAP = 45      # PoLyInfo 两次至少隔几秒：2026-10-09 隔 30 秒�
 POLYINFO_DAILY = 15    # PoLyInfo 每天最多几次（检索 / 样品列表 / 样品详情各算一次）；控制面板 POLYINFO_DAILY 可改
 CNKI_GAP = 30          # 知网两次至少隔几秒
 CNKI_DAILY = 30        # 知网每天最多几次（检索 / 翻页 / 摘要页各算一次）；控制面板 CNKI_DAILY 可改
+CNKI_PDF_GAP = 60      # 知网下载全文两次至少隔几秒（比检索慢：下载是知网最盯的动作）
+CNKI_PDF_DAILY = 5     # 知网每天最多下几篇全文；控制面板 CNKI_PDF_DAILY 可改（2026-10-12 用户定放开，量小）
 NO_CHARGE = ('NOT_FOUND', 'NO_SEARCH', 'LOGIN_REQUIRED')   # 这几种结果没真去网站查，不扣次数
 CCDC_GAP, CCDC_DAILY = 45, 15        # CCDC：条款明禁程序访问，用户知情后定小量用 —— 最保守
 JCR_GAP, JCR_DAILY = 20, 30          # JCR：一次只查一本刊
@@ -138,7 +142,7 @@ PoLyInfo（聚合物实测性质）：`polyinfo_search` → `polyinfo_samples` �
 再用 `polyinfo_current` 读那一页（不扣次数）。它的条款禁止批量获取 —— 只查回答眼前问题需要的那几条。
 中国知网（中文硕博论文、中文期刊、中国专利）：`cnki_search`（kind=thesis/phd/master/journal/patent…）→ `cnki_page` 翻页 →
 `cnki_detail`（摘要、关键词、导师、学位论文的整本目录、专利主权项）。两次至少隔 30 秒、每天 30 次；拼图验证码同上（cnki_current）。
-不下载全文：要哪本论文的全文，告诉用户去点「PDF下载」。
+全文：`cnki_download`（n 或 url）一次一篇，存成 PDF 回路径；两次至少隔 60 秒、每天 5 篇 —— 只下眼前真要读的。
 CCDC（单个晶体结构）`ccdc_search` / `ccdc_detail`；JCR（一本刊的 JIF 与分区）`jcr_journal`；Scopus（检索、被引列表）`scopus_search` /
 `scopus_citing` / `scopus_page`。这三家条款都不许程序批量取 —— 只查眼前问题需要的那一两条；额度见 `webdb_status`。"""
 
@@ -838,7 +842,7 @@ def _day(now):
     return time.strftime('%Y-%m-%d', time.localtime(now))
 
 
-WEB_DBS = ('scifinder', 'reaxys', 'polyinfo', 'cnki', 'ccdc', 'jcr', 'scopus', 'tansoole')   # 借浏览器查的库；共用一份账本、一把锁
+WEB_DBS = ('scifinder', 'reaxys', 'polyinfo', 'cnki', 'cnki_pdf', 'ccdc', 'jcr', 'scopus', 'tansoole')   # 借浏览器查的库；共用一份账本、一把锁
 
 
 def check_web_db(db):
@@ -849,11 +853,12 @@ def check_web_db(db):
 
 
 def gap_of(db):
-    return {'polyinfo': POLYINFO_GAP, 'cnki': CNKI_GAP, 'ccdc': CCDC_GAP, 'jcr': JCR_GAP, 'scopus': SCOPUS_GAP,
+    return {'polyinfo': POLYINFO_GAP, 'cnki': CNKI_GAP, 'cnki_pdf': CNKI_PDF_GAP, 'ccdc': CCDC_GAP, 'jcr': JCR_GAP, 'scopus': SCOPUS_GAP,
             'tansoole': TANSOOLE_GAP}.get(db, CHEMDB_GAP)
 
 
 _DAILY = {'polyinfo': ('POLYINFO_DAILY', POLYINFO_DAILY), 'cnki': ('CNKI_DAILY', CNKI_DAILY),
+          'cnki_pdf': ('CNKI_PDF_DAILY', CNKI_PDF_DAILY),
           'ccdc': ('CCDC_DAILY', CCDC_DAILY), 'jcr': ('JCR_DAILY', JCR_DAILY), 'scopus': ('SCOPUS_DAILY', SCOPUS_DAILY),
           'tansoole': ('TANSOOLE_DAILY', TANSOOLE_DAILY)}
 
@@ -1407,6 +1412,35 @@ def _cnki_detail(a):
     return _chemdb_run('cnki', {'op': 'detail', 'url': url}, 1, lambda db: cnki.detail(url=url), wait_s=_pi_wait(a))
 
 
+def _cnki_download(a):
+    from shared.adapters import cnki
+    from shared.kernel import paths
+    url = (a.get('url') or '').strip()
+    if not url:
+        if not a.get('n'):
+            raise ValueError('给 n（结果页上的序号 rank）或 url（摘要页）')
+        if not _chemdb_lock.acquire(blocking=False):
+            raise ValueError('有一个检索正在用浏览器；等它跑完（chemdb_result）再交')
+        try:
+            url = cnki.row_url(int(a['n'])) or ''
+        finally:
+            _chemdb_lock.release()
+        if not url:
+            raise ValueError(f'知网结果页上没有第 {a["n"]} 条（先 cnki_search / cnki_page 到那一页）')
+
+    def fetch(db):
+        r = cnki.download(url)
+        raw = r.pop('pdf', None)
+        if raw:
+            d = os.path.join(paths.CHEMDB_EXPORTS, 'cnki')
+            os.makedirs(d, exist_ok=True)
+            path = os.path.join(d, r['filename'])
+            io.open(path, 'wb').write(raw)
+            r['path'], r['path_local'] = to_wsl(path), path
+        return r
+    return _chemdb_run('cnki_pdf', {'op': 'download', 'url': url}, 1, fetch, wait_s=_pi_wait(a))
+
+
 def _cnki_current(a):
     """不导航：读知网标签上现在那一页（人拖完拼图后用）。不扣次数。"""
     from shared.adapters import cnki
@@ -1422,15 +1456,18 @@ def _cnki_current(a):
 def _cnki_status(a):
     from shared.adapters import cnki
     used, daily, wait = chemdb_quota('cnki')
+    pu, pd_, pw = chemdb_quota('cnki_pdf')
     out = {'quota': {'used_today': used, 'daily_limit': daily, 'remaining': max(0, daily - used)},
            'min_gap_s': CNKI_GAP, 'wait_s': round(wait, 1),
+           'pdf_quota': {'used_today': pu, 'daily_limit': pd_, 'remaining': max(0, pd_ - pu),
+                         'min_gap_s': CNKI_PDF_GAP, 'wait_s': round(pw, 1)},
            'last_search': (_load(_chemdb_usage_path()).get('searches') or {}).get('cnki')}
     try:
         out['tab'] = cnki.status()
     except Exception as e:
         out['tab'] = {'error': f'{type(e).__name__}: {str(e)[:160]}'}
     state = '拼图验证码挡着，等人拖' if out['tab'].get('captcha') else '可以查'
-    return _out('知网今天还剩 %d 次；%s' % (out['quota']['remaining'], state), out)
+    return _out('知网今天还剩 %d 次检索、%d 篇下载；%s' % (out['quota']['remaining'], out['pdf_quota']['remaining'], state), out)
 
 
 def _ccdc_search(a):
@@ -1732,6 +1769,12 @@ TOOLS = [
      'n = 当前结果页上的序号（rank），或直接给 url。同一篇当天走缓存。撞拼图验证码回 CAPTCHA_REQUIRED，人拖完用 cnki_current。',
      {'n': {'type': 'integer', 'minimum': 1}, 'url': {'type': 'string'},
       'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50}}, [], _cnki_detail),
+    ('cnki_download', '知网一篇的全文 PDF：在摘要页点「PDF下载」，存进主力机的导出文件夹，回 path（WSL 路径，直接读）/ filename / '
+     'title / bytes。n = 当前结果页上的序号（rank），或给摘要页 url。一次一篇；两次至少隔 60 秒、每天 5 篇（单独的额度，见 cnki_status 的 '
+     'pdf_quota）—— 只下眼前真要读的。code：OK / CAPTCHA_REQUIRED（拼图，人拖完再交一次）/ NO_PDF_LINK（只有 CAJ）/ '
+     'NOT_PDF（点了没拿到文件）。同一篇当天走缓存，不重复下。',
+     {'n': {'type': 'integer', 'minimum': 1}, 'url': {'type': 'string'},
+      'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50}}, [], _cnki_download),
     ('cnki_current', '不导航、不扣次数：读知网最新那个标签现在的页面（结果页 / 摘要页）。人拖完拼图验证码之后用。',
      {}, [], _cnki_current),
     ('cnki_status', '不碰网站、不扣次数：知网今天还剩几次、要等几秒、最近一次检索、验证码挡没挡着。', {}, [], _cnki_status),
