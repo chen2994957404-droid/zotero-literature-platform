@@ -115,6 +115,10 @@ def main():
     check('整页「安全验证」也算验证码（2026-10-12：4 次下载都被它挡住，却报成「没有 PDF 下载」）',
           cnki.is_verify_page('安全验证') and cnki.is_verify_page('', '安全验证 请拖动滑块完成拼图')
           and not cnki.is_verify_page('聚硼硅氧烷的制备 - 中国知网', '摘要：…… 本站已通过安全验证'))
+    u = 'https://kns.cnki.net/kcms2/article/abstract?v=AbC-12_x==&uniplatform=NZKPT&language=CHS'
+    check('同一篇摘要页：过验证后网址多了尾巴也认得', cnki.same_article(u, u + '&captchaId=9')
+          and cnki.same_article(u, 'https://kns.cnki.net/kcms2/article/abstract?uniplatform=NZKPT&v=AbC-12_x==')
+          and not cnki.same_article(u, u.replace('AbC', 'XyZ')) and not cnki.same_article('', u))
     check('PDF 文件名：去掉不许的字、截长', cnki.pdf_name('聚硼硅氧烷/硅橡胶: "综述"?') == '聚硼硅氧烷 硅橡胶 综述.pdf'
           and len(cnki.pdf_name('长' * 200)) == 84 and cnki.pdf_name('', 'https://x/abc?v=Zz9') .startswith('cnki_'))
     try:

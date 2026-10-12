@@ -275,6 +275,9 @@ Chinese master's / PhD theses, Chinese journals, conferences and **Chinese paten
   Since 0.14.1 CNKI's full-page 「安全验证」 is `CAPTCHA_REQUIRED` (it was misreported as `NO_PDF_LINK` before): the tab is
   brought to the front and the user gets a desktop reminder — stop, tell the user, and only retry after they say it's done.
   Only successful downloads count toward the 5 per day; blocked attempts only take the 60 s spacing.
+  **After the user passes the verification, call `cnki_download` again with the same `url` (not a new search, not `n`)**:
+  since 0.14.2 the server downloads from the page the user just unlocked, which is still open; a fresh search or page
+  gets verified again (seen 2026-10-13: three rounds of drag → new request → blocked again).
 
 ## CCDC, JCR, Scopus (server 0.10): `ccdc_search`, `ccdc_detail`, `ccdc_current`, `jcr_journal`, `scopus_search`, `scopus_citing`, `scopus_page`, `webdb_status`
 

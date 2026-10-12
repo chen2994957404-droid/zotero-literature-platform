@@ -539,6 +539,20 @@ def pdf_name(title, url=''):
     return (t or 'cnki_' + re.sub(r'\W+', '', url)[-16:]) + '.pdf'
 
 
+def same_article(a, b):
+    """两个摘要页网址是不是同一篇：比 v= 那一段（过验证后网址会多出 &capt… 之类的尾巴）。"""
+    def v(u):
+        m = re.search(r'[?&]v=([^&#]+)', u or '')
+        return m.group(1) if m else (u or '').split('#')[0]
+    return bool(a and b) and v(a) == v(b)
+
+
+def open_tab(ctx, url):
+    """浏览器里已经开着这一篇摘要页的标签（最新的那个）；没有回 None。不导航、不碰网站。"""
+    hits = [p for p in ctx.pages if '/kcms' in (p.url or '') and same_article(p.url, url)]
+    return hits[-1] if hits else None
+
+
 def download(url):
     """摘要页 url → 这篇的 PDF（字节）。在新标签里开摘要页、点「PDF下载」的链接、在网络层截住文件；读完就关标签。
 
@@ -550,14 +564,21 @@ def download(url):
     if 'cnki.net' not in (url or ''):
         raise ValueError('url 要是知网的摘要页（kns.cnki.net/kcms2/…）')
     with _session() as (browser, ctx):
-        tab = _new_tab(browser, ctx)
+        # 人刚过完验证的那一页还开着：直接在它上面点下载，别再新开一页（2026-10-13 实测：人拖完拼图，
+        # 再交一次又新开摘要页，立刻又被验证；而在已经过了验证的那页上点「PDF下载」一次就成）
+        tab = open_tab(ctx, url)
+        reused = tab is not None
+        tab = tab or _new_tab(browser, ctx)
         keep = False
         try:
-            try:
-                tab.goto(url, wait_until='load', timeout=60000)
-            except Exception as e:
-                return _result(code='NAVIGATE_FAILED', url=url, why=f'打不开摘要页：{str(e)[:120]}')
-            _settle(tab, lambda t: '摘要' in t or '主权项' in t or '安全验证' in t, timeout=40)
+            if not reused:
+                try:
+                    tab.goto(url, wait_until='load', timeout=60000)
+                except Exception as e:
+                    return _result(code='NAVIGATE_FAILED', url=url, why=f'打不开摘要页：{str(e)[:120]}')
+                _settle(tab, lambda t: '摘要' in t or '主权项' in t or '安全验证' in t, timeout=40)
+            else:
+                warnings.append('reused_open_tab: 用的是浏览器里已经开着（已过验证）的那页，没有重新打开')
             if _captcha(tab):
                 keep = _hold(tab)
                 return _result(code='CAPTCHA_REQUIRED', url=tab.url,
