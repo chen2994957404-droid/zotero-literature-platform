@@ -1416,6 +1416,13 @@ _RX_FACTS_JS = r"""async ([label, want, maxMore]) => {
       btn.click();
       for (let t = 0; t < 20 && !g.querySelector('table'); t++) await sleep(400);
     }
+    // 一组超过 7 行时表格只先给 7 行，底下一个「Show all」（2026-10-12 实测 BAPMA 的 pKa 组 15 条）
+    const more = [...g.querySelectorAll('button, a')].find(e => /^Show all$/i.test((e.innerText || '').trim()));
+    if (more) {
+      const before = g.querySelectorAll('tbody tr').length;
+      more.click();
+      for (let t = 0; t < 20 && g.querySelectorAll('tbody tr').length <= before; t++) await sleep(400);
+    }
     const tables = [...g.querySelectorAll('table')].map(tb => {
       const heads = [...tb.querySelectorAll('thead th')].map(th => ({t: (th.innerText || '').trim(),
                      ref: /^citation/.test(th.getAttribute('data-testid') || '')}));
@@ -1479,6 +1486,9 @@ def _rx_facts(pg, n, section, groups, max_rows, warnings):
         if not g.get('tables'):
             complete = False
             warnings.append(f'group_not_loaded: {name}（点开了但表格没出来）')
+        if total and len(rows) < total:
+            complete = False
+            warnings.append(f'group_partial: {name} 共 {total} 条，页面上只读到 {len(rows)} 行')
         out.append({'group': name, 'n': total, 'rows': rows[:max_rows], 'n_shown': min(len(rows), max_rows),
                     'truncated': len(rows) > max_rows})
     if any(g.get('truncated') for g in out):
