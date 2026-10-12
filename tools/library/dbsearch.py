@@ -97,7 +97,7 @@ def doi_key(text):
     这样「10.1021/acs.macromol」「10.1021-acs.macromol」（data/raw 里的文件夹名写法）、
     「doi_10.1021-acs.macromol.5b00210」都能互相命中，也可以只写前半截。"""
     t = (text or '').lower().strip()
-    t = re.sub(r'^(?:https?://(?:dx\.)?doi\.org/|doi:\s*|doi_)', '', t)
+    t = re.sub(r'^(?:https?://(?:dx\.)?doi\.org/|doi[:_]?\s*(?=10\.))', '', t)
     return re.sub(r'[\s/_\-‐-―]', '', t)
 
 
@@ -190,7 +190,7 @@ def find(q='', corr='', author='', team='', year_from=None, year_to=None, journa
                     score += 6
                 elif w in v:
                     score += 3
-                elif w in did:
+                elif doi_key(w) in did:
                     score += 8
                 elif ab and w in ab:
                     score += 1

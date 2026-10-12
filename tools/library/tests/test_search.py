@@ -54,3 +54,9 @@ def test_DOI各种写法归成同一串():
     assert search.doi_key('doi_10.1021-acs.macromol.5b00210') == k
     assert search.doi_key('10.1021-acs.macromol') in k            # 文件夹名写法 + 只写前半截
     assert search.doi_key('10.1021/acs.macromol') in k
+
+
+def test_文件夹名前缀被分词归一之后也认():
+    # 分词会先去掉下划线：doi_10.1021-acs → doi10.1021acs，doi_key 也要能剥掉这个前缀
+    k = search.doi_key('10.1021/acs.macromol.6c00733')
+    assert search.doi_key(search.norm('doi_10.1021-acs.macromol')) in k
