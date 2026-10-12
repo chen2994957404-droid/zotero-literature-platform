@@ -184,3 +184,8 @@ Wiley 1.15MB pdf · Elsevier 12.1MB docx · ACS 老 1.68MB pdf(18页) · ACS 新
 
 MineRU 云端一篇 pending 半小时，而「解析成功才算拿到」，于是 PDF 在手也读不了、后面的跟着等。
 现在 PDF 到手先出快速文本层（PyMuPDF，几秒），MineRU 后台补。判断「还要不要跑 MineRU」看 `pdf_parse.tier()`，别看 full.md 在不在。
+
+## 取全文：没订阅被报成验证码（2026-10-12，踩坑 #198）
+
+`not_pdf` 原来一律映射成 CAPTCHA_REQUIRED。Springer 没订的文章也挂 `citation_pdf_url`，取回来是网页 → 被当成验证码，叫人去点一个不存在的验证页。
+现在 `pdf_fetch` 取完看页面：验证页 → captcha，付费墙字样 → no_access，都没有 → not_pdf（码 NOT_PDF，不可重试）。
