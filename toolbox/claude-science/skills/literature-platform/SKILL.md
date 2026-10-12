@@ -8,7 +8,7 @@ description: The user's own literature platform (evidence library of ~1100 polym
 Run on the SSH host **zotero-b** (not locally):
 
 ```bash
-~/bin/litcall --version                    # litcall + server version (expect server 0.10.x)
+~/bin/litcall --version                    # litcall + server version (expect server 0.13.x)
 ~/bin/litcall --list                       # tools + args (one JSON per line)
 ~/bin/litcall <tool> '<json args>'         # prints JSON result; exit 1 on tool error
 ~/bin/litcall --batch < calls.jsonl        # many calls, one session: {"tool":..,"args":{..}} per line
@@ -24,8 +24,12 @@ What to expect (server 0.3):
   `tier: "structured"` (tables, figure images). Tables as data: `library_section` with
   `sectionId: "t1", format: "csv"` (or `"json"`) — needs `structured`.
 - **Status codes.** Every fetch result has `code` (`OK`, `CAPTCHA_REQUIRED`, `NOT_SUBSCRIBED`, `NOT_FOUND`,
-  `NO_PDF_LINK`, `PARSE_PENDING`, `PARSE_FAILED`, `NETWORK_ERROR`, `NOT_FETCHED`) plus `retryable`, `stage`, `route`.
-  Branch on `code`, not on the Chinese `why`.
+  `NO_PDF_LINK`, `NOT_PDF`, `PARSE_PENDING`, `PARSE_FAILED`, `NETWORK_ERROR`, `NOT_FETCHED`) plus `retryable`, `stage`, `route`.
+  Branch on `code`, not on the Chinese `why`. Since server 0.13, when the publisher returns something that is not a PDF the
+  server looks at the page: a challenge page → `CAPTCHA_REQUIRED`; "Access this article / Buy article" → `NOT_SUBSCRIBED`;
+  neither → `NOT_PDF` (cause unknown — **do not** ask the user to solve a CAPTCHA for it; tell them the article
+  could not be fetched and why is unclear). Before 0.13 an unsubscribed Springer article (e.g. Pleiades) came back as
+  `CAPTCHA_REQUIRED` by mistake.
 - **CAPTCHA.** The server defers the rest of that publisher, keeps going with others, and pops a reminder on
   the user's desktop. Ask the user to click it in the "取全文用的浏览器", then call `fulltext_retry`.
 - **Citing.** Section ids (`s8`, `s8.p2`) are per-version: they can shift when a paper goes text → structured.
@@ -43,7 +47,7 @@ What to expect (server 0.3):
 Check this platform before web search or other literature connectors: its full text and SI are
 what the user actually has.
 
-## SciFinder / Reaxys (server 0.7): `chemdb_status`, `chemdb_search`, `chemdb_page`
+## SciFinder / Reaxys (server 0.7; 0.13 adds `chemdb_substance`): `chemdb_status`, `chemdb_search`, `chemdb_page`, `chemdb_substance`
 
 The user's school subscribes to both; you can't log in, so these drive the browser on the user's main machine
 (the user logs in there once) and return **one results page as structured fields**. Read-only: no export, no detail pages.
@@ -119,6 +123,16 @@ main machine, then retry.
   SciFinder's list page gives **no name** for many multi-component entries (only "Images of a multi component structure
   including CAS RNs …"), so `name` is null there — identify them by `component_cas_rns`. SciFinder lists only components
   that have a CAS number (e.g. HCl in a salt is not listed): `components_unlisted` says how many are missing.
+- **Property values of one substance** (server 0.13, Reaxys only): `chemdb_search kind=substances` only gives counts
+  (`n_physical_data: 41`). To get the numbers:
+  `~/bin/litcall chemdb_substance '{"query":"105-83-9","groups":["Boiling","Density","Dissociation"]}'`
+  → `substance` + `groups[]`: `group` (Reaxys group name: Boiling Point, Density, Refractive Index, Dissociation Exponent
+  = pKa, Association (MCS) …), `n`, `rows[]` = `{"Boiling Point, °C": "80 - 100", "Pressure (Boiling Point), Torr": "1.2",
+  "reference": {citation, type, authors, doi, cited}}` (column names carry the units; old papers and patents often have no
+  DOI). Leave out `groups` to open all; `section: "other"` reads Other Data; `max_rows` (default 20, ≤100) per group;
+  `n` picks another entry when one CAS number maps to several. One call = one Reaxys search of the daily quota.
+  Quote values with their reference; Reaxys excerpts old literature (1950s Russian / Japanese journals are common) —
+  say so when a value only has such a source.
 - **Reagent price / availability / alternatives** (server 0.11) — use this instead of guessing prices when designing
   experiments: `{"db":"scifinder","query":"98-80-6","kind":"suppliers"}` (CAS number is most precise; a name or a
   `structure` also works — the first substance in the list is used, see `substance` / `substance_candidates`).
@@ -158,10 +172,17 @@ How the two behave (observed 2026-10-08):
 
 | | SciFinder | Reaxys |
 |---|---|---|
-| query parsing | ANDs every word (`query_interpretation`), flags it in `query_modified` | recognises substances as structures; splits into sub-queries (`preview`) |
+| query parsing | ANDs every word (`query_interpretation`), flags it in `query_modified` | recognises substance names as structures (see below); splits into sub-queries (`preview`) |
 | same query `polyborosiloxane self-healing elastomer` | 26 hits | 134 documents |
 | page size | ~80 per page | ~100 per page (server sets the maximum) |
 | strengths | patents (incl. Chinese), CAS concepts, patent legal status, facet counts | DOIs in list, times cited, index terms, experimental property data, reaction conditions |
+
+**Reaxys turns chemical names in a keyword query into structures** (its AI search, no switch to turn it off; seen
+2026-10-12): `3,3'-diamino-N-methyldipropylamine polyurethane boronic` became "Structure as drawn + title words", 49,310
+unrelated documents. Since server 0.13 the result carries `warnings: structure_injected …` (or `structure_group_skipped`
+when the server could pick a sub-query without a structure). When you see it: search the substance by CAS number
+(`kind: "substances"` / `chemdb_substance`, or `kind: "references"` with the CAS number), and put only topic words
+(no chemical names) in a keyword query — or use SciFinder with `within`.
 
 Query tips for this user's field:
 - **Go broad, filter later.** `polyborosiloxane self-healing elastomer` → 26 in SciFinder; `boron siloxane self-healing` → 317

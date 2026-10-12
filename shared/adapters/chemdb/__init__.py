@@ -20,8 +20,9 @@
   |---|---|
   | `search(db, query='', kind='references', structure='', match='exact', sort=None, filters=None, mode='auto', raw=False)` | 搜一次 → 第 1 页 |
   | `page(db, n, base_url='', raw=False)` | 结果列表第 n 页（base_url = 那次搜索回的 url；不给就用标签上停着的） |
+  | `substance_facts(query='', n=1, section='physical', groups=None, max_rows=20, base_url='')` | 只 Reaxys：物质列表第 n 个的物性表（沸点 / 密度 / pKa……按 Reaxys 的分组，每行带出处与 DOI） |
   | `tabs()` | 两个库的标签在不在、停在不在登录页 —— 只看浏览器，不碰网站 |
-  | `page_url` / `page_no` / `is_login` / `clean_text` / `count_of` / `parse_sf_bib` / `norm_rx_item` | 纯函数（自测覆盖） |
+  | `page_url` / `page_no` / `is_login` / `clean_text` / `count_of` / `parse_sf_bib` / `norm_rx_item` / `rx_pick_preview` / `rx_fact_label` / `norm_rx_ref` | 纯函数（自测覆盖） |
 
 检索三种入口（2026-10-08 用户：「最常用的是 CAS 号查精确结构、画大致结构查」）：
   - 关键词：query='boron siloxane self-healing'
@@ -90,6 +91,8 @@ SITE = {
         'match_label': {'exact': 'As drawn', 'substructure': 'As substructure', 'similarity': 'Similar'},
         # 快速检索框旁边的三个按钮（data-e2e 比文字稳：挂着结构时按钮文字会带别的东西，2026-10-08 实测 text-is 找不到）
         'clear_structure': '[data-e2e="e2e-build-query-structureDrawing-clear-button"]',
+        # 预览页标题「Results for <词> AND [结构]」里的那个结构按钮 = 搜索框上挂着的结构（2026-10-12 实测）
+        'heading_structure': '[data-e2e="e2e-quick-results-heading-showStructure"]',
         'draw': '[data-e2e="e2e-build-query-structuredrawing-draw"]',
         'search': '[data-e2e="search query"], [data-testid="search query"]',
         'sort': 'button[aria-label^="Select sorting category"]',
@@ -220,6 +223,66 @@ def norm_rx_substance(x):
             'n_preparations': counts.get('Preparations'), 'n_physical_data': counts.get('Physical Data'),
             'n_spectra': counts.get('Spectra'), 'n_bioactivity': counts.get('Bioactivity'),
             'n_suppliers': int(sup.group(1).replace(',', '')) if sup else None}
+
+
+def rx_pick_preview(preview, word, structure_search=False):
+    """Reaxys 预览里挑一组 → (组 | None, 警告 | None)。
+
+    Reaxys 2026 年的「AI 检索」会把关键词里的**化学名自己换成结构式**（2026-10-12 实测：
+    「3,3'-diamino-N-methyldipropylamine polyurethane boronic」被拆成「Structure as drawn + 标题词」，
+    49310 篇，全不相干；页面上没有关掉它的开关）。所以不是结构检索时：
+    同一类里优先挑**解读里没有 Structure 的**组；只剩带结构的就照挑，但如实警告。
+    """
+    groups = [c for c in preview or [] if c.get('kind') == word]
+    if not groups:
+        return None, None
+    if structure_search:
+        return groups[0], None
+    clean = [c for c in groups if 'Structure' not in (c.get('interpretation') or '')]
+    if clean:
+        if clean[0] is not groups[0]:
+            return clean[0], ('structure_group_skipped: Reaxys 把检索词里的化学名换成了结构式（第一组解读带 Structure），'
+                              '改挑不带结构的那组（preview 里各组都在）')
+        return clean[0], None
+    return groups[0], ('structure_injected: 这不是结构检索，Reaxys 却把检索词里的化学名换成了结构式'
+                       f'（解读：{(groups[0].get("interpretation") or "")[:120]}）—— 结果多半不相干。'
+                       '要按物质查：query 只给 CAS 号（或 structure 给 SMILES）；主题词另起一次只放主题词，或用 SciFinder')
+
+
+RX_SECTIONS = {'physical': 'Physical Data', 'other': 'Other Data'}   # 物质条目上可展开的数据块（Identification 等不是表）
+_RX_REF_NOISE = re.compile(r'^(Full Text|Details|Abstract|\(opens in a new window\)|Cited \d+ times?|;)$')
+
+
+def rx_fact_label(s):
+    """「Boiling Point - 6」「Physical Data - 41」→ (名字, 条数)。没带数就 (名字, None)。"""
+    s = re.sub(r'\s+', ' ', (s or '').replace('\xa0', ' ')).strip()
+    m = re.match(r'^(.*?)\s*-\s*([\d,]+)$', s)
+    return (m.group(1).strip(), int(m.group(2).replace(',', ''))) if m else (s, None)
+
+
+def norm_rx_ref(x):
+    """物性表一行的「Reference」格 → {citation, type, authors, doi, cited}。
+
+    页面上作者一人一个按钮、按钮上挂着 data-tracking-doc-link（OpenURL，DOI 在 doi= 里）和 data-tracking-name
+    （「Article:Journal of Medicinal Chemistry, 1990, vol. 33, # 5, p. 1369 - 1375」），2026-10-12 实测。
+    专利、老文献没有这些就退回格子里的文字（去掉 Full Text / Details / Cited N times 这些界面字）。
+    """
+    text = x.get('text') or ''
+    cited = re.search(r'Cited (\d+) times?', text)
+    doi = None
+    link = x.get('doc_link') or ''
+    if 'doi=' in link:
+        doi = urllib.parse.parse_qs(urllib.parse.urlparse(link).query).get('doi', [None])[0]
+    name = (x.get('name') or '').strip()
+    typ = None
+    if ':' in name and name.split(':', 1)[0].isalpha():
+        typ, name = name.split(':', 1)
+    if not name:
+        lines = [ln.strip() for ln in text.split('\n') if ln.strip() and not _RX_REF_NOISE.match(ln.strip())]
+        name = ' '.join(lines)
+    return {'citation': name.strip() or None, 'type': (typ or '').lower() or None,
+            'authors': [a for a in (x.get('authors') or []) if a] or None, 'doi': doi,
+            'cited': int(cited.group(1)) if cited else None}
 
 
 _QTY_PRICE_RE = re.compile(r'^\s*(?P<qty>\d[\d,]*(?:\.\d+)?)\s*(?P<unit>[a-zA-Zµμ]+)\s*(?:,\s*(?P<cur>[A-Z]{3})\s*(?P<price>\d[\d,]*(?:\.\d+)?))?\s*$')
@@ -1204,11 +1267,33 @@ def _rx_to_docs_of_first_substance(pg, warnings, extra=None):
     return True
 
 
+def _rx_clear_structure(pg, warnings):
+    """拿掉搜索框上挂着的结构式（上一次结构检索留下的；不拿掉会叠进这次检索，2026-10-08 实测叠过）。
+
+    挂着的结构在页面加载后才画出来：先给它 2 秒出现，再点到没有为止；还在就警告。
+    """
+    rm = pg.locator(SITE['reaxys']['clear_structure'])
+    try:
+        rm.first.wait_for(state='attached', timeout=2000)
+    except Exception:
+        return
+    for _ in range(3):
+        if not rm.count():
+            return
+        try:
+            rm.first.click(timeout=10000)
+        except Exception as e:
+            log.warn(f'Reaxys 清结构式没点上：{str(e)[:80]}')
+        pg.wait_for_timeout(800)
+    if rm.count():
+        warnings.append('structure_not_cleared: 搜索框上上一次的结构式没清掉，这次检索可能叠着它')
+
+
 RX_CAS_MIN_DOCS = 50     # CAS 号落到的 Reaxys 物质文献都少于这个数 → 多半是冷门条目，改按结构搜（见 cas_smiles）
 
 
 def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars, structure='', match='exact', subset=None,
-                   cas_smiles='', force_via=False):
+                   cas_smiles='', force_via=False, _retry=False):
     s = SITE['reaxys']
     if not _goto(pg, s['home']):
         return _result('reaxys', code='NAVIGATE_FAILED', why='Reaxys 打不开')
@@ -1220,12 +1305,7 @@ def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars, structu
                            why='Reaxys 要登录：请人在主力机「取全文用的浏览器」里登录（机构登录或 Elsevier 账号）')
         return _result('reaxys', code='TIMEOUT', url=pg.url, why='等不到搜索框')
     warnings, extra = [], {}
-    for _ in range(3):                        # 上一次的结构还挂在搜索框上，不拿掉会叠在一起搜（2026-10-08 实测叠过）
-        rm = pg.locator(s['clear_structure'])
-        if not rm.count():
-            break
-        rm.first.click()
-        pg.wait_for_timeout(800)
+    _rx_clear_structure(pg, warnings)
     pg.fill(s['input'], '')
     rx_cas = is_cas_rn(query) and not structure
     if structure:
@@ -1243,6 +1323,13 @@ def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars, structu
     if not _settle(pg, lambda t: 'View Results' in t or 'No results' in t, timeout=60):
         return _result('reaxys', code='TIMEOUT', url=pg.url, why='等不到结果预览', warnings=warnings)
     preview = pg.evaluate(_RX_PREVIEW_JS)
+    if not structure and _n(pg, s['heading_structure']) and not _retry:
+        # 不是结构检索，搜索框上却还挂着结构（清没清掉）→ 清了重来一次
+        log.warn('Reaxys：非结构检索却带着搜索框上的结构，清掉重搜一次')
+        r = _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars, subset=subset, cas_smiles=cas_smiles,
+                           force_via=force_via, _retry=True)
+        r['warnings'] = ['stale_structure_retried: 搜索框上残留着上一次的结构式，已清掉重搜'] + r.get('warnings', [])
+        return r
     # CAS 号要文献：文献那组是「标题里出现这串数字」的字面匹配，不对 —— 先落到物质，再取它的文献
     via = kind == 'references' and (rx_cas or force_via)
     word = 'substances' if via else s['card_word'][kind]
@@ -1251,8 +1338,13 @@ def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars, structu
         pick = preview[int(subset)] if 0 <= int(subset) < len(preview) and preview[int(subset)].get('kind') else None
         if pick and not via:
             word = pick['kind']
+        if pick and not structure and 'Structure' in (pick.get('interpretation') or ''):
+            warnings.append('structure_injected: 挑的这组解读里带 Structure（Reaxys 把检索词里的化学名换成了结构式），'
+                            '这不是结构检索 —— 结果可能不相干')
     else:
-        pick = next((c for c in preview if c.get('kind') == word), None)
+        pick, warn = rx_pick_preview(preview, word, structure_search=bool(structure))
+        if warn:
+            warnings.append(warn)
     if not pick:
         return _result('reaxys', ok=True, code='NO_RESULTS', count=0, url=pg.url, preview=preview, warnings=warnings,
                        why=f'预览里没有 {word} 这一组（preview 里是 Reaxys 拆出来的各组）', **extra)
@@ -1303,9 +1395,149 @@ def _search_reaxys(pg, query, kind, sort, filters, mode, raw, max_chars, structu
     return r
 
 
+_RX_FACTS_JS = r"""async ([label, want, maxMore]) => {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const card = [...document.querySelectorAll('[id^="substance-fact-card-"]')]
+    .find(c => ((c.querySelector('h3') || {}).innerText || '').trim().startsWith(label));
+  if (!card) return {why: 'no_card'};
+  for (let i = 0; i < maxMore; i++) {           // 分组多时只先列 5 个，Load More 才出其余的
+    const lm = [...card.querySelectorAll('button')].find(b => /^Load More$/i.test((b.innerText || '').trim()));
+    if (!lm) break; lm.click(); await sleep(1500);
+  }
+  const groups = [...card.querySelectorAll('.c-els-accordion__group')];
+  const ok = name => !want || !want.length || want.some(w => name.toLowerCase().includes(w.toLowerCase()));
+  const out = [];
+  for (const g of groups) {
+    const btn = g.querySelector('button.c-els-accordion__button');
+    const label = btn ? (btn.innerText || '').trim() : g.id;
+    const name = label.replace(/\s*-\s*[\d,]+\s*$/, '').trim();
+    if (!ok(name)) { out.push({label, skipped: true}); continue; }
+    if (btn && btn.getAttribute('aria-expanded') === 'false') {       // 每组点开才去取数据（懒加载）
+      btn.click();
+      for (let t = 0; t < 20 && !g.querySelector('table'); t++) await sleep(400);
+    }
+    const tables = [...g.querySelectorAll('table')].map(tb => {
+      const heads = [...tb.querySelectorAll('thead th')].map(th => ({t: (th.innerText || '').trim(),
+                     ref: /^citation/.test(th.getAttribute('data-testid') || '')}));
+      const rows = [...tb.querySelectorAll('tbody tr')].map(tr => {
+        const values = {}; let ref = null;
+        [...tr.querySelectorAll('td')].forEach((td, i) => {
+          const h = heads[i] || {t: 'col' + i};
+          if (h.ref || /^citation/.test(td.getAttribute('data-testid') || '')) {
+            const b = td.querySelector('[data-tracking-doc-link], [data-tracking-name]');
+            ref = {text: td.innerText || '', doc_link: b ? b.getAttribute('data-tracking-doc-link') : null,
+                   name: b ? b.getAttribute('data-tracking-name') : null,
+                   authors: [...td.querySelectorAll('[data-e2e="author-link"]')].map(a => (a.innerText || '').trim())};
+          } else {
+            const v = (td.innerText || '').replace(/\s+/g, ' ').trim();
+            if (v) values[h.t] = v;
+          }
+        });
+        return {values, ref};
+      });
+      return {columns: heads.filter(h => !h.ref).map(h => h.t), rows};
+    });
+    out.push({label, tables});
+  }
+  return {groups: out};
+}"""
+
+
+def _rx_facts(pg, n, section, groups, max_rows, warnings):
+    """当前停在 Reaxys 物质列表上：第 n 个物质 → 点开它的「Physical Data - N」→ 各组表格。"""
+    label = RX_SECTIONS[section]
+    items = [norm_rx_substance(x) for x in pg.evaluate(_RX_SUB_JS)]
+    if not 1 <= n <= len(items):
+        return _result('reaxys', code='NOT_FOUND', url=pg.url, warnings=warnings,
+                       why=f'这一页只有 {len(items)} 个物质，没有第 {n} 个')
+    sub = items[n - 1]
+    li = pg.locator('ul.e2e-results-list > li').nth(n - 1)
+    btn = li.locator(f'button:has-text("{label} -"), a:has-text("{label} -")')
+    if not btn.count():
+        return _result('reaxys', ok=True, code='NO_RESULTS', url=pg.url, substance=sub, groups=[], warnings=warnings,
+                       why=f'这个物质没有「{label}」')
+    sec_name, sec_n = rx_fact_label(btn.first.inner_text())
+    btn.first.click()
+    try:
+        pg.wait_for_selector('[id^="substance-fact-card-"] .c-els-accordion__group', timeout=30000)
+    except Exception:
+        return _result('reaxys', code='TIMEOUT', url=pg.url, substance=sub, warnings=warnings,
+                       why=f'点了「{label}」，数据面板没出来')
+    d = pg.evaluate(_RX_FACTS_JS, [label, list(groups or []), 8])
+    if d.get('why'):
+        return _result('reaxys', code='TIMEOUT', url=pg.url, substance=sub, warnings=warnings, why=d['why'])
+    out, complete = [], True
+    for g in d.get('groups') or []:
+        name, total = rx_fact_label(g.get('label'))
+        if g.get('skipped'):
+            out.append({'group': name, 'n': total, 'skipped': True})
+            continue
+        rows = []
+        for tb in g.get('tables') or []:
+            for row in tb.get('rows') or []:
+                rows.append(dict(row.get('values') or {}, reference=norm_rx_ref(row.get('ref') or {})))
+        if not g.get('tables'):
+            complete = False
+            warnings.append(f'group_not_loaded: {name}（点开了但表格没出来）')
+        out.append({'group': name, 'n': total, 'rows': rows[:max_rows], 'n_shown': min(len(rows), max_rows),
+                    'truncated': len(rows) > max_rows})
+    if any(g.get('truncated') for g in out):
+        warnings.append(f'rows_truncated: 每组只回前 {max_rows} 行（max_rows 最大 100）')
+    if groups and all(g.get('skipped') for g in out):
+        warnings.append('groups_not_matched: 给的 groups 一个也没对上，各组名见 groups[].group（都标 skipped）')
+    return _result('reaxys', ok=True, url=pg.url, substance=sub, section=section, n_records=sec_n, groups=out,
+                   warnings=warnings, complete=complete)
+
+
 # ══════════════════════════════════════════════════════════════════════
 # 对外
 # ══════════════════════════════════════════════════════════════════════
+
+def substance_facts(query='', n=1, section='physical', groups=None, max_rows=20, base_url=''):
+    """只 Reaxys：一个物质的物性表（沸点、密度、折射率、pKa……按 Reaxys 的分组，每行带出处、DOI、被引数）。
+
+    query 给 CAS 号（最准）或名字 → 先搜物质列表再读第 n 个；不给就读这个标签上停着的（或 base_url 指的）物质列表。
+    section = physical（Physical Data）/ other（Other Data）；
+    groups = ['Boiling', 'Density'] 只点开名字含这些词的组（不给就全点开，组多时最多 Load More 8 次）。
+    一次一页、只读：就是把人点开「Physical Data - 41」看到的那张表读下来（2026-10-12 用户要的）。
+    """
+    if section not in RX_SECTIONS:
+        raise ValueError(f'section 只能是 {" / ".join(RX_SECTIONS)}')
+    n, max_rows = int(n or 1), max(1, min(int(max_rows or 20), 100))
+    query = (query or '').strip()
+    log.info(f'reaxys 物质数据（{section}，第 {n} 个，groups={groups or "全部"}）：{query or base_url or "当前列表"}')
+    with _session() as (browser, ctx):
+        pg = _tab(browser, ctx, 'reaxys')
+        warnings = []
+        try:
+            if query:
+                r0 = _search_reaxys(pg, query, 'substances', None, None, 'auto', False, 30000)
+                warnings += r0.get('warnings') or []
+                if r0.get('code') != 'OK' or not r0.get('items'):
+                    r0.update(kind='substance_facts', query=query)
+                    return r0
+            else:
+                url = base_url or pg.url
+                if '/results/substances/' not in url:
+                    return _result('reaxys', code='NO_SEARCH', url=pg.url, kind='substance_facts',
+                                   why='没有物质列表可读：给 query（CAS 号最准），或先 search kind=substances')
+                if url != pg.url:
+                    if not _goto(pg, url):
+                        return _result('reaxys', code='NAVIGATE_FAILED', url=url, why='物质列表打不开')
+                    pg.reload(wait_until='domcontentloaded')
+                if is_login('reaxys', pg.url):
+                    return _result('reaxys', code='LOGIN_REQUIRED', url=pg.url, why='要登录：请人在主力机浏览器里登录')
+                if not _wait_items(pg, 'reaxys', timeout=45):
+                    return _result('reaxys', code='NO_SEARCH', url=pg.url, kind='substance_facts',
+                                   why='物质列表读不出来（Reaxys 的结果集会过期）；给 query 重新查')
+            r = _rx_facts(pg, n, section, groups, max_rows, warnings)
+        except Exception as e:
+            log.warn(f'reaxys 物质数据出错：{type(e).__name__}: {str(e)[:200]}')
+            r = _result('reaxys', code='TIMEOUT', complete=False, url=getattr(pg, 'url', ''),
+                        why=f'{type(e).__name__}: {str(e)[:200]}', warnings=warnings)
+    r.update(kind='substance_facts', query=query or None)
+    return r
+
 
 def search(db, query='', kind='references', structure='', match='exact', sort=None, filters=None, mode='auto',
            raw=False, max_chars=30000, subset=None, within=None, cas_smiles=''):

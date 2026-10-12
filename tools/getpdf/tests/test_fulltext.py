@@ -311,7 +311,9 @@ def test_只查不取_本地有PDF就出快速层_不等MineRU(real_env, monkeyp
 def test_状态码_每种失败各有各的码(env, monkeypatch):
     from tools import getpdf
     for reason, code, retry in (('captcha', F.CAPTCHA_REQUIRED, True), ('no_access', F.NOT_SUBSCRIBED, False),
-                                ('no_pdf_link', F.NO_PDF_LINK, False), ('navigate_failed', F.NOT_FOUND, False)):
+                                ('no_pdf_link', F.NO_PDF_LINK, False), ('navigate_failed', F.NOT_FOUND, False),
+                                # 2026-10-12：不是 PDF ≠ 验证码（Pleiades 一篇实为没订，被叫去点不存在的验证码）
+                                ('not_pdf', F.NOT_PDF, False)):
         monkeypatch.setattr(getpdf, 'fetch_one', lambda d, where=None, _r=reason: {
             'doi': d, 'ok': False, 'reason': _r, 'path': '', 'bytes': 0})
         r = F.one(DOI)

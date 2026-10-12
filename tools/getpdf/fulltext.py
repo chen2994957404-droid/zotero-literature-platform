@@ -26,7 +26,7 @@ MineRU 交给后台的 `Upgrader` 慢慢等，成功了升级成 `tier=structure
 
 ## 结果带机器读的状态码
 
-`code`（OK / CAPTCHA_REQUIRED / NOT_SUBSCRIBED / NOT_FOUND / NO_PDF_LINK / PARSE_PENDING /
+`code`（OK / CAPTCHA_REQUIRED / NOT_SUBSCRIBED / NOT_FOUND / NO_PDF_LINK / NOT_PDF / PARSE_PENDING /
 PARSE_FAILED / NETWORK_ERROR / NOT_FETCHED）+ `retryable` + `stage` + `tier` + `route`；中文 `why` 照留。
 
 ## 职责边界（**别在这里读全文**）
@@ -76,14 +76,17 @@ CAPTCHA_REQUIRED = 'CAPTCHA_REQUIRED'   # 撞上人机验证 / 被挡回验证�
 NOT_SUBSCRIBED = 'NOT_SUBSCRIBED'       # 页面在、学校没订
 NOT_FOUND = 'NOT_FOUND'                 # DOI 无效 / 出版商页面打不开
 NO_PDF_LINK = 'NO_PDF_LINK'             # 页面在、像有权限，但找不到 PDF 链接（出版商改版）
+NOT_PDF = 'NOT_PDF'                     # 取回来不是 PDF，页面上既不是验证页也看不到付费墙 —— 分不清，如实说
 PARSE_PENDING = 'PARSE_PENDING'         # PDF 在手，可读文本还没出来（扫描件等 MineRU 的 OCR）
 PARSE_FAILED = 'PARSE_FAILED'
 NETWORK_ERROR = 'NETWORK_ERROR'         # 浏览器没开 / 网络断 / 超时 —— 可重试
 NOT_FETCHED = 'NOT_FETCHED'             # 只查不取：手上没有，这次也没去取
-CODES = (OK, CAPTCHA_REQUIRED, NOT_SUBSCRIBED, NOT_FOUND, NO_PDF_LINK, PARSE_PENDING,
+CODES = (OK, CAPTCHA_REQUIRED, NOT_SUBSCRIBED, NOT_FOUND, NO_PDF_LINK, NOT_PDF, PARSE_PENDING,
          PARSE_FAILED, NETWORK_ERROR, NOT_FETCHED)
 
-_REASON_CODE = {'captcha': CAPTCHA_REQUIRED, 'not_pdf': CAPTCHA_REQUIRED, 'no_access': NOT_SUBSCRIBED,
+# not_pdf 原来也映射成 CAPTCHA_REQUIRED，叫人去点一个根本不存在的验证码（2026-10-12 Pleiades 一篇实为没订）。
+# 现在 pdf_fetch 取完会看页面：验证页报 captcha、付费墙报 no_access，剩下真分不清的才是 not_pdf。
+_REASON_CODE = {'captcha': CAPTCHA_REQUIRED, 'not_pdf': NOT_PDF, 'no_access': NOT_SUBSCRIBED,
                 'no_pdf_link': NO_PDF_LINK, 'navigate_failed': NOT_FOUND, 'too_big': NETWORK_ERROR}
 RETRYABLE = {CAPTCHA_REQUIRED, PARSE_PENDING, NETWORK_ERROR}
 
@@ -489,7 +492,7 @@ def blocked(r):
     if r.get('code'):
         return r['code'] == CAPTCHA_REQUIRED
     why = r.get('why') or ''
-    return any(pdf_fetch.REASONS[k] in why for k in ('captcha', 'not_pdf'))
+    return pdf_fetch.REASONS['captcha'] in why
 
 
 _PROGRESS_LOCK = threading.Lock()     # 心跳线程和主流程都会写进度文件，别同时写

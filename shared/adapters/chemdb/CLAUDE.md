@@ -32,7 +32,8 @@
 | `search(db, query, kind='references', max_chars=30000)` | 搜一次，读结果列表第 1 页 |
 | `page(db, n, max_chars=30000)` | 这个库标签上停着的结果列表的第 n 页 |
 | `search(db, query, kind='suppliers')` | 只 SciFinder：这个物质在哪些试剂商有卖（规格价格 / 纯度 / 库存 / 发货 / 国家 / 商品页网址）+ `summary` |
-| `page_url` / `page_no` / `is_login` / `clean_text` / `count_of` | 纯函数（自测覆盖） |
+| `substance_facts(query, n=1, section='physical', groups=None, max_rows=20)` | 只 Reaxys：物质列表第 n 个的物性表（Physical Data / Other Data 按分组展开，每行数值 + 条件 + 出处 / DOI / 被引数） |
+| `page_url` / `page_no` / `is_login` / `clean_text` / `count_of` / `rx_pick_preview` / `rx_fact_label` / `norm_rx_ref` | 纯函数（自测覆盖） |
 | `parse_qty_price` / `norm_sf_supplier` / `supplier_summary` | 供应商行的纯函数（「5 g, USD 10.00」→ 每克价） |
 
 返回 dict 的 `code`：`OK` / `LOGIN_REQUIRED` / `NO_RESULTS` / `NO_SEARCH` / `NAVIGATE_FAILED` / `TIMEOUT`。
@@ -53,6 +54,17 @@
 多的有 `.view-all-quantity-prices`）· `.stock-availability` · `.shipping` · `.country-name` · `.order-number` ·
 `a.order-from-supplier` / `a.product-information`（真网址在 `externalLink=`，编码两层）。左侧 Country/Region 能筛 China
 （阿拉丁 Aladdin Scientific、毕得 BLD-China、TCI 上海都在）。
+
+**Reaxys 物质的物性表**（2026-10-12 实测 BAPMA，Physical Data - 41）：物质条目上 `button:has-text("Physical Data -")` 点开是**同页的面板**
+（`[id^=substance-fact-card-]`），先只列 5 组，`Load More` 出其余；每组是手风琴（`button.c-els-accordion__button`，点开才去取数据）→
+`<table>`：`thead th` 是列名（带单位，如「Boiling Point, °C」「Pressure (Boiling Point), Torr」），出处那列 `data-testid^=citation`，
+作者按钮上挂着 `data-tracking-doc-link`（OpenURL，`doi=` 就是 DOI）和 `data-tracking-name`（「Article:刊名, 年, 卷, 页」）。
+pKa 在「Dissociation Exponent」组。
+
+**Reaxys 的「AI 检索」会把关键词里的化学名自己换成结构式**（2026-10-12 实测，页面上没有开关）：
+「3,3'-diamino-N-methyldipropylamine polyurethane boronic」→ 解读成「Structure as drawn + 标题词」，49310 篇全不相干。
+所以非结构检索时 `rx_pick_preview` 优先挑解读里不带 Structure 的组，只剩带结构的就照挑并警告 `structure_injected`；
+搜索框上残留的结构式（预览页标题「Results for … AND [结构]」）另有一道：清掉重搜一次（`stale_structure_retried`）。
 
 ⚠ 浏览器开了网页翻译时，读到的是**译文**（Edge 直接改写页面文字）。2026-10-08 用户已对 Reaxys 关掉。
 

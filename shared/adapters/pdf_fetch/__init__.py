@@ -59,7 +59,7 @@ REASONS = {
     'captcha': '撞上人机验证 —— 要人在那个浏览器里点一下，之后同一浏览器会顺畅一阵',
     'no_access': '页面在，但没有全文权限（这本刊学校没订，或者当前出口 IP 不是机构）',
     'no_pdf_link': '页面在、也像有权限，但找不到 PDF 直链（多半是这家出版商的页面改版了）',
-    'not_pdf': '拿到了东西但不是 PDF（多半被挡回了登录页或验证页）',
+    'not_pdf': '拿到了东西但不是 PDF，页面上既不是验证页也看不到付费墙字样（登录过期 / 出版商改版？分不清）',
     'too_big': '文件超过上限，没往回传',
     'navigate_failed': '页面根本打不开',
     'no_si': '这篇没挂补充材料，或者挂的全是视频之类（那种我们不要）',
@@ -186,6 +186,13 @@ _JS_STATE = """() => {
              (has('Ray ID') && has('Cloudflare') && t.length < 800),
     paywall: has('Get Access') || has('Purchase PDF') || has('Get rights and content')
              && !hits.length,
+    // 付费墙字样（**不管有没有候选**）：Springer 没订的文章照样挂 citation_pdf_url，
+    // 候选在、取回来却不是 PDF —— 原来一律当「被挡回验证页」（2026-10-12 Pleiades 一篇，
+    // 页面只有 Access this article / Buy article，根本没有验证）。只在取件失败后拿来分辨原因。
+    // ⚠ 不收「Get rights and content」：ScienceDirect 订了的每一篇也带这句（踩坑 #162）
+    paywallText: has('Access this article') || has('Buy article') || has('Buy Article') ||
+                 has('Buy this article') || has('Purchase this article') || has('Rent this article') ||
+                 has('Purchase PDF') || has('Get Access') || has('购买全文'),
     candidates: hits,
     si: si,
     suppPage: suppPage,
@@ -897,9 +904,29 @@ def _hold_for_human(page):
     return True
 
 
-def _challenged(page, out):
-    """取完一看：是不是停在验证页上（not_pdf 多半就是被挡回了验证页）。"""
-    return out.get('reason') in ('captcha', 'not_pdf') and (out.get('reason') == 'captcha' or _on_challenge(page))
+def _why_not_pdf(page, st, out):
+    """取回来的不是 PDF：**看页面分辨到底为什么**，改写 out['reason']。返回是否停在验证页上。
+
+    原来 not_pdf 一律当「被挡回验证页」，叫人去点 —— 2026-10-12 Pleiades（Springer）一篇
+    其实是没订：落地页只有 Access this article / Buy article，浏览器里根本没有验证页。
+    现在三分：当前页是验证页 → captcha；落地页或当前页有付费墙字样 → no_access；
+    两样都看不到 → 保持 not_pdf（如实说分不清，别叫人去点不存在的验证码）。
+    """
+    if out.get('reason') == 'captcha':
+        return True
+    if out.get('reason') != 'not_pdf':
+        return False
+    if _on_challenge(page):
+        out['reason'] = 'captcha'
+        return True
+    here = {}
+    try:
+        here = _eval_obj(page, _JS_STATE, timeout_ms=10000)
+    except Exception:
+        pass
+    if (st or {}).get('paywallText') or here.get('paywallText'):
+        out['reason'] = 'no_access'
+    return False
 
 
 def _blank(doi):
@@ -940,7 +967,7 @@ def fetch(doi, url=None, timeout=90, settle=6, kind='fulltext'):
             out['reason'] = 'no_access' if st.get('paywall') else 'no_pdf_link'
             return out
         _grab(page, ctx, cands, 'fulltext', timeout, settle, out)
-        if _challenged(page, out):
+        if _why_not_pdf(page, st, out):
             held = _hold_for_human(page)
         return out
     except BrowserUnavailable:
@@ -990,7 +1017,7 @@ def fetch_both(doi, url=None, timeout=90, settle=6):
                     pass
         if cands:
             _grab(page, ctx, cands, 'fulltext', timeout, settle, main)
-            if _challenged(page, main):
+            if _why_not_pdf(page, st, main):
                 held = _hold_for_human(page)
                 return main, si               # 正文都被挡了，SI 不用再去敲
         else:

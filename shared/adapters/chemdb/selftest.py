@@ -199,6 +199,41 @@ def main():
     except ValueError:
         check('Reaxys 不收 kind=suppliers', True)
 
+    # Reaxys 的 AI 检索会把关键词里的化学名换成结构式（2026-10-12 实测：BAPMA 的名字 + 主题词 → 「Structure as drawn」49310 篇）
+    pv = [{'index': 0, 'count': 49310, 'kind': 'documents',
+           'interpretation': 'Structure: Structure as drawn Titles, Abstracts, Keywords:"x"'},
+          {'index': 1, 'count': 581, 'kind': 'substances', 'interpretation': 'Structure: Structure as drawn'}]
+    pick, warn = chemdb.rx_pick_preview(pv, 'documents')
+    check('非结构检索：解读里冒出 Structure 要警告', bool(pick and warn) and (pick or {}).get('index') == 0
+          and str(warn).startswith('structure_injected'), str(warn))
+    pick, warn = chemdb.rx_pick_preview(pv + [{'index': 2, 'count': 3, 'kind': 'documents',
+                                               'interpretation': 'Titles, Abstracts, Keywords:"x"'}], 'documents')
+    check('有不带结构的同类组就挑它', bool(pick and warn) and (pick or {}).get('index') == 2
+          and str(warn).startswith('structure_group_skipped'), str(warn))
+    check('结构检索本来就带 Structure，不警告', chemdb.rx_pick_preview(pv, 'documents', structure_search=True) == (pv[0], None))
+    check('预览里没有这一类 → None', chemdb.rx_pick_preview(pv, 'reactions') == (None, None))
+    # 物质详情页的物性表（2026-10-12 实测 BAPMA 的 Physical Data - 41）
+    check('分组标签拆成名字和条数', chemdb.rx_fact_label('Boiling Point\xa0- 6') == ('Boiling Point', 6)
+          and chemdb.rx_fact_label('Physical Data - 1,041') == ('Physical Data', 1041)
+          and chemdb.rx_fact_label('Load More') == ('Load More', None))
+    ref = chemdb.norm_rx_ref({'text': 'Edwards\n; Prakash\nJournal of Medicinal Chemistry, 1990\nFull Text\nCited 75 times\n'
+                                      '(opens in a new window)\nDetails\nAbstract',
+                              'doc_link': 'https://lls.reaxys.com/xflink?aulast=Edwards&title=J&doi=10.1021%2Fjm00167a014&issn=0022-2623',
+                              'name': 'Article:Journal of Medicinal Chemistry, 1990, vol. 33, # 5, p. 1369 - 1375',
+                              'authors': ['Edwards', 'Prakash']})
+    check('出处：DOI 从 OpenURL 里取、类型与被引数', ref == {
+        'citation': 'Journal of Medicinal Chemistry, 1990, vol. 33, # 5, p. 1369 - 1375', 'type': 'article',
+        'authors': ['Edwards', 'Prakash'], 'doi': '10.1021/jm00167a014', 'cited': 75}, str(ref))
+    pat = chemdb.norm_rx_ref({'text': 'Current Patent Assignee: Toho Rayon Co. - JP2135363, 1958\nChem.Abstr., 1964, vol. 60, '
+                                      '# 2756f\nFull Text\nDetails'})
+    check('没有链接的老专利退回文字、界面字去掉', pat['citation'] == 'Current Patent Assignee: Toho Rayon Co. - JP2135363, '
+          '1958 Chem.Abstr., 1964, vol. 60, # 2756f' and pat['doi'] is None, str(pat))
+    try:
+        chemdb.substance_facts('105-83-9', section='spectra')
+        check('section 只收 physical / other', False)
+    except ValueError:
+        check('section 只收 physical / other', True)
+
     if flag('--live'):
         for db in chemdb.DBS:
             try:

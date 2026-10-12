@@ -78,6 +78,23 @@ def main():
               f'代码里多了 {used - set(pdf_fetch.REASONS)}')
 
     total += 1
+    # 取回来不是 PDF：看页面分原因（2026-10-12 Pleiades 一篇实为没订，被报成验证码）
+    import unittest.mock as _m
+    res = []
+    for on_ch, land, here in ((True, {}, {}), (False, {'paywallText': True}, {}),
+                              (False, {}, {'paywallText': True}), (False, {}, {})):
+        o = {'reason': 'not_pdf'}
+        with _m.patch.object(pdf_fetch, '_on_challenge', lambda p, _v=on_ch: _v), \
+                _m.patch.object(pdf_fetch, '_eval_obj', lambda *a, _h=here, **k: _h):
+            held = pdf_fetch._why_not_pdf(None, land, o)
+        res.append((held, o['reason']))
+    if res == [(True, 'captcha'), (False, 'no_access'), (False, 'no_access'), (False, 'not_pdf')] \
+            and 'Buy article' in js:
+        print('  [PASS] 不是 PDF 时分得清：验证页 / 付费墙 / 分不清'); ok += 1
+    else:
+        print(f'  [FAIL] 不是 PDF 的原因分错了：{res}')
+
+    total += 1
     # 没装 playwright 的机器（比如编程端）必须给人话，不是 ImportError
     if pdf_fetch.is_available():
         print('  [PASS] 本机装了 playwright'); ok += 1

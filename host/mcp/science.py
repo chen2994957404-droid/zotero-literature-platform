@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.12.0'
+VERSION = '0.13.0'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -88,6 +88,10 @@ VERSION = '0.12.0'
 #   设计实验时比药品价格、好不好买、找同类替代品，不再凭记忆。同一套额度 / 间隔 / 缓存（SciFinder 条款用户 10-08 已知情）。
 # v0.12（同日，用户定）：tansoole_search / tansoole_page —— 探索平台（泰坦科技，他实际买药的地方）：品牌、规格、纯度、
 #   货期（现货 / 几个工作日 / 期货）、能买还是要询价。价格是网站的防抓取字体，用户知情后定不读（价格走 kind=suppliers）。
+# v0.13（2026-10-12，Claude Science 跑 BAPMA 扩链方案时报的三处）：chemdb_substance —— Reaxys 一个物质的物性表
+#   （沸点 / 密度 / 折射率 / pKa……按 Reaxys 的分组，每行数值 + 条件 + 出处 / DOI），原来 kind=substances 只给「41 条物性」这个数。
+#   Reaxys 关键词里的化学名被它的 AI 检索换成结构式时警告（structure_injected），能挑不带结构的组就挑；
+#   取全文拿回来不是 PDF 时看页面分辨：验证页 → CAPTCHA_REQUIRED、付费墙 → NOT_SUBSCRIBED、分不清 → NOT_PDF（不再一律叫人去点验证码）。
 
 # 原样借用的（输出本来就合适）
 BORROW = ()     # 2026-10-04 用户定：只给它做不到的（取全文）。数值库它自己会抽，不借了；ping 自己挂
@@ -115,11 +119,13 @@ INSTRUCTIONS = """\
 每个工具都返回 structuredContent（JSON）；itemKey 可以给证据库 id，也可以直接给 DOI。
 取全文：串行、每篇隔 20 秒、同时只跑一个作业（服务端强制，保护全校出口 IP），一篇约 1 分钟。
 PDF 到手几秒内先出 tier=text（本地抽字，可按节读、无表格结构）；MineRU 后台补成 tier=structured（含表格）。
-每篇结果带 code（OK / CAPTCHA_REQUIRED / NOT_SUBSCRIBED / NOT_FOUND / NO_PDF_LINK / PARSE_PENDING /
+每篇结果带 code（OK / CAPTCHA_REQUIRED / NOT_SUBSCRIBED / NOT_FOUND / NO_PDF_LINK / NOT_PDF / PARSE_PENDING /
 PARSE_FAILED / NETWORK_ERROR / NOT_FETCHED）与 retryable；CAPTCHA_REQUIRED 等人在主力机浏览器点完后用 fulltext_retry。
+NOT_PDF = 拿回来的不是 PDF、页面上既不是验证页也看不到付费墙，分不清 —— 别叫人去点验证码。
 任何返回超过 50 KB 会写成文件、只回 spilled 路径。
 文件路径是 B 机 WSL 路径（/mnt/d/...），你的 SSH 算力能直接读。
 SciFinder / Reaxys：先 `chemdb_status`（不扣次数），再 `chemdb_search` 回第 1 页的结构化列表，`chemdb_page` 翻页。
+一个物质的物性数值（沸点、密度、pKa……带出处）：`chemdb_substance` query=CAS 号（只 Reaxys，一次算一次检索）。
 药品价格 / 好不好买 / 替代品：`chemdb_search` db=scifinder kind=suppliers（CAS 号最准），回各家规格价格、纯度、库存、发货、国家。
 用户实际在探索平台（泰坦）买药：`tansoole_search` 看那里有哪些品牌、规格、纯度、现货还是要等几个工作日（不含价格）。
 按人的频率：两次至少隔 30 秒、每个库每天有上限（quota）；当天同一检索走缓存不扣次数 —— 先想好检索词，别试错式地连搜。
@@ -1093,8 +1099,13 @@ def _deliver(r, db, params, cached):
     if not params.get('raw'):
         r.pop('text', None)
     n = len(r.get('items') or [])
-    head = '%s %s%s：%s' % (db, r.get('code'), '（缓存）' if cached else '',
-                            r.get('why') or '共 %s 条，第 %s 页 %d 条' % (r.get('count'), r.get('page'), n))
+    summary = '共 %s 条，第 %s 页 %d 条' % (r.get('count'), r.get('page'), n)
+    if r.get('kind') == 'substance_facts':
+        sub: dict = r.get('substance') or {}           # type: ignore[assignment]
+        gs: list = r.get('groups') or []               # type: ignore[assignment]
+        summary = '%s（%s）：%s 组、%s 行数据' % (sub.get('name'), sub.get('cas_rn'), len(gs),
+                                          sum(len(g.get('rows') or []) for g in gs))
+    head = '%s %s%s：%s' % (db, r.get('code'), '（缓存）' if cached else '', r.get('why') or summary)
     return _out(head, r)
 
 
@@ -1243,6 +1254,26 @@ def _chemdb_page(a):
     return _chemdb_run(db, p, n, lambda db: chemdb.page(db, n, base_url=last.get('url') or '', raw=p['raw'],
                                                        max_chars=mc),
                        wait_s=max(0, min(int(a.get('wait_s') if a.get('wait_s') is not None else CHEMDB_WAIT), 50)))
+
+
+def _chemdb_substance(a):
+    from shared.adapters import chemdb
+    groups = a.get('groups')
+    groups = [g for g in (groups if isinstance(groups, list) else [groups]) if g] or None
+    p = {'op': 'substance', 'query': (a.get('query') or '').strip() or None, 'n': int(a.get('n') or 1),
+         'section': a.get('section') or 'physical', 'groups': groups,
+         'max_rows': max(1, min(int(a.get('max_rows') or 20), 100))}
+    if p['section'] not in chemdb.RX_SECTIONS:
+        raise ValueError(f'section 只能是 {" / ".join(chemdb.RX_SECTIONS)}')
+    base = ''
+    if not p['query']:
+        last = (_load(_chemdb_usage_path()).get('searches') or {}).get('reaxys') or {}
+        if last.get('kind') != 'substances' or not last.get('url'):
+            raise ValueError('不给 query 时读 Reaxys 最近一次 kind=substances 的列表，可最近一次不是物质检索；给 query（CAS 号最准）')
+        base, p['list'] = last['url'], last.get('query')
+    return _chemdb_run('reaxys', p, 1, lambda db: chemdb.substance_facts(
+        p['query'] or '', n=p['n'], section=p['section'], groups=p['groups'], max_rows=p['max_rows'], base_url=base),
+        wait_s=max(0, min(int(a.get('wait_s') if a.get('wait_s') is not None else CHEMDB_WAIT), 50)))
 
 
 def _chemdb_status(a):
@@ -1633,6 +1664,21 @@ TOOLS = [
       'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50},
       'raw': {'type': 'boolean'}, 'maxChars': {'type': 'integer', 'minimum': 1000, 'maximum': 45000}},
      ['db', 'page'], _chemdb_page),
+    ('chemdb_substance', '只 Reaxys：一个物质的物性数值表 —— 把人点开物质条目上「Physical Data - 41」看到的表读回来。'
+     '回 substance（cas_rn / name / formula / n_physical_data……）+ groups[]（group = Reaxys 的分组名，如 Boiling Point / Density / '
+     'Refractive Index / Dissociation Exponent（pKa 在这组）/ Association (MCS)；n = 这组共几条；rows[] 每行是 {列名（带单位）: 值} '
+     '+ reference{citation, type, authors, doi, cited}；truncated 表示只回了前 max_rows 行）。'
+     'query 给 CAS 号最准（先搜物质列表，再读第 n 个）；不给就读 Reaxys 最近一次 kind=substances 的列表。'
+     '算一次检索（扣 Reaxys 当天额度），当天同参数走缓存。只要几项就给 groups，省得把 Bioactivity 那种大组也点开。',
+     {'query': {'type': 'string', 'description': 'CAS 号（最准，如 "105-83-9"）或物质名'},
+      'n': {'type': 'integer', 'minimum': 1, 'description': '物质列表里第几个（一个 CAS 号偶尔对应几个条目；默认 1）'},
+      'section': {'type': 'string', 'enum': ['physical', 'other'],
+                  'description': 'physical = Physical Data（默认）；other = Other Data'},
+      'groups': {'type': 'array', 'items': {'type': 'string'},
+                 'description': '只点开名字含这些词的组（不分大小写），如 ["Boiling", "Density", "Dissociation"]；不给就全点开'},
+      'max_rows': {'type': 'integer', 'minimum': 1, 'maximum': 100, 'description': '每组最多回几行（默认 20）'},
+      'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50}},
+     [], _chemdb_substance),
     ('chemdb_result', '取 chemdb_search / chemdb_page 回了 PENDING 的那次检索：给 job_id，最多等 wait_s 秒（默认 25，≤50）。'
      '查完回完整结果，没完再回 PENDING。不扣次数。',
      {'job_id': {'type': 'string'}, 'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50}},

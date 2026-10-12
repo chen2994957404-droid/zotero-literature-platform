@@ -423,6 +423,12 @@ def main():
             S.openalex_match = real_oa
         check('JSON 里不出 NaN', S._no_nan({'a': float('nan'), 'b': [1.0, float('inf')], 'c': 'x'}) == {'a': None, 'b': [1.0, None], 'c': 'x'})
         check('chemdb_result 挂上了', 'chemdb_result' in sn)
+        check('chemdb_substance 挂上了（Reaxys 物质的物性表，v0.13）', 'chemdb_substance' in sn)
+        try:
+            S._chemdb_substance({'query': '105-83-9', 'section': 'spectra'})
+            check('chemdb_substance：section 只收 physical / other', False)
+        except ValueError:
+            check('chemdb_substance：section 只收 physical / other', True)
         check('chemdb 库内标记：in_library / id / tier',
               items[0]['in_library'] and items[0]['id'] == 'ID_a' and items[1]['tier'] == 'structured'
               and items[2]['in_library'] is False, str(items))
