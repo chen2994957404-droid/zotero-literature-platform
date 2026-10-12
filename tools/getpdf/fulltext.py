@@ -86,8 +86,11 @@ CODES = (OK, CAPTCHA_REQUIRED, NOT_SUBSCRIBED, NOT_FOUND, NO_PDF_LINK, NOT_PDF, 
 
 # not_pdf 原来也映射成 CAPTCHA_REQUIRED，叫人去点一个根本不存在的验证码（2026-10-12 Pleiades 一篇实为没订）。
 # 现在 pdf_fetch 取完会看页面：验证页报 captcha、付费墙报 no_access，剩下真分不清的才是 not_pdf。
+# navigate_failed = 页面没打开（浏览器里 goto 抛了 ERR_CONNECTION_CLOSED / 90 秒超时）—— 是网络，不是「没有这篇」。
+# 原来映射成 NOT_FOUND（不可重试）：2026-10-12 doi.org 断了 18 分钟，10 篇不同出版商的连着报「找不到」。
+# 无效 DOI 在更前面就挡了（/science 提交前问 Crossref；不像 DOI 的走 _fail_early）。
 _REASON_CODE = {'captcha': CAPTCHA_REQUIRED, 'not_pdf': NOT_PDF, 'no_access': NOT_SUBSCRIBED,
-                'no_pdf_link': NO_PDF_LINK, 'navigate_failed': NOT_FOUND, 'too_big': NETWORK_ERROR}
+                'no_pdf_link': NO_PDF_LINK, 'navigate_failed': NETWORK_ERROR, 'too_big': NETWORK_ERROR}
 RETRYABLE = {CAPTCHA_REQUIRED, PARSE_PENDING, NETWORK_ERROR}
 
 
@@ -410,14 +413,16 @@ def _progress_owner(path):
 
 HEARTBEAT_S = 15
 RETRY_COOLDOWN = 60        # 撞上人机验证的，整批跑完后歇多久再补试一次
+NET_COOLDOWN = 180         # 有网络失败的，歇久一点（2026-10-12 那次断了 18 分钟）
+NET_TRIP = 3               # 连着几篇网络失败就当「网断了」：后面的先不去敲（每篇白等 90 秒），留到补试
 
 
 def _ordered(dois, res):
     return [res[d] for d in dois if d in res]
 
 
-def _deferred(doi, why):
-    return {'doi': doi, 'id': '', 'ok': False, 'code': CAPTCHA_REQUIRED, 'retryable': True,
+def _deferred(doi, why, code=CAPTCHA_REQUIRED):
+    return {'doi': doi, 'id': '', 'ok': False, 'code': code, 'retryable': True,
             'stage': 'download', 'tier': pdf_parse.TIER_NONE, 'route': '', 'source': '',
             'secs': 0, 'chars': 0, 'deferred': True, 'why': why}
 
@@ -457,32 +462,52 @@ def _many_loop(dois, res, t0, now, index, allow_fetch, use_zotero, gap, progress
                     log.info('桌面提醒没发出去：%s', str(e)[:80])
         return r
 
-    held = []
+    held, streak = [], 0
     for doi in dois:
         if allow_fetch and publisher_of(doi) in blocked_pub:
             held.append(doi)
             res[doi] = _deferred(doi, '同一家出版商前一篇撞上人机验证，这篇先没去敲（暂缓）')
             _write_progress(progress, dois, _ordered(dois, res), t0, done=False)
             continue
+        if allow_fetch and streak >= NET_TRIP:
+            # 连着几篇（不同出版商）页面都打不开：是网断了，后面的先不去敲，歇够了再补试
+            held.append(doi)
+            res[doi] = _deferred(doi, '前面连着 %d 篇页面都打不开（网络问题），这篇先没去敲，稍后补试' % streak,
+                                 code=NETWORK_ERROR)
+            _write_progress(progress, dois, _ordered(dois, res), t0, done=False)
+            continue
         if allow_fetch:
             _polite()
-        _run(doi)
+        streak = streak + 1 if _net_failed(_run(doi)) else 0
 
-    # 补试：撞上的 + 暂缓的。歇一会儿再来（2026-09-30：RSC 的 Cloudflare 时有时无，隔几分钟就过了）
-    again = [d for d in dois if allow_fetch and (d in held or blocked(res[d]))]
+    # 补试：撞上验证的 + 网络失败的 + 暂缓的。歇一会儿再来
+    # （2026-09-30：RSC 的 Cloudflare 时有时无，隔几分钟就过了；2026-10-12：doi.org 断了 18 分钟后自己好了）
+    again = [d for d in dois if allow_fetch and (d in held or blocked(res[d]) or _net_failed(res[d]))]
     if not again:
         return
-    log.info(f'{len(again)} 篇撞上人机验证或被暂缓，歇 {RETRY_COOLDOWN} 秒后每家先试一篇')
-    now.update(doi='（等人机验证放行，%d 秒后补试）' % RETRY_COOLDOWN, since=time.time())
-    time.sleep(RETRY_COOLDOWN)
-    still = set()
+    wait = NET_COOLDOWN if any(_net_failed(res[d]) for d in again) else RETRY_COOLDOWN
+    log.info(f'{len(again)} 篇撞上人机验证、网络失败或被暂缓，歇 {wait} 秒后补试')
+    now.update(doi='（等人机验证放行 / 网络恢复，%d 秒后补试）' % wait, since=time.time())
+    time.sleep(wait)
+    still, streak = set(), 0
     for doi in again:
         if publisher_of(doi) in still:
             res[doi] = _deferred(doi, '这家出版商还在人机验证，没去敲；人点完后再交一次（fulltext_retry）')
             continue
+        if streak >= 2:
+            res[doi] = _deferred(doi, '网络还没恢复（补试时又连着打不开），没去敲；过一会儿再交一次（fulltext_retry）',
+                                 code=NETWORK_ERROR)
+            continue
         _polite()
-        if blocked(_run(doi)):
+        r = _run(doi)
+        if blocked(r):
             still.add(publisher_of(doi))
+        streak = streak + 1 if _net_failed(r) else 0
+
+
+def _net_failed(r):
+    """真去取了、失败在网络上（页面打不开 / 超时 / 浏览器断开）—— 过一会儿再试多半就好。"""
+    return not r.get('ok') and r.get('code') == NETWORK_ERROR and r.get('source') == SRC_FETCH
 
 
 def blocked(r):

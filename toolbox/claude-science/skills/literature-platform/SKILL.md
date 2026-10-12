@@ -30,6 +30,12 @@ What to expect (server 0.3):
   neither → `NOT_PDF` (cause unknown — **do not** ask the user to solve a CAPTCHA for it; tell them the article
   could not be fetched and why is unclear). Before 0.13 an unsubscribed Springer article (e.g. Pleiades) came back as
   `CAPTCHA_REQUIRED` by mistake.
+  Since server 0.13.2: a landing page that does not open (connection closed / 90-second timeout) is `NETWORK_ERROR`
+  (retryable), no longer `NOT_FOUND` — an invalid DOI is rejected at submission (Crossref check) instead. Inside a batch,
+  after 3 network failures in a row the server stops hitting publishers, waits 3 minutes at the end and retries them
+  itself; anything still failing comes back `NETWORK_ERROR` + `retryable` → `fulltext_retry` a bit later.
+  `NOT_FOUND` now really means the DOI / page does not exist. World Scientific "No Access" and Taylor & Francis
+  "Purchase options" pages are `NOT_SUBSCRIBED`.
 - **CAPTCHA.** The server defers the rest of that publisher, keeps going with others, and pops a reminder on
   the user's desktop. Ask the user to click it in the "取全文用的浏览器", then call `fulltext_retry`.
 - **Citing.** Section ids (`s8`, `s8.p2`) are per-version: they can shift when a paper goes text → structured.

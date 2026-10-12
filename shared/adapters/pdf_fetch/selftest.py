@@ -89,7 +89,7 @@ def main():
             held = pdf_fetch._why_not_pdf(None, land, o)
         res.append((held, o['reason']))
     if res == [(True, 'captcha'), (False, 'no_access'), (False, 'no_access'), (False, 'not_pdf')] \
-            and 'Buy article' in js:
+            and all(w in js for w in ('Buy article', 'No Access', 'Purchase options', 'Log in via your institution')):
         print('  [PASS] 不是 PDF 时分得清：验证页 / 付费墙 / 分不清'); ok += 1
     else:
         print(f'  [FAIL] 不是 PDF 的原因分错了：{res}')

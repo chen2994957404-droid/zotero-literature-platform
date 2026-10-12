@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.13.1'
+VERSION = '0.13.2'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -93,6 +93,8 @@ VERSION = '0.13.1'
 #   Reaxys 关键词里的化学名被它的 AI 检索换成结构式时警告（structure_injected），能挑不带结构的组就挑；
 #   取全文拿回来不是 PDF 时看页面分辨：验证页 → CAPTCHA_REQUIRED、付费墙 → NOT_SUBSCRIBED、分不清 → NOT_PDF（不再一律叫人去点验证码）。
 # v0.13.1（同日实测）：物性表一组超过 7 行时点「Show all」（BAPMA 的 pKa 组 15 条只读到 7 行）；读不全的组标 group_partial、complete=false。
+# v0.13.2（同日，58 篇批量取全文的报告）：页面打不开（断连 / 90 秒超时）改报 NETWORK_ERROR（可重试），不再是 NOT_FOUND；
+#   连着 3 篇网络失败就先停手，整批跑完歇 3 分钟统一补试。World Scientific「No Access」、T&F「Purchase options」认成 NOT_SUBSCRIBED。
 
 # 原样借用的（输出本来就合适）
 BORROW = ()     # 2026-10-04 用户定：只给它做不到的（取全文）。数值库它自己会抽，不借了；ping 自己挂

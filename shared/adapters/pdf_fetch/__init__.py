@@ -61,7 +61,7 @@ REASONS = {
     'no_pdf_link': '页面在、也像有权限，但找不到 PDF 直链（多半是这家出版商的页面改版了）',
     'not_pdf': '拿到了东西但不是 PDF，页面上既不是验证页也看不到付费墙字样（登录过期 / 出版商改版？分不清）',
     'too_big': '文件超过上限，没往回传',
-    'navigate_failed': '页面根本打不开',
+    'navigate_failed': '页面没打开（连接被断开或 90 秒超时，多半是网络一时不通，过一会儿重试）',
     'no_si': '这篇没挂补充材料，或者挂的全是视频之类（那种我们不要）',
 }
 
@@ -192,7 +192,11 @@ _JS_STATE = """() => {
     // ⚠ 不收「Get rights and content」：ScienceDirect 订了的每一篇也带这句（踩坑 #162）
     paywallText: has('Access this article') || has('Buy article') || has('Buy Article') ||
                  has('Buy this article') || has('Purchase this article') || has('Rent this article') ||
-                 has('Purchase PDF') || has('Get Access') || has('购买全文'),
+                 has('Purchase PDF') || has('Get Access') || has('购买全文') ||
+                 // 2026-10-12 又两家没订被报错：World Scientific 的 PDF 链接回 403 页、页上标「No Access」；
+                 // Taylor & Francis 没有 PDF 链接，只有「Purchase options」「Log in via your institution」（48 小时租 PDF）
+                 has('No Access') || has('Purchase options') || has('Log in via your institution') ||
+                 has('Log in via an institution'),
     candidates: hits,
     si: si,
     suppPage: suppPage,
@@ -964,7 +968,7 @@ def fetch(doi, url=None, timeout=90, settle=6, kind='fulltext'):
             return out
         cands = st.get('candidates') or []
         if not cands:
-            out['reason'] = 'no_access' if st.get('paywall') else 'no_pdf_link'
+            out['reason'] = 'no_access' if st.get('paywall') or st.get('paywallText') else 'no_pdf_link'
             return out
         _grab(page, ctx, cands, 'fulltext', timeout, settle, out)
         if _why_not_pdf(page, st, out):
@@ -1021,7 +1025,7 @@ def fetch_both(doi, url=None, timeout=90, settle=6):
                 held = _hold_for_human(page)
                 return main, si               # 正文都被挡了，SI 不用再去敲
         else:
-            main['reason'] = 'no_access' if st.get('paywall') else 'no_pdf_link'
+            main['reason'] = 'no_access' if st.get('paywall') or st.get('paywallText') else 'no_pdf_link'
         if pick:
             si['filename'] = _si_name(pick)
             _grab(page, ctx, [pick['url']], 'si', timeout, settle, si)

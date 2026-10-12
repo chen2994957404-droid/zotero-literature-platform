@@ -311,7 +311,7 @@ def test_只查不取_本地有PDF就出快速层_不等MineRU(real_env, monkeyp
 def test_状态码_每种失败各有各的码(env, monkeypatch):
     from tools import getpdf
     for reason, code, retry in (('captcha', F.CAPTCHA_REQUIRED, True), ('no_access', F.NOT_SUBSCRIBED, False),
-                                ('no_pdf_link', F.NO_PDF_LINK, False), ('navigate_failed', F.NOT_FOUND, False),
+                                ('no_pdf_link', F.NO_PDF_LINK, False), ('navigate_failed', F.NETWORK_ERROR, True),
                                 # 2026-10-12：不是 PDF ≠ 验证码（Pleiades 一篇实为没订，被叫去点不存在的验证码）
                                 ('not_pdf', F.NOT_PDF, False)):
         monkeypatch.setattr(getpdf, 'fetch_one', lambda d, where=None, _r=reason: {
@@ -352,3 +352,40 @@ def test_撞验证的出版商_同家暂缓_别家照跑(env, monkeypatch):
     assert by['10.1002/w1']['ok']
     assert all(by[d]['code'] == F.CAPTCHA_REQUIRED and by[d]['retryable'] for d in ('10.1126/s2', '10.1126/s3'))
     assert len(warned) == 1, '每家出版商只喊人一次'
+
+
+def test_网断了_连着失败就先停手_歇够了补试(env, monkeypatch):
+    """2026-10-12：doi.org 断了 18 分钟，10 篇不同出版商连着各等 90 秒，全报「找不到」（不可重试）。
+    现在：连着 NET_TRIP 篇网络失败就不再去敲后面的，整批跑完歇一会儿统一补试；网好了就都拿到。"""
+    monkeypatch.setattr(F, 'NET_COOLDOWN', 0)
+    tried, down = [], {'on': True}
+
+    def fake_one(doi, zotero_index=None, allow_fetch=True, use_zotero=True, upgrader=None):
+        tried.append(doi)
+        if down['on'] and doi != '10.1002/a0':
+            return {'doi': doi, 'id': '', 'ok': False, 'code': F.NETWORK_ERROR, 'source': F.SRC_FETCH,
+                    'why': 'navigate_failed'}
+        return {'doi': doi, 'id': '', 'ok': True, 'code': F.OK, 'source': F.SRC_FETCH, 'why': ''}
+    monkeypatch.setattr(F, 'one', fake_one)
+    dois = ['10.1002/a0'] + ['10.%d/x%d' % (1016 + i, i) for i in range(7)]
+    real_sleep = F.time.sleep
+    monkeypatch.setattr(F.time, 'sleep', lambda s: down.update(on=False) if s == 0 else real_sleep(0))
+    rs = F.many(dois, gap=0, limit=8)
+    first = tried[:tried.index(dois[1]) + F.NET_TRIP]
+    assert len(first) == 1 + F.NET_TRIP, '连着 %d 篇网络失败后就不再去敲后面的' % F.NET_TRIP
+    assert all(r['ok'] for r in rs), '歇够了补试，网好了就都拿到'
+
+
+def test_补试时网还没好_剩下的标网络错误可重试(env, monkeypatch):
+    monkeypatch.setattr(F, 'NET_COOLDOWN', 0)
+    tried = []
+
+    def fake_one(doi, zotero_index=None, allow_fetch=True, use_zotero=True, upgrader=None):
+        tried.append(doi)
+        return {'doi': doi, 'id': '', 'ok': False, 'code': F.NETWORK_ERROR, 'retryable': True, 'source': F.SRC_FETCH,
+                'why': 'navigate_failed'}
+    monkeypatch.setattr(F, 'one', fake_one)
+    dois = ['10.%d/x%d' % (1016 + i, i) for i in range(8)]
+    rs = F.many(dois, gap=0, limit=8)
+    assert len(tried) == F.NET_TRIP + 2, '第一轮敲 NET_TRIP 篇、补试再敲 2 篇就停'
+    assert all(r['code'] == F.NETWORK_ERROR and r['retryable'] for r in rs)
