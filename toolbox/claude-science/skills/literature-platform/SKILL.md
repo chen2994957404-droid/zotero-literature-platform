@@ -282,6 +282,12 @@ Chinese master's / PhD theses, Chinese journals, conferences and **Chinese paten
   user's own browsing (user tested 2026-10-13). So ask the user to search and open the paper in the main machine's
   「取全文用的浏览器」, then call `~/bin/litcall cnki_download '{}'` (no arguments) — it saves the article that is open there.
   One paper at a time: ask for the next one only after this one is saved.
+- **Chinese journal articles: try the journal's own website before CNKI** (2026-10-13). Many Chinese journals publish every
+  article on their own site with a free PDF — e.g. 功能高分子学报 (gngfzxb.ecust.edu.cn) had a 2026 online-first paper as a
+  free 11-page PDF. Their DOIs (`10.xxxx/j.cnki.…`) resolve only to CNKI, so don't rely on doi.org: web-search
+  「<title> <journal name>」, open the hit on the journal's domain, read the `<meta name="citation_pdf_url">` in the page HTML,
+  and download it with `curl` on your SSH host (it's open access — no platform tool or CNKI quota needed). Only if the
+  journal site has no PDF, fall back to CNKI (`cnki_download`, user opens the page).
 
 ## CCDC, JCR, Scopus (server 0.10): `ccdc_search`, `ccdc_detail`, `ccdc_current`, `jcr_journal`, `scopus_search`, `scopus_citing`, `scopus_page`, `webdb_status`
 
