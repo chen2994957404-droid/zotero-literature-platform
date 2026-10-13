@@ -114,7 +114,7 @@ class Log:
         self(*args)
 
     def warning(self, *args):
-        """标准库 logging 的名字。两处代码已经这么叫了（curate.journals / wechat_import），真出错时才会发现没这个方法。"""
+        """标准库 logging 的名字。两处代码已经这么叫了（journalwatch.grading / wechat_import），真出错时才会发现没这个方法。"""
         return self.warn(*args)
 
     def warn(self, *args):

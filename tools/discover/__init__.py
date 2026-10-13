@@ -27,7 +27,6 @@
 | `run_discovery(query, ...)` | **主入口**：完整混合检索，返回排好序的结构化结果 |
 | `search(query, limit)`      | 只搜 OpenAlex 一次（便宜、不花 LLM 额度），标出库里已有 |
 | `match.match_many/rank/pick_seeds` | 与我的库对照、排序、挑雪球种子 |
-| `importer.import_dois(dois, tags)` | 按 DOI 收进 Zotero（**写操作**，带角色守卫）|
 
 **命令行与控制面板共用 `run_discovery`** —— 逻辑只有一份。
 
@@ -40,7 +39,7 @@ import re
 
 from shared.adapters import openalex, sciverse
 from shared.kernel import paths
-from shared.adapters.zotero_client import library_index
+from shared.kernel.catalog import have_index as library_index   # 「这篇我有没有」只问证据库（2026-10-13 Zotero 移出平台）
 from shared.domain.libmatch import looks_like_book
 
 from tools.discover.match import match_many, pick_seeds, rank, rerank_jev

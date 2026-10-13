@@ -41,7 +41,7 @@ agent 会自己想检索式（还能根据上一轮读到的东西调整），�
 三条腿缺一不可：语义补「换了说法」，词面与引用补「没摘要的只能按标题匹配」（踩坑 #188）。
 
 每个返回里都带 `in_library` —— 「这篇我是不是早就有了」。
-判断在 `shared/domain/libmatch`，取库存在 `shared/adapters/zotero_client`。
+判断在 `shared/domain/libmatch`，取库存在 `shared.kernel.catalog.have_index`（证据库）。
 
 ## 为什么默认用精确检索而不是相关性检索
 
@@ -73,7 +73,7 @@ from collections import Counter
 
 from shared.adapters import openalex, snowball
 from shared.kernel import errors, paths
-from shared.adapters.zotero_client import library_index
+from shared.kernel.catalog import have_index as library_index   # 「这篇我有没有」只问证据库（2026-10-13 Zotero 移出平台）
 from shared.domain.libmatch import looks_like_book, mark_have
 from tools.litsearch import session as ledger
 

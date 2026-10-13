@@ -46,7 +46,7 @@ from shared.kernel import paths
 from shared.kernel.cli import flag, opt
 from shared.kernel.log import get_logger
 
-log = get_logger('curate.journals')
+log = get_logger('journalwatch.grading')
 
 TIERS = ('顶刊', '一流', '常规', '一般', '慎用')
 
@@ -108,7 +108,7 @@ def _dois_by_key(keys=None):
       · `curated/<key>/meta.json` —— 精读线产出的，只有精读过的篇才有
       · `structured/<key>.json` 与 `abstracts/<Wxxx>.json` —— 抽取产出的，覆盖广得多
 
-    只看前者时，188 篇的库里只有 51 篇查得到刊 —— 粗层那些篇（从 Zotero 全文索引抽的）
+    只看前者时，188 篇的库里只有 51 篇查得到刊 —— 粗层那些篇
     压根没有 meta.json。而它们的 DOI 明明就在结构化记录里躺着。
     """
     out = {}
@@ -214,7 +214,9 @@ def load():
 
 
 def main():
-    """命令行：`python -m tools.curate journals`（只读外网、不写 Zotero、不花钱）。"""
+    """命令行：`python -m tools.journalwatch.grading`（只读外网、不花钱；`--list` 只看上次结果）。
+
+2026-10-13 从 tools/curate 搬来：curate 是 Zotero 库房维护，随 Zotero 一起移出平台；期刊分级跟 Zotero 无关，跟盯新刊同属「期刊」这件事。"""
     if flag('--list'):
         d = load()
         rank = dict((t, i) for i, t in enumerate(TIERS))

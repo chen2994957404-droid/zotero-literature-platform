@@ -177,8 +177,7 @@ def main():
     print('相关度 = 这篇跟你库里已有内容的接近程度（不是质量分，是"离你多近"）。')
     print()
     print('决定收哪几篇（按上面的编号，不用抄 DOI）：')
-    print('  python -m tools.discover.collect 1,3,5-7          只收进库，先不精读')
-    print('  python -m tools.discover.collect 1,3 --精读        收进库并立刻精读')
+    print('  python -m tools.discover.collect 1,3,5-7          挑这几篇，给出收进证据库的命令')
     print('  python -m tools.discover.collect --看              再看一遍刚才的列表')
 
 

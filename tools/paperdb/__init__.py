@@ -351,9 +351,9 @@ def derive(m):
 def _journals():
     """读回期刊分级：`{key: {name, publisher, tier, ...}}`。没有就空。
 
-    真相是 `serving/journals.json`（`tools/curate/journals.py` 写的），
+    真相是 `serving/journals.json`（`tools/journalwatch/grading.py` 写的），
     这里只把它编进索引 —— 与 structured/*.json 同一个关系。
-    **不 import tools.curate**（工具不许 import 工具），只读它的产物。
+    **不 import tools.journalwatch**（工具不许 import 工具），只读它的产物。
     """
     p = paths.journals()
     if not os.path.exists(p):

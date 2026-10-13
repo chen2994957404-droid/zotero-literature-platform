@@ -25,7 +25,7 @@ Sciverse 按提问语言给同语言文献加权。中文问「聚硼硅氧烷�
     shared.adapters.query_expand（中文 → 英文检索式）
   + shared.adapters.sciverse（谁来检索，唯一联网的一环）
   + shared.adapters.llm_client（谁来作答）
-  + shared.adapters.zotero_client（这篇我有没有）
+  + shared.kernel.catalog（这篇我有没有：只问证据库）
 """
 import re
 
@@ -33,7 +33,7 @@ from shared.adapters.llm_client import chat
 from shared.adapters.query_expand import to_english
 from shared.adapters.sciverse import (SciverseError, ask_evidence, available,
                                       looks_chinese, search_papers)
-from shared.adapters.zotero_client import library_index
+from shared.kernel.catalog import have_index as library_index   # 「这篇我有没有」只问证据库（2026-10-13 Zotero 移出平台）
 from shared.kernel import prompts
 from shared.kernel.config import get_key, get_model
 

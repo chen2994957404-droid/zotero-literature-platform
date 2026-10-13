@@ -23,7 +23,7 @@
   - match_many(papers)     → 批量对照（批量向量化，省调用）
   - Ollama 没跑时自动降级为「只做精确去重」，不阻断主流程
 
-依赖：shared.adapters.embed（本地 bge-m3，免费）、shared.adapters.zotero_client、shared.adapters.vectordb。
+依赖：shared.adapters.embed（本地 bge-m3，免费）、shared.adapters.vectordb。
 
 ## 纯判断已经下沉，这里只剩编排（2026-09-09 拆「找文献」）
 
@@ -33,7 +33,7 @@ R3 窗（2026-08-30）当时的结论是「本块只有 `tools/discover` 一个�
 标注 in_library、两个阈值）下沉进了 `shared/domain/libmatch`，满足下沉规则的「≥2 个使用者」。
 
 **留在这里的是编排**：拉库索引并缓存、批量向量化、按语义挑种子、排序。
-它们要 `embed` / `vectordb` / `zotero_client` 三个适配器，且只有 discover 这一条线在用。
+它们要 `embed` / `vectordb` 两个适配器，且只有 discover 这一条线在用。
 
 下面把下沉出去的名字**再导出**一次 —— `selftest.py` 与 `tests/test_evals.py`
 一直按 `match.norm_title` / `match._overlap` 引用，保持它们不用改。
@@ -54,7 +54,7 @@ def build_index(force=False):
         return _index_cache['titles'], _index_cache['dois']
     # 取库存这件事本身在适配层（强制规范 #5：联网只在 adapters）。
     # 这里只负责「缓存 5 分钟」这一层编排，避免一次批量对照反复拉 Zotero。
-    from shared.adapters.zotero_client import library_index
+    from shared.kernel.catalog import have_index as library_index   # 只问证据库（2026-10-13 Zotero 移出平台）
     titles, dois = library_index()   # Zotero 没开时它返回两个空集合，不抛异常
     _index_cache.update({'t': now, 'titles': titles, 'dois': dois})
     return titles, dois

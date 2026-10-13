@@ -12,7 +12,7 @@
 
 ## 为什么住在 domain 而不是 adapters
 
-「库里有哪些标题和 DOI」是**取数**，那一步在 `shared/adapters/zotero_client.library_index()`；
+「库里有哪些标题和 DOI」是**取数**，那一步在 `shared.kernel.catalog.have_index()`（证据库）；
 「拿到这两个集合之后怎么判断像不像」是**算法**，就是本模块。
 所以本模块**只接收调用方传进来的集合**，自己一次网都不联、一个路径都不认识。
 换掉 Zotero 换不到这里，改判重口径才会改到这里。
@@ -69,7 +69,7 @@ def mark_have(papers, have_titles, have_dois):
     """就地给每篇标上 `in_library`（True/False），返回命中的篇数。
 
     `have_titles` / `have_dois` 由调用方传进来 —— 通常来自
-    `shared.adapters.zotero_client.library_index()`。**本模块不去取它们**，
+    `shared.kernel.catalog.have_index()`。**本模块不去取它们**，
     因为取数要联网，那是 adapters 的活。
 
     两条腿都认：DOI 命中，或归一后的标题命中。任一命中即算「有」——

@@ -103,36 +103,25 @@ def main():
     else:
         print('  [FAIL] 去重键不对')
 
-    # 下面几条要 Zotero / Ollama，环境不具备就 SKIP（不是功能坏了）
+    # 下面几条要证据库数据 / Ollama，环境不具备就 SKIP（不是功能坏了）
     titles, dois = build_index(force=True)
     print(f'  [INFO] 库索引：{len(titles)} 个标题 / {len(dois)} 个 DOI'
-          + ('（Zotero 未开，已降级）' if not titles else ''))
-    # 2026-09-13 起 build_index 是「证据库 ∪ Zotero」，Zotero 没开索引也不空 ——
-    # 所以「索引非空」不再等于「Zotero 开着」，抽样那一步得自己接住连不上（离线测试必须全绿）
+          + ('（证据库是空的）' if not titles else ''))
+    # 2026-10-13 起 build_index 只问证据库（Zotero 移出平台）：抽一篇库里的验「已有」，拿一篇无关的验「新」
     sample = None
-    zotero_up = False
     if titles:
-        from shared.adapters.zotero_client import USER_ID, zget
-        try:
-            tops = zget(f'/users/{USER_ID}/items/top?limit=25')
-            zotero_up = True
-        except Exception:
-            tops = []
-        for x in tops:
-            d = x['data']
-            if d.get('title') and d.get('itemType') == 'journalArticle':
-                sample = {'title': d['title'], 'doi': d.get('DOI') or '',
-                          'abstract': (d.get('abstractNote') or '')[:800]}
+        from shared.kernel import catalog
+        for rec in catalog.scan():
+            if rec.get('title') and rec.get('doi'):
+                sample = {'title': rec['title'], 'doi': rec['doi'], 'abstract': ''}
                 break
-    if zotero_up:
-        if sample:
-            total += 1
-            r = match_many([sample])[0]
-            if r['status'] in ('have', 'likely'):
-                print(f"  [PASS] 库内文献被正确识别为「{r['status']}」"
-                      f"（相关度 {r['relevance']}）"); ok += 1
-            else:
-                print(f"  [FAIL] 库内文献被误判为「{r['status']}」：{sample['title'][:50]}")
+    if sample:
+        total += 1
+        r = match_many([sample])[0]
+        if r['status'] in ('have', 'likely'):
+            print(f"  [PASS] 库内文献被正确识别为「{r['status']}」（相关度 {r['relevance']}）"); ok += 1
+        else:
+            print(f"  [FAIL] 库内文献被误判为「{r['status']}」：{sample['title'][:50]}")
 
         total += 1
         fake = {'title': 'A study on medieval Byzantine coin metallurgy in the 9th century',
@@ -142,7 +131,7 @@ def main():
         else:
             print('  [FAIL] 无关文献被误判为已有')
     else:
-        print('  [SKIP] Zotero 未开，跳过「已有/新」判别（要真实库才有意义）')
+        print('  [SKIP] 证据库是空的（或还没建作者索引），跳过「已有/新」判别')
 
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)

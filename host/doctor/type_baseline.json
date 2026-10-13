@@ -28,7 +28,7 @@
  "shared/kernel/proc_lock/__init__.py": 1,
  "shared/kernel/tests/test_heartbeat.py": 5,
  "shared/kernel/tests/test_jobs.py": 9,
- "tools/curate/journals.py": 7,
+ "tools/journalwatch/grading.py": 7,
  "tools/deepread/__init__.py": 5,
  "tools/deepread/evals/golden.py": 1,
  "tools/deepread/evals/scorers/golden.py": 6,

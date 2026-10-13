@@ -1,17 +1,16 @@
 # -*- coding: utf-8 -*-
-"""决定层：从上次检索结果里按编号挑几篇收进 Zotero。
+"""决定层：从上次检索结果里按编号挑几篇，给出「收进证据库」的那条命令。
 
-**为什么单独做这一步**：搜到不等于要收，收了不等于要精读。
-这两个决定都该由你自己做，而不是被自动化替你决定 ——
-尤其精读要花钱（MineRU 解析 + 大模型），不该被顺手触发。
+**为什么单独做这一步**：搜到不等于要收，收了不等于要精读 —— 这两个决定都该由你自己做。
+
+2026-10-13 起 Zotero 移出平台：「收」= 用 `tools.getpdf` 把正文 + SI 取进证据库。
+工具之间不许互相 import，所以这里不直接调 getpdf，而是挑好、去掉库里已有的，打印出那条命令。
+精读在文献库应用里按篇点。
 
 用法（编号来自 `python -m tools.discover` 的输出，不用抄 DOI）：
-  python -m tools.discover.collect 1,3,5-7        收进库，**不**打标签、不精读
-  python -m tools.discover.collect 1,3 --精读      收进库并打「待处理」→ 自动精读
+  python -m tools.discover.collect 1,3,5-7        挑这几篇，给出取全文的命令
   python -m tools.discover.collect --看            再看一遍上次的检索结果
-  python -m tools.discover.collect 全部            收下列表里所有的（慎用）
-
-收进库但没精读的，以后随时可以在 Zotero 里补打「待处理」标签。
+  python -m tools.discover.collect 全部            列表里所有的（慎用）
 """
 import io
 import json
@@ -26,7 +25,6 @@ except Exception:
 
 from shared.kernel import paths
 from shared.kernel.cli import flag, positionals
-from tools.discover.importer import import_dois
 from tools.discover.match import build_index
 
 
@@ -102,7 +100,6 @@ def main():
         print('\n收哪几篇：python -m tools.discover.collect 1,3,5-7  [--精读]')
         return
 
-    deep = flag('--精读') or flag('--deepread')
     picks = parse_picks(' '.join(args), len(items))
     if not picks:
         print('没有选中任何条目。')
@@ -123,49 +120,21 @@ def main():
                 print(f'  {c["n"]:2d}. {(c.get("title") or "")[:66]}')
             chosen = [c for c in chosen if c not in already]
     except Exception:
-        pass          # 查不了就照常走，导入本身仍会由 Zotero 端兜底
+        pass          # 查不了就照常走，取全文那一步还会按 DOI 再对一次账
 
     print(f'\n准备收下 {len(chosen)} 篇：')
     for c in chosen:
         print(f'  {c["n"]:2d}. {(c.get("title") or "")[:68]}')
         print(f'      DOI:{c["doi"]}')
     if no_doi:
-        print(f'\n有 {len(no_doi)} 篇没有 DOI，无法自动导入，需要手动加：')
+        print(f'\n有 {len(no_doi)} 篇没有 DOI，没法按 DOI 取，需要手动找：')
         for c in no_doi:
             print(f'  {c["n"]:2d}. {(c.get("title") or "")[:68]}')
     if not chosen:
         return
 
-    print()
-    if deep:
-        print('★ 会打「待处理」标签 → 收进库后**立刻自动精读**（消耗 MineRU 与大模型额度）')
-    else:
-        print('· 只收进 Zotero，**不精读**。以后想读，在 Zotero 里补打「待处理」标签即可')
-
-    # 去掉 BOM 等不可见字符：某些 shell 管道会在输入前加 ﻿，
-    # 不处理会导致「明明输了 y 却被当成取消」这种莫名其妙的行为
-    ans = input('\n确认执行？(y/回车确认，其他取消): ').strip().lstrip('﻿').strip().lower()
-    if ans not in ('', 'y', 'yes', '是'):
-        print('已取消，什么都没做。')
-        return
-
-    try:
-        r = import_dois([c['doi'] for c in chosen], ['待处理'] if deep else [])
-    except Exception as e:
-        print(f'导入失败：{e}')
-        return
-
-    print(f'\n成功收下 {len(r["ok"])} 篇：')
-    for doi, title, key in r['ok']:
-        print(f'  ✓ {title[:68]}')
-    if r['failed']:
-        print(f'\n失败 {len(r["failed"])} 篇：')
-        for doi, why in r['failed']:
-            print(f'  ✗ {doi} — {why}')
-    if deep and r['ok']:
-        print('\n精读服务会在 1 分钟内开始，完成后可在 Zotero 里点开 summary 附件查看。')
-    elif r['ok']:
-        print('\n已收进库（未精读）。想读时在 Zotero 打「待处理」标签即可。')
+    print('\n收进证据库（借取全文用的浏览器，用学校订阅）：')
+    print('  python -m tools.getpdf ' + ' '.join(c['doi'] for c in chosen))
 
 
 if __name__ == '__main__':

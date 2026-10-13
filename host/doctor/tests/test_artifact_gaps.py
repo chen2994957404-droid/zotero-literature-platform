@@ -64,7 +64,7 @@ class TestInspect:
 class TestDiagnose:
     def test_解析就没成(self, gaps):
         stage, advice = gaps.diagnose(missing=['fulltext', 'summary'], present=[])
-        assert '解析' in stage and '待处理' in advice
+        assert '解析' in stage and '精读' in advice
 
     def test_精读没做完(self, gaps):
         """**这是被误杀最典型的形态**：正文在了，精读报告没出来。

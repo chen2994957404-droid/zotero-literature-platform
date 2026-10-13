@@ -73,7 +73,7 @@ def main():
             print(f'              {" · ".join(meta)}')
     print('=' * 78)
     print(f'其中库里已有 {have} 篇，新的 {len(items) - have} 篇')
-    print('\n想导入某篇：python -m tools.discover.importer <DOI>')
+    print('\n想导入某篇：python -m tools.getpdf <DOI>（收进证据库）')
 
 
 if __name__ == '__main__':

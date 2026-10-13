@@ -489,37 +489,23 @@ def action_search(params):
 
 
 def action_collect(payload):
-    """把选中的文献收进 Zotero。deep=True 时打「待处理」标签触发精读。
+    """「收进库」—— 2026-10-13 起 Zotero 移出平台，不再往 Zotero 里建条目。
 
-    **两个决定分开**：收进库 与 是否精读。精读要花钱，不该被顺手触发。
+    收进证据库 = 用取全文把正文 + SI 拿下来（借浏览器，一篇约一分钟，面板等不了），所以这里只给出命令。
     """
     dois = [d for d in (payload.get('dois') or []) if d]
     if not dois:
         return False, '没有选中任何文献'
-    deep = bool(payload.get('deep'))
     try:
-        from tools.discover.importer import import_dois
         from tools.discover.match import build_index
         _, have = build_index(force=True)
-        skipped = [d for d in dois if d.lower() in have]
-        todo = [d for d in dois if d.lower() not in have]
-        if not todo:
-            return True, f'选中的 {len(dois)} 篇库里都已经有了，没有导入'
-        r = import_dois(todo, ['待处理'] if deep else [], verbose=False)
-        msg = f'收下 {len(r["ok"])} 篇'
-        if skipped:
-            msg += f'（跳过 {len(skipped)} 篇库里已有的）'
-        if r['failed']:
-            msg += f'，{len(r["failed"])} 篇失败'
-        if deep and r['ok']:
-            msg += '；已打「待处理」标签，精读一分钟内自动开始'
-        return True, msg
-    except Exception as e:
-        return False, f'{type(e).__name__}: {str(e)[:150]}'
-
-
-READ_TAG = '读完'
-READING_TAG = '在读'
+    except Exception:
+        have = set()
+    todo = [d for d in dois if d.lower() not in have]
+    if not todo:
+        return True, f'选中的 {len(dois)} 篇证据库里都已经有了'
+    return True, ('Zotero 已移出平台。收进证据库请运行：python -m tools.getpdf ' + ' '.join(todo)
+                  + (f'（另有 {len(dois) - len(todo)} 篇库里已有）' if len(todo) < len(dois) else ''))
 
 
 def collect_review():
@@ -531,26 +517,9 @@ def collect_review():
     from tools.deepread import evals as E
     out = {'pending': [], 'stats': E.stats(), 'reasons': E.REASONS,
            'reading': 0, 'read': 0}
-    try:
-        from shared.adapters.zotero_client import zget, USER_ID
-        import urllib.parse
-        q = urllib.parse.quote(READ_TAG)
-        items = zget(f'/users/{USER_ID}/items?tag={q}&limit=100')
-        out['read'] = len(items)
-        done = E.load()
-        for it in items:
-            k = it['key']
-            if k in done:
-                continue
-            snap = E.snapshot(k)
-            out['pending'].append({
-                'key': k, 'title': (it['data'].get('title') or '')[:100],
-                'has_summary': snap is not None, 'snapshot': snap,
-            })
-        r = zget(f'/users/{USER_ID}/items?tag={urllib.parse.quote(READING_TAG)}&limit=100')
-        out['reading'] = len(r)
-    except Exception as e:
-        out['error'] = f'读不到 Zotero（是不是没开？）：{str(e)[:80]}'
+    # 2026-10-13 起 Zotero 移出平台：「待评价」原来按 Zotero 的「读完 / 在读」标签挑，
+    # 现在没有这个来源了。评测集本身（E.stats / action_rate）照旧；以后在文献库应用里按篇评价。
+    out['note'] = 'Zotero 已移出平台，待评价清单暂时没有来源（评测集照旧保存）'
     return out
 
 
