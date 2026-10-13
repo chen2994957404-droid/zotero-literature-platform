@@ -278,6 +278,10 @@ Chinese master's / PhD theses, Chinese journals, conferences and **Chinese paten
   **After the user passes the verification, call `cnki_download` again with the same `url` (not a new search, not `n`)**:
   since 0.14.2 the server downloads from the page the user just unlocked, which is still open; a fresh search or page
   gets verified again (seen 2026-10-13: three rounds of drag → new request → blocked again).
+  **Preferred since 0.14.3 — "user opens, server fetches":** CNKI verifies pages the program opens itself, but not the
+  user's own browsing (user tested 2026-10-13). So ask the user to search and open the paper in the main machine's
+  「取全文用的浏览器」, then call `~/bin/litcall cnki_download '{}'` (no arguments) — it saves the article that is open there.
+  One paper at a time: ask for the next one only after this one is saved.
 
 ## CCDC, JCR, Scopus (server 0.10): `ccdc_search`, `ccdc_detail`, `ccdc_current`, `jcr_journal`, `scopus_search`, `scopus_citing`, `scopus_page`, `webdb_status`
 

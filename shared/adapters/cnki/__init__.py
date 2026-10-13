@@ -553,7 +553,7 @@ def open_tab(ctx, url):
     return hits[-1] if hits else None
 
 
-def download(url):
+def download(url=''):
     """摘要页 url → 这篇的 PDF（字节）。在新标签里开摘要页、点「PDF下载」的链接、在网络层截住文件；读完就关标签。
 
     返回 dict：ok, code, url, title, filename, pdf（bytes，成功才有）, bytes, why, warnings。
@@ -561,9 +561,16 @@ def download(url):
     NOT_PDF（点了下载拿回来的不是 PDF：要登录、没权限或改版）/ NAVIGATE_FAILED。
     """
     warnings = []
-    if 'cnki.net' not in (url or ''):
+    if url and 'cnki.net' not in url:
         raise ValueError('url 要是知网的摘要页（kns.cnki.net/kcms2/…）')
     with _session() as (browser, ctx):
+        if not url:
+            # 不给 url：下人在浏览器里打开着的那篇（最新的摘要页标签）。2026-10-13 用户实测：人手动用知网不弹验证，
+            # 程序自己开页就弹 —— 所以知网全文改成「人打开、程序取」：程序不导航，只在人开好的页上点「PDF下载」
+            pages = [p for p in ctx.pages if '/kcms' in (p.url or '')]
+            if not pages:
+                return _result(code='NOT_FOUND', why='浏览器里没有打开着的知网摘要页：请人在「取全文用的浏览器」里搜到这篇、点开，再交一次')
+            url = pages[-1].url
         # 人刚过完验证的那一页还开着：直接在它上面点下载，别再新开一页（2026-10-13 实测：人拖完拼图，
         # 再交一次又新开摘要页，立刻又被验证；而在已经过了验证的那页上点「PDF下载」一次就成）
         tab = open_tab(ctx, url)

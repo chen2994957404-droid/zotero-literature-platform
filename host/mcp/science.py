@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.14.2'
+VERSION = '0.14.3'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -100,6 +100,7 @@ VERSION = '0.14.2'
 # v0.14.1（同日，Claude Science 头一回用就 4 篇全挡）：知网整页「安全验证」认成 CAPTCHA_REQUIRED（原来报 NO_PDF_LINK、不弹提醒）；
 #   下载额度只数真下到的（ONLY_OK_COUNTS），没下到的只占间隔、不扣篇数。
 # v0.14.2（2026-10-13）：cnki_download 先找浏览器里已经开着的同一篇（人刚过完验证的那页），在它上面点下载，不再新开一页又被验证。
+# v0.14.3（同日，用户实测「手动检索不弹」）：cnki_download 不给 n / url = 下人在浏览器里打开着的那篇（人打开、程序取）。
 
 # 原样借用的（输出本来就合适）
 BORROW = ()     # 2026-10-04 用户定：只给它做不到的（取全文）。数值库它自己会抽，不借了；ping 自己挂
@@ -1422,9 +1423,7 @@ def _cnki_download(a):
     from shared.adapters import cnki
     from shared.kernel import paths
     url = (a.get('url') or '').strip()
-    if not url:
-        if not a.get('n'):
-            raise ValueError('给 n（结果页上的序号 rank）或 url（摘要页）')
+    if not url and a.get('n'):
         if not _chemdb_lock.acquire(blocking=False):
             raise ValueError('有一个检索正在用浏览器；等它跑完（chemdb_result）再交')
         try:
@@ -1433,6 +1432,18 @@ def _cnki_download(a):
             _chemdb_lock.release()
         if not url:
             raise ValueError(f'知网结果页上没有第 {a["n"]} 条（先 cnki_search / cnki_page 到那一页）')
+    if not url:
+        # 人打开、程序取：浏览器里人打开着的那篇。缓存键要按那一页算，不能都叫「当前页」
+        if not _chemdb_lock.acquire(blocking=False):
+            raise ValueError('有一个检索正在用浏览器；等它跑完再交')
+        try:
+            with cnki._session() as (_b, ctx):
+                opened = [p for p in ctx.pages if '/kcms' in (p.url or '')]
+                url = opened[-1].url if opened else ''
+        finally:
+            _chemdb_lock.release()
+        if not url:
+            raise ValueError('浏览器里没有打开着的知网摘要页：请用户在主力机「取全文用的浏览器」里搜到这篇、点开，再交一次（不带参数）')
 
     def fetch(db):
         r = cnki.download(url)
@@ -1776,7 +1787,8 @@ TOOLS = [
      {'n': {'type': 'integer', 'minimum': 1}, 'url': {'type': 'string'},
       'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50}}, [], _cnki_detail),
     ('cnki_download', '知网一篇的全文 PDF：在摘要页点「PDF下载」，存进主力机的导出文件夹，回 path（WSL 路径，直接读）/ filename / '
-     'title / bytes。n = 当前结果页上的序号（rank），或给摘要页 url。一次一篇；两次至少隔 60 秒、每天 5 篇（单独的额度，见 cnki_status 的 '
+     'title / bytes。**首选不带参数**：请用户在主力机「取全文用的浏览器」里自己搜到、点开那篇，再调这个（不带 n / url）就下他打开着的那篇'
+     '（程序自己开知网页老被安全验证，人手动开不弹）。也可给 n（当前结果页序号）或摘要页 url。一次一篇；两次至少隔 60 秒、每天 5 篇（单独的额度，见 cnki_status 的 '
      'pdf_quota）—— 只下眼前真要读的。code：OK / CAPTCHA_REQUIRED（拼图，人拖完再交一次）/ NO_PDF_LINK（只有 CAJ）/ '
      'NOT_PDF（点了没拿到文件）。同一篇当天走缓存，不重复下。',
      {'n': {'type': 'integer', 'minimum': 1}, 'url': {'type': 'string'},
