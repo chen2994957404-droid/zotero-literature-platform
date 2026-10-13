@@ -3,7 +3,7 @@
 
 覆盖分两档（见 docs/explain/架构重构_v2总体设计.md 第五节）：
   离线档：包安装 → 离线测试 → 语法 → 静态检查        ← 必须永远全绿
-  实测档：配置 → Zotero/Ollama → 原子模块自测 → 数据 → 后台服务  ← 本机没配就会红，正常
+  实测档：配置 → Ollama → 原子模块自测 → 数据 → 后台服务  ← 本机没配就会红，正常
 
 用法: python host/doctor/health_check.py            两档都跑
       python host/doctor/health_check.py --offline  只跑离线档（改完代码先跑这个）
@@ -190,7 +190,7 @@ def c_secret_storage():
     plain = [k for k in SECRET_KEYS if key_location(k) == '.env明文']
     # 含明文密钥的残留文件（备份、临时文件）
     import re
-    pat = re.compile(r'^(DEEPSEEK_KEY|ZOTERO_API_KEY|MINERU_TOKEN|SILICONFLOW_KEY|OPENALEX_KEY)=(.{8,})$', re.M)
+    pat = re.compile(r'^(DEEPSEEK_KEY|MINERU_TOKEN|SILICONFLOW_KEY|OPENALEX_KEY)=(.{8,})$', re.M)
     leftovers = []
     for f in glob.glob('.env.bak*') + glob.glob('.env.tmp') + glob.glob('*.env'):
         try:
@@ -226,8 +226,7 @@ def c_hardcoded():
     """
     import re
     # 这些值都已经在 shared/kernel/config 的 SITE_SETTINGS 里可配，源码里不该再出现
-    PATS = [(re.compile(r'localhost:23119'), 'ZOTERO_API_HOST'),
-            (re.compile(r'localhost:11434'), 'OLLAMA_HOST')]
+    PATS = [(re.compile(r'localhost:11434'), 'OLLAMA_HOST')]
     bad = []
     for f in code_files():
         n = os.path.normpath(f)
@@ -253,31 +252,27 @@ def c_hardcoded():
 
 def c_config():
     from shared.kernel.config import get_key
-    missing = [k for k in ('DEEPSEEK_KEY', 'ZOTERO_API_KEY', 'MINERU_TOKEN') if not get_key(k)]
+    missing = [k for k in ('DEEPSEEK_KEY', 'MINERU_TOKEN') if not get_key(k)]
     return (OK, '三个密钥都能读到') if not missing else (FAIL, f'缺少: {missing}')
 
 
 def c_keys_valid():
     """三把密钥**真的还能用吗** —— 不是「读得到」，是「打过去对方认不认」。
 
-    2026-08-28 的真事：主力机的 DeepSeek 与 Zotero 密钥早已失效，
+    2026-08-28 的真事：主力机的 DeepSeek 密钥早已失效，
     但心跳正常、体检全绿（那时只查存在性），**精读其实一次都跑不了**，
     而且要等用户下次打标签才会发现。
 
     > **「配置存在」不等于「配置有用」。** 安全网必须查后者，否则它只是让人安心。
 
-    三个校验都免费：DeepSeek 查余额、Zotero 问 /keys/current、
-    MineRU 拿一个不存在的任务 id 去查（401 vs 200 能区分认证问题）。
+    两个校验都免费：DeepSeek 查余额、MineRU 拿一个不存在的任务 id 去查（401 vs 200 能区分认证问题）。
+    （Zotero 那把 2026-10-13 随 Zotero 移出平台不查了。）
     """
     from shared.adapters.llm_client import check_key as _ds
     from shared.adapters.pdf_parse import check_token as _mineru
-    from shared.adapters.zotero_client import check_key as _zot
-    def _zot2():                       # 统一成 (ok, msg) 两元组
-        ok, msg, _detail = _zot()
-        return ok, msg
 
     rows, bad, unknown = [], [], []
-    for name, fn in (('DeepSeek', _ds), ('MineRU', _mineru), ('Zotero', _zot2)):
+    for name, fn in (('DeepSeek', _ds), ('MineRU', _mineru)):
         ok, msg = fn()
         rows.append(f'{name} {msg}')
         if ok is False:
@@ -290,21 +285,6 @@ def c_keys_valid():
     if unknown:
         return WARN, f'{"、".join(unknown)} 没验成（多半是网络）—— {detail}'
     return OK, detail
-
-
-def c_zotero():
-    try:
-        from shared.kernel.config import get_site
-        uid = get_site('ZOTERO_USER_ID')
-        host = get_site('ZOTERO_API_HOST')
-        if not uid:
-            return WARN, '未配置 ZOTERO_USER_ID（控制面板里可填）'
-        urllib.request.urlopen(urllib.request.Request(
-            f'{host}/api/users/{uid}/items/top?limit=1',
-            headers={'Zotero-Allowed-Request': 'true'}), timeout=6)
-        return OK, 'Zotero 本地 API 通'
-    except Exception:
-        return WARN, 'Zotero 未开（精读/抽取/找文献会失败）'
 
 
 def c_ollama():
@@ -367,11 +347,11 @@ def c_modules():
 # R2 窗（2026-08-30）起，工具是包不是散脚本 —— 「按文件名找」会在搬家后
 # 直接失效（找不到就报 FAIL），而模块名是这些工具的对外契约，本来就该稳定。
 KEY_MODULES = [
-    'tools.deepread', 'host.watcher.service', 'tools.deepread.batch',
+    'tools.deepread', 'tools.deepread.batch',
     'tools.extract', 'tools.extract.batch', 'tools.paperdb',
     'tools.ask', 'tools.ask.vectorize', 'tools.askworld',
-    'tools.discover', 'tools.discover.importer', 'tools.direction', 'host.autosync.service',
-    'tools.library', 'host.mcp.server',
+    'tools.discover', 'tools.direction', 'host.watcher.watchdog',
+    'tools.library', 'host.mcp.server', 'host.app.server',
 ]
 # R3 窗（2026-08-30）起十个工具全是包，散脚本入口连同 find_script 一起退休了。
 # R4 窗（2026-08-31）加 tools.library（新工具包）与 host.mcp.server（聚合后的 MCP 入口）。
@@ -419,9 +399,8 @@ def c_data():
     msg = f'library {n_lib} 篇 / structured {n_struct} 条 / 向量库{"在" if vdb else "缺失"}'
     from shared.kernel import role
     if role.is_test():
-        # 测试端有自己的 Zotero 账号，数据是它自己跑出来的 —— 不用从主力机拷
         if n_lib == 0:
-            return WARN, msg + ' —— 测试端还没有产物；在测试 Zotero 库里打「待处理」跑一篇即可'
+            return WARN, msg + ' —— 测试端还没有产物'
         return OK, msg + f'（测试端，自产 {n_lib} 篇；与主力机的权威数据互不相干）'
     if role.is_dev():
         # 编程端的权威数据在主力机，这里只需要够做回归测试的金样本（2~3 篇）
@@ -533,12 +512,12 @@ def c_services():
         # 一次问全：任务名 + 它的动作。动作要用来查「会不会弹控制台窗口」。
         out = powershell(
             "Get-ScheduledTask | Where-Object {$_.TaskName -in "
-            "@('ZoteroLiteratureWatcher','OllamaService','ZoteroApp','LiteratureAutoSync')} "
+            "@('ZoteroLiteratureWatcher','OllamaService')} "
             "| ForEach-Object { $_.TaskName + '|' + ($_.Actions | "
             "Select-Object -First 1 -ExpandProperty Execute) }", timeout=30)
         rows = [r.strip() for r in out.splitlines() if r.strip() and '|' in r]
         tasks = {r.split('|', 1)[0]: r.split('|', 1)[1] for r in rows}
-        want = {'ZoteroLiteratureWatcher', 'OllamaService', 'ZoteroApp', 'LiteratureAutoSync'}
+        want = {'ZoteroLiteratureWatcher', 'OllamaService'}   # 前者是历史名字，跑的是看门狗
         miss = want - set(tasks)
         if miss:
             return WARN, f'缺任务: {miss}'
@@ -577,17 +556,12 @@ def c_role():
     if not role.is_configured():
         return WARN, (f'没设置机器角色，按最安全的 {r}（{lab}）处理。'
                       f'请在控制面板「本机设置」里选「机器角色」：'
-                      f'dev（编程端）/ prod（运行端·主力机）/ test（编程端接测试 Zotero 账号）')
+                      f'dev（编程端）/ prod（运行端·主力机）/ test（编程端测试档）')
     if r == role.PROD:
-        return OK, f'{lab} —— 允许写 Zotero、跑常驻服务、跑全库作业'
+        return OK, f'{lab} —— 允许跑常驻服务、跑全库作业、花钱'
     if r == role.TEST:
-        # 对测试端来说，「指着哪个库」比「角色写着什么」重要得多，所以直接体检它
-        if role.test_library_ok():
-            return OK, f'{lab} —— 允许写，且已确认写回目标是测试库'
-        return FAIL, (f'{lab}，但**写回目标不是测试库** —— 现在任何写操作都会被拒绝。'
-                      f'请在控制面板把「Zotero 用户 ID（写回用）」和'
-                      f'「测试账号的用户 ID」填成同一个值（测试账号的数字 id）')
-    return OK, f'{lab} —— 已禁止写 Zotero / 跑 watcher / 跑全库作业（保护真实文献库）'
+        return OK, f'{lab} —— 允许跑，产物只在本机'
+    return OK, f'{lab} —— 已禁止跑常驻服务 / 全库作业 / 花钱（这些只在主力机做）'
 
 
 def c_installed():
@@ -676,7 +650,6 @@ if __name__ == '__main__':
     if not offline:
         check('配置加载', c_config)
         check('密钥有效性', c_keys_valid)
-        check('Zotero 服务', c_zotero)
         check('Ollama 服务', c_ollama)
         check('原子模块自测', c_modules)
         check('数据资产', c_data)

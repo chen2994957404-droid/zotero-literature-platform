@@ -1,21 +1,19 @@
 # -*- coding: utf-8 -*-
-"""向量化：把文献变成可检索的向量块。**两条线，同一个向量库。**
+"""向量化：把文献变成可检索的向量块。
 
-| 线 | 料 | 覆盖 | 质量 | 入口 |
-|---|---|---|---|---|
-| 精层 `deep_all()`  | 精读产物 `parsed/full.md` **+ `si_parsed/full.md`（SI）** | 只有精读过的 | 高 | `--deep` |
-| 粗层 `light_all()` | Zotero 自带全文索引（不解析 PDF、不占空间） | **全库** | 一般 | `--light`（默认）|
+| 线 | 料 | 入口 |
+|---|---|---|
+| 精层 `deep_all()`  | 解析出的全文 `parsed/full.md` **+ `si_parsed/full.md`（SI）** | 默认（`--deep` 同义）|
 
-两条并存不冲突：粗层负责「广撒网、都能搜到」，精层负责「读过的答得深」。
-**同一篇不会两档并存**：粗层遇到已有向量的跳过；精层入库后，反过来把同篇的粗层块删掉。
+原来另有粗层 `light_all()`（料是 Zotero 自带的全文索引），2026-10-13 随 Zotero 移出平台删了。
+向量库里已有的老粗层块（source='library'）照旧能检索；某篇精层入库时会把它的粗层块删掉（同一篇不两档并存）。
 
 ⚠ 判重必须按「这一档有没有入过库」算（`_indexed_keys(coll, source)`），
 不能按「这篇有没有块」（`existing_keys()`）算 —— 粗层每小时自动跑、早把全库入过一遍，
 用后者会让精层一篇都进不来，而且不报错（踩坑 #126）。
 
 用法:
-    python -m tools.ask.vectorize                 增量粗层（全库轻量，定时任务跑的就是这条）
-    python -m tools.ask.vectorize --deep          增量精层（正文 + 补充材料 SI）
+    python -m tools.ask.vectorize                 增量精层（正文 + 补充材料 SI）
     python -m tools.ask.vectorize --deep --no-si  只做正文，跳过 SI
     python -m tools.ask.vectorize --deep --rebuild  清空重建整个向量库
 
@@ -33,13 +31,12 @@ try:
 except Exception:
     pass
 
-from shared.adapters import vectordb, zotero_client
+from shared.adapters import vectordb
 from shared.adapters.embed import chunk, embed
 from shared.kernel import paths, role
 from shared.kernel.cli import flag
 
 BATCH = 16          # 每批 16 块送 embedding，避免单次请求过大
-ARTICLE_TYPES = ('journalArticle', 'conferencePaper', 'thesis', 'bookSection', 'book')
 
 
 def get_collection(rebuild=False):
@@ -169,98 +166,13 @@ def deep_all(rebuild=False, log=print, with_si=True):
     return processed + si_papers, total_chunks + si_chunks
 
 
-# ── 粗层：Zotero 全文索引 → 向量库 ────────────────────────────────────
-def fetch_top_items():
-    """取 Zotero 所有顶层文献（分页，每页 100 条）。走适配层，强制规范 #5。"""
-    tops = []
-    start = 0
-    while True:
-        d = zotero_client.search_items(limit=100, start=start)
-        if not d:
-            break
-        tops += d
-        start += 100
-        if len(d) < 100:
-            break
-    return tops
-
-
-def light_one(x, coll, existing):
-    """轻量向量化单篇：找 PDF 附件 → 取全文索引 → 切块 → 入库。
-
-    返回 (结果, 块数)，结果 ∈ ('skipped' 已入库 / 'nofull' 无全文 / 'empty' 无块 /
-    'processed' 新入库)；取不到附件列表返回 (None, 0)（不计入任何统计）。
-    """
-    key = x['key']
-    title = x['data'].get('title', key)
-    if key in existing:
-        return 'skipped', 0
-    try:
-        children = zotero_client.zget(
-            f'/users/{zotero_client.USER_ID}/items/{key}/children')
-    except Exception:
-        return None, 0    # 该篇取不到附件列表（孤儿条目/服务抖动）：跳过且不计入统计
-    att = None
-    for c in children:
-        if c['data'].get('contentType') == 'application/pdf':
-            att = c['key']
-            break
-    if not att:
-        return 'nofull', 0
-    txt = zotero_client.get_fulltext(att)
-    if len(txt) < 500:
-        return 'nofull', 0
-    chunks = chunk(txt)
-    if not chunks:
-        return 'empty', 0
-    ids = [f'{key}_L{i}' for i in range(len(chunks))]
-    metas = [{'key': key, 'title': title, 'doi': x['data'].get('DOI', ''),
-              'source': 'library', 'chunk': i} for i in range(len(chunks))]
-    coll.add(ids, chunks, metas, _embed_all(chunks))
-    return 'processed', len(chunks)
-
-
-# ⚠ 2026-09-13 起粗层（Zotero 全文索引）**不再由每小时任务调度**：落地流水线
-#   （host/ingest）把每篇都解析成更好的全文并入精层，粗层只剩「没有 PDF 的条目」这一点用处。
-#   函数留着给人手动跑（`--light`），不删是因为向量库里还有老的粗层块要能被识别退场。
-def light_all(log=print):
-    """粗层增量向量化全库（走 Zotero 全文 API）。返回 (处理篇数, 块数)。"""
-    coll = get_collection()
-    existing = coll.existing_keys()
-    arts = [x for x in fetch_top_items()
-            if x['data'].get('itemType') in ARTICLE_TYPES]
-    log(f'Zotero顶层文献 {len(arts)} 篇，开始轻量向量化...\n')
-
-    processed = skipped = nofull = total_chunks = 0
-    for x in arts:
-        status, n = light_one(x, coll, existing)
-        if status == 'processed':
-            processed += 1
-            total_chunks += n
-            log(f'[{processed}] {x["data"].get("title", x["key"])[:45]} — {n}块')
-            time.sleep(0.2)
-        elif status == 'skipped':
-            skipped += 1
-        elif status == 'nofull':
-            nofull += 1
-        # status 为 None（取不到附件列表）或 'empty'（无块）不计数
-
-    log(f'\n完成：新入库 {processed} 篇（{total_chunks}块），'
-        f'已有跳过 {skipped}，无全文 {nofull}')
-    log(f'向量库总块数：{coll.count()}')
-    return processed, total_chunks
-
-
 def main():
-    """命令行入口：默认粗层增量；--deep 走精层；--rebuild 清空重建（只对精层有意义）。"""
+    """命令行入口：增量精层；--rebuild 清空重建。"""
     # 机器角色守卫：这件事只允许在运行端（主力机）做，见 docs/howto/两台机器的分工.md
     role.require_prod('全库向量化', force=flag('--force'))
     os.makedirs(paths.VECTOR_DB, exist_ok=True)
-    if flag('--deep'):
-        deep_all(rebuild=flag('--rebuild'), with_si=not flag('--no-si'))
-        print(f'向量库位置：{paths.VECTOR_DB}')
-    else:
-        light_all()
+    deep_all(rebuild=flag('--rebuild'), with_si=not flag('--no-si'))
+    print(f'向量库位置：{paths.VECTOR_DB}')
 
 
 if __name__ == '__main__':

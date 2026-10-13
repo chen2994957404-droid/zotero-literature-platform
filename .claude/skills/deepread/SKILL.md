@@ -6,7 +6,7 @@ description: 一篇文献 → 中文图文精读报告（含 SI 合并）。什�
 <!-- 本文件由 host/codegen/skills.py 生成，**别手改**。改源：tools/deepread/SKILL.md + tools/deepread/tool.toml -->
 
 > **动手之前先看这三行**（取自 `tools/deepread/tool.toml`）：
-> **会花钱** · **有副作用**：写Zotero（回写精读附件与状态标签）、写 data/raw/<key>/ 与 data/curated/<key>/ · **只能在运行端（主力机）跑**
+> **会花钱** · **有副作用**：写 data/raw/<key>/ 与 data/curated/<key>/ · **只能在运行端（主力机）跑**
 > MCP 暴露方式：`prompt`（**由人在客户端点，模型不能自己发起**）
 > 命令行：`python -m tools.deepread`
 

@@ -2,34 +2,25 @@
 #   costs_money / side_effects / requires_role 描述**这个工具最危险的那条路径**，
 #   哪怕那条路径只在命令行上有、没暴露给 MCP —— 写清楚才有意义。
 name          = "getpdf"
-one_line      = "一批 DOI → 正文 + SI 收进证据库（借真实浏览器，用机构订阅权限）；要的话再推到 Zotero"
+one_line      = "一批 DOI → 正文 + SI 收进证据库（借真实浏览器，用机构订阅权限）"
 expose        = "prompt"
 costs_money   = false           # 不调任何付费 API
 side_effects  = [
   "向出版商网站发真实请求 —— 量大会触发风控，被封的是整个机构的 IP",
   "写 data/raw/_incoming/getpdf/*.pdf，并复制成 data/raw/<id>/ 的本地正本 + 登记 curated/<id>/meta.json",
-  "--to-zotero 时**写用户的 Zotero 库**：建条目、挂 PDF 附件、建合集（不可逆）",
   "fulltext 会花 MineRU 解析额度，并写 data/raw/<id>/（正本 PDF 与解析产物）",
 ]
-requires_role = "prod"          # 最危险的那条路径是 --to-zotero，它写真实的库
+requires_role = "prod"          # 向出版商发真实请求 + 花 MineRU 额度，只在主力机做
 prompts       = []
 
 # ── 允许模型自己发起的入口 ─────────────────────────────────────────────
 # 判据是**代价的量级与可逆性**：
 #   取一篇 = 单次、不花钱、可重来 → 可以放开，但客户端每次必须弹窗
 #   一整批 = 量能堆到触发出版商风控 → 留给人点，走 prompt
-agent_tools   = ["getpdf_one", "paper_fulltext", "getpdf_stash_one"]
-# getpdf_stash_one（2026-09-09 加）：**一篇** DOI → 取 PDF + 建/补条目 + 挂附件 + 归合集。
-#   ⚠ 这一条和「不可逆写 Zotero 一律走 prompt」有张力，是用户当天拍板放开的，理由值得记：
-#   当天外部 agent（Antigravity）被要求「把这几篇收进我的剪切硬化材料文件夹」，
-#   而它在 MCP 上**看不到**本工具包（整包是 prompt），于是它自己去读代码、
-#   绕过本流水线直接调了 `_web.create_items`。结果元数据对，但缺平台标签、缺摘要、
-#   没 PDF —— 三条对下游隐形的条目。
-#   **结论：堵不住，因为它能读代码跑命令。给正规入口比假装它没有路更安全。**
-#   代价被这样框住：一次一篇（批量仍只能人点，封的是整个机构的 IP）、
-#   每次强制弹窗且没有「不再询问」、`role.require_prod` 那道闸原样保留。
-# paper_fulltext：DOI → LLM 读得懂的全文（四层回退）。**默认最多 3 篇**，
-#   前三层（缓存 / 本地 / Zotero）零成本，只有第四层才真去敲出版商。
+agent_tools   = ["getpdf_one", "paper_fulltext"]
+# （getpdf_stash_one「推到 Zotero」2026-10-13 随 Zotero 移出平台删掉。）
+# paper_fulltext：DOI → LLM 读得懂的全文（三层回退）。**默认最多 3 篇**，
+#   前两层（缓存 / 本地正本）零成本，只有第三层才真去敲出版商。
 #   放开成 tool 的判据仍是那条：单次、可重来、且客户端每次弹窗。
 #   一整批仍然只能走 getpdf_batch 那条人点的路 —— 封的是整个机构的 IP。
 # 「看进度」不在这里：它只读一个进度文件、零成本，但本工具包是「花钱」档，

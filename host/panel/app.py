@@ -46,7 +46,6 @@ HOST = '127.0.0.1'          # 只监听本机，外部访问不到
 
 KEY_NAMES = [
     ('DEEPSEEK_KEY',    'DeepSeek（精读/抽取/问答）', True),
-    ('ZOTERO_API_KEY',  'Zotero（回写附件与标签）',   True),
     ('MINERU_TOKEN',    'MineRU（PDF 解析）',         True),
     ('SILICONFLOW_KEY', '硅基流动（图表数字化，可空）', False),
     # 免费档的代价不是钱是数据：Google 明说免费档「内容会用于改进产品」。
@@ -67,10 +66,8 @@ KEY_NAMES = [
 
 # 面板可重启的后台服务：任务计划名 → 显示名
 SERVICES = {
-    'ZoteroLiteratureWatcher': '文献精读监听',
+    'ZoteroLiteratureWatcher': '看门狗（守文献库应用 / MCP 服务 / 取全文浏览器）',   # 任务名是历史遗留
     'OllamaService':           '本地 Ollama（问答/向量化）',
-    'ZoteroApp':               'Zotero 主程序',
-    'LiteratureAutoSync':      '自动同步',
 }
 
 
@@ -80,7 +77,7 @@ def collect_status():
     """服务健康状态。直接复用 health_check 的检查函数，不重写判断逻辑。"""
     from host.doctor import health_check as H
     checks = [
-        ('配置密钥', H.c_config), ('Zotero 服务', H.c_zotero),
+        ('配置密钥', H.c_config),
         ('Ollama 服务', H.c_ollama), ('数据资产', H.c_data),
         ('后台任务', H.c_services),
     ]
@@ -187,17 +184,6 @@ def collect_alerts():
                 alerts.append({'level': 'fail', 'text': f"「{JOB_LABELS.get(o['name'], o['name'])}」{o['note']}"})
     except Exception:
         pass
-    # Zotero 没开是最常见的根因，单独探一次给出直白结论
-    try:
-        import urllib.request
-        from shared.kernel.config import get_site
-        uid = get_site('ZOTERO_USER_ID')
-        urllib.request.urlopen(urllib.request.Request(
-            f"{get_site('ZOTERO_API_HOST')}/api/users/{uid}/items/top?limit=1",
-            headers={'Zotero-Allowed-Request': 'true'}), timeout=5)
-    except Exception:
-        alerts.append({'level': 'fail',
-                       'text': 'Zotero 桌面程序没开 —— 精读功能现在无法工作。点下面「Zotero 主程序」的重启按钮即可。'})
     return alerts
 
 
@@ -269,7 +255,6 @@ def action_check_keys(_payload=None):
     try:
         from shared.adapters.llm_client import check_key as _ds
         from shared.adapters.pdf_parse import check_token as _mineru
-        from shared.adapters.zotero_client import check_key as _zot
     except Exception as e:
         return False, f'适配层加载失败：{e}'
     lines, all_ok = [], True
@@ -280,14 +265,8 @@ def action_check_keys(_payload=None):
             ok, msg = False, str(e)[:140]
         all_ok = all_ok and (ok is not False)
         lines.append(('✅ ' if ok else '❌ ') + name + '：' + str(msg)[:160])
-    try:
-        ok, msg, _d = _zot()
-    except Exception as e:
-        ok, msg = False, str(e)[:140]
-    all_ok = all_ok and (ok is not False)
-    lines.append(('✅ ' if ok else '❌ ') + 'Zotero（回写标签/附件）：' + str(msg)[:160])
     if not all_ok:
-        lines.append('失效的那把请在上面重填并保存，然后重启精读监听。')
+        lines.append('失效的那把请在上面重填并保存。')
     return all_ok, '\n'.join(lines)
 
 
@@ -411,9 +390,9 @@ def _budget_today():
 # 哪些本机设置是「选一个」而不是「填一段」。**选项从 shared.kernel.role 取，不在前端写死**。
 SITE_OPTIONS = {
     'ROLE': [
-        {'value': role.DEV,  'text': '编程端 dev —— 不许写 Zotero / 跑监听 / 跑全库作业'},
+        {'value': role.DEV,  'text': '编程端 dev —— 不许跑常驻服务 / 全库作业 / 花钱的批量'},
         {'value': role.PROD, 'text': '运行端 prod —— 主力机，允许全部操作'},
-        {'value': role.TEST, 'text': '编程端·测试库 test —— 接测试 Zotero 账号，允许写（只写测试库）'},
+        {'value': role.TEST, 'text': '编程端·测试档 test —— 允许跑，产物只在本机'},
     ],
 }
 
@@ -812,12 +791,17 @@ class Handler(BaseHTTPRequestHandler):
         if p == '/api/all':
             return self._send(collect_all())
         if p == '/summary':
-            # 直接在面板里打开精读，省得切到 Zotero 去找 —— 看完就地评价
+            # 直接在面板里打开精读 —— 看完就地评价
             import urllib.parse as _up
+            from shared.kernel import catalog
             q = _up.parse_qs(self.path.partition('?')[2])
             key = (q.get('key') or [''])[0]
-            # 只允许字母数字的 Zotero key，杜绝路径穿越
-            if not key or not key.isalnum():
+            # 只认合法的文献 id（doi_… 或旧的 8 位编号），杜绝路径穿越
+            try:
+                key = catalog.resolve(key)
+            except paths.BadKeyError:
+                key = ''
+            if not key:
                 # 中文不能写在 b'' 字节串里，要显式编码
                 return self._send('<h3>无效的文献编号</h3>'.encode('utf-8'),
                                   400, 'text/html')

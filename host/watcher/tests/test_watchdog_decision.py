@@ -85,18 +85,6 @@ class TestWiring:
         assert 5 < alive < 60 and 800 < prog < 1000
 
 
-def test_看门狗盯的名字和watcher报活的名字一致(wd):
-    """两边名字对不上，看门狗就会永远读到「信号缺失」→ 无限重启。
-
-    这种错不会报错，只会表现为「服务一直在重启」。
-    """
-    src = open(os.path.join(os.path.dirname(os.path.abspath(_watchdog.__file__)),
-                            'service.py'), encoding='utf-8').read()
-    assert f"heartbeat.start('{wd.BEACON}')" in src, (
-        f'看门狗盯的是 {wd.BEACON!r}，但 watcher 没有用这个名字报活')
-    assert f"heartbeat.progress('{wd.BEACON}')" in src
-
-
 # ── 2026-09-17 起看门狗管三个进程 + 每日作业 ─────────────────────────────
 
 def test_进程表里每个报活名都真有人在用(wd):

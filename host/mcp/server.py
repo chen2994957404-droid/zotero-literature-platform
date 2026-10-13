@@ -27,7 +27,7 @@ from host.mcp import registry
 from host.mcp.stdio import MCPStdioServer
 
 VERSION = '0.2.0'          # 0.1 = 手写 10 个 zotero 工具；0.2 = 按工具包聚合
-NAME = 'zotero-platform'
+NAME = 'zotero-platform'   # 历史名字：客户端（Antigravity 等）按它连，改了要同步改它们的配置，所以先不动
 
 
 def _instructions():
@@ -57,17 +57,14 @@ def build_server():
                     '跑完会给出每篇的 id 与来源，然后用 library_outline 看菜单。',
                     {'type': 'object', 'properties': {}},
                     lambda a: {'text': _fulltext_status()})
-    # 「这篇精读到哪一步了」——同一条判例（2026-09-10）：deepread 那个工具包是
-    # 「花钱」档，守卫要求它注册的每个 tool 都 confirm；而查进度是**发起之后必然
-    # 要反复做的动作**，每次弹窗等于把「排队 + 轮询」这个设计废掉。
-    # 只读、零成本的东西不该被工具包的档位连坐，所以挂在平台层。
+    # 「这篇精读到哪一步了」——只读、零成本，跟 ping 同类挂在平台层（2026-09-10 的判例）。
+    # 2026-10-13 起不再看 Zotero 标签：精读在文献库应用里点，这里报本地产物 + 应用作业队列里最近一次。
     s.register_tool('deepread_status',
-                    '看某篇文献精读到哪一步了（只读、零成本、不弹窗）。'
-                    '同时报 Zotero 的状态标签与本地产物 —— 两者可能不一致'
-                    '（回写失败时产物已经在盘上了）。用 deepread_request 排队之后靠它轮询。',
+                    '看某篇文献精读到哪一步了（只读、零成本、不弹窗）：本地有哪些精读产物、'
+                    '文献库应用里最近一次精读作业的状态。精读本身由人在应用里点。',
                     {'type': 'object',
                      'properties': {'itemKey': {'type': 'string',
-                                                'description': 'Zotero 条目 key'}},
+                                                'description': '证据库里的文献 id（旧的 Zotero 编号也认）'}},
                      'required': ['itemKey']},
                     lambda a: {'text': _deepread_status(a.get('itemKey') or ''),
                                'structured': _deepread_status_raw(a.get('itemKey') or '')})
@@ -81,24 +78,29 @@ def build_server():
 
 
 def _deepread_status_raw(key):
+    import os
+    from shared.kernel import catalog, paths
+    from host.app import jobs
     from tools import deepread
-    return deepread.status(key)
+    pid = catalog.resolve(key)
+    return {'key': pid, 'plan': deepread.plan(pid), 'job': jobs.of(pid),
+            'summary': os.path.exists(paths.summary(pid)),
+            'summary_full': os.path.exists(paths.summary_full(pid))}
 
 
 def _deepread_status(key):
     """→ 给人/模型看的一行话。不猜、不报错：查不到就说查不到。"""
     if not key:
-        return '要给 itemKey（Zotero 条目 key，8 位字母数字）。'
-    d = _deepread_status_raw(key)
-    made = []
-    if d['summary']:
-        made.append('正文精读')
-    if d['summary_full']:
-        made.append('正文+SI 合并版')
-    return ('{0}{1}\n  状态标签：{2}\n  本地产物：{3}{4}'.format(
-        key, ('　' + d['title']) if d['title'] else '',
-        d['tag'] or '（没有）', '、'.join(made) or '（还没有）',
-        ('\n  ' + d['note']) if d.get('note') else ''))
+        return '要给 itemKey（证据库里的文献 id）。'
+    try:
+        d = _deepread_status_raw(key)
+    except Exception as e:
+        return f'{key}：查不了（{type(e).__name__}: {str(e)[:80]}）'
+    made = [n for k, n in (('summary', '正文精读'), ('summary_full', '正文+SI 合并版')) if d[k]]
+    job = d['job']
+    return ('{0}\n  本地产物：{1}\n  应用里最近一次精读：{2}\n  现在点的话：{3}'.format(
+        d['key'], '、'.join(made) or '（还没有）',
+        (job['state'] + ' ' + (job.get('note') or '')) if job else '（没点过）', d['plan']['note']))
 
 
 def _fulltext_status():

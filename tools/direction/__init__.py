@@ -48,12 +48,12 @@
 
 | 入口 | 干什么 |
 |---|---|
-| `collect_seeds(band)` | 三路取种子（OpenAlex / 已有窄带语料 / 用户 Zotero）|
+| `collect_seeds(band)` | 两路取种子（OpenAlex / 已有窄带语料）|
 | `build(band, min_df)` | 拉元数据与参考文献，建引用图（联网，十几分钟）|
 | `cluster(band)` / `report(band)` | 聚类 / 出人读的地图（**纯本地，可反复调参**）|
 | `stats(band)` | 这条窄带现在有多少料 |
 
-依赖：shared.adapters.wechat_seed / shared.adapters.openalex / shared.adapters.zotero_client /
+依赖：shared.adapters.wechat_seed / shared.adapters.openalex /
 包内的 bibliometrics / shared.kernel。本工具**不联网**（联网都在 adapters 里）。
 """
 import collections
@@ -237,45 +237,6 @@ def seeds_from_band(band, spec=None, progress=None):
     return n
 
 
-def seeds_from_zotero(band, spec=None, progress=None):
-    """③ 用户自己的 Zotero 库。**只能在 Zotero 在跑的那台机器上取**（本地 API）。
-
-    取不到不是错误 —— 编程端本来就没有真实库。跳过并说明即可。
-    """
-    say = progress or (lambda *a: None)
-    spec = spec or load_spec(band)
-    conf = spec.get('zotero')
-    if not conf:
-        say('  [Zotero] band.json 里没配 zotero，跳过')
-        return 0
-    try:
-        from shared.adapters import zotero_client
-        items = zotero_client.search_items(conf.get('query', ''),
-                                           limit=int(conf.get('limit', 300)),
-                                           qmode=conf.get('qmode', 'everything'),
-                                           tag=conf.get('tag'),
-                                           collection=conf.get('collection'))
-        dois = zotero_client.dois_of(items)
-    except Exception as e:
-        say('  [Zotero] 取不到（多半是本机没跑 Zotero）：%s' % str(e)[:80])
-        return 0
-    if not dois:
-        say('  [Zotero] 匹配到 %d 条但都没有 DOI，跳过（编程端是测试账号，属正常）'
-            % len(items))
-        return 0
-    works = openalex.works_by_dois(dois, select='id,doi')
-    c = _conn(band)
-    try:
-        with c:
-            n = _add_seeds(c, [(w, wechat_seed.normalize_doi(x.get('doi')),
-                                'zotero', str(conf.get('query', ''))[:60])
-                               for w, x in works.items()])
-    finally:
-        c.close()
-    say('  [Zotero] %d 条有 DOI，对齐 %d 篇，新增 %d' % (len(dois), len(works), n))
-    return n
-
-
 def seeds_from_wechat(band, seed_dir, progress=None):
     """④（可选）直接从公众号 md 目录取。用于建 wechat_polymer 那类窄带。"""
     say = progress or (lambda *a: None)
@@ -302,13 +263,13 @@ def seeds_from_wechat(band, seed_dir, progress=None):
 
 
 def collect_seeds(band, progress=None):
-    """三路取种子，落进 seed_pool。返回各来源的新增数。"""
+    """两路取种子（OpenAlex / 已有窄带语料），落进 seed_pool。返回各来源的新增数。
+    （第三路「用户 Zotero」2026-10-13 随 Zotero 移出平台删了；band.json 里的 zotero 配置会被忽略。）"""
     say = progress or (lambda *a: None)
     spec = load_spec(band)
     say('窄带「%s」· %s' % (band, spec.get('name', '')))
     out = {'openalex': seeds_from_openalex(band, spec, say),
-           'band': seeds_from_band(band, spec, say),
-           'zotero': seeds_from_zotero(band, spec, say)}
+           'band': seeds_from_band(band, spec, say)}
     c = _conn(band)
     tot = c.execute('SELECT COUNT(*) FROM seed_pool').fetchone()[0]
     by = dict(c.execute('SELECT source,COUNT(*) FROM seed_pool GROUP BY source'))

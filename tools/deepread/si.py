@@ -16,7 +16,6 @@ import zipfile
 
 from shared.adapters.llm_client import chat
 from shared.adapters.pdf_parse import parse_document, PDFParseError
-from shared.adapters.zotero_client import find_si
 from shared.kernel import paths, prompts
 from shared.kernel.config import get_key
 from shared.domain.figure_crop import crop_figures
@@ -39,16 +38,11 @@ class SIFailed(Exception):
 
 
 def find_si_file(item_key):
-    """定位 SI 文件 → (路径, 类型)。**本地正本优先**（raw/<id>/si.*），没有再问 Zotero。
-
-    2026-09-13：正本搬到证据库之后，精读不该再只认 Zotero 的附件 ——
-    `getpdf` 落地的文献（可能根本不在 Zotero 里）也要能精读。
-    Zotero 那一半的查找逻辑下沉到了 `zotero_client.find_si`。
-    """
+    """定位 SI 文件 → (路径, 类型)；没有返回 (None, None)。只认证据库里的本地正本（raw/<id>/si.*）。"""
     local = paths.find_local_si(item_key)
     if local:
         return local, os.path.splitext(local)[1].lstrip('.').lower()
-    return find_si(item_key)
+    return None, None
 
 
 def extract_docx_images(path, min_kb=15, log=print):

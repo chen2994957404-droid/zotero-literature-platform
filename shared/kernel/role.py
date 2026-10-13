@@ -1,72 +1,40 @@
 # -*- coding: utf-8 -*-
 """shared.kernel.role —— 这台机器是什么角色。
 
-**为什么需要它**（见 `docs/howto/两台机器的分工.md`）：
-
-本平台跑在两台机器上，**共用同一个 Zotero 账号**：
+**为什么需要它**（见 `docs/howto/两台机器的分工.md`）：本平台跑在两台机器上：
 
     A 机 = 编程端   有 Claude Code，改代码的唯一入口
-    B 机 = 运行端   Ollama、watcher、4 个自启任务、data/ 权威副本
+    B 机 = 运行端   Ollama、看门狗、文献库应用、data/ 权威副本
 
-编程端做验证时如果回写 Zotero（打标签、传附件、改名），
-**污染的是真实文献库，而且立刻同步到主力机**。同理，在编程端误跑一次
-全库批量作业，烧的是真钱。
-
+在编程端误跑一次全库批量作业，烧的是真钱；起常驻服务会跟主力机抢活。
 分工写在文档里没有强制力 —— 人会忘，LLM 更会忘。所以让代码自己知道在哪台机器上。
 
-## 现状为什么不能靠「反正编程端写不了」
-
-编程端的 `ZOTERO_USER_ID` 是 `0`（Zotero 本地 API 的约定值），
-拿这个 id 去写 `api.zotero.org` 会失败 —— 但这是**巧合形成的保护，不是设计**。
-一旦有人为了让本地 API 表现一致而把它改成真实数字 id，
-编程端立刻就获得了改写真实文献库的能力，而且没有任何东西会拦。
-
-## 第三档 test：编程端接测试 Zotero 账号（2026-08-27 加）
-
-编程端登录**另一个 Zotero 账号**之后，「不许写」这条就不必再一刀切了 ——
-写坏了也只坏在测试库里。此时角色设 `test`：`require_prod` 放行，
-但先验一条客观事实 —— 写回目标 id 必须等于配置里的测试账号 id（`test_library_ok()`）。
-
-**最硬的那层保护其实不在这里**：编程端只持有测试账号的 API key，
-带着它根本写不到真实库。角色守卫挡的是「配置被切回真实账号却没人发现」。
-
-顺带一提：「watcher 只能在 B 跑」那条铁律的根因是*两台共用同一账号*会重复精读、
-标签互相打架。账号不同就不存在这个冲突，所以 test 机可以跑 watcher。
+三档：`dev`（编程端，拒绝）· `prod`（主力机，全部允许）· `test`（编程端测试档，允许，产物只在本机）。
+（test 原来的意思是「编程端接测试 Zotero 账号」，还要核对写回目标是测试库；
+2026-10-13 Zotero 移出平台，那道核对没有对象了，test 就是「编程端也放行」。）
 
 ## 用法
 
 ```python
 from shared.kernel import role
 
-role.require_prod('写回 Zotero')            # dev 上直接抛 WrongMachineError
-                                          # test 上：确认目标是测试库才放行
-role.require_prod('全库重抽', force=flag('--force'))   # 显式 --force 可越过
-
-if role.is_dev():
-    out_dir = sandbox_dir           # 编程端把产物写到沙盒，不碰权威数据
+role.require_prod('全库重抽', force=flag('--force'))   # dev 上抛 WrongMachineError；显式 --force 可越过
 ```
 
 ## 默认值：未设置时按 `dev` 处理（fail safe）
 
-两种默认的代价不对称：
-
-- 默认 `prod` → 编程端在配置好之前**毫无保护**，一次手滑就静默污染真实数据，
-  而且很难发现是什么时候被改的
-- 默认 `dev` → 主力机在配置好之前会**明确拒绝并告诉你怎么改**，
-  响亮、立刻可修
-
-所以默认 `dev`。主力机第一次部署时在控制面板把角色设成 `prod` 即可
-（`更新平台.bat` 会提醒）。
+默认 `prod` → 编程端在配置好之前**毫无保护**；默认 `dev` → 主力机在配置好之前会**明确拒绝并告诉你怎么改**。
+所以默认 `dev`。主力机第一次部署时在控制面板把角色设成 `prod` 即可。
 """
 from shared.kernel import errors
 
 DEV = 'dev'        # 编程端：有 Claude Code，改代码的地方
 PROD = 'prod'      # 运行端：跑服务、持有权威数据的地方
-TEST = 'test'      # 编程端 + 测试 Zotero 账号：允许写，但只许写测试库
+TEST = 'test'      # 编程端测试档：允许跑（产物只在本机）
 VALID = (DEV, PROD, TEST)
 
 _LABEL = {DEV: '编程端（A 机）', PROD: '运行端（B 机）',
-          TEST: '编程端·测试库（A 机 + 测试 Zotero 账号）'}
+          TEST: '编程端·测试档（A 机）'}
 
 
 def current():
@@ -90,22 +58,6 @@ def is_prod():
 
 def is_test():
     return current() == TEST
-
-
-def test_library_ok():
-    """test 角色下：写回的目标**确实是测试库**吗？
-
-    判据只有一条 —— 配置里「写回用的 user id」必须等于「测试账号的 user id」。
-    两个都得填；只要对不上（比如哪天把配置切回真实账号忘了改回来），
-    就当作不是测试库。
-
-    为什么单独判而不是信任角色：角色是人填的一个字，
-    而「现在指着哪个库」是客观事实。**闸门要挡在事实那一侧。**
-    """
-    from shared.kernel.config import get_site, web_user_id
-    want = (get_site('ZOTERO_TEST_USER_ID') or '').strip()
-    have = (web_user_id() or '').strip()
-    return bool(want) and want == have
 
 
 def label(r=None):
@@ -138,21 +90,10 @@ def require_prod(action, force=False):
     """
     if is_prod():
         return
-    # test 角色：允许做写操作，但**必须确认目标是测试库**。
-    # 光看角色不够 —— 角色是人填的一个字，指着哪个库才是事实。
     if is_test():
-        if test_library_ok():
-            return
-        raise errors.WrongMachineError(
-            f'「{action}」在{label()}上被拒绝：**写回目标不是测试库**。\n'
-            f'  控制面板里「Zotero 用户 ID（写回用）」必须等于「测试账号的用户 ID」，\n'
-            f'  现在两者对不上（或有一项没填）。\n'
-            f'  这道闸就是防「配置切回真实账号却忘了改角色」——'
-            f'那一下会把测试改动写进你真正的文献库。\n'
-            f'  详见 docs/howto/两台机器的分工.md')
+        return
     if force:
-        print(f'⚠ 已用 --force 越过机器角色检查：在{label()}上执行「{action}」。'
-              f'两台共用同一个 Zotero 账号，改动会同步过去。')
+        print(f'⚠ 已用 --force 越过机器角色检查：在{label()}上执行「{action}」。')
         return
     hint = ('' if is_configured() else
             '（本机没设置角色，按最安全的 dev 处理）')

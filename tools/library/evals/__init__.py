@@ -4,10 +4,10 @@
 ## 为什么这一套是 `live` 的
 
 `paperdb` 的评测能全离线，因为它的输入（`structured/*.json`）可以造。
-`library` 不行 —— 它要回答的是「**在用户真实的 Zotero 库里**，搜一个词能不能
+`library` 不行 —— 它要回答的是「**在用户真实的证据库里**，搜一个词能不能
 把该出来的搜出来」。拿造出来的假库测，测的是 `urllib` 通不通，不是检索质量。
 
-所以这套金标标了 `@pytest.mark.live`：**默认不跑**，在开着 Zotero 的机器上
+所以这套金标标了 `@pytest.mark.live`：**默认不跑**，在有证据库数据的主力机上
 `python -m pytest tools/library -m live` 单独跑。免费、只读、几秒钟。
 
 ## 金标为什么不写死具体的条目

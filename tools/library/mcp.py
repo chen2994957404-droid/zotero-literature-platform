@@ -5,19 +5,18 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[attr-defined]
 except Exception:
     pass
-"""library 的 MCP 面：9 个只读工具（模型可以自己调，不花钱、不写东西）。
+"""library 的 MCP 面：只读工具（模型可以自己调，不花钱、不写东西）。
 
 **本文件只做参数转换**：把 MCP 传来的 arguments 拆成 Python 参数、把返回值
 渲染成文本。一行业务逻辑都不许写在这里 —— 逻辑在 `tools/library/__init__.py`，
 那样命令行、面板、MCP 三个入口共用同一份行为，不会各说各话。
 
-R4 窗（2026-08-31）从 `host/mcp/zotero_server.py` 拆过来的 9 个。
-第 10 个 `ping` 是服务自己的存活检查，不属于任何工具，留在 `host/mcp/server.py`。
+2026-10-13 Zotero 移出平台：原来查 Zotero 的 9 个工具（stats / search / item / pdf / fulltext / 合集 / 标签 / 最近）删了。
 """
 from tools import library
 
 _KEY = {'itemKey': {'type': 'string',
-                    'description': '文献 id（Zotero 编号 / OpenAlex id / 由 DOI 生成的 id 都行），'
+                    'description': '文献 id（由 DOI 生成的 doi_… 为主；旧的 8 位编号也认），'
                                    '也可以直接给 DOI（10.xxxx/...），会先在证据库里对账'}}
 
 
@@ -40,9 +39,9 @@ def register(server):
     # ── 证据库（全集）：先问这里，零网络 ───────────────────────────
     server.register_tool(
         'library_db_search',
-        '搜**证据库**（平台自己的库，是全集；Zotero 只是用户挑出来读的子集）：'
+        '搜**证据库**（平台自己的库）：'
         '按标题 / DOI / 期刊 子串，返回每篇的 id 和手上有什么（正文/SI/已解析/已精读/已结构化）。'
-        '不联网、秒回。**问「有没有这篇」先用它**，再用 library_search 看 Zotero。',
+        '不联网、秒回。**问「有没有这篇」先用它**。',
         {'type': 'object', 'properties': {
             'query': {'type': 'string', 'description': '标题片段、DOI 或期刊名'},
             'limit': {'type': 'integer', 'minimum': 1, 'maximum': 100}},
@@ -75,53 +74,8 @@ def register(server):
         {'type': 'object', 'properties': {}},
         lambda a: _db_stats())
 
-    # ── Zotero（用户的阅读桌）─────────────────────────────────────────
-    server.register_tool(
-        'library_stats', 'Zotero 有多大：条目/合集/标签数量，以及 Zotero 通不通。',
-        {'type': 'object', 'properties': {}},
-        lambda a: _stats())
-
-    server.register_tool(
-        'library_search', '按关键词/标签/类型/合集搜我库里的文献（顶层条目）。',
-        {'type': 'object', 'properties': {
-            'query': {'type': 'string', 'description': '搜索词'},
-            'qmode': {'type': 'string', 'enum': ['titleCreatorYear', 'everything'],
-                      'description': '默认 titleCreatorYear（准）；everything 连全文一起搜（广）'},
-            'tag': {'type': 'string', 'description': '按标签精确过滤'},
-            'itemType': {'type': 'string', 'description': '按条目类型过滤'},
-            'collection': {'type': 'string', 'description': '合集 key，只搜该合集'},
-            'limit': {'type': 'integer', 'minimum': 1, 'maximum': 100,
-                      'description': '返回条数，默认 25'},
-            'start': {'type': 'integer', 'minimum': 0, 'description': '跳过前 N 条'},
-        }},
-        lambda a: _items(library.search(
-            query=a.get('query'), qmode=a.get('qmode', 'titleCreatorYear'),
-            tag=a.get('tag'), item_type=a.get('itemType'),
-            collection=a.get('collection'), limit=a.get('limit', 25),
-            start=a.get('start', 0))))
-
-    server.register_tool(
-        'library_item', '按 key 取单篇完整信息：元数据、附件、笔记数、正文 PDF 路径。',
-        {'type': 'object', 'properties': dict(_KEY), 'required': ['itemKey']},
-        lambda a: _item(library.item(_k(a))))
-
-    server.register_tool(
-        'library_pdf', '定位某篇文献的正文 PDF 本地路径（自动排除补充材料 SI）。',
-        {'type': 'object', 'properties': dict(_KEY), 'required': ['itemKey']},
-        lambda a: _pdf(library.pdf(_k(a))))
-
-    server.register_tool(
-        'library_fulltext',
-        '取某篇文献的正文全文（Zotero 全文索引，免费瞬时；无索引会说明原因）。',
-        {'type': 'object', 'properties': dict(_KEY, **{
-            'maxChars': {'type': 'integer', 'minimum': 100, 'maximum': 100000,
-                         'description': f'返回字符上限，默认 {library.MAX_CHARS}'}}),
-         'required': ['itemKey']},
-        lambda a: _fulltext(library.fulltext(
-            _k(a), max_chars=a.get('maxChars', library.MAX_CHARS))))
-
     # ── 菜单与分组（2026-09-08 加）──────────────────────────────────
-    # 为什么要这两个：`library_fulltext` 一口气吐几万字符，模型读三篇就把
+    # 为什么要这两个：整篇全文一口气几万字符，模型读三篇就把
     # 上下文吃掉一半。先给菜单（几百 token）、再按地址取需要的那两三节，
     # 成本大约是整篇的三十分之一。两个都只读免费，所以可以是 tool。
     server.register_tool(
@@ -146,78 +100,8 @@ def register(server):
             _k(a), a['sectionId'], si=bool(a.get('si')),
             max_chars=a.get('maxChars', library.MAX_CHARS))))
 
-    server.register_tool(
-        'library_collections', '列出全部合集（含父子层级）。',
-        {'type': 'object', 'properties': {}},
-        lambda a: _collections(library.collections()))
-
-    server.register_tool(
-        'library_collection_items', '列出某个合集里的文献。',
-        {'type': 'object', 'properties': {
-            'collectionKey': {'type': 'string'},
-            'limit': {'type': 'integer', 'minimum': 1, 'maximum': 100},
-        }, 'required': ['collectionKey']},
-        lambda a: _items(library.collection_items(
-            a['collectionKey'], limit=a.get('limit', 25))))
-
-    server.register_tool(
-        'library_tags', '列出全部标签及各自文献数（降序）。',
-        {'type': 'object', 'properties': {}},
-        lambda a: _tags(library.tags()))
-
-    server.register_tool(
-        'library_recent', '最近 N 天内新增/修改的文献。',
-        {'type': 'object', 'properties': {
-            'days': {'type': 'integer', 'minimum': 1, 'maximum': 3650,
-                     'description': '回溯天数，默认 7'},
-            'limit': {'type': 'integer', 'minimum': 1, 'maximum': 100},
-        }},
-        lambda a: _items(library.recent(days=a.get('days', 7),
-                                        limit=a.get('limit', 25))))
-
 
 # ── 返回值 → MCP 的 {text, structured}（纯转换）────────────────────────
-
-def _stats():
-    s = library.stats()
-    if not s['zotero_reachable']:
-        return {'text': 'Zotero 本地 API 不可达：请确认 Zotero 桌面已打开，且设置了'
-                        '「允许其他应用与本机上的 Zotero 通信」。', 'structured': s}
-    return {'text': f"顶层条目 {s['top_items']} · 合集 {s['collections']} "
-                    f"· 标签 {s['tags']}", 'structured': s}
-
-
-def _items(items):
-    return {'text': library.render_items(items),
-            'structured': {'count': len(items), 'items': items}}
-
-
-def _item(detail):
-    return {'text': library.render_item(detail), 'structured': detail}
-
-
-def _pdf(r):
-    return {'text': r['pdf_path'] or f"{r['itemKey']} 未找到正文 PDF"
-                                     f"（可能无 PDF 附件或只有补充材料）。",
-            'structured': r}
-
-
-def _fulltext(r):
-    if not r['chars']:
-        return {'text': f"{r['itemKey']} 取不到全文：{r['why_empty']}", 'structured': r}
-    return {'text': r['text'] + ('\n…（已截断，全文更长）' if r['truncated'] else ''),
-            'structured': {k: v for k, v in r.items() if k != 'text'}}
-
-
-def _collections(cols):
-    return {'text': library.render_collections(cols),
-            'structured': {'count': len(cols), 'collections': cols}}
-
-
-def _tags(rows):
-    return {'text': library.render_tags(rows),
-            'structured': {'count': len(rows), 'tags': rows}}
-
 
 def _outline(d):
     return {'text': library.render_outline(d), 'structured': d}
@@ -235,4 +119,4 @@ def _db_stats():
     s = library.db_stats()
     return (f"证据库 {s['papers']} 篇（带 DOI {s['with_doi']}）· 有正文 {s['pdf']} · 有 SI {s['si']} · "
             f"已解析 {s['fulltext']}（SI {s['si_fulltext']}）· 已精读 {s['summary']} · "
-            f"已结构化 {s['structured']} · 其中在 Zotero 的 {s['in_zotero']}")
+            f"已结构化 {s['structured']}")

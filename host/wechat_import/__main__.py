@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
-"""把公众号推送导进 Zotero，并把推文本身当正文精读装上。
+"""把公众号推送收进证据库，并把推文本身当正文精读装上。（2026-10-13 起不再写 Zotero。）
 
 用法:
     python -m host.wechat_import --dry-run              # 先看会导哪些（什么都不写）
-    python -m host.wechat_import --limit 5              # 最近 5 篇：建条目 + 装精读
+    python -m host.wechat_import --limit 5              # 最近 5 篇：收进证据库 + 装精读
     python -m host.wechat_import --limit 5 --with-pdf   # 连正文 PDF 与 SI 一起取到本地
-    python -m host.wechat_import --limit 5 --with-pdf --upload-summary  # 精读也传进 Zotero
-    python -m host.wechat_import --limit 5 --with-pdf --upload   # 连 PDF 与 SI 一起传
     python -m host.wechat_import --file <某篇.md>       # 只导指定的一篇
     python -m host.wechat_import --金标 --limit 50        # 配精读金标：推文当范文存起来，原件进证据库
     python -m host.wechat_import --金标 --只用手上有的      # 同上但不向出版商取，先看手上能配多少
@@ -15,13 +13,7 @@
 
 目录默认取配置里的「公众号推送下载目录」，也可以用 `--dir` 指定。
 
-**会写 Zotero**（建条目、打标签），所以要么在主力机上跑，要么在配了测试账号的
-编程端跑。`--dry-run` 不写任何东西，只告诉你会发生什么。
-
-**附件默认不传**：正文 PDF、SI、精读都先落在本地 `data/` 里 ——
-Zotero 免费存储只有 300 MB，够不了几十篇。
-`--upload-summary` 只传精读（小，而且是你天天看的那份，传了在 Zotero 里点开就能读）；
-`--upload` 连正文 PDF 与 SI 一起传（很占配额，实测有 34.9 MB 的综述）。
+**会写证据库**（主力机上跑）。`--dry-run` 不写任何东西，只告诉你会发生什么。
 
 `--with-pdf` 需要那台机器上开着「取全文用的浏览器」（见 tools/getpdf）。
 不开也能跑，只是先没有正文 PDF，以后随时能补。
@@ -79,8 +71,7 @@ def main():
         return 0
 
     if flag('--金标') or flag('--golden'):
-        # 不写 Zotero、不装精读：推文只当**标尺**存成 reference.md（见 golden.py）。
-        # 会向出版商取原件（除非 --只用手上有的），所以不需要 Zotero 那道守卫。
+        # 不装精读：推文只当**标尺**存成 reference.md（见 golden.py）。
         from host.wechat_import import golden
         res = golden.build(files, allow_fetch=not flag('--只用手上有的'),
                            workers=2 if flag('--两路') else 1)
@@ -88,22 +79,16 @@ def main():
         print(golden.summarize(res))
         return 0
 
-    # 这里**故意不接 --force**：那个开关的意思是「产物重做一遍」，
-    # 不该顺带把「这台机器允不允许写 Zotero」的保护也一起关掉。
-    role.require_prod('把公众号精读导进 Zotero（建条目、传附件、打标签）')
-    res = wi.import_many(files, purpose=opt('--purpose') or '建库',
-                         with_pdf=flag('--with-pdf'),
-                         upload=('all' if flag('--upload')
-                                 else 'summary' if flag('--upload-summary') else False),
-                         force=flag('--force'))
+    # 这里**故意不接 --force**：那个开关的意思是「产物重做一遍」，不该顺带关掉机器角色的保护。
+    role.require_prod('把公众号精读收进证据库（取原件、装精读）')
+    res = wi.import_many(files, with_pdf=flag('--with-pdf'), force=flag('--force'))
     ok = [r for r in res if r['key']]
     print('\n完成：%d/%d 篇进库（新建 %d，本来就有 %d）'
           % (len(ok), len(res),
              sum(1 for r in res if r['action'] == 'created'),
              sum(1 for r in res if r['action'] == 'exists')))
-    print('正文PDF %d 篇、SI %d 篇已落到本地 data/ 里%s'
-          % (sum(1 for r in res if r.get('pdf')), sum(1 for r in res if r.get('si')),
-             '' if flag('--upload') else '（原件没传 Zotero —— 要传加 --upload）'))
+    print('正文PDF %d 篇、SI %d 篇已落到本地 data/ 里'
+          % (sum(1 for r in res if r.get('pdf')), sum(1 for r in res if r.get('si'))))
     for r in res:
         if not r['key']:
             print('  未处理 %s —— %s' % (r['file'][:40], r['note']))

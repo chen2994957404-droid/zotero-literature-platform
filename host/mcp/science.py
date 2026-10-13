@@ -704,7 +704,7 @@ def _fulltext(a):
     else:
         # 只查不取：前三层零成本，同步答
         from tools.getpdf import fulltext as F
-        rs = F.many(dois, allow_fetch=False, limit=len(dois), use_zotero=False)
+        rs = F.many(dois, allow_fetch=False, limit=len(dois))
         return _out('只查不取：%d/%d 篇手上有全文' % (sum(1 for r in rs if r['ok']), len(rs)),
                     {'results': [_slim_result(r) for r in rs], 'rejected': rejected})
     dois, gone = precheck(dois)
@@ -718,7 +718,7 @@ def _fulltext(a):
     except OSError:
         pass
     subproc.spawn([sys.executable, '-m', 'tools.getpdf'] + dois
-                  + ['--fulltext', '--limit', str(len(dois)), '--no-zotero'], cwd=paths.ROOT)
+                  + ['--fulltext', '--limit', str(len(dois))], cwd=paths.ROOT)
     eta = len(dois) * 60
     return _out('已提交 %d 篇，后台串行，预计约 %d 分钟%s' % (
         len(dois), max(1, eta // 60), '；退回 %d 篇' % len(rejected) if rejected else ''),

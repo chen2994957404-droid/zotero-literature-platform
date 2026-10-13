@@ -38,7 +38,7 @@ def test_选项由后端下发而不是前端写死():
     """前端写死过一次，于是后端加档、前端不知道。**选项属于数据，不属于模板。**"""
     sites = {s['name']: s for s in panel.collect_config()['sites']}
     assert sites['ROLE']['options'], 'ROLE 必须带 options 下发'
-    assert sites['ZOTERO_STORAGE']['options'] == [], '自由填写的项不该有 options'
+    assert sites['OLLAMA_HOST']['options'] == [], '自由填写的项不该有 options'
 
 
 def test_所有本机设置都在保存白名单里():

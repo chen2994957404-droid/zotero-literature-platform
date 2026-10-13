@@ -7,14 +7,13 @@
 而这台机器有三样它没有的：机构订阅权限（靠出口 IP）、一个过过人机验证的
 真实浏览器、MineRU 解析额度。**把这三样接到模型手上，付费墙就跨过去了。**
 
-## 四层回退（越靠前越快越省）
+## 三层回退（越靠前越快越省；2026-10-13 起没有「从 Zotero 复制」那层了）
 
     1. 缓存      `raw/<id>/parsed/full.md` 已经在      → 秒回，零成本
     2. 本地正本  `raw/<id>/main.pdf` 已经在            → 只解析
-    3. Zotero    库里这篇有 PDF 附件                    → **复制成本地正本**，再解析
-    4. 取        借浏览器向出版商要                      → 20 秒间隔，慢是故意的
+    3. 取        借浏览器向出版商要                      → 20 秒间隔，慢是故意的
 
-2～4 层都归 `getpdf.land()` 做（2026-09-13 起）：不管从哪来，**正本一律落进 raw/<id>/
+2～3 层都归 `getpdf.land()` 做（2026-09-13 起）：不管从哪来，**正本一律落进 raw/<id>/
 并登记进证据库目录**，本模块只负责解析。
 
 ## 解析分两层（2026-10-04，Claude Science 的需求文档 P0-1）
@@ -66,7 +65,6 @@ log = get_logger('getpdf')
 # 来源标签：给模型看的「这篇是怎么来的」，也用来解释为什么快/慢
 SRC_CACHE = 'cache'        # 解析过了，秒回
 SRC_LOCAL = 'local'        # 本地有 PDF，只花解析
-SRC_ZOTERO = 'zotero'      # Zotero 库里有附件，只花解析
 SRC_FETCH = 'fetch'        # 真去出版商取了
 
 # ── 结果里给机器读的状态码（2026-10-04，Claude Science 的需求文档 P0-2）─────────
@@ -99,10 +97,10 @@ def code_of(reason):
     return _REASON_CODE.get(reason or '', NETWORK_ERROR)
 
 
-def resolve_id(doi, zotero_index=None):
-    """DOI → 这篇在本平台的 id。实现在 `getpdf.resolve_id`（证据库 → Zotero → 按 DOI 生成）。"""
+def resolve_id(doi):
+    """DOI → 这篇在本平台的 id。实现在 `getpdf.resolve_id`（证据库已有就用那个，没有按 DOI 生成）。"""
     from tools import getpdf
-    return getpdf.resolve_id(doi, zotero_index)
+    return getpdf.resolve_id(doi)
 
 
 def tier_of(pid, si=False):
@@ -191,7 +189,7 @@ class Upgrader:
         self._t.join()
 
 
-def one(doi, zotero_index=None, allow_fetch=True, use_zotero=True, upgrader=None):
+def one(doi, allow_fetch=True, upgrader=None):
     """一篇 → dict(doi, id, ok, code, retryable, stage, tier, route, source, secs, chars, why, si)。**不抛异常**。
 
     `allow_fetch=False` 时只走前三层（不向出版商发任何请求）——
@@ -204,7 +202,7 @@ def one(doi, zotero_index=None, allow_fetch=True, use_zotero=True, upgrader=None
     if not pdf_fetch.is_doi(doi):
         return _fail_early(doi, '不像一个 DOI（应形如 10.1016/j.cej.2025.164092）')
     try:
-        pid, in_zotero = resolve_id(doi, zotero_index)
+        pid = resolve_id(doi)
     except paths.BadKeyError as e:
         return _fail_early(doi, str(e))
     route = {'r': ''}
@@ -220,7 +218,7 @@ def one(doi, zotero_index=None, allow_fetch=True, use_zotero=True, upgrader=None
         return {'doi': doi, 'id': pid, 'ok': ok, 'code': code, 'retryable': code in RETRYABLE,
                 'stage': stage, 'tier': tier_of(pid), 'route': route['r'] or source,
                 'source': source, 'secs': round(time.time() - t0, 1), 'chars': chars,
-                'in_zotero': in_zotero, 'why': why,
+                'why': why,
                 'si': _si_state(pid, allow_fetch, upgrader) if ok else ''}
 
     # ── 1. 缓存 ────────────────────────────────────────────────────
@@ -230,7 +228,7 @@ def one(doi, zotero_index=None, allow_fetch=True, use_zotero=True, upgrader=None
         from shared.kernel import catalog
         if allow_fetch and catalog.si_status(pid) == catalog.SI_UNKNOWN:
             try:
-                _land(doi, allow_fetch, zotero_index, use_zotero)
+                _land(doi, allow_fetch)
             except Exception as e:
                 log.warn('%s 补 SI 时出错（正文不受影响）：%s', doi, str(e)[:120])
         # 只有快速层的：趁这次有人要，把 MineRU 那一档补上（后台，不挡）
@@ -239,11 +237,11 @@ def one(doi, zotero_index=None, allow_fetch=True, use_zotero=True, upgrader=None
             upgrader.add(pid, 'main', paths.local_pdf(pid))
         return done(True, SRC_CACHE)
 
-    # ── 2～4. 落成本地正本（本地 → Zotero 复制 → 真去取）───────────
+    # ── 2～3. 落成本地正本（本地 → 真去取）───────────
     had_local = os.path.exists(paths.local_pdf(pid))
     run = None if had_local else jobs.start(pid, 'fetch', producer='fulltext')
     try:
-        landed = _land(doi, allow_fetch, zotero_index, use_zotero)
+        landed = _land(doi, allow_fetch)
     except Exception as e:                    # 浏览器没开、网络断：这篇算失败，整批照跑
         if run:
             jobs.fail(run, str(e)[:200])
@@ -256,7 +254,7 @@ def one(doi, zotero_index=None, allow_fetch=True, use_zotero=True, upgrader=None
         return done(False, SRC_FETCH if allow_fetch else '', landed.get('note') or '没取到', code=code)
     if run:
         jobs.finish(run)
-    source = {'local': SRC_LOCAL, 'zotero': SRC_ZOTERO, 'fetch': SRC_FETCH}.get(
+    source = {'local': SRC_LOCAL, 'fetch': SRC_FETCH}.get(
         landed.get('source'), SRC_LOCAL)
     if source == SRC_FETCH:
         route['r'] = 'oa' if landed.get('reason') == 'oa' else 'browser_pdf'
@@ -320,11 +318,10 @@ def _si_state(pid, allow_parse=True, upgrader=None):
     return 'parsed' if t != pdf_parse.TIER_NONE else 'pending'
 
 
-def _land(doi, allow_fetch, zotero_index, use_zotero=True):
+def _land(doi, allow_fetch):
     """真正去落地。**单独一个函数是为了能在测试里替换掉**（别真敲出版商）。"""
     from tools import getpdf
-    return getpdf.land(doi, with_si=True, allow_fetch=allow_fetch,
-                       zotero_index=zotero_index, use_zotero=use_zotero)
+    return getpdf.land(doi, with_si=True, allow_fetch=allow_fetch)
 
 
 def publisher_of(doi):
@@ -332,7 +329,7 @@ def publisher_of(doi):
     return (doi or '').split('/', 1)[0].lower()
 
 
-def many(dois, allow_fetch=True, gap=None, progress=None, limit=3, use_zotero=True, notify=None):
+def many(dois, allow_fetch=True, gap=None, progress=None, limit=3, notify=None):
     """一批 DOI → 一批结果。**取是串行的，20 秒间隔不能省**。
 
     为什么默认只收 3 篇（`limit`）：出版商风控封的是**整个机构的 IP**，
@@ -340,24 +337,11 @@ def many(dois, allow_fetch=True, gap=None, progress=None, limit=3, use_zotero=Tr
 
     `progress` 给一个文件路径就会边跑边写进度 —— 这是「发起 + 轮询」的那半。
     下载都跑完就标 `done`（新作业可以交了），MineRU 升级还在后台的标 `upgrading`。
-    `use_zotero=False`：完全不碰 Zotero（不问它的 DOI 索引、不去它那找附件）—— Claude Science 那条路。
     `notify(标题, 正文)`：撞上人机验证时喊人（主力机桌面弹提醒）；每家出版商只喊一次。
     """
     from tools import getpdf
     dois = [d.strip() for d in (dois or []) if d and d.strip()][:max(1, int(limit))]
     gap = getpdf.GAP if gap is None else gap
-    index = {}
-    # Zotero 的 DOI 索引要问一趟 Zotero（实测约 10 秒）。全都已经在证据库里、解析过的，
-    # 根本用不上它 —— 「只查不取」原来 11.5 秒、而 library_db_search 只要 1 秒，就差在这（2026-09-30）
-    from shared.kernel import catalog
-    def _cached(d):
-        pid = catalog.find(d)
-        return bool(pid) and os.path.exists(paths.fulltext(pid))
-    if use_zotero and not all(_cached(d) for d in dois):
-        try:
-            index = getpdf.doi_index()         # Zotero 里已有的先认出来，能省一次下载
-        except Exception as e:
-            log.warn('取 Zotero 的 DOI 索引失败（不影响，只是可能重下）：%s', str(e)[:120])
 
     res, t0 = {}, time.time()
     # 心跳：解析一篇大文献要好几分钟，期间原来进度一动不动 —— Claude Science 看着「用时卡在 34.8 秒」
@@ -370,7 +354,7 @@ def many(dois, allow_fetch=True, gap=None, progress=None, limit=3, use_zotero=Tr
     threading.Thread(target=_beat, daemon=True).start()
     up = Upgrader() if allow_fetch else None
     try:
-        _many_loop(dois, res, t0, now, index, allow_fetch, use_zotero, gap, progress, up, notify)
+        _many_loop(dois, res, t0, now, allow_fetch, gap, progress, up, notify)
     finally:
         stop.set()
     out = _ordered(dois, res)
@@ -427,7 +411,7 @@ def _deferred(doi, why, code=CAPTCHA_REQUIRED):
             'secs': 0, 'chars': 0, 'deferred': True, 'why': why}
 
 
-def _many_loop(dois, res, t0, now, index, allow_fetch, use_zotero, gap, progress, up=None, notify=None):
+def _many_loop(dois, res, t0, now, allow_fetch, gap, progress, up=None, notify=None):
     """串行跑一遍；**撞上人机验证的出版商，后面同家的先跳过，别家照跑**（2026-10-04 需求 P0-3）。
 
     原来撞上验证就整批等着补试，其它出版商的也跟着干等。现在：同一家的暂缓（不去敲 —— 验证是按站点的，
@@ -445,7 +429,7 @@ def _many_loop(dois, res, t0, now, index, allow_fetch, use_zotero, gap, progress
 
     def _run(doi):
         now.update(doi=doi, since=time.time())
-        r = one(doi, zotero_index=index, allow_fetch=allow_fetch, use_zotero=use_zotero, upgrader=up)
+        r = one(doi, allow_fetch=allow_fetch, upgrader=up)
         if r.get('source') == SRC_FETCH:
             last_fetch['t'] = time.time()
         res[doi] = r
@@ -592,4 +576,4 @@ def _menu_of(pid):
 
 def _cn(source):
     return {SRC_CACHE: '早就解析过', SRC_LOCAL: '本地有 PDF',
-            SRC_ZOTERO: 'Zotero 库里有', SRC_FETCH: '刚去取的'}.get(source, source)
+            SRC_FETCH: '刚去取的'}.get(source, source)

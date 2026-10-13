@@ -17,7 +17,7 @@ try:
 except Exception:
     pass
 
-from shared.kernel import errors, paths, proc_lock, role
+from shared.kernel import catalog, errors, paths, proc_lock, role
 from shared.kernel.cli import flag
 from shared.kernel.log import get_logger
 from host.app import jobs
@@ -25,9 +25,52 @@ from host.app import jobs
 log = get_logger('app_jobs')
 
 
+def adopt_reference(pid, log=print):
+    """这篇有人写的范文（公众号推文）而且还没有正文精读 → 推文当正文精读（2026-09-06 用户定的策略 A）。
+
+    精读那边看到状态库里 `main_summary` 已完成（producer=wechat），就只补 SI。返回 True 表示这次装上了。
+    （2026-10-13 从打标签精读监听 host.watcher.service 搬来：那条监听随 Zotero 一起删了。）
+    """
+    from host import wechat_import
+    ref = paths.reference(pid)
+    if not os.path.exists(ref) or os.path.exists(paths.summary(pid)):
+        return False
+    try:
+        article = wechat_import.article_from_reference(ref)
+        r = wechat_import.build_local(pid, article, log=log)
+        return not r.get('skipped')
+    except Exception as e:
+        log(f'  [范文没装上] {str(e)[:120]} —— 照常跑我们自己的精读')
+        return False
+
+
+def try_fetch_si(pid, pdf_path, log=print):
+    """精读前补一次 SI：有 DOI、目录里没记「确认没有 SI」、取全文用的浏览器开着才去取。
+
+    取到 → 落进 data/raw/<id>/si.*；出版商说没挂 → 目录记 si_status=none，以后不再来。
+    浏览器没开不算错：写一行日志，照常只精读正文。（同样从 host.watcher.service 搬来。）
+    """
+    doi = catalog.doi_of(catalog.read_meta(pid))
+    if not doi:
+        return False
+    if catalog.si_status(pid) == catalog.SI_NONE:
+        log('  [SI] 目录记着这篇没有补充材料（出版商页面确认过），不再去取')
+        return False
+    try:
+        from tools import getpdf
+        r = getpdf.land(doi, pdf_path=pdf_path)
+    except Exception as e:                       # 浏览器没开 / 取件模块不可用 —— 不拖累精读
+        log(f'  [SI] 这次没能补 SI：{str(e)[:100]}（照常只精读正文）')
+        return False
+    if r.get('si'):
+        log(f'  [SI] 补到了补充材料：{os.path.basename(r["si"])}')
+        return True
+    log(f'  [SI] 没取到：{r.get("note") or "出版商那边没给"}')
+    return False
+
+
 def deepread_one(pid):
     """一篇精读 → (state, note)。"""
-    from host.watcher.service import _try_fetch_si, adopt_reference
     from tools import deepread
     if adopt_reference(pid, log=log):
         log('  公众号范文装上当正文精读，只补 SI')
@@ -35,7 +78,7 @@ def deepread_one(pid):
     pdf_path = local if os.path.exists(local) else None
     si_exists = bool(paths.find_local_si(pid))
     if not si_exists and pdf_path:
-        si_exists = _try_fetch_si(pid, {'data': {}}, pdf_path)
+        si_exists = try_fetch_si(pid, pdf_path, log=log)
     r = deepread.run(pid, pdf_path=pdf_path, si_exists=si_exists, log=log)
     names = {'full': '全文精读完成', 'main': '正文精读完成', 'si': 'SI 精读完成',
              'nopdf': '本地没有可精读的文件', 'failed': '没做成：' + str(r.error or '')[:200]}

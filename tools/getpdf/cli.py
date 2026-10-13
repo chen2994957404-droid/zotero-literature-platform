@@ -12,18 +12,9 @@
     python -m tools.getpdf --file dois.txt --limit 10    # 这次最多取 10 篇
     python -m tools.getpdf 10.1016/xxx --out D:/somewhere   # 只下到某个目录，不收进证据库
 
-    python -m tools.getpdf --从Zotero落地                # 把 Zotero 里已有的文献复制成本地正本（一次性回流）
-    python -m tools.getpdf --从Zotero落地 --limit 20     # 先试 20 篇
     python -m tools.getpdf --补SI [--limit 20] [--gap 20] # 给证据库里没取过 SI 的补 SI（幂等，停了再跑接着补）
 
-**取到的默认收进证据库**（raw/<id>/main.pdf + si.* + 目录登记），不写 Zotero。
-
-  收进 Zotero（会写你的库）:
-    python -m tools.getpdf --file dois.txt --to-zotero             # 默认「建库」用途
-    python -m tools.getpdf 10.1016/xxx --to-zotero --purpose 精读   # 标成重点文章
-    python -m tools.getpdf --file dois.txt --to-zotero --with-si   # 连补充材料一起
-    python -m tools.getpdf 10.1016/xxx --to-zotero --collection "阿课题/抗冲丙烯酸酯"
-        └ 归到指定合集。**中间层必须已存在**，只有最后一层会自动新建
+**取到的收进证据库**（raw/<id>/main.pdf + si.* + 目录登记）。2026-10-13 起 Zotero 移出平台，不再有「推到 Zotero」。
 
 **跑之前**：那台机器上要有一个带调试口启动的浏览器，**里面得有人过过一次人机验证**
 （机构订阅靠出口 IP 自动生效，不用登录；人机验证的通行证跟着浏览器的用户资料走）。
@@ -34,11 +25,6 @@
 
 默认很慢（每篇间隔 20 秒、单次最多 25 篇），这是**故意的**：
 出版商封的是整个机构的 IP，代价全校担。要快请自己显式加 --gap / --limit。
-
-`--to-zotero` 做四件事，每件都**幂等**（同一批跑两遍 = 跑一遍）：
-查库里有没有 → 没有就按 Crossref 元数据建条目 → 挂正文 PDF（已有就不重复挂）
-→ 放进「<顶层合集>/建库用」或「/重点精读」。
-**不打精读标签、不触发精读** —— 那是花钱的事，什么时候开始由你决定。
 
 `--with-si` 连补充材料一起取。**值得开** —— 本项目验证过：投料量、配比、
 温度时间几乎只写在 SI 里。只要「实验那份」，演示视频一律不下
@@ -100,16 +86,12 @@ def main():
                               force=flag('--force'))
         # --limit：一次处理几篇（默认 3，MCP 的 /science 面一次最多交 25 篇）。
         # 只是「一批几篇」，风控靠的串行 + 20 秒间隔在 many() 里，不受它影响
-        # --no-zotero：完全不碰 Zotero（MCP 的 /science 面，给 Claude Science 用的那条路）
         from tools.getpdf import notify
         rs = F.many(keys, allow_fetch=allow, limit=int(opt('--limit') or 3),
-                    progress=paths.runtime('fulltext_progress.json'),
-                    use_zotero=not flag('--no-zotero'), notify=notify.desktop)
+                    progress=paths.runtime('fulltext_progress.json'), notify=notify.desktop)
         print(F.summarize(rs))
         return 0 if all(r['ok'] for r in rs) else 1
 
-    if flag('--从Zotero落地'):
-        return _land_from_zotero()
     if flag('--补SI'):
         # 给证据库里「没取过 SI」的文献补 SI；幂等，停了再跑接着补
         if not getpdf.probe().get('ok'):
@@ -138,29 +120,7 @@ def main():
     gap = int(opt('--gap') or getpdf.GAP)
     limit = int(opt('--limit') or getpdf.LIMIT)
 
-    to_zotero = flag('--to-zotero')
     with_si = flag('--with-si')
-    purpose = opt('--purpose') or '建库'
-    if to_zotero:
-        if purpose not in getpdf.PURPOSES:
-            print(f'--purpose 只能是 {" / ".join(getpdf.PURPOSES)}，'
-                  f'给的是「{purpose}」')
-            return 2
-        # 写 Zotero 是不可逆的副作用 —— 守卫写在函数体里，不能写模块顶层（强制规范 #7）
-        role.require_prod('把文献收进你的 Zotero 库（建条目、挂 PDF、归合集）',
-                          force=flag('--force'))
-        # **先确认拿得到密钥再动手**，别等 PDF 都下完了才在入库那步炸出 traceback。
-        # 最常见的原因不是「没配」，而是**远程 SSH 会话打不开 Windows 凭据库** ——
-        # 密钥明明存着，`get_key` 却返回空串（2026-09-06 就这么炸过一次）。
-        from shared.kernel.config import get_key
-        if not get_key('ZOTERO_API_KEY'):
-            print('读不到 Zotero 的密钥，没法写库 —— 先不下载了，省得白跑一趟。')
-            print('  ① 如果你是**远程连过来**跑的：SSH 会话打不开 Windows 凭据库，')
-            print('     密钥存着也读不到。换成 `job` 通道跑，或者直接在那台机器上跑。')
-            print('  ② 如果是在本机跑：去控制面板把 Zotero 的密钥填上。')
-            print('  （不带 --to-zotero 只取 PDF 不受影响。）')
-            return 1
-
     p = getpdf.probe()
     if not p['ok']:
         print(f'浏览器连不上（{p["cdp"]}），先跑 --probe 看怎么办。')
@@ -194,14 +154,11 @@ def main():
         _fetch_si_all(results, where, gap)
     if not opt('--out'):
         _land_all(results)              # 收进证据库：正本 + 目录。--out 时是「只下到那里」
-    if to_zotero:
-        _stash_all(results, purpose, with_si=with_si,
-                   collection=opt('--collection'))
     return 0
 
 
 def _land_all(results):
-    """把拿到的正文 / SI 收进证据库（复制成正本 + 登记目录）。不联网、不写 Zotero。"""
+    """把拿到的正文 / SI 收进证据库（复制成正本 + 登记目录）。不联网。"""
     got = [r for r in results if r['ok'] and r['path']]
     if not got:
         return
@@ -218,25 +175,6 @@ def _land_all(results):
               + ('  +SI' if l.get('si') else '') + (f'  （{l["note"]}）' if l['note'] else ''))
     print('  ' + '，'.join(f'{n} 篇{ {"landed": "新落地", "exists": "已有", "failed": "失败"}[a] }'
                          for a, n in counts.items()))
-
-
-def _land_from_zotero():
-    """一次性回流：Zotero 里已有的文献 → 本地正本 + 目录。只读 Zotero。"""
-    from tools.getpdf import from_zotero
-    limit = int(opt('--limit') or 0) or None
-    print('把 Zotero 里的文献复制成本地正本（不动 Zotero 里的任何东西）…')
-    try:
-        c = from_zotero.land_all(limit=limit, log_fn=print, quiet=flag('--安静'))
-    except Exception as e:
-        print(f'连不上 Zotero（{type(e).__name__}）—— 这一步要在 Zotero 正在跑的那台机器上做。')
-        return 1
-    print(f'\n回流结果：新落地 {c["landed"]} 篇 · 早就在 {c["exists"]} 篇 · '
-          f'没附件 {c["nopdf"]} 篇 · 失败 {c["failed"]} 篇')
-    from shared.kernel import catalog
-    st = catalog.stats()
-    print(f'证据库现在：{st["papers"]} 篇，其中有正文 {st["pdf"]}、有 SI {st["si"]}、'
-          f'已解析 {st["fulltext"]}、已精读 {st["summary"]}')
-    return 0
 
 
 def _fetch_si_all(results, where, gap):
@@ -258,45 +196,3 @@ def _fetch_si_all(results, where, gap):
         print(f'  [{i}/{len(got)}] {"✓" if si["ok"] else "×"} {r["doi"]}  {note}')
         if i < len(got) and si['reason'] != 'exists':
             time.sleep(gap)
-
-
-def _stash_all(results, purpose, with_si=False, collection=None):
-    """把拿到的那些收进 Zotero，逐篇报告。"""
-    got = [r for r in results if r['ok'] and r['path']]
-    if not got:
-        print('\n没有可以收进 Zotero 的（这批一篇都没拿到）。')
-        return
-    sub, why = getpdf.PURPOSES[purpose]
-    where = collection or f'{getpdf.collection_top()}/{sub}'
-    print(f'\n收进 Zotero → 「{where}」（{why}）')
-
-    words = {'created': '新建了条目并挂上 PDF', 'attached': '条目本来就有，补了 PDF',
-             'exists': '本来就在库里', 'failed': '没成'}
-    print('  先取一份全库 DOI 索引用来查重…')
-    index = getpdf.doi_index()
-    print(f'  库里现有 {len(index)} 篇带 DOI 的文献')
-    col = (getpdf.resolve_collection(collection) if collection
-           else getpdf.ensure_tree(purpose))
-    counts = {}
-    for i, r in enumerate(got, 1):
-        s = getpdf.stash(r['doi'], r['path'], purpose=purpose,
-                         col_key=col, index=index)
-        counts[s['action']] = counts.get(s['action'], 0) + 1
-        mark = '✓' if s['ok'] else '×'
-        note = f'  （{s["note"]}）' if s['note'] else ''
-        line = (f'  [{i}/{len(got)}] {mark} {s["doi"]}  '
-                f'{words.get(s["action"], s["action"])}{note}')
-        if with_si and s['ok'] and s['item']:
-            si = r.get('si') or {}
-            if si.get('ok') and si.get('path'):
-                did, why = getpdf.attach_si(s['item'], si['path'])
-                line += '  + SI 挂上了' if did else f'  + SI：{why}'
-            else:
-                line += '  + 没有 SI'
-        print(line)
-
-    print('\n入库结果：')
-    for a, n in sorted(counts.items(), key=lambda kv: -kv[1]):
-        print(f'  {n} 篇 · {words.get(a, a)}')
-    print('\n没有打精读标签，也没有触发精读 —— 要精读的话你在 Zotero 里打「待处理」。')
-    print('（正本已在证据库里；Zotero 里的只是给你看的副本。）')

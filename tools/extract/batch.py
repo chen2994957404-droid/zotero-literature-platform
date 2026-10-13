@@ -34,7 +34,6 @@ try:
 except Exception:
     pass
 
-from shared.adapters import zotero_client as zotero
 from shared.adapters.pdf_parse import parse_pdf, PDFParseError
 from shared.kernel import paths, role
 from shared.kernel.cli import flag, pos
@@ -59,9 +58,9 @@ def ensure_fullmd(key, log=print):
     if os.path.exists(md):
         log('  [复用] 已有 full.md')
         return md
-    pdf = zotero.find_pdf(key)
-    if not pdf:
-        log('  [跳过] Zotero 里找不到正文 PDF')
+    pdf = paths.local_pdf(key)
+    if not os.path.exists(pdf):
+        log('  [跳过] 证据库里没有正文 PDF（先取全文）')
         return None
     log(f'  [MineRU] 解析 {os.path.basename(pdf)} ...')
     try:
@@ -103,22 +102,7 @@ def extract_many(keys, force=False, parse_missing=False, log=print):
     return done
 
 
-# ───────────────────────── 粗层：Zotero 全文索引 + 本地模型 ─────────────────────────
-
-def _library_articles():
-    """Zotero 库里所有顶层文献条目（分页取完）。"""
-    arts, start = [], 0
-    while True:
-        page = zotero.search_items(limit=100, start=start)
-        if not page:
-            break
-        arts += page
-        start += 100
-        if len(page) < 100:
-            break
-    return [x for x in arts if x['data'].get('itemType') in
-            ('journalArticle', 'conferencePaper', 'thesis', 'bookSection', 'book')]
-
+# ───────────────────────── 粗层：证据库全文 + 本地模型 ─────────────────────────
 
 def _already_done():
     """(已抽过的 key, 精层受保护的 key)。

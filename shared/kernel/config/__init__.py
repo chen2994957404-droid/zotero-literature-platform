@@ -16,7 +16,6 @@
 
 .env 格式（该文件已在 .gitignore，不进版本库）：
     DEEPSEEK_KEY=sk-xxx
-    ZOTERO_API_KEY=xxx
     MINERU_TOKEN=sk-xxx
 """
 import os
@@ -38,7 +37,7 @@ _cache = None
 KEYRING_SERVICE = 'literature-platform'
 
 # 哪些是「密钥」（存凭据库），哪些是普通配置（留在 .env，需要可读可移植）
-SECRET_KEYS = ('DEEPSEEK_KEY', 'ZOTERO_API_KEY', 'MINERU_TOKEN', 'SILICONFLOW_KEY',
+SECRET_KEYS = ('DEEPSEEK_KEY', 'MINERU_TOKEN', 'SILICONFLOW_KEY',
                'SCIVERSE_KEY', 'OPENALEX_KEY', 'GEMINI_KEY', 'DASHSCOPE_KEY')
 
 
@@ -169,7 +168,7 @@ def all_keys():
     if _cache is None:
         _cache = _load_env_file()
     names = set(_cache.keys())
-    for n in ('DEEPSEEK_KEY', 'ZOTERO_API_KEY', 'MINERU_TOKEN', 'SILICONFLOW_KEY',
+    for n in ('DEEPSEEK_KEY', 'MINERU_TOKEN', 'SILICONFLOW_KEY',
               'OPENALEX_KEY'):
         if os.environ.get(n):
             names.add(n)
@@ -187,9 +186,9 @@ SITE_SETTINGS = [
     # ⚠ 角色放第一位：它决定这台机器**允许做什么**，是安全项不是偏好项。
     #   见 docs/howto/两台机器的分工.md 与 shared/kernel/role.py。默认 dev 是刻意的（fail safe）。
     ('ROLE', '机器角色', 'dev',
-     'dev=编程端（不许写 Zotero、不许跑 watcher、不许跑全库作业）；'
+     'dev=编程端（不许跑常驻服务、全库作业、花钱的批量）；'
      'prod=运行端（主力机，允许全部操作）；'
-     'test=编程端但接的是**测试 Zotero 账号**（允许写，但只许写测试库）'),
+     'test=编程端测试档（允许跑，产物只在本机）'),
     # ⚠ 额度紧跟角色之后，理由相同：它也是**安全项不是偏好项**。
     #   角色管「这台机器能不能写」，额度管「今天还能花多少」——
     #   2026-09-10 证明了只有前者是不够的：外部 agent 一次批量精读 10 篇，
@@ -207,28 +206,10 @@ SITE_SETTINGS = [
      'Jev 有自己的月度额度，不算在里面。本地模型免费，不算'),
     # 2026-09-27 用户定：证据库这块先停，只留「打标签 → 精读」。
     #   开关管的是**后台自己干的**那几件（落地流水线、每日盯新刊 + 自动取件）；
-    #   工具本身（人或 AI 点一次做一次）不受影响。每小时的 LiteratureAutoSync 是计划任务，在任务计划里停。
+    #   工具本身（人或 AI 点一次做一次）不受影响。
     ('AUTO_BUILD', '后台自动建库', '0',
      '1 = 开：新文献一落地就自动解析 / 拆章节 / 进检索库，每天凌晨盯新刊并自动下载达标的几篇。'
-     '0 = 关（默认）：后台只做「打待处理标签 → 精读」，其余等人或 AI 主动要时才做'),
-    # 2026-10-03 用户定：除了 Claude Science 要用的（8778 MCP 服务、取全文浏览器、Ollama），后台全停。
-    #   这条管的是「盯 Zotero 待处理标签 → 自动精读」那个常驻进程；关了之后看门狗不再拉它，
-    #   只守 8778 与取全文浏览器。
-    ('TAG_DEEPREAD', '打标签自动精读', '1',
-     '1 = 开（默认）：后台盯 Zotero「待处理」标签，打上就自动精读并写回。'
-     '0 = 关：打标签不再触发精读；Claude Science 用的检索 / 取全文服务照常'),
-    ('ZOTERO_USER_ID', 'Zotero 用户 ID（本地 API）', '',
-     'Zotero 本地 API 用；本机开着 Zotero 时填 0 也行'),
-    ('ZOTERO_WEB_USER_ID', 'Zotero 用户 ID（写回用）', '',
-     '写 zotero.org 用的**真实数字 id**（设置→账户里能看到）。'
-     '留空则沿用上面那个 —— 但上面填 0 时写回必然失败'),
-    ('ZOTERO_TEST_USER_ID', '测试账号的用户 ID', '',
-     '只有机器角色=test 时才用：写回的目标必须是这个 id，否则直接拒绝。'
-     '这条是「别把测试改动写进真实文献库」的执行点'),
-    ('ZOTERO_STORAGE', 'Zotero 附件目录', '',
-     '形如 D:\\...\\Zotero\\storage，精读结果要写进去'),
-    ('ZOTERO_API_HOST', 'Zotero 本地服务地址', 'http://localhost:23119',
-     '一般不用改'),
+     '0 = 关（默认）：后台什么都不自动做，等人或 AI 主动要时才做'),
     ('OLLAMA_HOST', 'Ollama 地址', 'http://localhost:11434',
      '一般不用改'),
     ('OLLAMA_MODELS', 'Ollama 模型目录', '',
@@ -279,21 +260,9 @@ def need_site(name):
     return v
 
 
-def web_user_id():
-    """写 zotero.org 时该用哪个用户 id。
-
-    **本地 API 和 Web API 要的不是同一个东西**：本地 API 认 `0`，
-    Web API 必须是真实数字 id。此前两者共用一个配置项 `ZOTERO_USER_ID`，
-    于是编程端填 0 时「读得动、写必失败」，而失败原因看起来像鉴权问题
-    —— 这个坑记了很久（见 docs/待办与需求.md）。现在拆开：
-    没单独配就沿用旧值，行为与从前一致；配了就以它为准。
-    """
-    return get_site('ZOTERO_WEB_USER_ID') or get_site('ZOTERO_USER_ID')
-
-
 def site_missing():
     """哪些必填的本机设置还没配（装到新电脑时用来提示）。返回键名列表。"""
-    must = ('ZOTERO_USER_ID', 'ZOTERO_STORAGE')
+    must = ()            # 2026-10-13 Zotero 移出平台后，没有「不填就跑不了」的本机设置了
     return [k for k in must if not get_site(k)]
 
 

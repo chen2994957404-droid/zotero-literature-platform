@@ -83,12 +83,9 @@ def main():
         print('好，什么都没做。')
         return 0
 
-    # 这里**故意不接 --force**：那个开关的意思是「产物重做一遍」，
-    # 不该顺带把「这台机器允不允许写 Zotero」的保护也一起关掉。
-    role.require_prod('把公众号精读导进 Zotero（建条目、传附件、打标签）')
-    # 精读传进 Zotero（它小，而且是你要看的那份）；正文 PDF 与 SI 留在本地。
-    res = wi.import_many(todo, with_pdf=True,
-                         upload='all' if flag('--upload') else 'summary')
+    # 这里**故意不接 --force**：那个开关的意思是「产物重做一遍」，不该顺带关掉机器角色的保护。
+    role.require_prod('把公众号精读收进证据库（取原件、装精读）')
+    res = wi.import_many(todo, with_pdf=True)
     ok = [r for r in res if r['key']]
     print('\n完成：%d/%d 篇进库（新建 %d，本来就有 %d）'
           % (len(ok), len(res),

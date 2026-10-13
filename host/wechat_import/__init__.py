@@ -1,39 +1,33 @@
 # -*- coding: utf-8 -*-
-"""wechat_import · 公众号推送 → Zotero 条目 + 一份现成的正文精读
+"""wechat_import · 公众号推送 → 证据库里一篇 + 一份现成的正文精读
 
 **解决的真实问题**（用户 2026-09-06 定）：我们自己的正文精读，本来就是照着
 「高分子学人」的推送学的 —— 那份是人写的，质量更高。既然取 PDF 的通道已经打通，
 就该反过来用：**推送本身当正文精读**，我们只补它没有的东西（SI）。
 
-所以一篇推送进来会变成四样东西：
+所以一篇推送进来会变成三样东西：
 
-    1. Zotero 里一个条目（按 Crossref 元数据建）—— 只有元数据，很轻
-    2. `data/raw/<KEY>/main.pdf` · `si.pdf|docx` —— 正文与补充材料的**本地正本**
-    3. `data/curated/<KEY>/summary.html` —— 推送正文，图内嵌，样式与我们的精读一致
-    4. 状态库里一条 `main_summary` 完成记录，producer=`wechat`
+    1. `data/raw/<id>/main.pdf` · `si.pdf|docx` —— 正文与补充材料的**本地正本**（要 --with-pdf）
+    2. `data/curated/<id>/summary.html` —— 推送正文，图内嵌，样式与我们的精读一致
+    3. 状态库里一条 `main_summary` 完成记录，producer=`wechat`
 
-**附件默认不传 Zotero**（用户 2026-09-06 定）：Zotero 官方存储免费只有 300 MB，
-单个附件还有体积上限（实测 4.1 MB 过、5.1 MB 就 413）。建库本来就不需要 Zotero ——
-先把文献落到本地，需要哪篇再 `upload_attachments(key)` 传上去。
-卡在配额上的应该只是「传」，不该是「取」和「读」。
+（2026-10-13 起不再建 Zotero 条目、不打标签、不传附件 —— Zotero 移出平台。id 按 DOI 起。）
 
-第 3 条是关键：有了它，`tools.deepread.run()` 会**跳过正文精读**（省钱、也不覆盖
+第 2 条是关键：有了它，`tools.deepread.run()` 会**跳过正文精读**（省钱、也不覆盖
 人写的那份），只去做 SI，然后把 SI 合并进来 —— 「全文精读 = 公众号正文 + 我们的 SI」
 就这么成立，不用改 deepread 一行代码。
 
-**为什么住在 host/**：它要串起 `getpdf`（建条目、取 PDF）与 `deepread`
-（状态标签、合并），跨工具的编排上浮到 host（硬规则 2）。
+**为什么住在 host/**：它要串起 `getpdf`（取 PDF）与 `deepread`（合并），跨工具的编排上浮到 host（硬规则 2）。
 
 对外接口：
     parse_md(path)                  → 一篇 md → article（不联网、不写盘）
     list_dir(dir)                   → 目录里的 md，按推送日期从新到旧
     build_local(key, article)       → 落地 summary.html + meta.json + 状态记录
-    import_one(path, ...)           → 一篇走完：建条目 → 取原件到本地 → 装精读
+    import_one(path, ...)           → 一篇走完：定 id → 取原件到本地 → 装精读
     import_many(paths, ...)         → 一批（单篇失败不拖累整批）
-    upload_attachments(key)         → 把本地原件与精读传进 Zotero（按需，另一步）
 
 **图为什么内嵌成 base64**：跟 `deepread` 的产物保持同一形状 —— 一个 HTML 文件
-自带全部图，扔进 Zotero 附件就能看，也不怕微信图床哪天失效。
+自带全部图，也不怕微信图床哪天失效。
 """
 import base64
 import io
@@ -44,7 +38,7 @@ import shutil
 import time
 
 from shared.adapters import wechat_seed
-from shared.kernel import jobs, paths
+from shared.kernel import catalog, jobs, paths
 from shared.kernel.log import get_logger
 
 log = get_logger('wechat_import')
@@ -242,26 +236,18 @@ def _write_meta(key, article):
         log.warning('meta.json 没写成: %s', e)
 
 
-# ── 写 Zotero 的那一段（调用方必须先过 role 守卫）────────────────────
-def import_one(md_path, purpose='建库', with_pdf=False, with_si=None,
-               upload=False, force=False, log=print):
-    """一篇 md → Zotero 条目 + 本地原件 + 正文精读。**会写 Zotero**（建条目、打标签）。
+# ── 收进证据库（2026-10-13 起不再写 Zotero）────────────────────────────
+def import_one(md_path, with_pdf=False, with_si=None, force=False, log=print):
+    """一篇 md → 证据库里一篇（按 DOI 起 id）+ 本地原件 + 正文精读（推文本身）。
 
-    返回 dict(file, doi, key, action, summary, pdf, si, note)。`action` 沿用
-    getpdf 的说法（created / exists / skipped / failed），好跟那条线对得上。
-
-    `upload` 三档：`False`（默认，一个附件都不传）· `'summary'`（只传精读，
-    它小、而且是你天天要看的）· `'all'`（连正文 PDF 与 SI 一起传，很占配额）。
-
-    **库里已经有的条目不动它的合集** —— 用户的 178 个合集是按来源（大学→导师）
-    分的，把已收藏的文献又塞进「LLM导入」会打乱他自己的心智模型。
-    只有我们新建的条目才归到 `LLM导入/<用途>` 下。
+    返回 dict(file, doi, key, action, summary, pdf, si, note)。`action`：
+    `created`（证据库里原来没有）/ `exists`（原来就有）/ `skipped`（推送里没 DOI）/ `failed`。
 
     `with_si` 不传时**跟着 `with_pdf` 走**：这条线的整个意义就是「全文精读 =
     公众号的正文 + 我们做的 SI」，取了正文却不取 SI，那一半永远补不上。
+    原来还会建 Zotero 条目、打「正文精读（公众号）」标签、按需传附件 —— 随 Zotero 移出平台删了。
     """
     from tools import getpdf
-    from tools.deepread import tags as dr_tags
 
     out = {'file': os.path.basename(md_path), 'doi': '', 'key': '',
            'action': 'failed', 'summary': '', 'pdf': '', 'si': '', 'note': ''}
@@ -277,35 +263,24 @@ def import_one(md_path, purpose='建库', with_pdf=False, with_si=None,
     if with_si is None:
         with_si = with_pdf
 
-    # ① 先拿到 key。条目只有元数据，很轻 —— 贵的是附件，那是第 ③ 步的事。
-    idx = getpdf.doi_index()
-    key = idx.get(doi.strip().lower())
-    if key:
-        out['action'] = 'exists'
-        log('  [已在库里] %s' % key)
-    else:
-        r = getpdf.stash(doi, None, purpose=purpose, index=idx, force=force)
-        if not r['ok']:
-            out['note'] = r['note']
-            log('  [建条目失败] %s' % r['note'])
-            return out
-        key, out['action'] = r['item'], r['action']
-        log('  [%s] %s' % (r['action'], key))
+    try:
+        key = getpdf.resolve_id(doi)
+    except paths.BadKeyError as e:
+        out['note'] = str(e)
+        log('  [DOI 不规范] %s' % e)
+        return out
     out['key'] = key
+    out['action'] = 'exists' if catalog.find(doi) else 'created'
+    log('  [%s] %s' % ('已在证据库' if out['action'] == 'exists' else '新收', key))
 
-    # ② 原件落到**本地正本**（raw/<key>/），Zotero 传不传是另一回事
+    # 原件落到**本地正本**（raw/<key>/）
     if with_pdf:
         out['pdf'] = _ensure_pdf(key, doi, log) or ''
         if out['pdf'] and with_si:
             out['si'] = _ensure_si(key, doi, log) or ''
     built = build_local(key, article, force=force, log=log)
     out['summary'] = built['path']
-
-    # ③ 传 Zotero —— **默认不传**（用户 2026-09-06 定：先下到本地，需要的再传）
-    if upload:
-        upload_attachments(key, pdf=(upload == 'all'), si=(upload == 'all'), log=log)
-    _try(lambda: dr_tags.set_state_tag(key, dr_tags.TAG_MAIN_WX, log=log),
-         '打标签', log)
+    catalog.register(key, doi=doi, source=catalog.SRC_WECHAT)
     return out
 
 
@@ -316,18 +291,9 @@ def _ensure_pdf(key, doi, log=print):
     临时区随时可清空。
     """
     from tools import getpdf
-    from shared.adapters import zotero_client as Z
     dst = paths.local_pdf(key)
     if os.path.exists(dst) and os.path.getsize(dst) > 1024:
         log('  [正文PDF] 本地已有 %d MB' % (os.path.getsize(dst) // 1048576))
-        return dst
-    # Zotero 里已经有这篇的 PDF（用户自己存的、或早先传上去的）就拷过来。
-    # **再去敲一次出版商是白敲** —— 封的是整个机构的 IP，代价全校担。
-    had = _try(lambda: Z.find_pdf(key), '问 Zotero 有没有 PDF', log)
-    if had and os.path.exists(had):
-        paths.paper_raw_dir(key, create=True)
-        shutil.copy2(had, dst)
-        log('  [正文PDF] Zotero 里已有，拷进本地库')
         return dst
     # 取件是**最容易出岔子**的一步（浏览器会跳转、出版商会变卦），但它岔了
     # 不该连累后面 —— 推文精读本来就不需要 PDF。实测撞到过
@@ -361,34 +327,6 @@ def _ensure_si(key, doi, log=print):
     return dst
 
 
-def upload_attachments(key, pdf=True, si=True, summary=True, log=print):
-    """把这篇的本地原件与精读传进 Zotero。**每一份各自失败，互不牵连。**
-
-    三样可以分开传，因为它们的性质不一样：**精读是人天天看的，而且小**
-    （0.5~4 MB）；正文 PDF 与 SI 是给解析器吃的，动辄几十 MB
-    （实测撞到过 34.9 MB 的综述）。所以默认的用法是「精读传上去、原件留本地」。
-
-    这是「先下到本地，需要的再传」里的**传**那一半。为什么要分开：
-    Zotero 官方存储免费只有 300 MB，而一篇正文 PDF 就 1～10 MB；
-    附件还有单个体积上限（实测 4.1 MB 过、5.1 MB 就 413）。
-    卡在这些限制上的应该只是「传」，不该是「取」和「读」。
-    """
-    from tools import getpdf
-    from tools.deepread import batch as dr_batch
-
-    pdf_path, si_path = paths.local_pdf(key), paths.find_local_si(key)
-    if pdf and os.path.exists(pdf_path):
-        r = _try(lambda: getpdf.attach_pdf(key, pdf_path), '传正文PDF', log)
-        if r:
-            log('  [正文PDF] %s' % ('传上去了' if r[0] else r[1]))
-    if si and si_path:
-        r = _try(lambda: getpdf.attach_si(key, si_path), '传SI', log)
-        if r:
-            log('  [SI] %s' % ('传上去了' if r[0] else r[1]))
-    if summary:
-        _try(lambda: dr_batch.upload_one(key, log=log), '传精读', log)
-
-
 def _try(fn, what, log):
     """跑一步，出岔子只记一行、返回 None。
 
@@ -403,8 +341,7 @@ def _try(fn, what, log):
         return None
 
 
-def import_many(paths_, purpose='建库', with_pdf=False, upload=False,
-                force=False, log=print):
+def import_many(paths_, with_pdf=False, force=False, log=print):
     """一批 md。**单篇失败不拖累整批**，最后返回每篇的结果列表。
 
     取正文 PDF 时每篇之间**照 `getpdf.GAP` 等一会儿**：出版商封的是整个机构的
@@ -420,8 +357,7 @@ def import_many(paths_, purpose='建库', with_pdf=False, upload=False,
         if with_pdf and i > 1:
             time.sleep(getpdf.GAP)
         try:
-            out.append(import_one(p, purpose=purpose, with_pdf=with_pdf,
-                                  upload=upload, force=force, log=log))
+            out.append(import_one(p, with_pdf=with_pdf, force=force, log=log))
         except Exception as e:
             log('  [失败] %s' % e)
             out.append({'file': os.path.basename(p), 'doi': '', 'key': '',

@@ -69,8 +69,7 @@ RESTART_TASKS = ['ZoteroLiteratureWatcher']
 # 而任何地方都不会报错**。这正是踩坑 #81「按名字找东西，搬家时静默失效」的最坏形态：
 # 这次失效的不是一个函数，是整条自动化线。
 TASK_MODULES = {
-    'ZoteroLiteratureWatcher': 'host.watcher.watchdog',   # 曾是 tools.deepread.watchdog
-    'LiteratureAutoSync': 'host.autosync',                # 曾是 tools.curate.sync
+    'ZoteroLiteratureWatcher': 'host.watcher.watchdog',   # 曾是 tools.deepread.watchdog；任务名是历史遗留，跑的就是看门狗
 }
 
 

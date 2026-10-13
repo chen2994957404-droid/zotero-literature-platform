@@ -1,16 +1,15 @@
 # -*- coding: utf-8 -*-
 """看门狗 = 平台常驻进程的总管：该活着的拉起来、真死了的重启 —— **但绝不打断正在干活的**。
 
-## 管三个进程（2026-09-17 起，之前只管 watcher 一个）
+## 管哪些进程
 
-**2026-09-27 起后两个受「后台自动建库」开关管**（`AUTO_BUILD`，默认关）：用户决定证据库先停、
-只留打标签精读。开关关着时只守 watcher，落地流水线与每日作业都不拉。
+**2026-10-13 Zotero 移出平台**：原来的「打标签精读监听」（`host.watcher.service`）删了，精读改在文献库应用里按篇点。
+剩下的常驻进程受「后台自动建库」开关管（`AUTO_BUILD`，默认关，2026-09-27 用户定）；另按端口守几个服务（见 `port_services`）。
 
 | 进程 | 干什么 | 形态 |
 |---|---|---|
-| `host.watcher.service` | 盯 Zotero 标签 → 精读 → 回写（花钱、要人打标签） | 常驻 |
-| `host.ingest --loop`   | 落地流水线：正本一到就解析 / 骨架 / 向量化（不花模型钱） | 常驻 |
-| `host.daily`           | 每天一次：盯新刊 + 补摘要 + 自动升 1 级取件 | 跑完就退出，一天拉一次 |
+| `host.ingest --loop`   | 落地流水线：正本一到就解析 / 骨架 / 向量化（不花模型钱） | 常驻（AUTO_BUILD=1 才拉）|
+| `host.daily`           | 每天一次：盯新刊 + 补摘要 + 自动升 1 级取件 | 跑完就退出，一天拉一次（AUTO_BUILD=1 才拉）|
 
 **为什么拆开**（用户 2026-09-17 定）：这三件事原来全挤在 watcher 的一个循环里串着做 ——
 每天一次的盯新刊要补几千篇摘要、借浏览器取十篇文献，一跑就是几十分钟，
@@ -73,12 +72,10 @@ GRACE = 180         # 重启后给进程的启动宽限期，期间不判死
 #         只匹配 `watcher` 更糟：看门狗自己的命令行 `host.watcher.watchdog` 也含它，**会把自己杀掉**。
 #         PowerShell 单引号串里反斜杠是字面量，所以这一串原样就是正则；点 / 斜杠 / 反斜杠三种写法都认。
 SERVICES = [
-    {'name': 'watcher', 'beacon': 'watcher', 'module': 'host.watcher.service', 'args': [],
-     'pat': "'watcher[\\\\./]service'", 'no_progress': NO_PROGRESS, 'tag_deepread': True},
     {'name': 'ingest',  'beacon': 'ingest',  'module': 'host.ingest', 'args': ['--loop'],
      'pat': "'host[\\\\./]ingest'",          'no_progress': NO_PROGRESS, 'auto_build': True},
 ]
-BEACON = SERVICES[0]['beacon']     # 老名字，测试与日志还在用
+BEACON = SERVICES[0]['beacon']     # 默认盯的报活名（测试用）
 
 
 def port_services():
@@ -128,29 +125,21 @@ def auto_build_on():
     return (get_site('AUTO_BUILD') or '0').strip() == '1'
 
 
-def tag_deepread_on():
-    """「打标签自动精读」开着吗（控制面板 TAG_DEEPREAD，默认开；2026-10-03 用户关掉，只留 Claude Science 要的服务）。"""
-    from shared.kernel.config import get_site
-    return (get_site('TAG_DEEPREAD') or '1').strip() != '0'
-
-
-def active_services(auto_build, tag_deepread=True):
-    """这次该守的进程：精读监听看 TAG_DEEPREAD；标了 auto_build 的只在自动建库开着时才守。
+def active_services(auto_build):
+    """这次该守的进程：标了 auto_build 的只在自动建库开着时才守。
     SERVICES 本身保持全量 —— 停进程、测试核对报活名都要认得全部。"""
-    return [s for s in SERVICES
-            if (auto_build or not s.get('auto_build'))
-            and (tag_deepread or not s.get('tag_deepread'))]
+    return [s for s in SERVICES if auto_build or not s.get('auto_build')]
 
-# 看门狗拉起的三个孙子进程。**重启计划任务时要把它们全停掉**：任务停的只是看门狗，
+# 看门狗拉起的孙子进程。**重启计划任务时要把它们全停掉**：任务停的只是看门狗，
 # 孙子进程照跑旧代码（踩坑 #62）—— 面板的重启按钮与 `host.deploy.update` 都从这里取，别各写一份。
 # 认的是**命令行里的模块路径**（同 SERVICES 的 pat），不认锁文件：锁文件里的 PID 活没活要问 tasklist，
 # 那一步在无窗口会话里会误判（2026-09-17 部署时拿着一个早死的 PID 报「已停掉」，真活着的没停）。
-CHILD_LOCKS = ('zotero_watcher', 'ingest_loop', 'daily')     # 各自的单实例锁名（面板显示用）
+CHILD_LOCKS = ('ingest_loop', 'daily')     # 各自的单实例锁名（面板显示用）
 _CHILD_PATS = [(s['name'], s['pat'], s['beacon']) for s in SERVICES] + [('daily', "'host[" + chr(92) * 2 + "./]daily'", '')]
 
 
 def kill_children(run=None):
-    """停掉三个孙子进程并清掉它们的报活 / 进度文件，让新看门狗**第一轮**就用新代码把它们拉起来。
+    """停掉孙子进程并清掉它们的报活 / 进度文件，让新看门狗**第一轮**就用新代码把它们拉起来。
 
     不清信号文件的话，刚被杀的进程留下的是新鲜心跳（后台线程 30 秒写一次），
     新看门狗要等满 300 秒才发现没人干活。`run` 参数已不用，留着不改调用方。
@@ -197,10 +186,6 @@ def find_pids(pat):
         return []
 
 
-def find_watcher_pids():
-    return find_pids(SERVICES[0]['pat'])
-
-
 def spawn_module(module, args=()):
     """后台无窗口起 `python -m <module>`，继承当前环境变量（含密钥）。spawn 内部会自动换 pythonw。"""
     env = dict(os.environ, PYTHONIOENCODING='utf-8')
@@ -217,10 +202,6 @@ def restart_service(svc):
     # 又回到两份并存的老毛病。让锁自己判断，比我们猜更可靠。
     spawn_module(svc['module'], svc['args'])
     log(f'已重启 {svc["name"]}（{svc["module"]}，后台无窗口）')
-
-
-def restart_watcher():
-    restart_service(SERVICES[0])
 
 
 def _read_stamp():
@@ -268,14 +249,13 @@ log = get_logger('watchdog')   # 统一日志：时间戳 + 落盘 + 自动轮�
 
 def main():
     # 机器角色守卫：常驻服务只能在运行端（主力机）跑。
-    # 两台都跑会重复精读同一篇、重复写回 Zotero、重复烧钱，标签状态机还会互相打架。
-    role.require_prod('看门狗（守护 watcher / 落地流水线 / 每日作业）', force=flag('--force'))
+    # 两台都跑会重复跑落地流水线、重复取件。
+    role.require_prod('看门狗（守护落地流水线 / 每日作业 / 端口服务）', force=flag('--force'))
     auto = auto_build_on()
-    tag = tag_deepread_on()
-    services = active_services(auto, tag)
+    services = active_services(auto)
     log(f'看门狗启动。管 {len(services)} 个常驻进程（{"、".join(s["name"] for s in services) or "无"}）'
         f'{" + 每日作业" if auto else "；后台自动建库已关，不拉落地流水线与每日作业"}'
-        f'{"" if tag else "；打标签自动精读已关"}；'
+        '；'
         f'报活阈值 {STALE}s，无进展阈值 {NO_PROGRESS}s，检查间隔 {CHECK}s')
     # 开关刚关上时，上一轮拉起的进程可能还活着 —— 停掉，否则它会一直跑下去
     for svc in SERVICES:

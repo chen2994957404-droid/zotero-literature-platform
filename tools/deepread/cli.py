@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""精读的命令行入口（只解析参数，逻辑在 tools/deepread 与 batch.py）。
+"""精读的命令行入口（只解析参数，逻辑在 tools/deepread 与 batch.py）。日常单篇精读在文献库应用里点。
 
 ⚠ **key 要写在选项前面**（`shared.kernel.cli.positionals()` 到第一个 `--` 就停）。
    写成 `--si KEY` 的话，key 根本不会被看见 —— 你会得到一份用法说明和退出码 2，
@@ -9,9 +9,7 @@
 用法:
     python -m tools.deepread KEY1 KEY2          批量正文精读
     python -m tools.deepread KEY1 --force       强制重跑（旧版自动备份 .bak）
-    python -m tools.deepread KEY1 KEY2 --si     批量补 SI 精读 + 合并 + 回写
-    python -m tools.deepread KEY1 --upload      批量回写 summary 附件 + 打标签
-    python -m tools.deepread KEY1 --refresh     只把新版铺进本地 storage
+    python -m tools.deepread KEY1 KEY2 --si     批量补 SI 精读 + 合并
     python -m tools.deepread --file keys.txt    从文件读 key（每行一个）
     python -m tools.deepread --rerun-pro        列出可用 pro 重跑的文献
     python -m tools.deepread --rerun-pro 3      用 pro 重跑第 3 篇
@@ -52,8 +50,7 @@ except Exception:
     pass
 
 from shared.kernel.cli import flag, opt, positionals, wants_help
-from tools.deepread.batch import (read_many, refresh_local_file, rerun_candidates,
-                                  rerun_with_pro, si_many, upload_many)
+from tools.deepread.batch import read_many, rerun_candidates, rerun_with_pro, si_many
 
 
 
@@ -210,17 +207,10 @@ def main():
         rerun_with_pro(rows[idx][0], rows[idx][1], force=force)
         return
 
-    if flag('--refresh'):
-        for key in keys:
-            good, msg = refresh_local_file(key)
-            print(f'  {key}: {"OK " if good else "跳过 "}{msg}')
-        return
     if not keys:
         print(__doc__)
         raise SystemExit(2)
-    if flag('--upload'):
-        upload_many(keys, force=force)
-    elif flag('--si'):
+    if flag('--si'):
         si_many(keys, force=force)
     else:
         read_many(keys, force=force)

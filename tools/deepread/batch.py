@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""deepread · 批量与回写：一批 key → 精读，以及把产物送回 Zotero。
+"""deepread · 批量：一批 key → 精读。（2026-10-13 起不再回写 Zotero —— Zotero 移出平台。）
 
 R2 窗（2026-08-30）把 `文献精读/` 下六个各自为政的脚本并进这一个文件：
 
@@ -16,31 +16,26 @@ R2 窗（2026-08-30）把 `文献精读/` 下六个各自为政的脚本并进�
 
 **对外契约**（`cli.py` 与 `mcp.py` 只许调这些，R4 窗接）：
 
-| 函数 | 干什么 | 花钱 | 写 Zotero |
-|---|---|---|---|
-| `read_many(keys, force)`     | 批量正文精读（复用已有解析） | 是 | 否 |
-| `si_many(keys)`              | 批量补 SI → 合并 → 回写 → 升级标签 | 是 | 是 |
-| `rerun_candidates()`         | 哪些篇可以用 pro 重跑（解析还在） | 否 | 否 |
-| `rerun_with_pro(key, title)` | 用 pro 重跑一篇正文精读 | 是 | 否 |
-| `upload_many(keys)`          | 批量回写 summary 附件 + 「已精读」标签 | 否 | 是 |
-| `upload_one(key, html)`      | 回写一篇（复用附件条目，不删不新建） | 否 | 是 |
-| `refresh_local_file(key)`    | 只把新版铺进本地 storage，不动条目 | 否 | 否 |
+| 函数 | 干什么 | 花钱 |
+|---|---|---|
+| `read_many(keys, force)`     | 批量正文精读（复用已有解析） | 是 |
+| `si_many(keys)`              | 批量补 SI → 合并 | 是 |
+| `rerun_candidates()`         | 哪些篇可以用 pro 重跑（解析还在） | 否 |
+| `rerun_with_pro(key, title)` | 用 pro 重跑一篇正文精读 | 是 |
 
-**花钱的和写 Zotero 的一律在函数体里先过 `role.require_prod`**（见 code-redlines）。
+**花钱的一律在函数体里先过 `role.require_prod`**（见 code-redlines）。
 """
 import json
 import os
 import shutil
 
-from shared.adapters import zotero_client as zotero
 from shared.kernel import jobs, paths, role
 from shared.kernel.config import get_key, get_model
-from tools.deepread import main_text, merge as _merge, si as _si, tags as _tags
+from tools.deepread import main_text, merge as _merge, si as _si
 from tools.deepread import STEP_MAIN, STEP_SI
 
 PROVIDER = 'deepseek'
 PRO_MODEL = 'deepseek-v4-pro'      # 想细品的那几篇才用它（贵约 3 倍）
-DONE_TAG = '已精读'                # 只回写附件、不走状态机时打的兼容标签
 
 
 def _model():
@@ -53,77 +48,6 @@ def _route_model():
     from shared.kernel.config import routing
     p = routing.purposes()['DEEPREAD']
     return '%s/%s' % (p['channel'], p['model'])
-
-
-# ───────────────────────── 回写 Zotero ─────────────────────────
-
-def upload_one(key, html=None, force=False, log=print):
-    """把某篇的精读回写成 Zotero 的 summary 附件，返回附件 key。
-
-    ⚠ **有就复用附件条目、只换文件内容**。原来的「先删旧附件、再传新的」
-    正是踩坑 #28 的根因：删除动作会进 Zotero 同步链，于是每篇都弹一次
-    「冲突解决」框。watcher 早改成复用，批量脚本却留着旧写法 ——
-    同一个 bug 的两份实现，这也是把回写收进一处的直接理由。
-    """
-    role.require_prod('回写精读附件到 Zotero', force=force)
-    src = html or paths.summary(key)
-    if not os.path.exists(src):
-        log('  [跳过] 无 summary.html')
-        return None
-    att_key = zotero.find_child_attachment(key, 'summary')
-    if not att_key:
-        att_key = zotero.upload_attachment(key, src, 'summary')
-    zotero.put_local(att_key, src, 'summary.html')
-    return att_key
-
-
-def add_done_tag(key, log=print):
-    """给文献加「已精读」标签（保留原有标签）。"""
-    try:
-        item = zotero.get_item(key)
-        tags = item['data'].get('tags', [])
-        if any(t.get('tag') == DONE_TAG for t in tags):
-            return
-        tags.append({'tag': DONE_TAG})
-        zotero.replace_tags(key, tags, action='加「已精读」标签')
-    except Exception as e:
-        log(f'    (加标签失败: {e})')
-
-
-def upload_many(keys, force=False, log=print):
-    """批量回写精读附件 + 打「已精读」标签。返回成功篇数。"""
-    role.require_prod('批量回写精读附件', force=force)
-    ok = 0
-    for i, key in enumerate(keys, 1):
-        log(f'[{i}/{len(keys)}] {key}')
-        try:
-            if upload_one(key, force=force, log=log):
-                add_done_tag(key, log=log)
-                log('  [已上传] summary + 标签「已精读」')
-                ok += 1
-        except Exception as e:
-            log(f'  [上传失败] {e}')
-    log(f'\n完成：成功 {ok}/{len(keys)}')
-    return ok
-
-
-def refresh_local_file(key):
-    """把新版 summary.html 刷进 Zotero 本地 storage，覆盖旧附件文件。
-
-    用途：精读被重跑之后，Zotero 里点开的还是旧文件。
-
-    **只改文件内容、不动条目与版本号** —— 因此不触发同步冲突
-    （踩坑 #18：「先删附件再传新的」会把删除动作推进同步链，反复弹冲突框）。
-    返回 (是否成功, 说明)。
-    """
-    src = paths.summary(key)
-    if not os.path.exists(src):
-        return False, '本地无 summary.html'
-    att_key = zotero.find_child_attachment(key, 'summary')
-    if not att_key:
-        return False, 'Zotero 里没有 summary 附件（需走 watcher 首次上传）'
-    zotero.put_local(att_key, src, 'summary.html')
-    return True, f'-> storage/{att_key}/ ({round(os.path.getsize(src) / 1024)} KB)'
 
 
 # ───────────────────────── 批量精读 ─────────────────────────
@@ -183,7 +107,7 @@ def read_many(keys, force=False, log=print):
 
 
 def si_many(keys, force=False, log=print):
-    """给「已有正文精读 + 有 SI」的文献批量补 SI 精读，合并后回写并升级标签。
+    """给「已有正文精读 + 有 SI」的文献批量补 SI 精读，再合并成全文精读。
 
     原来是三次 subprocess（si_deepread → merge_summary → 回写），
     错在哪只拿得到一坨 stdout。现在是三次函数调用。返回 (成功, 失败)。
@@ -205,16 +129,11 @@ def si_many(keys, force=False, log=print):
             log('  这篇没有 SI 附件，跳过')
             continue
         log('  SI精读完成')
-        merged = _merge.merge(key, log=log)
-        final = merged or si_html
         try:
-            att_key = upload_one(key, final, force=force, log=log)
-            if att_key:
-                log('  附件已更新')
-            _tags.set_state_tag(key, _tags.TAG_FULL, log=log)
+            _merge.merge(key, log=log)
             ok += 1
         except Exception as e:
-            log(f'  回写失败: {e}')
+            log(f'  合并失败: {e}')
             fail += 1
     log(f'\n完成：成功 {ok}，失败 {fail}')
     return ok, fail

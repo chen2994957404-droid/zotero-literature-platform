@@ -363,8 +363,8 @@ def main():
                                                  for i in range(len(sci._tools))), ','.join(no_struct))
     check('/science 不打 confirm（Claude Science 自己会问人）',
           not any(t['confirm'] for t in sci._tools))
-    check('/science 不含写 Zotero / 花钱的工具',
-          not (sn & {'getpdf_stash_one', 'deepread_request', 'ask_library', 'extract_one'}))
+    check('/science 不含花钱的工具',
+          not (sn & {'ask_library', 'extract_one'}))
     check('/science 只给它做不到的：不挂数值库、参考文献、全库清单（2026-10-04 用户定）',
           not (sn & {'paperdb_sql', 'paperdb_measurements', 'library_refs', 'library_manifest'}))
     ghosts = sorted(n for n in set(re.findall(r'`([a-z][a-z0-9_]+)`', S.INSTRUCTIONS)) if n not in sn)

@@ -141,7 +141,7 @@ def _pitfalls_for(name, pits):
             re.escape(base) + '/']
     if len(base) >= 6:
         pats.append(r'b%sb' % re.escape(base))
-    extra = {'pdf_fetch': ['取件', '取全文'], 'pdf_parse': ['MineRU'], 'zotero_client': ['Zotero API', '附件'],
+    extra = {'pdf_fetch': ['取件', '取全文'], 'pdf_parse': ['MineRU'], 
              'watcher': ['看门狗', '心跳'], 'llm_client': ['DeepSeek', 'Ollama'], 'vectordb': ['chromadb', '向量库'],
              'embed': ['bge-m3', '向量化'], 'figure_crop': ['裁图'], 'heartbeat': ['心跳'], 'budget': ['账本', '额度']}
     pats += [re.escape(x) for x in extra.get(base, [])]

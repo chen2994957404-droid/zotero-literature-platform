@@ -1,17 +1,13 @@
 # -*- coding: utf-8 -*-
-"""打标签的条目要按 DOI 认出证据库里已有的那篇；有范文的用推文当正文精读（2026-09-15）。
-
-全离线：不碰 Zotero、不取图（范文里的图链接换成假替身）。
-"""
+"""单篇精读的两个前置步骤（2026-10-13 从打标签精读监听搬来，测试一并搬来）。全离线。"""
 import io
-import json
 import os
 
 import pytest
 
 from shared.kernel import catalog, paths
-from host.watcher import service as w
 from host import wechat_import
+from host.app import runner as w
 
 DOI = '10.1021/acs.macromol.6c00991'
 
@@ -22,32 +18,9 @@ def env(tmp_path, monkeypatch):
         d = tmp_path / name.lower()
         d.mkdir()
         monkeypatch.setattr(paths, name, str(d))
-    from shared.kernel import jobs
-    monkeypatch.setattr(paths, 'STATE', str(tmp_path / 'state'))
     monkeypatch.setattr(wechat_import, 'fetch_images', lambda article, log=print: {})
-    # service 里的 print 就是写 data/logs/zotero_watcher.log 的 logger：不拦住，pytest 每跑一次都往主力机的真日志里塞
-    # 四行「[SI] 没能补 SI：浏览器没开」（2026-09-20 重启后排查日志时发现，以为是线上在空转）
-    monkeypatch.setattr(w, 'print', lambda *a, **k: None)
-    catalog._cache_clear() if hasattr(catalog, '_cache_clear') else None
+    catalog._cache_clear()
     return tmp_path
-
-
-def test_按DOI认出已落地的同一篇(env):
-    pid = paths.paper_id_from_doi(DOI)
-    catalog.register(pid, doi=DOI, title='x')
-    item = {'key': 'ABCD1234', 'data': {'DOI': DOI, 'title': 'x'}}
-    assert w.paper_id_for(item) == pid
-    assert catalog.read_meta(pid).get('zotero_key') == 'ABCD1234'      # Zotero 编号成了属性
-
-
-def test_证据库没有就按DOI起名_Zotero编号只登记成属性(env):
-    # 2026-10-12 起跟 Zotero 拆开：新文献一律按 DOI 命名
-    item = {'key': 'ABCD1234', 'data': {'DOI': '10.1000/new', 'title': 'y'}}
-    pid = w.paper_id_for(item)
-    assert pid == paths.paper_id_from_doi('10.1000/new')
-    assert catalog.read_meta(pid).get('zotero_key') == 'ABCD1234'
-    assert catalog.resolve('ABCD1234') == pid                               # 旧编号也认得
-    assert w.paper_id_for({'key': 'EFGH5678', 'data': {}}) == 'EFGH5678'   # 没 DOI 只好用 Zotero 编号
 
 
 def test_有范文就当正文精读_没范文不动(env):
@@ -74,7 +47,6 @@ def test_范文读回article():
 
 
 def test_精读前补SI_记过没有的不再去取_浏览器没开不拖累(env, monkeypatch):
-    """2026-09-17：打标签精读以前从不取 SI；现在取一次，出版商说没有就记下来，以后不再敲。"""
     pid = paths.paper_id_from_doi(DOI)
     catalog.register(pid, doi=DOI, title='x')
     calls = []
@@ -84,17 +56,15 @@ def test_精读前补SI_记过没有的不再去取_浏览器没开不拖累(env
         calls.append(doi)
         return {'si': '', 'note': '正文有；没有 SI（出版商页面确认）'}
     monkeypatch.setattr(getpdf, 'land', fake_land)
-    item = {'key': 'ABCD1234', 'data': {'DOI': DOI}}
-    assert w._try_fetch_si(pid, item, 'main.pdf') is False and calls == [DOI]
-    # 目录记了「没有」→ 第二次直接不去
-    catalog.mark_si_none(pid)
-    assert catalog.si_status(pid) == catalog.SI_NONE
-    assert w._try_fetch_si(pid, item, 'main.pdf') is False and calls == [DOI]
-    # 浏览器没开（land 抛异常）→ 返回 False，不抛
+    quiet = lambda *a: None
+    assert w.try_fetch_si(pid, 'main.pdf', log=quiet) is False and calls == [catalog.norm_doi(DOI)]
+    catalog.mark_si_none(pid)                                            # 目录记了「没有」→ 第二次直接不去
+    assert w.try_fetch_si(pid, 'main.pdf', log=quiet) is False and len(calls) == 1
     catalog.register(pid, overwrite=True, si_status=catalog.SI_UNKNOWN)
+
     def boom(doi, pdf_path=None, **kw):
         raise RuntimeError('浏览器没开')
     monkeypatch.setattr(getpdf, 'land', boom)
-    assert w._try_fetch_si(pid, item, 'main.pdf') is False
-    # 没 DOI 的不去
-    assert w._try_fetch_si(pid, {'key': 'X', 'data': {}}, 'main.pdf') in (False, True)
+    assert w.try_fetch_si(pid, 'main.pdf', log=quiet) is False             # 浏览器没开 → 不抛
+    catalog.register('doi_10.9-nodoi', title='没 DOI')
+    assert w.try_fetch_si('doi_10.9-nodoi', 'main.pdf', log=quiet) is False
