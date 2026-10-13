@@ -1,6 +1,6 @@
 # tools/discover · 找新文献
 
-**一句话**：从全世界找该读的文献 → 对照我的库 → 按「跟我多相关」排序 → 挑几篇收进 Zotero。
+**一句话**：从全世界找该读的文献 → 对照我的库 → 按「跟我多相关」排序 → 挑几篇收进证据库。
 
 ## 怎么用
 
@@ -11,13 +11,13 @@ python -m tools.discover "shear stiffening gel" 30 --since 2020
 python -m tools.discover "..." --openalex     # 改用免费的 OpenAlex（不用密钥）
 ```
 
-看完想收哪几篇（**这一步会写 Zotero**）：
+看完想收哪几篇（给出取全文的命令，再用 getpdf 收进证据库）：
 
 ```
 python -m tools.discover.collect 1,3,5-7
 ```
 
-入库后在 Zotero 打「待处理」标签即自动精读。
+收进来后在桌面「文献库」里打开、点「精读这篇」。
 
 ## 两种模式
 

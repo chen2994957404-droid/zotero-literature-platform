@@ -40,7 +40,7 @@ R4 窗（2026-08-31）改成**聚合**：服务端自己不知道有哪些工具
 `costs_money=true` 或 `side_effects` 非空的工具包，**不许注册 tool 类**。
 钱和副作用必须停在人这一侧。故意违反会让 `--list` 变红、自测变红。
 
-现状：`library`（9 个）与 `paperdb`（4 个）是 tool；`extract` 出 3 份 resource；
+现状：`library` 与 `paperdb` 是 tool；`extract` 出 3 份 resource；
 其余 8 个工具包各出 1 条 prompt。
 
 ## 协议实现到什么程度
@@ -84,9 +84,8 @@ args = ["<项目根>\\host\\mcp\\server.py"]
 
 ## 写操作留给谁
 
-MCP 面**不做写操作**：写 Zotero 的能力（打标签/改名/去重/回写附件）都在
-`tools/curate` 与 `tools/deepread` 里，它们在 MCP 上是 prompt，
-由人点、由人确认，并且各自带机器角色守卫。绕过 proc_lock 的写是事故。
+MCP 面**不做写操作**（2026-10-13 起 Zotero 移出平台，原来那些「写 Zotero」的入口都删了）。
+花钱的（精读、全库抽取）在 MCP 上是 prompt，由人点、由人确认，并且各自带机器角色守卫。
 
 ## 改完必须做
 

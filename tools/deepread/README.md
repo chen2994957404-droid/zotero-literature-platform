@@ -1,33 +1,26 @@
 # tools/deepread · 精读一篇文献
 
-**一句话**：一篇 PDF → 一份中文图文精读报告，自动回写到 Zotero。
+**一句话**：一篇 PDF → 一份中文图文精读报告（存在证据库那篇的目录里）。
 整个平台最常用、最有价值的一条线。
 
 ## 用户怎么用（推荐：一条命令都不用敲）
 
-在 Zotero 里给文献打「待处理」标签 → 剩下全自动。
-`watcher` 每 60 秒轮询一次，处理完把标签换成状态标签。服务已开机自启。
+在桌面「文献库」里打开这篇，点「精读这篇」→ 确认 → 排队跑完，详情页出现精读按钮。
+（2026-10-13 起 Zotero 移出平台：不再打标签触发、不再回写 Zotero。）
 
 ## 命令行
 
 ```
 python -m tools.deepread KEY1 KEY2          批量正文精读
-python -m tools.deepread --si KEY1          补 SI 精读 + 合并 + 回写
+python -m tools.deepread KEY1 --si          补 SI 精读 + 合并
 python -m tools.deepread --force KEY1       强制重跑（旧版自动备份 .bak）
 python -m tools.deepread --rerun-pro        列出可用 pro 重跑的文献
 python -m tools.deepread --rerun-pro 3      用 pro 重跑第 3 篇
 ```
 
-常驻服务（自己的入口）：
+## 做成什么
 
-```
-python -m host.watcher.service       盯 Zotero 标签，自动精读
-python -m host.watcher.watchdog      看门狗，它真死了才重启它
-```
-
-## 状态标签（互斥，一篇同时只有一个）
-
-`待处理`/`待精读` 触发 → `正文精读` / `全文精读`（正文+SI）/ `SI精读` / `无附件`
+`正文精读` / `全文精读`（正文+SI）/ `SI精读` / 没文件就做不了
 
 **已精读的部分不会重跑**：已有正文、后来补了 SI，就只补 SI 那段（省钱）。
 

@@ -6,7 +6,7 @@ description: 找新文献：拆检索式 + 雪球扩展 + 按「跟我多相关�
 <!-- 本文件由 host/codegen/skills.py 生成，**别手改**。改源：tools/discover/SKILL.md + tools/discover/tool.toml -->
 
 > **动手之前先看这三行**（取自 `tools/discover/tool.toml`）：
-> **会花钱** · **有副作用**：写Zotero（按 DOI 导入） · **只能在运行端（主力机）跑**
+> **会花钱** · **有副作用**：写 data/state/_last_search.json（暂存检索结果，供按编号挑） · **只能在运行端（主力机）跑**
 > MCP 暴露方式：`prompt`（**由人在客户端点，模型不能自己发起**）
 > 命令行：`python -m tools.discover`
 
@@ -19,7 +19,7 @@ description: 找新文献：拆检索式 + 雪球扩展 + 按「跟我多相关�
 
 ## 怎么用
 
-我是 **prompt**（拆检索式花钱，导入会写 Zotero）。讲清代价、用户点头后：
+我是 **prompt**（拆检索式、算相关度有成本）。讲清代价、用户点头后：
 
 ```
 python -m tools.discover "关键词或一句话需求" [--解决问题] [--since 2020] [--openalex]
@@ -39,7 +39,7 @@ python -m tools.discover "关键词或一句话需求" [--解决问题] [--since
 
 ## 边界
 
-- 我只负责找和排序；**导入 Zotero 是写操作**，只在主力机上能跑
+- 我只负责找和排序；挑中的要收进证据库，用 `python -m tools.discover.collect 1,3` 给出取全文命令，再走 `getpdf`
 - 「跟我多相关」是拿用户库里的内容算的：库很空时这个排序没什么意义
 - 默认会过滤掉贴题度低的；召回明显不足时可以 `--宽松`
 - `--精排`（2026-09-19 加，默认关）：前 60 篇新文献再让 Jev 判断模型打「贴题 0–3 档」重排。

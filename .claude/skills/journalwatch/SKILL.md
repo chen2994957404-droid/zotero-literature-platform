@@ -20,7 +20,7 @@ description: 盯新刊：好期刊最近新登记的论文列出来，标出库�
 
 ## 怎么用
 
-我是 **tool**（免费、只读、不写 Zotero、不取全文）：
+我是 **tool**（免费、只读、不取全文）：
 
 ```
 python -m tools.journalwatch [--天 7] [--只看新的] [--刊 Macro] [--含摘要]

@@ -66,11 +66,11 @@
 ## 依赖
 
 `shared/adapters/openalex`（检索、取摘要）· `shared/adapters/snowball`（前后向）·
-`shared/adapters/zotero_client`（库索引）· `shared/domain/libmatch`（判「有没有」）。
+`shared.kernel.catalog`（库索引，只问证据库）· `shared/domain/libmatch`（判「有没有」）。
 
 **不 import 任何别的 `tools/*`**（硬规则 2）。库索引的 5 分钟缓存在本包里有一份，
 `tools/discover` 里也有一份 —— 出现第三个使用者时，就该把「带缓存的库索引」
-提到 `shared/adapters/zotero_client` 里去。
+提到 `shared/kernel/catalog` 里去。
 
 ## 怎么验证
 

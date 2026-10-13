@@ -51,7 +51,7 @@ R6 窗把数据换成五层，全系统只改了 `paths.py` 一个文件 —— 
 注意 Logger 是全局的，同名再取一次会把 handler 挂两遍（踩坑 #48）。
 
 ### 7. 有副作用的操作要加机器角色守卫
-凡是**写 Zotero / 花钱的批量作业 / 起常驻服务**：
+凡是**写外部系统 / 花钱的批量作业 / 起常驻服务**：
 ```python
 from shared.kernel import role
 from shared.kernel.cli import flag
@@ -63,7 +63,6 @@ def main():
   体检的运行时导入检查、pytest 收集、面板借用逻辑会一起挂。守卫挡的是「执行」不是「加载」。
 - 动作描述会原样显示给不懂编程的用户看，写人话。
 - 常驻服务要在 `__main__` 里接住 `WrongMachineError`，打印人话而非 traceback。
-- 守卫测试会扫描所有出现 `api.zotero.org` 的文件，漏一个就红。
 
 ## 二、四条硬规则（REBUILD.md 第三节，守卫强制）
 

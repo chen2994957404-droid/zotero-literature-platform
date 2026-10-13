@@ -26,7 +26,7 @@ paths:
 | 谁 import `host/` | 没人可以。`host/` 单向依赖别人 |
 | `shared/domain/` import `paths` 或 adapters | 路径由调用方传进来；纯逻辑必须能离线测 |
 
-## 写 Zotero / 花钱 / 起常驻服务，必须有机器角色守卫
+## 花钱 / 起常驻服务 / 写外部系统，必须有机器角色守卫
 
 ```python
 def main():

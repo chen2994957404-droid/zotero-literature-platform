@@ -20,7 +20,7 @@ python -m tools.askworld "问题" [--since 2020] [--top 10]
 - **要的是一份「该读哪些」的清单，不是一段回答** → `discover`
   （它还会标出哪些已经在库里、按跟他多相关排序）
 - **没配 SCIVERSE_KEY** → 别硬跑。改用 `python -m tools.discover "关键词" --openalex`（免费）
-- **要精读某一篇** → 先把它导进 Zotero，再走 `deepread`
+- **要精读某一篇** → 先用 `getpdf` 收进证据库，再在文献库应用里点精读
 
 ## 边界
 

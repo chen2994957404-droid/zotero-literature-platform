@@ -1,6 +1,6 @@
 ---
 name: two-machines
-description: 涉及写回 Zotero、跑花钱的批量作业、起常驻服务（`host/watcher/`）、部署代码到主力机、连 B 机排查、或需要知道 B 机真实状态时读这份。A/B 两台机器的分工与硬约束、ROLE 三档（dev/test/prod）各自允许什么、SSH 连 B 的正确姿势与它的两个陷阱、以及「部署≠换文件」的重启纪律。（连机器的**机械细节**已拆到全局技能 `remote-machine`，那份任何项目都能用。）
+description: 涉及跑花钱的批量作业、起常驻服务（`host/watcher/` 看门狗、`host/app` 文献库应用）、部署代码到主力机、连 B 机排查、或需要知道 B 机真实状态时读这份。A/B 两台机器的分工与硬约束、ROLE 三档（dev/test/prod）各自允许什么、SSH 连 B 的正确姿势与它的两个陷阱、以及「部署≠换文件」的重启纪律。（连机器的**机械细节**已拆到全局技能 `remote-machine`，那份任何项目都能用。）
 ---
 
 # 两台机器
@@ -17,10 +17,10 @@ description: 涉及写回 Zotero、跑花钱的批量作业、起常驻服务（
 |---|---|---|
 | Claude Code | **只在这里** | 没有 |
 | Ollama | 无（MX450 只有 2 GB，跑不动 bge-m3） | 有，带保活任务 |
-| Zotero 桌面 | 已装，平时不常开 | **常开**（本地 API 要它） |
+| Zotero | 2026-10-13 起移出平台，平台不再用它 | 同左 |
 | 项目路径 | `D:\dev\literature-platform` | `D:\02_AI\Projects\literature-platform` |
-| `data/`（五层） | 测试账号自产的几篇 | **权威副本** |
-| 自启任务 | **只有一个例外**：`LiteraturePlatformTunnel`（给 Antigravity 的 SSH 隧道，只往外连、不花钱不写库；`host/deploy/tunnel_task.py`，2026-09-19）| 4 个：Watcher / Ollama / ZoteroApp / AutoSync |
+| `data/`（五层） | 自产的几篇（金样本） | **权威副本** |
+| 自启任务 | **只有一个例外**：`LiteraturePlatformTunnel`（SSH 隧道：把 B 的 8778 MCP 与 8780 文献库应用接到本机，只往外连、不花钱不写库；`host/deploy/tunnel_task.py`）| 2 个：`ZoteroLiteratureWatcher`（名字是历史遗留，跑的是看门狗）/ `OllamaService` |
 
 ## 二、谁干什么（有争议以此为准）
 
@@ -33,29 +33,17 @@ description: 涉及写回 Zotero、跑花钱的批量作业、起常驻服务（
 | 库内问答 `python -m tools.ask` | ❌ 没向量库没 Ollama | ✅ |
 | 找新文献 / 外部检索 | ✅ | ✅ |
 | 常驻服务 / 自启任务 | ❌ **绝不注册** | ✅ **唯一** |
-| 写回 Zotero | 见下面 ROLE 三档 | ✅ |
 | 花钱的批量作业 | ❌ | ✅ |
 
 ## 三、⚠ ROLE 三档 —— 别再照旧文档说「A 机一律不许写」
 
 `shared/kernel/role.py` + `.env` 里的 `ROLE`（控制面板「本机设置」第一项可改）。
 
-- **`dev`（A 机，默认）**：拒绝写 Zotero / 起 watcher / 全库作业，除非显式 `--force`
-- **`test`（A 机 + 独立测试 Zotero 账号，2026-08-27 加）**：**允许写、允许跑 watcher**。
-  写坏了只坏在测试库里。解开的正是此前 A 机无法验证的那一半：
-  标签状态机、附件回写与复用、版本冲突、watcher 端到端。
-  而且**大多不花钱** —— 喂一份假 `summary.html` 就能走完整条回写链路。
+- **`dev`（A 机默认）**：拒绝起常驻服务 / 全库作业 / 花钱的批量，除非显式 `--force`
+- **`test`（A 机现在是这一档）**：放行，产物只在 A 本机的 `data/` 里。
+  （原来的意思是「A 机接测试 Zotero 账号、允许写测试库」，还要核对写回目标；
+  2026-10-13 Zotero 移出平台，那道核对没有对象了。）
 - **`prod`（B 机）**：全部允许
-
-「A 机不许写」「watcher 只能在 B」这两条的**根因都是「共用同一个 Zotero 账号」**。
-账号不同就都不成立 —— `ROLE=test` 时别照字面拒绝用户。
-
-**test 档的两层保护**：硬的是 A 机只持有测试账号的 key（凭据决定，不是纪律）；
-软的是 `role.require_prod` 会核对 `ZOTERO_WEB_USER_ID == ZOTERO_TEST_USER_ID`，
-对不上就拒绝 —— 挡的是「配置切回真实账号却忘了改角色」。
-
-**换账号的实测教训**：要么新建 profile + 新数据目录，要么**先退出账号、再清空本地数据**。
-顺序反了（登着旧账号做「重置」）可能把本地状态推上服务器，清空真实库并同步到 B。
 
 ## 四、连 B 机（A 能直接连了，2026-08-28）
 
@@ -69,7 +57,7 @@ description: 涉及写回 Zotero、跑花钱的批量作业、起常驻服务（
 | 要干的事 | 一条命令 |
 |---|---|
 | 看 B 现在什么状态 | `remote.py check` |
-| 看某个日志尾巴 | `remote.py logs zotero_watcher 40`（`watchdog` / `ingest` / `daily` / `auto_sync` 同理）|
+| 看某个日志尾巴 | `remote.py logs watchdog 40`（`ingest` / `daily` / `app_jobs` 同理）|
 | 跑只读命令（已自动进项目目录） | `remote.py run "git log --oneline -3"` |
 | **上线**（推完 git 之后） | `remote.py deploy` —— 走 job 通道，体检里的密钥项才是真的；它会停掉旧的干活进程 |
 | 跑要密钥 / 花钱的活 | `remote.py job "python -m tools.xxx ..." --async` 然后 `job --tail` |
@@ -111,28 +99,27 @@ python toolbox/remote-machine/remote.py job "<PowerShell>"   # B 用自己的身
 ```
 
 原理：它触发一个 `LogonType=Interactive` 的计划任务，那个会话跑在 `SessionId=1`，
-凭据库正常可读（watcher 天天在花钱、在写 Zotero，就是活证据）。
+凭据库正常可读。
 实测拿到 35 位密钥并真调了一次 DeepSeek 补全。
 
 | 要干的事 | 走哪条 |
 |---|---|
 | `git pull` / 装包 / pytest / 离线体检 / 读日志读数据 | `run`（更快，一条 ssh 就完） |
-| 任何调付费 API 的、写 Zotero 的、要密钥的 | **`job`** |
+| 任何调付费 API 的、要密钥的、要跑超过几分钟的 | **`job`**（`--async` 不等它）|
 
 所以「给用户一个 .bat 让他双击」不再是唯一出路 —— 但**大批量作业仍然先问用户**
 （那是钱的量级问题，不是能力问题）。⚠ 这条通道一次只跑一个作业。
 
 ### ⚠ 陷阱 2：远程 `git pull` 之后，B 上跑的还是旧代码
-面板和 watcher 是长驻进程，磁盘上代码换了它们照跑旧的（2026-08-28 咬过：
+面板、文献库应用（8780）、MCP 服务（8778）都是长驻进程，磁盘上代码换了它们照跑旧的（2026-08-28 咬过：
 给用户加了按钮，用户在面板上**根本看不到**；而 `launch/控制面板.bat` 检测到面板还活着
 只开浏览器**不会重启它**，所以「关窗口再双击」也没用）。
 
-远程 pull 之后二选一：让用户双击一次 `launch/更新平台.bat`，或者自己停掉面板 ——
+远程 pull 之后：`remote.py deploy`（会重启看门狗和它的孙子进程），或者按端口停掉那个进程、让看门狗一分钟内拉起新的 ——
 ```bash
-$p=(Get-NetTCPConnection -LocalPort 8777 -State Listen).OwningProcess; Stop-Process -Id $p -Force
+$p=(Get-NetTCPConnection -LocalPort 8780 -State Listen).OwningProcess; Stop-Process -Id $p -Force   # 8777 面板 / 8778 MCP 同理
 ```
-watcher 由计划任务托管，`Stop-ScheduledTask` + `Start-ScheduledTask`。
-注意它是**孙子进程**（踩坑 #62），重启计划任务不一定换得掉。
+文献库应用的前台（`host/app/web/dist`）不进版本库：在 A 机 `npm run build`，用 `remote.py push` 逐个传过去。
 
 ## 五、B 机的状态怎么让你看见
 
@@ -142,5 +129,5 @@ watcher 由计划任务托管，`Stop-ScheduledTask` + `Start-ScheduledTask`。
 **给用户的东西不能是「要敲命令的工具」** —— 他不懂编程。
 凡是要他在 B 机上做的事，做成**双击就能跑的 .bat**，或面板上的一个按钮。
 
-B 机常用位置：日志 `data\logs\zotero_watcher.log`、
+B 机常用位置：日志 `data\logs\watchdog.log`、
 更新用 `python host\deploy\update.py`（或让用户双击 `launch\更新平台.bat`）。

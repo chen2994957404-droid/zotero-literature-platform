@@ -12,7 +12,7 @@
 
 ```
 python -m tools.digitize "<图片路径>" [--hint "只读红色那条曲线"]
-python -m tools.digitize --key <Zotero条目key> --figures 2,3   # 已精读的文献，直接指图号
+python -m tools.digitize --key <证据库文献 id> --figures 2,3   # 已精读的文献，直接指图号
 ```
 
 输出 JSON：`chart_type / x_axis / y_axis / series[{name, points}] / confidence / note`。

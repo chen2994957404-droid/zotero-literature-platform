@@ -50,7 +50,7 @@ shared.kernel.paths（去哪读、往哪写） + shared.domain.schema（抽什�
 | 档 | 料 | 模型 | 入口 |
 |---|---|---|---|
 | 精层 | MineRU 全文 `full.md` + SI | 云端 DeepSeek | `batch.extract_many` |
-| 粗层 | Zotero 自带全文索引 | 本地 Ollama | `batch.coarse_all` |
+| 粗层 | 证据库里的全文 | 本地 Ollama | `batch.coarse_all` |
 
 **精层结果绝不被粗层覆盖**，即使 `--rebuild`（踩坑 #16 的代价买来的）。
 

@@ -1,6 +1,7 @@
 # literature-platform · 给所有 agent 的正本
 
-文献自动化科研平台，**核心是证据库**，Zotero 是最重要的来源 + 精读成果的展示面。
+文献自动化科研平台，**核心是证据库**；用户自己用的入口是**文献库应用**（`host/app`，浏览器开 http://127.0.0.1:8780）。
+**Zotero 已于 2026-10-13 移出平台**（旧代码在 git 标签 `zotero-before-removal`；用户以后会按新需求单独做 Zotero 功能）。
 用户是材料方向研究者（聚硼硅氧烷 / 动态键弹性体），
 **不懂编程**。给他看的一律用中文通俗表述，别讲技术细节。
 
@@ -18,11 +19,11 @@
 ```
 docs/  ← 跨工具的档案（另有 4 份日志直接躺在下面）
     explain/（8）、howto/（3）、reference/（19）、incidents/（2）  ← 为什么 / 怎么做 / 事实 / 坑
-host/  ← 平台自身：让平台活着的东西（没人 import 它）（11 块）
-    app、autosync、codegen、daily、deploy、doctor、ingest、mcp、panel、watcher、wechat_import
-launch/  ← 给人双击的入口（常用 5 个；不常用/ 里 7 个备用与开发用）
+host/  ← 平台自身：让平台活着的东西（没人 import 它）（10 块）
+    app、codegen、daily、deploy、doctor、ingest、mcp、panel、watcher、wechat_import
+launch/  ← 给人双击的入口（常用 5 个；不常用/ 里 6 个备用与开发用）
     取全文用的浏览器.bat、导入公众号精读.bat、控制面板.bat、设置与密钥.bat、运行与日志.bat
-    不常用/：更新平台.bat、比一比两个模型.bat、精读监听.bat、诊断报告.bat、连上文献平台（Antigravity用）.bat、重抽缺SI的文献.bat、重跑精读PRO.bat
+    不常用/：更新平台.bat、比一比两个模型.bat、诊断报告.bat、连上文献平台（Antigravity用）.bat、重抽缺SI的文献.bat、重跑精读PRO.bat
 outputs/  ← 外部 agent 的产物 / 草稿，不进版本库
 scratch/  ← 外部 agent 的产物 / 草稿，不进版本库
 shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
@@ -30,20 +31,20 @@ shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
         cli、config、proc_lock、prompts、subproc、budget.py、catalog.py、errors.py、heartbeat.py、jobs.py、log.py、mcp_prompt.py、paths.py、role.py、units_store.py
     domain/  ← 纯逻辑：不联网、不知道文件放在哪（6 块）
         figure_crop、glossary、libmatch、numcheck、schema、stopwords
-    adapters/  ← 外接口：唯一允许联网/用第三方库的一环（26 块）
-        ccdc、chemdb、cnki、crossref、embed、jcr、llm_client、ner、openalex、pdf_fetch、pdf_parse、polyinfo、pubchem、query_expand、sciverse、scopus、semanticscholar、sentences、snowball、tansoole、typesafe、units、unpaywall、vectordb、wechat_seed、zotero_client
+    adapters/  ← 外接口：唯一允许联网/用第三方库的一环（25 块）
+        ccdc、chemdb、cnki、crossref、embed、jcr、llm_client、ner、openalex、pdf_fetch、pdf_parse、polyinfo、pubchem、query_expand、sciverse、scopus、semanticscholar、sentences、snowball、tansoole、typesafe、units、unpaywall、vectordb、wechat_seed
 tests/ （6 个脚本）
     test_architecture.py、test_budget.py、test_llm_routing.py、test_no_undefined_names.py、test_principles.py、test_types.py
 toolbox/ （0 个脚本）
-tools/  ← 工具包：一个工具 = 一个自包含的包（13 块）
-    ask、askworld、curate、deepread、digitize、direction、discover、extract、getpdf、journalwatch、library、litsearch、paperdb
+tools/  ← 工具包：一个工具 = 一个自包含的包（12 块）
+    ask、askworld、deepread、digitize、direction、discover、extract、getpdf、journalwatch、library、litsearch、paperdb
 
 根目录文件：AGENTS.md、BA_TRIS_DMAEMA_三元共聚20g小试实验指南.md、CLAUDE.md、LICENSE、README.md、REBUILD.md、conftest.py、pyproject.toml、pyrightconfig.json、requirements.txt、各部分的关系.md
 
 （data/ 是数据目录（五层），3000+ 文件，**不要去 glob 它**）
 ```
 
-**可枚举的模块 50 个**（`tools/` 工具包 + `shared/` 共用件，每个都有 `__init__.py` 与 `selftest.py`） · **还没切进 `tools/` 的老文件夹 1 个**
+**可枚举的模块 48 个**（`tools/` 工具包 + `shared/` 共用件，每个都有 `__init__.py` 与 `selftest.py`） · **还没切进 `tools/` 的老文件夹 1 个**
 
 进度、健康状况、下一步做什么 → 见 `HANDOVER.md`
 
@@ -64,10 +65,9 @@ glob 根目录会直接淹掉上下文（实测：前 100 个结果全是精读�
 ## ⚠ 两台机器 —— 你在 A 机（编程端）
 
 **A 机 = 改代码的唯一入口；B 机 = 主力机，数据与服务的权威副本，没有 Claude Code。**
-A 机默认不写 Zotero、不跑常驻服务、不跑花钱的批量作业 ——
-但 2026-08-27 起 A 机多了独立的测试 Zotero 账号（`ROLE=test`），这一档允许写、允许跑。
+A 机默认不跑常驻服务、不跑花钱的批量作业（`ROLE=dev`）；A 机现在是 `ROLE=test`（测试档，放行，产物只在本机）。
 
-涉及写 Zotero / 部署到 B / 连 B 排查 / 起常驻服务 → **读 `two-machines` skill**。
+涉及部署到 B / 连 B 排查 / 起常驻服务 → **读 `two-machines` skill**。
 
 ## 🧰 按需加载的 skill（`.claude/skills/`，全部由生成器产出）
 
@@ -79,7 +79,7 @@ A 机默认不写 Zotero、不跑常驻服务、不跑花钱的批量作业 —�
 | `code-redlines` | **要动任何 .py 之前**（七条强制规范 + 四条硬规则 + 验证顺序）|
 | `research-first` | 要做新东西、选技术路线、或要断言外部世界现状 |
 | `deep-research` | 用户要**研究透一个方向 / 判断想法有没有人做过 / 出带出处的调研报告**：通用章法（分面 + 同义词族 → 四种经典检索策略 → 滚雪球准则 → 质疑空集 → 饱和判据 → 报告形状），不绑定课题 |
-| `two-machines` | 写 Zotero / 部署 / 连 B / 起常驻服务（连机器的机械细节在**全局**技能 `remote-machine`，源在 `toolbox/remote-machine/`）|
+| `two-machines` | 部署 / 连 B / 起常驻服务（连机器的机械细节在**全局**技能 `remote-machine`，源在 `toolbox/remote-machine/`）|
 | 十个工具各一份 | 要用某个工具时（含**什么时候别用我**）|
 
 ---
@@ -89,19 +89,20 @@ A 机默认不写 Zotero、不跑常驻服务、不跑花钱的批量作业 —�
 | 用户说 | 你怎么做 |
 |--------|---------|
 | 「库里有没有 XX 这篇」「手上有哪些文献」| `python -m tools.library 库 XX`（**先问证据库**，零网络、秒回；结果标出每篇有正文/SI/已解析/已精读没有）|
-| 「Zotero 里最近加了什么」「有哪些标签」| `python -m tools.library search XX`（那是 Zotero，他自己读的那部分）|
+| 「按 DOI / 标题词 / 通讯作者 / 团队 / 年份 / 期刊找」| `python -m tools.library 检索 …`（他自己用的是文献库应用里的检索页，同一套）|
+| 「某个研究团队有哪些文章」| `python -m tools.library 团队 XX`（名单在 `data/state/teams.json`，人工查证）|
 | 「我库里关于 XX 有什么？」| `python -m tools.ask "问题"`（RAG，中文答 + 附来源。**只是找某篇在不在，用上面那条更便宜**）|
 | 「帮我找 XX 方向的文献」| `python -m tools.discover "关键词"`（拆检索式 + 雪球 + 按「跟他多相关」排序）|
 | 「我在找**新方向**」「别被我现有的库拖累」| `python -m tools.discover "关键词" --新方向`（只按贴题排，不按近库排）；或直接用 `lit_search` 对抗式检索（它本来就不看库）。**别用 `ask`** —— 那是问他自己的库 |
 | 「把这个方向研究透」「我想在 A 上引入 B，有人做过吗」| 读 `deep-research` skill 照章法走：`library_retrieve`（库内找原料，零成本）→ `lit_search`（标 可读/库里有）→ `library_outline`/`library_section`（点节、段、表）→ `library_refs`（库内顺引用）→ 报告带出处 |
 | 「帮我横向比较 XX」「这方向有什么空白」| 读 `data/serving/structured/compare.md`；PBS 方向另有 `compare_PBS.md` |
-| 「精读某篇文献」| 让他在 Zotero 打「待处理」标签。**状态机自动判断**：只有正文→正文精读；有 SI→连 SI 一起→全文精读；已精读的只补缺的。服务已开机自启 |
+| 「精读某篇文献」| 让他在**文献库应用**里打开这篇、点「精读这篇」（会先说明要做什么、要花钱，确认后排队）。**状态机自动判断**：只有正文→正文精读；有 SI→全文精读；已精读的只补缺的 |
 | 「把某批文献的数据抽出来」| `python -m tools.extract KEY1 KEY2 --parse` |
 | 「拉伸强度超过 10 MPa 的有哪些」| `python -m tools.paperdb --find ...`（能比大小的数值库）|
 | 「全世界有没有人做过 XX」| `python -m tools.askworld "问题"`（Sciverse 取原文片段，**带出处**）|
 | 「把论文图里的曲线变成数据」| `python -m tools.digitize 图片路径`，**必须用云端大模型**（本地 7B 会编假数据）|
 | 「帮我想想研究方向」| 读 compare 表找「机理 × 性能」的空白格，或 `python -m tools.direction` |
-| 「库里好像有重复的 / 标签乱了」| `python -m tools.curate`（打标签 / 改名 / 去重 / 同步）|
+| 「期刊分级 / 这本刊可不可信」| `python -m tools.journalwatch.grading --list` |
 
 ## 现成数据资产
 
@@ -126,11 +127,11 @@ flash 的正式名已是 `deepseek-flash`（旧名 `deepseek-v4-flash` 靠转发
 
 ## 运维现状（不用管，已自动化）
 
-两个自启任务：`ZoteroLiteratureWatcher`（打「待处理」标签即自动精读）、`OllamaService`。
+两个自启任务：`ZoteroLiteratureWatcher`（名字是历史遗留，跑的是**看门狗**：守文献库应用 8780、MCP 服务 8778、取全文浏览器 9333）、`OllamaService`。
 **密钥存在系统凭据库**，硬盘上没有明文；统一走 `shared.kernel.config.get_key()`，
 加载顺序：环境变量 → 系统凭据库 → `.env`。用户在**控制面板**里填写与切换。
 
-用户的操作入口是 **`launch/控制面板.bat`**（本地网页）。人看的地图在 `README.md`。
+用户的操作入口：**桌面「文献库」快捷方式**（文献库应用）与 **`launch/控制面板.bat`**（设置、密钥、运维）。人看的地图在 `README.md`。
 
 ## ⚠ 最高优先级：先看真实世界，别用记忆代替调研
 
@@ -168,28 +169,25 @@ flash 的正式名已是 `deepseek-flash`（旧名 `deepseek-v4-flash` 靠转发
 **标着【启发式】的你可以推翻** —— 遇到反例有义务说出来并给证据，闷头照办才是违规。
 （旧版 288 行的哲学与推导原文在 `架构准则_v1_历史存档.md`，已不生效，查「为什么」时用。）
 
-## 核心归属（2026-09-07 立，2026-09-13 用户再降 Zotero 一级）
+## 核心归属（2026-09-07 立；2026-10-13 Zotero 移出平台）
 
-**证据库是全集，Zotero 是他自己挑出来读的子集。** 用户原话：
-> Zotero 的定位只是我自己读文献的一个工具，数据库是单独的核心；
-> 文献文件的核心也不再是库里，是我们下文献的那个地方。
+**证据库是唯一的库。** 用户原话（09-13）：
+> 数据库是单独的核心；文献文件的核心也不再是库里，是我们下文献的那个地方。
 
-- 文献的身份证**与来源无关**：Zotero 编号 / OpenAlex id / 由 DOI 生成的 id 都合法，
-  唯一执行点是 `paths.check_key()`；**跨来源认同一篇靠 DOI**。
-- **「有没有这篇」先问证据库目录 `shared.kernel.catalog`**（零网络），Zotero 只是补充；
-  `zotero_client.library_index()` 已经是两者的并集，调用方不用自己并。
+2026-10-13：「先把 Zotero 踢出体系，后面再单独做 Zotero 我想要的功能，现在对 Zotero 需求已经变了。」
+
+- 文献 id **按 DOI 起**（`paths.paper_id_from_doi`：`doi_10.1021-acs.x`），唯一执行点是 `paths.check_key()`；
+  **跨来源认同一篇靠 DOI**。2026-10-12 起 220 个老的 Zotero 编号目录已改名，7 篇没 DOI 的还是 8 位编号；
+  **旧编号照样认得**（`catalog.resolve`，对照就是目录卡里的 `zotero_key` 属性）。
+- **「有没有这篇」问证据库目录 `shared.kernel.catalog`**（零网络）。
 - 正本在 `data/raw/<id>/`（`main.pdf` / `si.*` / `parsed/`），目录在 `curated/<id>/meta.json`。
-  **「收一篇」= `getpdf.land()`：落正本 + 登记，不写 Zotero**；
-  「推到 Zotero」是另一个动作（`--to-zotero` / `getpdf_stash_one`），由人决定。
-- 精读 / 解析找 PDF 与 SI **本地正本优先，Zotero 兜底**。
-- 数据库的写入口只有一条：B 机上的流水线。打标签 = 投稿，不是直接写库。
-  **打了标签先按 DOI 对账**（`host/watcher/service.paper_id_for`）：证据库里已有的用原目录，
-  Zotero 编号只登记成属性；有范文（公众号推文 `reference.md`）的，推文当正文精读、我们只补 SI（2026-09-15 用户定）。
-- 老库回流：`python -m tools.getpdf --从Zotero落地`（一次性，只读 Zotero）。
-- ⏸ **2026-09-27 起后台自动建库已停**（本机设置 `AUTO_BUILD=0`，用户定）：落地流水线、每日盯新刊取件、每小时回流粗抽都不跑，只留打标签精读；下面这条在开关打开时才生效。
+  **「收一篇」= `getpdf.land()`：落正本 + 登记**。
+- 精读 / 解析找 PDF 与 SI **只认本地正本**。有范文（公众号推文 `reference.md`）的，推文当正文精读、我们只补 SI（2026-09-15 用户定）。
+- 精读由人在文献库应用里点（`host/app/runner.py`，一篇一篇排队，不回写任何地方）。
+- 作者 / 通讯 / 单位 / 摘要索引在 `serving/oa_index.json`（OpenAlex 取一次，可重建）；研究团队名单 `state/teams.json`（人工查证，不可重建）。
+- ⏸ **2026-09-27 起后台自动建库已停**（本机设置 `AUTO_BUILD=0`，用户定）：落地流水线、每日盯新刊取件都不跑；下面这条在开关打开时才生效。
 - **落地即自动**（`host/ingest`）：正本一到，MineRU 解析 → 骨架 → 向量化自动做完，
   一分钱大模型的钱不花；之后模型就能 `library_outline` → `library_section` 自己读它。
-  精读仍只由「待处理」标签触发。
 
 **装一次才能跑**（换电脑/重装后必做）：`pip install -e . --no-deps`
 
@@ -217,7 +215,7 @@ host  →  tools  →  shared.domain / shared.adapters  →  shared.kernel
 `tool.toml` · `__init__.py` · `cli.py` · `mcp.py` · `SKILL.md` · `README.md` · `tests/`
 （另有 `selftest.py` · `INCIDENTS.md` · `prompts/` · `evals/`）。
 `expose` 判据按**代价量级 + 可不可逆**分三档（2026-09-01 改，踩坑 #95）：
-只读且便宜 → `tool`；只读数据 → `resource`；**全库作业 / 不可逆写 Zotero → `prompt`**。
+只读且便宜 → `tool`；只读数据 → `resource`；**全库作业 / 不可逆写 → `prompt`**。
 其中「单次、便宜、可重来」的入口（问一次库 / 抽一篇 / 读一张图）可以逐个写进
 `tool.toml` 的 `agent_tools` 白名单放开成 tool，但必须 `confirm=True`
 （客户端每次弹窗且无「不再询问」）。**两道闸缺一不可，守卫双向查。**
@@ -226,7 +224,7 @@ host  →  tools  →  shared.domain / shared.adapters  →  shared.kernel
 往 `agent_tools` 加一个名字，必须同时在 `tests/test_architecture.py` 的
 `AGENT_TOOLS_APPROVED` 里登记**并写明理由**，否则守卫变红。
 第二处存在的意义就是逼人把「为什么它是单次/便宜/可重来」写成一句话。
-`curate` / `discover` / `direction` / 整批 `getpdf` / 整篇 `deepread` 列在
+`discover` / `direction` / 整批 `getpdf` / 整篇 `deepread` 列在
 `HUMAN_ONLY` 里，**永远只给人点**。
 
 ⚠ 而且要知道：**弹窗那道闸不是硬的。** `confirm` 是 Claude Code 专有标记，
@@ -250,7 +248,7 @@ python host/codegen/handover.py     # → HANDOVER.md + 本文件的结构树 + 
 ## 验证自主性
 
 **自主做**：只读/验证类命令、A/B 对比、单篇验证、读脚本读数据 → 跑完直接报结果。
-**先问用户**：全库重抽（花钱）、覆盖/删除数据、写真实 Zotero 库、
+**先问用户**：全库重抽（花钱）、覆盖/删除数据、
 方向性抉择（改 schema、换技术路线 —— 那是用户的领域判断）。
 
 ## 日志纪律（每次改动都要）

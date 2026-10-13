@@ -33,16 +33,10 @@ python -m tools.getpdf --file dois.txt            # 一批
 默认每篇隔 20 秒、单次最多 25 篇。出版商风控封的是**整个机构的 IP**，
 全校跟着断，不是某个账号被封那么简单。要快自己加 `--gap` / `--limit`。
 
-## 收进 Zotero
+## 收进证据库
 
-```bash
-python -m tools.getpdf --file dois.txt --to-zotero
-```
-
-查重 → 建条目（Crossref 元数据）→ 挂 PDF → 放进「LLM导入/建库用」。
-**每步幂等**，同一批跑两遍不会留下重复。不打精读标签、不触发精读。
-
-⚠ 附件占 **Zotero 官方存储（免费 300 MB）**，PDF 几十篇就满。
+取到的正文 / SI 落成 `data/raw/<id>/` 的本地正本并登记目录（id 按 DOI 起）。
+2026-10-13 起 Zotero 移出平台，没有「收进 Zotero」了。
 
 ## 结构
 

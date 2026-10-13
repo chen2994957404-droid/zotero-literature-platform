@@ -1,6 +1,6 @@
 ---
 name: getpdf
-description: 一批 DOI → 正文 + SI 收进证据库（借真实浏览器，用机构订阅权限）；要的话再推到 Zotero。什么时候用：用户说「把这几篇下下来」「discover 找出来的这批我要正文」；某篇要精读但库里没有 PDF；你手上有 DOI，缺的是全文
+description: 一批 DOI → 正文 + SI 收进证据库（借真实浏览器，用机构订阅权限）。什么时候用：用户说「把这几篇下下来」「discover 找出来的这批我要正文」；某篇要精读但库里没有 PDF；你手上有 DOI，缺的是全文
 ---
 
 # getpdf · 把正文弄到手
@@ -15,8 +15,7 @@ description: 一批 DOI → 正文 + SI 收进证据库（借真实浏览器，�
 
 ## 什么时候**别**用我
 
-- **用户只是想知道某篇在不在库里** → `library search`，免费秒回
-- **那篇是开放获取的** → Zotero 自己的「查找可用 PDF」就够了，不用惊动出版商
+- **用户只是想知道某篇在不在库里** → `library 库 XX` 或 `library 检索 …`，免费秒回
 - **用户想要「把某个期刊/某个方向的全下下来」** → 别做。那是扫库，
   会触发出版商风控，**封的是整个机构的 IP，全校跟着断**。
   正确做法是先用 `discover` 筛出真正该读的那几十篇，再取这些。
@@ -30,14 +29,10 @@ python -m tools.getpdf 10.1016/j.cej.2025.164092  # 取一篇
 python -m tools.getpdf --file dois.txt            # 一批，一行一个
 python -m tools.getpdf --file dois.txt --gap 30 --limit 10
 
-# 取到的**默认收进证据库**（raw/<id>/main.pdf + si.* + 目录登记），不写 Zotero。
-# 一次性回流：把 Zotero 里已有的文献复制成本地正本（只读 Zotero，在有 Zotero 的机器上跑）
-python -m tools.getpdf --从Zotero落地
+python -m tools.getpdf --file dois.txt --with-si  # 连补充材料一起
 
-# 再推到 Zotero 给主人看（**会写用户的库**，由人决定）
-python -m tools.getpdf --file dois.txt --to-zotero              # 默认「建库」用途
-python -m tools.getpdf 10.1016/xxx --to-zotero --purpose 精读    # 标成重点文章
-python -m tools.getpdf --file dois.txt --to-zotero --with-si    # 连补充材料一起
+# 取到的**收进证据库**（raw/<id>/main.pdf + si.* + 目录登记）。
+# 2026-10-13 起 Zotero 移出平台：没有「推到 Zotero」「从 Zotero 回流」了（旧代码在 git 标签 zotero-before-removal）
 ```
 
 ## `--with-si`：连补充材料一起取
@@ -62,25 +57,7 @@ python -m tools.getpdf --file dois.txt --to-zotero --with-si    # 连补充材�
 | Wiley | `...sup-0001-SuppMat.pdf` · `...sup-0001-MovieS1.mp4` | SuppMat |
 | ACS | `/article-supplement/<id>/<格式>/<名>/`，**懒加载，要滚到底才出现** | 滚完就能取 |
 
-附件标题固定用 **`SI`** —— 跟库里已有的一致，而且 `deepread` 找 SI 认的就是这个名字。
 SI 允许 `.docx`（实测库里 19 pdf + 13 docx，docx 占四成），但永远不收 HTML。
-
-## `--to-zotero` 做什么
-
-四件事，**每件都幂等**（同一批跑两遍 = 跑一遍）：
-
-1. 取一份全库 DOI 索引查重（**不是按篇去搜** —— 按篇搜查不到刚写进去的，会建重复）
-2. 库里没有 → 按 Crossref 元数据建条目，打上 `来源/自动` + `用途/建库`（或 `用途/精读`）
-3. 挂正文 PDF；已经有 PDF 附件就不重复挂
-4. 放进「`LLM导入`/`建库用`」或「`LLM导入`/`重点精读`」
-
-**不打精读标签、不触发精读。** 那是花钱的事，什么时候开始由用户决定
-（他在 Zotero 里打「待处理」，watcher 会接手）。
-
-合集名可以在控制面板改（`GETPDF_COLLECTION_TOP`），改了不用动代码。
-
-**为什么用途用合集、状态用标签**：进库原因是进来时就定了的、基本不变，适合合集；
-处理状态会变（待处理 → 正文精读 → 全文精读 → 读完），而且 watcher 认的就是标签。
 
 ## 跑之前必须成立的两件事
 
@@ -108,26 +85,3 @@ SI 允许 `.docx`（实测库里 19 pdf + 13 docx，docx 占四成），但永�
 | `no_pdf_link` | 出版商页面改版了 | 记进 INCIDENTS，回头改 `pdf_fetch` 的选择器 |
 | `not_pdf` | 拿回来的不是 PDF，页面既不是验证页也没有付费墙字样 | 分不清（code=NOT_PDF）；**别叫人去点验证码**。验证页会报 `captcha`、付费墙会报 `no_access`（2026-10-12 起取完看页面分辨） |
 | `exists` | 盘上已经有了 | 正常，跳过 |
-
-## 附件必须走两步，少一步用户就打不开
-
-```
-upload_attachment(...)   ① 建附件条目，文件传进 Zotero 官方存储
-put_local(att, pdf)      ② **把文件铺一份到本地 Zotero storage**
-```
-
-**②不是优化，是必需的。** 用户的文件同步走 WebDAV（坚果云），
-桌面端**只会去 WebDAV 找文件**，官方存储里那份它不看 ——
-少了②，条目有了、点开却是「在此路径无法找到附件」（2026-09-05 真坏过一次）。
-
-②还顺带解决另外两件事：`find_pdf` 从本地 storage 读，下游解析/精读才有正文可读；
-桌面端会把这个本地文件同步到用户自己的 WebDAV，跟他手动加的文献同一套。
-
-`put_local` 住在 `shared.adapters.zotero_client`（`deepread` 也用它）。
-
-## 存储余量
-
-附件同时占 **Zotero 官方存储（免费 300 MB）**。PDF 一篇 1～9 MB，**几十篇就满**。
-批量之前值得看一眼余量（zotero.org → Settings → Storage）。
-满了的长期解法：升级 Zotero 存储，或者改成只铺本地、不传官方存储
-（省配额，但要确认桌面端能把它同步出去）。

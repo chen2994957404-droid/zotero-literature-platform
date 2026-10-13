@@ -4,7 +4,7 @@
 
 ## 这块是什么
 
-**搜全球 → 对照我的库 → 按「跟我多相关」排序 → 按编号收进 Zotero。**
+**搜全球 → 对照我的库 → 按「跟我多相关」排序 → 按编号挑出来，交给 getpdf 收进证据库。**
 
 外部检索谁都能调。本工具不可替代的地方是：**只有它知道用户已经有什么、
 读过什么、在做什么方向**，所以它回答的不是「有哪些文献」，而是
@@ -28,11 +28,9 @@
 | `mcp.py` | 给 agent 的 MCP 面（只做参数转换，不许有逻辑）|
 | `README.md` · `SKILL.md` | 给人的说明 · 给 agent 的手册（含**什么时候别用我**）|
 | `evals/` | 评测：12 条金标，钉住排序规则（相关度压过被引，踩坑 #38）。加用例只改 `golden/ranking.json` |
-| `collect.py` | 按编号收进 Zotero（**收 ≠ 精读**，两个决定分开）|
-| `importer.py` | 按 DOI 收进 Zotero（写操作，带机器角色守卫）|
+| `collect.py` | 按编号挑，去掉库里已有的，给出取全文命令（**收 ≠ 精读**，两个决定分开）|
 | `match.py` | 与我的库对照：已有/新、相关度、雪球种子、排序 |
-| `thesis.py` | 一次性：给毕业论文孤儿附件建 thesis 条目 |
-| `selftest.py` | 自测（纯逻辑离线；要 Zotero 的那两条环境不具备时 SKIP）|
+| `selftest.py` | 自测（纯逻辑离线；要证据库数据的那两条环境不具备时 SKIP）|
 
 ## 三条实测结论（改的时候别顺手删掉）
 
@@ -57,7 +55,6 @@ discover.run_discovery('polyborosiloxane 剪切增稠', limit=25, log=print)
 discover.search('shear stiffening gel', limit=10)   # 只搜一次 OpenAlex，便宜
 
 from tools.discover.match import match_many, pick_seeds, rank, build_index
-from tools.discover.importer import import_dois     # 写 Zotero，有角色守卫
 ```
 
 `run_discovery` 是**面板与命令行共用**的那一份 —— 逻辑只有一份，别再抄第二份。
@@ -72,10 +69,7 @@ from tools.discover.importer import import_dois     # 写 Zotero，有角色守�
 ## 怎么验证
 
 ```
-python tools/discover/selftest.py             # 6 条纯逻辑 + 2 条要 Zotero
+python tools/discover/selftest.py             # 纯逻辑 + 2 条要证据库数据
 python -m tools.discover "polyborosiloxane" --单查询 --不雪球   # 最省的一次真检索
 python -m tools.discover.collect --看          # 看上次结果，不写任何东西
 ```
-
-⚠ `collect` / `importer` / `thesis` 会**写用户的 Zotero 库**，
-A 机默认禁止（`ROLE=dev`）。要在编程端试，用测试账号那一档（`ROLE=test`）。

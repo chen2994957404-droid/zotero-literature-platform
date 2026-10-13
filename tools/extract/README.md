@@ -26,7 +26,7 @@ python -m tools.extract.compare_models  比一比两个模型（只读不写）
 | 档 | 料从哪来 | 用什么模型 | 用途 |
 |---|---|---|---|
 | 精层 | 精读产物 `parsed/full.md`（+ SI）| 云端 pro | 可信数值，能进论文 |
-| 粗层 | Zotero 自带全文索引 | 本地 qwen | 广撒网、粗筛 |
+| 粗层 | 证据库里的全文 | 本地 qwen | 广撒网、粗筛 |
 
 ## 产物
 

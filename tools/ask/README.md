@@ -25,7 +25,7 @@ python -m tools.ask.vectorize --deep --rebuild   # 清空重建整个向量库
 | 层 | 从哪来 | 特点 |
 |---|---|---|
 | 精层 | 精读产物 `parsed/full.md` | 有版面、有图注，答得深 |
-| 粗层 | Zotero 自带全文索引 | 广撒网，覆盖全库 |
+| 粗层（老的，来自已删的 Zotero 全文索引）| 不再新增 | 只剩存量 |
 
 ## 花钱吗
 

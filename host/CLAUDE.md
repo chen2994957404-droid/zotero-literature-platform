@@ -18,13 +18,14 @@
 | `panel/` | 控制面板（本地网页）—— 用户与整个系统的交互入口 | 双击 `launch/控制面板.bat` |
 | `doctor/` | 一键体检 + 诊断报告 + 产物缺口 | 双击 `launch/不常用/诊断报告.bat` |
 | `deploy/` | 拉新代码 + 装包 + 重启服务；数据搬家 | 双击 `launch/不常用/更新平台.bat` |
-| `watcher/` | **看门狗 + 精读监听**：看门狗管三个进程；监听只做「盯 Zotero 标签 → 精读 → 抽取 → 回写 → 改标签」 | 打个标签，剩下不用管 |
+| `watcher/` | **看门狗**：守常驻进程（落地流水线 / 每日作业，AUTO_BUILD=1 才拉）与端口服务（8780 文献库应用 / 8778 MCP / 9333 取全文浏览器） | 不用管 |
+| `app/` | **文献库应用**（FastAPI + Vue）：检索、团队、单篇精读（`runner.py` 排队跑）| 桌面「文献库」快捷方式 |
 | `ingest/` | **落地流水线**（自己的常驻进程 `--loop`）：有正本没解析的 → MineRU 解析 → 骨架 → 向量化（不花大模型钱） | 文献一落地就自动做；`python -m host.ingest` 手动清积压 |
 | `daily/` | **每日作业**（自己的进程，一天拉一次）：盯新刊 → 补摘要 / 分类 → 过线入队 → 自动升 1 级取件 | 不用管；`python -m host.daily` 手动跑一次 |
 | `mcp/` | MCP 协议层：读各 `tools/*/tool.toml` 聚合暴露面 | 在 Claude 里直接用工具 |
 | `codegen/` | 所有生成器：`HANDOVER.md` · `.claude/` · `docs/incidents/` | 不直接碰 |
-| `wechat_import/` | 公众号推送 → Zotero 条目 + **推文本身当正文精读**（串 `getpdf` 与 `deepread`） | 双击 `launch/导入公众号精读.bat` |
-| `wechat_import/golden.py` | 精读**金标集**：推文当范文存成 `reference.md`，原件进证据库，**不写 Zotero 不装精读** | `python -m host.wechat_import --金标` |
+| `wechat_import/` | 公众号推送 → 证据库里一篇 + **推文本身当正文精读**（串 `getpdf` 与 `deepread`） | 双击 `launch/导入公众号精读.bat` |
+| `wechat_import/golden.py` | 精读**金标集**：推文当范文存成 `reference.md`，原件进证据库，**不装精读** | `python -m host.wechat_import --金标` |
 
 ## panel 的设计铁律
 
@@ -39,7 +40,7 @@
 ### 面板的能力边界（刻意划的线）
 
 - **可做**（可逆、零风险）：看状态/进程/日志/最近处理记录；改密钥与模型；重启后台服务
-- **不可做**（不可逆或花钱）：删数据、全库重抽、改 Zotero 库、触发批量精读
+- **不可做**（不可逆或花钱）：删数据、全库重抽、触发批量精读
 
 理由：面板上一个按钮点错的代价，远大于用户多问一句的成本。**新增按钮前先按这条尺子量。**
 
@@ -62,7 +63,7 @@
 ```
 python host/doctor/health_check.py --offline   # 离线档：包安装/离线测试/语法/静态检查
                                                #   ← 不依赖任何外部服务，必须永远全绿
-python host/doctor/health_check.py             # 完整档：另加配置、Zotero、Ollama、
+python host/doctor/health_check.py             # 完整档：另加配置、Ollama、
                                                #   自测、数据资产、后台服务
                                                #   ← 本机没配密钥/没开服务就会红，属正常
 ```
@@ -74,25 +75,18 @@ python host/doctor/health_check.py             # 完整档：另加配置、Zote
 **运行时导入检查比语法检查更重要**：语法过 ≠ 能跑（踩坑 #49）。
 另有「关键入口找不到」检查 —— 按**模块名**查，不按文件名（踩坑 #81：搬家会静默失效）。
 
-## watcher：一个看门狗管三个进程（2026-09-17 起）
+## watcher：看门狗（2026-10-13 起只剩它）
 
 ```
-计划任务 ZoteroLiteratureWatcher
-  └─ host.watcher.watchdog（看门狗：每分钟看一眼，死了才重启，绝不打断正在干活的）
-       ├─ host.watcher.service   精读监听（盯标签 → 精读 → 回写）      常驻，锁 zotero_watcher
-       ├─ host.ingest --loop     落地流水线（解析 / 骨架 / 向量化）     常驻，锁 ingest_loop
-       └─ host.daily             盯新刊 + 补摘要 + 升 1 级取件          每天 02:00 后拉一次，锁 daily
+计划任务 ZoteroLiteratureWatcher（名字是历史遗留）
+  └─ host.watcher.watchdog（每分钟看一眼，死了才重启，绝不打断正在干活的）
+       ├─ host.ingest --loop     落地流水线（AUTO_BUILD=1 才拉）      常驻，锁 ingest_loop
+       ├─ host.daily             每日作业（AUTO_BUILD=1 才拉）         每天 02:00 后拉一次，锁 daily
+       └─ 按端口守：8780 文献库应用 · 8778 MCP 服务 · 9333 取全文浏览器
 ```
 
-⏸ **2026-09-27 起后两个默认不拉**：本机设置 `AUTO_BUILD`（默认 `0`）关着时，看门狗只守精读监听；
-`host.autosync` 也只保活、不回流不粗抽。用户定：证据库先停，只留打标签精读。
-
-**为什么拆**：三件事原来挤在监听的一个循环里串着做，每天一次的盯新刊 + 取件一跑几十分钟，
-用户打的标签得干等。本来就是不同的活，就该是不同的进程；都是等网络的活，同时开着不吃资源。
-
-停任务只停得掉看门狗，三个孙子进程照跑旧代码（踩坑 #62）—— 面板的重启按钮和
-`host.deploy.update` 都走 `watchdog.kill_children()` 按锁把它们停掉。找进程要认**模块路径**
-（`SERVICES[*]['pat']`），只认单个词会出事（看门狗自己的命令行里也有 "watcher"，会把自己杀掉）。
+原来的「打标签精读监听」（`host.watcher.service`）随 Zotero 移出平台删了，精读在文献库应用里按篇点。
+停任务只停得掉看门狗，孙子进程照跑旧代码（踩坑 #62）—— 用 `watchdog.kill_children()`；端口服务直接按端口停掉，看门狗一分钟内拉起。
 
 ## mcp：清单驱动，没有硬编码的工具名
 

@@ -53,4 +53,4 @@ python -m tools.discover.collect 1,3,5-7
    正本 + SI 落地，落地流水线随后自动解析。取不到的隔天再试，最多四天。
    队列在 `journal_watch_seen.json` 的 `queue` / `harvested`。
 
-不精读（那要花模型钱，仍只由你打标签触发）、不写 Zotero。
+不精读（那要花模型钱，只由你在文献库应用里点）。
