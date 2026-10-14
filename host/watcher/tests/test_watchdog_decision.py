@@ -164,3 +164,31 @@ def test_端口服务表指向真实存在的入口(wd):
 
 def test_没人监听的端口判为不通(wd):
     assert wd.port_open(1, timeout=0.3) is False
+
+
+
+def test_浏览器端口在听却连不上_连着两次才关掉(wd):
+    """2026-10-14：浏览器半死 —— 调试口照样回话，Playwright 一挂标签就卡住，所有借浏览器的活 180 秒超时，看门狗却觉得它活着。"""
+    killed, st = [], {'last': 0}
+    bad = lambda: {'ok': False, 'error': 'Timeout 45000ms exceeded'}
+    kw = dict(is_open=lambda p: True, kill=killed.append, say=lambda m: None)
+    assert wd.browser_check(1000, st, 9333, probe=bad, **kw) == 'fail'
+    assert wd.browser_check(1000 + 10, st, 9333, probe=bad, **kw) == '', '没到下一次探测时间不连'
+    assert wd.browser_check(1000 + wd.BROWSER_PROBE, st, 9333, probe=bad, **kw) == 'killed'
+    assert killed == [9333]
+    assert wd.browser_check(1000 + 2 * wd.BROWSER_PROBE, st, 9333, probe=lambda: {'ok': True}, **kw) == 'ok'
+
+
+def test_浏览器一次慢不算_连上就清零(wd):
+    st, killed = {'last': 0}, []
+    kw = dict(is_open=lambda p: True, kill=killed.append, say=lambda m: None)
+    wd.browser_check(1000, st, 9333, probe=lambda: {'ok': False, 'error': 'slow'}, **kw)
+    wd.browser_check(1000 + wd.BROWSER_PROBE, st, 9333, probe=lambda: {'ok': True}, **kw)
+    wd.browser_check(1000 + 2 * wd.BROWSER_PROBE, st, 9333, probe=lambda: {'ok': False, 'error': 'slow'}, **kw)
+    assert killed == [], '中间连上过一次，失败计数要清零'
+
+
+def test_端口没在听不归它管(wd):
+    st = {'last': 0}
+    assert wd.browser_check(1000, st, 9333, is_open=lambda p: False, probe=lambda: 1 / 0,
+                            kill=lambda p: 1 / 0, say=lambda m: None) == ''

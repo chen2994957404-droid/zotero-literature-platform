@@ -39,6 +39,8 @@
 | 8780 | 文献库应用 `python -m host.app.server`（2026-10-11） | 用户检索证据库（编程机经 SSH 隧道打开） |
 
 它们没有心跳，**端口在监听就算活着**；不在就拉起来（同样有 GRACE 宽限，不会连着拉）。
+**浏览器另加一道**（2026-10-14）：端口在听、却连不上（Playwright 挂标签时卡死，所有借浏览器的活都 180 秒超时）。
+每 BROWSER_PROBE 秒真连一次，连着 BROWSER_FAILS 次连不上 → 杀掉整棵浏览器进程树，下一轮按端口规则拉起来。
 不受 AUTO_BUILD 管：它们只是「有人来要才干活」的服务，不自己去建库。
 浏览器直接跑那个 .bat（参数只有一份正本）；bat 末尾的 pause 在 stdin=NUL 下立即返回。
 
@@ -64,6 +66,9 @@ STALE = 300         # 超 300 秒没报活 = 进程死了/冻住了。后台线�
 NO_PROGRESS = 2700  # 报活正常但 45 分钟毫无进展 = 卡在某个不返回的调用上。
                     # 这个阈值必须**大于最慢一篇精读的耗时**，否则又变回误杀
 GRACE = 180         # 重启后给进程的启动宽限期，期间不判死
+BROWSER_PROBE = 600     # 取全文浏览器每 10 分钟真连一次
+BROWSER_PROBE_WAIT = 45 # 一次最多等 45 秒（正常不到 1 秒）
+BROWSER_FAILS = 2       # 连着几次连不上才重启（别因为一次慢就把正在取件的浏览器杀掉）
 
 # ── 常驻进程表 ──────────────────────────────────────────────────────────────
 # beacon：它用 heartbeat.start(<beacon>) 报活的名字（测试会核对 service 源码里真用的是这个名）
@@ -117,6 +122,40 @@ def ensure_ports(now, last, services=None, is_open=port_open, start=None, say=No
         started.append(svc['name'])
         say(f'[{svc["name"]}] 端口 {svc["port"]} 没在监听 → 已拉起')
     return started
+
+
+def browser_check(now, state, port, is_open=port_open, probe=None, kill=None, say=None):
+    """端口在听的取全文浏览器真连一次；连着 BROWSER_FAILS 次连不上就杀掉（之后 ensure_ports 会拉起来）。
+    state 记 last / fails。返回这轮做了什么：'' / 'ok' / 'fail' / 'killed'（便于测）。"""
+    say = say or log
+    if now - state.get('last', 0) < BROWSER_PROBE or not is_open(port):
+        return ''
+    state['last'] = now
+    if probe is None:
+        from shared.adapters import pdf_fetch
+        probe = lambda: pdf_fetch.probe(timeout=BROWSER_PROBE_WAIT)
+    r = probe()
+    if r.get('ok'):
+        state['fails'] = 0
+        return 'ok'
+    state['fails'] = state.get('fails', 0) + 1
+    say(f'[getpdf_browser] 端口 {port} 在听却连不上（第 {state["fails"]} 次）：{str(r.get("error"))[:120]}')
+    if state['fails'] < BROWSER_FAILS:
+        return 'fail'
+    (kill or kill_browser)(port)
+    state['fails'] = 0
+    say(f'[getpdf_browser] 连着 {BROWSER_FAILS} 次连不上 → 已关掉，下一轮按端口拉起来')
+    return 'killed'
+
+
+def kill_browser(port):
+    """按调试口认出取全文浏览器的主进程，连子进程一起关（/T）。只认带 --remote-debugging-port=<port> 的那个。"""
+    txt = _sp.powershell(
+        "Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | "
+        f"Where-Object {{$_.CommandLine -match 'remote-debugging-port={int(port)}'}} | "
+        "Select-Object -ExpandProperty ProcessId", timeout=25)
+    for pid in [t.strip() for t in txt.splitlines() if t.strip().isdigit()]:
+        _sp.run(['taskkill', '/F', '/T', '/PID', pid], timeout=30)
 
 
 def auto_build_on():
@@ -264,7 +303,7 @@ def main():
                 _sp.run(['taskkill', '/F', '/PID', pid], timeout=20)
                 log(f'开关已关，停掉 {svc["name"]} PID={pid}')
     last_restart = {s['name']: 0 for s in services}
-    last_port = {}
+    last_port, browser_state = {}, {'last': time.time()}
     while True:
         now = time.time()
         for svc in services:
@@ -281,6 +320,12 @@ def main():
             ensure_ports(now, last_port)
         except Exception as e:
             log(f'守端口服务失败：{type(e).__name__}: {e}')
+        try:
+            bp = next(s['port'] for s in port_services() if s['name'] == 'getpdf_browser')
+            if browser_check(now, browser_state, bp) == 'killed':
+                last_port.pop('getpdf_browser', None)      # 刚关掉，下一轮立刻拉，不等宽限
+        except Exception as e:
+            log(f'查取全文浏览器失败：{type(e).__name__}: {e}')
         try:
             if auto and daily_due(now):
                 launch_daily()

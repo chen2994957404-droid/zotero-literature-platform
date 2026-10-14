@@ -99,8 +99,11 @@ def _sync_api():
             '装一次：pip install playwright')
 
 
-def probe(url=None):
-    """那个浏览器连不连得上 → dict(ok, cdp, pages, error)。
+def probe(url=None, timeout=30):
+    """那个浏览器连不连得上 → dict(ok, cdp, pages, error)。最多等 timeout 秒。
+
+    ⚠ 「端口在听」≠「连得上」（2026-10-14）：浏览器卡在半死状态时调试口照样回 /json/version，
+    可 Playwright 一挂上标签就不返回 —— 取全文、知网、SciFinder 全部 180 秒超时。所以要真连一次。
 
     单独一个 probe 是因为**「浏览器没开」和「这篇拿不到」要分开报** ——
     前者是人要去做一件事，后者是这篇跳过就好。
@@ -112,7 +115,7 @@ def probe(url=None):
     pw = None
     try:
         pw = sync_playwright().start()
-        browser = pw.chromium.connect_over_cdp(target)
+        browser = pw.chromium.connect_over_cdp(target, timeout=timeout * 1000)
         ctxs = browser.contexts
         pages = sum(len(c.pages) for c in ctxs)
         browser.close()
