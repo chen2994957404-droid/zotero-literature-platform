@@ -328,8 +328,9 @@ def _hold(pg):
 
 def _gate(pg, warnings):
     if _captcha(pg):
+        _hold(pg)     # 拉到最前：2026-10-14 用户「我没看到弹窗」—— 检索标签被别的标签压在后面
         return _result(code='CAPTCHA_REQUIRED', url=pg.url, warnings=warnings,
-                       why='知网弹了拼图验证码：请人在主力机「取全文用的浏览器」的知网标签里把拼图拖到位，'
+                       why='知网弹了拼图验证码：请人在主力机「取全文用的浏览器」里把拼图拖到位（知网那个标签已切到最前面），'
                            '之后用 cnki_current 读这一页（不用重查）')
     return None
 
