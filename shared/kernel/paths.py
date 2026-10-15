@@ -148,13 +148,14 @@ def direction_bands():
 #   `2T6H4S3D`                  Zotero 条目编号（8 位大写字母数字）—— 老数据原样有效
 #   `W2741809687`               OpenAlex 作品 id —— 方向层本来就在用
 #   `doi_10.1021-acs.macro...`  由 DOI 生成（见 `paper_id_from_doi`）—— 两边都没有时用
+#   `cnki_slgy202603021`        知网的文件名（见 `paper_id_from_cnki`）—— 没有 DOI 的中文文献（2026-10-15 加）
 # 加一种来源 = 往 `_ID_PREFIXES` 里加一个前缀，不用改别的地方。
 #
 # **对账靠 DOI，不靠 id**：同一篇文献在不同来源下可能拿到不同 id，
 # 谁跟谁是同一篇由 `papers.doi` 回答（见 tools/paperdb）。
 ZOTERO_KEY_RE = re.compile(r'^[A-Z0-9]{8}$')
 OA_ID_RE = re.compile(r'^W\d{4,12}$')
-_ID_PREFIXES = ('doi',)
+_ID_PREFIXES = ('doi', 'cnki')
 SLUG_ID_RE = re.compile(r'^(?:%s)_[a-z0-9][a-z0-9._-]{0,79}$' % '|'.join(_ID_PREFIXES))
 
 # 旧名字保留：既有代码里 `KEY_RE.match(x)` 问的都是「这是不是 Zotero 编号」，
@@ -187,7 +188,7 @@ def check_key(key):
     raise BadKeyError(
         f'不是合法的文献 id: {key!r}'
         f'（应为 8 位 Zotero 编号如 2T6H4S3D、OpenAlex id 如 W2741809687，'
-        f'或 doi_ 开头的 id —— 用 paths.paper_id_from_doi() 生成）')
+        f'或 doi_ / cnki_ 开头的 id —— 用 paths.paper_id_from_doi() / paper_id_from_cnki() 生成）')
 
 
 def is_zotero_key(key):
@@ -203,6 +204,21 @@ def is_zotero_key(key):
 
 
 _DOI_PREFIX_RE = re.compile(r'^(?:https?://(?:dx\.)?doi\.org/|doi:)', re.I)
+
+
+CNKI_FILENAME_RE = re.compile(r'^[A-Za-z]{0,8}\d{4,}[A-Za-z0-9]*$')   # 期刊 SLGY202603021；学位论文全是数字
+
+
+def paper_id_from_cnki(filename):
+    """知网的文件名（每篇固定的编号，如期刊 `SLGY202603021`、学位论文 `1024012345.nh` 去掉后缀）→ `cnki_slgy202603021`。
+
+    给**没有 DOI 的中文文献**用（2026-10-15：王海平《塑料工业》2026 在知网页和 PDF 里都没有 DOI，证据库收不进）。
+    有 DOI 的一律按 DOI 起（`paper_id_from_doi`）—— 跨来源认同一篇靠 DOI。
+    """
+    f = re.sub(r'\.(nh|caj|pdf)$', '', str(filename or '').strip(), flags=re.I)
+    if not CNKI_FILENAME_RE.match(f):
+        raise BadKeyError(f'不像知网文件名: {filename!r}（应形如 SLGY202603021）')
+    return check_key('cnki_' + f.lower())
 
 
 def paper_id_from_doi(doi):

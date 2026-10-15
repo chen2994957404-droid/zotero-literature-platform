@@ -64,6 +64,15 @@ class TestPaperId:
         i1, i2 = paths.paper_id_from_doi(long1), paths.paper_id_from_doi(long2)
         assert i1 != i2 and len(i1) <= 80 and paths.check_key(i1) == i1
 
+    def test_没有DOI的知网文献按知网文件名起id(self):
+        """2026-10-15：王海平《塑料工业》2026 知网页和 PDF 里都没有 DOI，证据库收不进。"""
+        assert paths.paper_id_from_cnki('SLGY202603021') == 'cnki_slgy202603021'
+        assert paths.paper_id_from_cnki('1022409835.nh') == 'cnki_1022409835'     # 学位论文全是数字、带 .nh
+        assert paths.check_key('cnki_slgy202603021') == 'cnki_slgy202603021'
+        for bad in ('', None, 'abc', '../x', 'SLGY 2026'):
+            with pytest.raises(paths.BadKeyError):
+                paths.paper_id_from_cnki(bad)
+
     @pytest.mark.parametrize('bad', ['', None, 'not-a-doi', 'https://example.com/x'])
     def test_不是DOI就拒绝(self, bad):
         with pytest.raises(paths.BadKeyError):

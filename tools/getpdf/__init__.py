@@ -335,6 +335,23 @@ def land(doi, with_si=True, allow_fetch=True, pdf_path=None, si_path=None):
     return out
 
 
+def land_file(pid, pdf_path, **meta):
+    """没有 DOI 的一篇：给定 id（如 `paths.paper_id_from_cnki`）+ 本地 PDF → 收成正本并登记 → dict(id, ok, action, pdf)。
+
+    `land` 认 DOI（跨来源认同一篇靠它）；这条只给真没有 DOI 的（知网上一部分中文期刊文章）。**幂等**。
+    """
+    pid = paths.check_key(pid)
+    out = {'id': pid, 'ok': False, 'action': 'failed', 'pdf': ''}
+    if not (pdf_path and os.path.exists(pdf_path)):
+        return out
+    main = paths.local_pdf(pid)
+    changed = _copy(pdf_path, main)
+    catalog.register(pid, source=catalog.SRC_LOCAL, **meta)
+    out.update(ok=True, action='landed' if changed else 'exists', pdf=main)
+    log.info(f'{pid} {out["action"]}（无 DOI，本地文件）')
+    return out
+
+
 def si_todo():
     """该补 SI 的清单：有正文、有 DOI、SI 状态是「没取过」（不含出版商确认没有的）。零网络。"""
     out = []

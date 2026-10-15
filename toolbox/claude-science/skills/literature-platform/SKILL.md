@@ -285,13 +285,16 @@ Chinese master's / PhD theses, Chinese journals, conferences and **Chinese paten
   **After the user passes the verification, call `cnki_download` again with the same `url` (not a new search, not `n`)**:
   since 0.14.2 the server downloads from the page the user just unlocked, which is still open; a fresh search or page
   gets verified again (seen 2026-10-13: three rounds of drag → new request → blocked again).
-  **Preferred since 0.14.3 — "user opens, server fetches":** CNKI verifies pages the program opens itself, but not the
+  **Fallback (was the preferred route 0.14.3–0.15.1) — "user opens, server fetches":** CNKI verifies pages the program opens itself, but not the
   user's own browsing (user tested 2026-10-13). So ask the user to search and open the paper in the main machine's
   「取全文用的浏览器」, then call `~/bin/litcall cnki_download '{}'` (no arguments) — it saves the article that is open there.
   One paper at a time: ask for the next one only after this one is saved.
   Since 0.15.1 a successful `cnki_download` also **files the paper into the evidence library** (`library_id`; DOI read from the
   CNKI page or the PDF, title / authors / journal / year from the CNKI page), so it can go into a topic (`topic_add`) like any
-  other paper. A paper with no DOI anywhere stays only in the export folder (`warnings: not_in_library`).
+  other paper. Since 0.15.2 a paper with no DOI is filed too, under its CNKI code (`library_id` like `cnki_slgy202603021`).
+  **0.15.2 also fixed a false alarm**: searches with only a few hits were reported as `CAPTCHA_REQUIRED` although the page
+  was fine (the hidden slider widget's text was counted). Searching and downloading by yourself (`cnki_search` →
+  `cnki_download {"n": …}`) works again — tested 2026-10-15, no verification. Only a real verification needs the user.
 - **Chinese journal articles: try the journal's own website before CNKI** (2026-10-13). Many Chinese journals publish every
   article on their own site with a free PDF — e.g. 功能高分子学报 (gngfzxb.ecust.edu.cn) had a 2026 online-first paper as a
   free 11-page PDF. Their DOIs (`10.xxxx/j.cnki.…`) resolve only to CNKI, so don't rely on doi.org: web-search

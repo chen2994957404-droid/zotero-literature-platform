@@ -249,3 +249,17 @@ def test_补试时网还没好_剩下的标网络错误可重试(env, monkeypatc
     rs = F.many(dois, gap=0, limit=8)
     assert len(tried) == F.NET_TRIP + 2, '第一轮敲 NET_TRIP 篇、补试再敲 2 篇就停'
     assert all(r['code'] == F.NETWORK_ERROR and r['retryable'] for r in rs)
+
+
+def test_没有DOI的按给定id收进证据库_幂等(env, tmp_path):
+    """2026-10-15：知网上没有 DOI 的中文文章（id 用 paths.paper_id_from_cnki 起）。"""
+    from tools import getpdf
+    from shared.kernel import catalog
+    src = tmp_path / 'x.pdf'
+    src.write_bytes(b'%PDF-1.4 test')
+    pid = paths.paper_id_from_cnki('SLGY202603021')
+    r = getpdf.land_file(pid, str(src), title='高压传感器防护泡沫', journal='塑料工业', year='2026', origin='cnki')
+    assert r['ok'] and r['action'] == 'landed' and os.path.exists(paths.local_pdf(pid))
+    assert catalog.read_meta(pid)['title'] == '高压传感器防护泡沫' and pid in catalog.ids()
+    assert getpdf.land_file(pid, str(src))['action'] == 'exists'
+    assert not getpdf.land_file(pid, str(tmp_path / 'none.pdf'))['ok']

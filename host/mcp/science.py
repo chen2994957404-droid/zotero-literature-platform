@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.15.1'
+VERSION = '0.15.2'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -104,6 +104,7 @@ VERSION = '0.15.1'
 # v0.15.0（2026-10-15 用户提）：topic_add / topic_remove / topic_list / topic_items —— 专题：把写综述用到的一批文献放进一个有名字的组，用户在文献库应用里按专题筛。
 # v0.15.1（2026-10-15）：cnki_download 下到的直接收进证据库（按页面 / PDF 里的 DOI 落正本 + 登记标题作者刊名年份），
 #   回 library_id —— 原来只落在导出文件夹，专题里加不进去。没有 DOI 的仍只在文件夹（warnings 说明）。
+# v0.15.2（同日）：没有 DOI 的按知网文件名起 id（cnki_slgy202603021）照样收进证据库；修知网「被挡」误报（屏幕外拼图弹层的字）。
 
 # 原样借用的（输出本来就合适）
 BORROW = ()     # 2026-10-04 用户定：只给它做不到的（取全文）。数值库它自己会抽，不借了；ping 自己挂
@@ -1462,12 +1463,13 @@ def _cnki_detail(a):
 def _cnki_download(a):
     from shared.adapters import cnki
     from shared.kernel import paths
-    url = (a.get('url') or '').strip()
+    url, fname = (a.get('url') or '').strip(), ''
     if not url and a.get('n'):
         if not _chemdb_lock.acquire(blocking=False):
             raise ValueError('有一个检索正在用浏览器；等它跑完（chemdb_result）再交')
         try:
-            url = cnki.row_url(int(a['n'])) or ''
+            row = cnki.row_info(int(a['n']))
+            url, fname = row.get('url') or '', row.get('filename') or ''
         finally:
             _chemdb_lock.release()
         if not url:
@@ -1486,7 +1488,7 @@ def _cnki_download(a):
             raise ValueError('浏览器里没有打开着的知网摘要页：请用户在主力机「取全文用的浏览器」里搜到这篇、点开，再交一次（不带参数）')
 
     def fetch(db):
-        r = cnki.download(url)
+        r = cnki.download(url, filename=fname)
         raw = r.pop('pdf', None)
         if raw:
             d = os.path.join(paths.CHEMDB_EXPORTS, 'cnki')
@@ -1509,13 +1511,22 @@ def cnki_meta_fields(meta):
 
 def _cnki_to_library(r, path):
     """下到的知网 PDF 收进证据库：有 DOI 就落正本 + 登记；没有就只留在导出文件夹并说明。"""
-    doi = ((r.get('meta') or {}).get('doi') or '').strip()
-    if not doi:
-        r.setdefault('warnings', []).append('not_in_library: 页面和 PDF 里都没找到 DOI，只放在导出文件夹（证据库按 DOI 收）')
-        return
+    meta = r.get('meta') or {}
+    doi = (meta.get('doi') or '').strip()
     try:
         from tools import getpdf
-        from shared.kernel import catalog
+        from shared.kernel import catalog, paths
+        if not doi:
+            # 没有 DOI：按知网文件名起 id（2026-10-15，王海平《塑料工业》2026 两边都没 DOI）
+            try:
+                pid = paths.paper_id_from_cnki(meta.get('cnki_filename'))
+            except paths.BadKeyError:
+                r.setdefault('warnings', []).append('not_in_library: 没有 DOI，也没读到知网文件名，只放在导出文件夹')
+                return
+            lr = getpdf.land_file(pid, path, cnki_filename=meta.get('cnki_filename'), **cnki_meta_fields(meta))
+            if lr.get('ok'):
+                r['library_id'], r['in_library'] = lr['id'], True
+            return
         lr = getpdf.land(doi, with_si=False, allow_fetch=False, pdf_path=path)
         if lr.get('ok'):
             catalog.register(lr['id'], **cnki_meta_fields(r.get('meta')))
@@ -1864,8 +1875,9 @@ TOOLS = [
      {'n': {'type': 'integer', 'minimum': 1}, 'url': {'type': 'string'},
       'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50}}, [], _cnki_detail),
     ('cnki_download', '知网一篇的全文 PDF：在摘要页点「PDF下载」，存进主力机的导出文件夹，回 path（WSL 路径，直接读）/ filename / '
-     'title / bytes，**并直接收进证据库**（library_id；按页面 / PDF 里的 DOI，标题作者刊名年份取自知网页，可加进专题）。**首选不带参数**：请用户在主力机「取全文用的浏览器」里自己搜到、点开那篇，再调这个（不带 n / url）就下他打开着的那篇'
-     '（程序自己开知网页老被安全验证，人手动开不弹）。也可给 n（当前结果页序号）或摘要页 url。一次一篇；两次至少隔 60 秒、每天 5 篇（单独的额度，见 cnki_status 的 '
+     'title / bytes，**并直接收进证据库**（library_id；有 DOI 按 DOI，没有按知网文件名 cnki_…；标题作者刊名年份取自知网页，可加进专题）。'
+     '常用：先 cnki_search，再给 n（当前结果页序号）。也可给摘要页 url；都不给 = 下用户在主力机浏览器里打开着的那篇'
+     '（真撞上安全验证、人拖完之后用）。一次一篇；两次至少隔 60 秒、每天 5 篇（单独的额度，见 cnki_status 的 '
      'pdf_quota）—— 只下眼前真要读的。code：OK / CAPTCHA_REQUIRED（拼图，人拖完再交一次）/ NO_PDF_LINK（只有 CAJ）/ '
      'NOT_PDF（点了没拿到文件）。同一篇当天走缓存，不重复下。',
      {'n': {'type': 'integer', 'minimum': 1}, 'url': {'type': 'string'},

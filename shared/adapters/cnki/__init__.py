@@ -527,6 +527,16 @@ def detail(n=0, url=''):
                     pass
 
 
+def row_info(n):
+    """结果页上第 n 条（rank）的 {url, filename, db}；不导航、不碰网站。没有返回 {}。"""
+    with _session() as (browser, ctx):
+        pg = _find_tab(ctx)
+        if not pg:
+            return {}
+        hit = next((it for it in parse_rows(pg.evaluate(_ROWS_JS)) if it.get('rank') == int(n)), None)
+        return {k: (hit or {}).get(k) for k in ('url', 'filename', 'db')} if hit else {}
+
+
 def row_url(n):
     """结果页上第 n 条（rank）的摘要页链接；不导航、不碰网站。没有返回 None。"""
     with _session() as (browser, ctx):
@@ -568,6 +578,9 @@ def status():
 
 
 # ── 下载一篇的 PDF（2026-10-12 用户定：放开，一次一篇、每天限量、撞验证码就停）──────────────
+_FILENAME_JS = r"""() => { const pick = s => { const e = document.querySelector(s); return e ? (e.value || e.getAttribute('value') || '') : ''; };
+  return {fn: pick('#paramfilename') || pick('input[name=filename]') || pick('#filename'),
+          db: pick('#paramdbname') || pick('input[name=dbname]') || pick('#dbname')}; }"""
 _PDF_LINK_JS = r"""() => { const a = document.querySelector('#pdfDown');
   const t = document.querySelector('.wx-tit h1') || document.querySelector('h1');
   return {href: a && a.href && a.href.startsWith('http') ? a.href : '', title: t ? t.innerText.trim() : document.title,
@@ -605,7 +618,7 @@ def open_tab(ctx, url):
     return hits[-1] if hits else None
 
 
-def download(url=''):
+def download(url='', filename=''):
     """摘要页 url → 这篇的 PDF（字节）。在新标签里开摘要页、点「PDF下载」的链接、在网络层截住文件；读完就关标签。
 
     返回 dict：ok, code, url, title, filename, pdf（bytes，成功才有）, bytes, why, warnings。
@@ -651,6 +664,12 @@ def download(url=''):
                         doi=doi_from_text((det.get('fields') or {}).get('DOI') or ''),
                         abstract=(det.get('fields') or {}).get('摘要') or '',
                         keywords=(det.get('fields') or {}).get('关键词') or [])
+            try:
+                ident = tab.evaluate(_FILENAME_JS)
+            except Exception:
+                ident = {}
+            meta['cnki_filename'] = ident.get('fn') or filename or ''
+            meta['cnki_db'] = ident.get('db') or ''
             if not link.get('href'):
                 return _result(code='NO_PDF_LINK', url=url, title=title,
                                why='摘要页上没有「PDF下载」' + ('（只有 CAJ 格式）' if link.get('caj') else ''))
