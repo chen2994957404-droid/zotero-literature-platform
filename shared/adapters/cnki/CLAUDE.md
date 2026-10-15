@@ -22,6 +22,8 @@
   （没有查到官方原文，是通行说法）；所以照人的做法：在摘要页点「PDF下载」，每天篇数与间隔由 `host/mcp/science.py` 管（`CNKI_PDF_DAILY`，默认 5），撞拼图就停。
   下载链接是 `#pdfDown`（`bar.cnki.net/bar/download/order?id=…`），**必须带摘要页当 referer**，直接跳过去回「来源应用不正确(01)」；
   文件用 `pdf_fetch._Intercept` 在网络层截住（不弹下载框、不把窗口拉到前面）。
+  下到时顺手读页面的 DOI / 标题 / 作者 / 刊名年份（`meta`；DOI 页上没有就从 PDF 前两页找，`doi_from_text` 处理中文排版里的空格与全角符号），
+  `/science` 拿它收进证据库（2026-10-15）。
 - 撞拼图 → 立刻回 `CAPTCHA_REQUIRED`，页面原样留着（摘要页的新标签也不关）；人拖完后 `current()` 读最新的知网标签。
   **这块里没有、也不许加任何拖拼图的代码。**
 - 频率（间隔、每天上限、缓存）归调用方（`host/mcp/science.py`）。

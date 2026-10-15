@@ -103,6 +103,30 @@ def is_verify_page(title, body=''):
     return bool(b) and len(b) < 1500 and '安全验证' in b and '摘要' not in b
 
 
+_DOI_IN_TEXT = re.compile(r'(10\.\d{4,9}/[^\s，。；;）)]+)')
+_SOURCE_LINE = re.compile(r'^\s*(\S[^.\n]*?)\s*\.\s*((?:19|20)\d{2})\s*[,，]', re.M)
+
+
+def parse_source(text):
+    """摘要页上「塑料工业 . 2026 ,54 (03) : 151-159+180」那一行 → {journal, year}；认不出给空。"""
+    m = _SOURCE_LINE.search(text or '')
+    return {'journal': m.group(1).strip(), 'year': m.group(2)} if m else {'journal': '', 'year': ''}
+
+
+def split_authors(line):
+    """「王海平1王国丽1罗杰1易瑞吉2」「代文文,张朋旗,张 凯」→ ['王海平', '王国丽', ...]（去掉单位上标）。"""
+    parts = re.split(r'[\d,，;；、*∗]+|\s{2,}', line or '')
+    return [re.sub(r'\s+', '', x) for x in parts if re.sub(r'\s+', '', x)][:20]
+
+
+def doi_from_text(text):
+    """PDF / 页面文字里的 DOI。中文期刊排版常在 DOI 里夹空格、用全角点（「10. 19936/j. cnki. 2096－8000」），先归一再找。"""
+    t = (text or '').replace('．', '.').replace('－', '-').replace('／', '/')
+    t = re.sub(r'(?<=[\d./a-zA-Z-])\s+(?=[\d./a-zA-Z-])', '', t)
+    m = _DOI_IN_TEXT.search(t)
+    return m.group(1).rstrip('.') if m else ''
+
+
 def parse_total(text):
     """「共找到 498 条结果 1/25」→ (498, 1, 25)；只有一页时页面不写页码：「共找到 4 条结果」→ (4, 1, 1)。读不到 (None, None, None)。"""
     m = _TOTAL.search(text or '')
@@ -533,6 +557,16 @@ _PDF_LINK_JS = r"""() => { const a = document.querySelector('#pdfDown');
           caj: !!document.querySelector('#cajDown')}; }"""
 
 
+def _pdf_head_text(raw, pages=2):
+    """PDF 前两页的文字（找 DOI 用）；读不出给空。"""
+    try:
+        import fitz
+        with fitz.open(stream=raw, filetype='pdf') as d:
+            return '\n'.join(str(d[i].get_text()) for i in range(min(pages, d.page_count)))
+    except Exception:
+        return ''
+
+
 def pdf_name(title, url=''):
     """文件名：标题去掉文件名里不许的字、截到 80 字；没标题用网址里的一段。"""
     t = re.sub(r'[\\/:*?"<>|\r\n\t]+', ' ', title or '').strip()
@@ -593,6 +627,13 @@ def download(url=''):
                                why='知网弹了安全验证（拼图）：请人在主力机「取全文用的浏览器」里过一下（那个标签已切到最前面），再交一次')
             link = tab.evaluate(_PDF_LINK_JS)
             title = link.get('title') or ''
+            page = _body(tab)
+            det = parse_detail(page)
+            meta = dict(parse_source(page), title=title or det.get('title') or '',
+                        authors=split_authors(det.get('authors_line') or ''),
+                        doi=doi_from_text((det.get('fields') or {}).get('DOI') or ''),
+                        abstract=(det.get('fields') or {}).get('摘要') or '',
+                        keywords=(det.get('fields') or {}).get('关键词') or [])
             if not link.get('href'):
                 return _result(code='NO_PDF_LINK', url=url, title=title,
                                why='摘要页上没有「PDF下载」' + ('（只有 CAJ 格式）' if link.get('caj') else ''))
@@ -620,8 +661,10 @@ def download(url=''):
             if not raw.startswith(b'%PDF'):
                 return _result(code='NOT_PDF', url=url, title=title,
                                why=f'拿回来的不是 PDF（{cap.mime or "?"}，{len(raw)} 字节，开头 {raw[:12]!r}）')
+            if not meta['doi']:
+                meta['doi'] = doi_from_text(_pdf_head_text(raw))
             return _result(ok=True, code='OK', url=url, title=title, filename=pdf_name(title, url),
-                           pdf=raw, bytes=len(raw), warnings=warnings)
+                           pdf=raw, bytes=len(raw), meta=meta, warnings=warnings)
         finally:
             if not keep:
                 try:

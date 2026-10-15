@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.15.0'
+VERSION = '0.15.1'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -102,6 +102,8 @@ VERSION = '0.15.0'
 # v0.14.2（2026-10-13）：cnki_download 先找浏览器里已经开着的同一篇（人刚过完验证的那页），在它上面点下载，不再新开一页又被验证。
 # v0.14.3（同日，用户实测「手动检索不弹」）：cnki_download 不给 n / url = 下人在浏览器里打开着的那篇（人打开、程序取）。
 # v0.15.0（2026-10-15 用户提）：topic_add / topic_remove / topic_list / topic_items —— 专题：把写综述用到的一批文献放进一个有名字的组，用户在文献库应用里按专题筛。
+# v0.15.1（2026-10-15）：cnki_download 下到的直接收进证据库（按页面 / PDF 里的 DOI 落正本 + 登记标题作者刊名年份），
+#   回 library_id —— 原来只落在导出文件夹，专题里加不进去。没有 DOI 的仍只在文件夹（warnings 说明）。
 
 # 原样借用的（输出本来就合适）
 BORROW = ()     # 2026-10-04 用户定：只给它做不到的（取全文）。数值库它自己会抽，不借了；ping 自己挂
@@ -1492,8 +1494,36 @@ def _cnki_download(a):
             path = os.path.join(d, r['filename'])
             io.open(path, 'wb').write(raw)
             r['path'], r['path_local'] = to_wsl(path), path
+            _cnki_to_library(r, path)
         return r
     return _chemdb_run('cnki_pdf', {'op': 'download', 'url': url}, 1, fetch, wait_s=_pi_wait(a))
+
+
+def cnki_meta_fields(meta):
+    """知网页上读到的 → 证据库目录卡的字段（只补不覆盖由 catalog.register 保证）。"""
+    m = meta or {}
+    return {k: v for k, v in {'title': m.get('title'), 'journal': m.get('journal'), 'year': m.get('year'),
+                              'authors': m.get('authors'), 'abstract': m.get('abstract'),
+                              'keywords': m.get('keywords'), 'language': 'zh', 'origin': 'cnki'}.items() if v}
+
+
+def _cnki_to_library(r, path):
+    """下到的知网 PDF 收进证据库：有 DOI 就落正本 + 登记；没有就只留在导出文件夹并说明。"""
+    doi = ((r.get('meta') or {}).get('doi') or '').strip()
+    if not doi:
+        r.setdefault('warnings', []).append('not_in_library: 页面和 PDF 里都没找到 DOI，只放在导出文件夹（证据库按 DOI 收）')
+        return
+    try:
+        from tools import getpdf
+        from shared.kernel import catalog
+        lr = getpdf.land(doi, with_si=False, allow_fetch=False, pdf_path=path)
+        if lr.get('ok'):
+            catalog.register(lr['id'], **cnki_meta_fields(r.get('meta')))
+            r['library_id'], r['in_library'] = lr['id'], True
+        else:
+            r.setdefault('warnings', []).append(f'not_in_library: 收进证据库没成（{lr.get("note")}）')
+    except Exception as e:
+        r.setdefault('warnings', []).append(f'not_in_library: {type(e).__name__}: {str(e)[:120]}')
 
 
 def _cnki_current(a):
@@ -1834,7 +1864,7 @@ TOOLS = [
      {'n': {'type': 'integer', 'minimum': 1}, 'url': {'type': 'string'},
       'wait_s': {'type': 'integer', 'minimum': 0, 'maximum': 50}}, [], _cnki_detail),
     ('cnki_download', '知网一篇的全文 PDF：在摘要页点「PDF下载」，存进主力机的导出文件夹，回 path（WSL 路径，直接读）/ filename / '
-     'title / bytes。**首选不带参数**：请用户在主力机「取全文用的浏览器」里自己搜到、点开那篇，再调这个（不带 n / url）就下他打开着的那篇'
+     'title / bytes，**并直接收进证据库**（library_id；按页面 / PDF 里的 DOI，标题作者刊名年份取自知网页，可加进专题）。**首选不带参数**：请用户在主力机「取全文用的浏览器」里自己搜到、点开那篇，再调这个（不带 n / url）就下他打开着的那篇'
      '（程序自己开知网页老被安全验证，人手动开不弹）。也可给 n（当前结果页序号）或摘要页 url。一次一篇；两次至少隔 60 秒、每天 5 篇（单独的额度，见 cnki_status 的 '
      'pdf_quota）—— 只下眼前真要读的。code：OK / CAPTCHA_REQUIRED（拼图，人拖完再交一次）/ NO_PDF_LINK（只有 CAJ）/ '
      'NOT_PDF（点了没拿到文件）。同一篇当天走缓存，不重复下。',

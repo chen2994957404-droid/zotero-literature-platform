@@ -424,6 +424,10 @@ def main():
         check('JSON 里不出 NaN', S._no_nan({'a': float('nan'), 'b': [1.0, float('inf')], 'c': 'x'}) == {'a': None, 'b': [1.0, None], 'c': 'x'})
         check('chemdb_result 挂上了', 'chemdb_result' in sn)
         check('chemdb_substance 挂上了（Reaxys 物质的物性表，v0.13）', 'chemdb_substance' in sn)
+        f = S.cnki_meta_fields({'title': '聚硼硅氧烷', 'journal': '塑料工业', 'year': '2026', 'authors': ['王海平'],
+                                'doi': '10.1/x', 'abstract': ''})
+        check('知网元数据 → 目录卡字段（空的不写、标来源与语言）', f == {'title': '聚硼硅氧烷', 'journal': '塑料工业',
+              'year': '2026', 'authors': ['王海平'], 'language': 'zh', 'origin': 'cnki'}, str(f))
         with tempfile.TemporaryDirectory() as tdq:
             qp = os.path.join(tdq, 'u.json')
             S.chemdb_charge('cnki_pdf', path=qp, count=False)

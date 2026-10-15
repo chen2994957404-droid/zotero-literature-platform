@@ -289,6 +289,9 @@ Chinese master's / PhD theses, Chinese journals, conferences and **Chinese paten
   user's own browsing (user tested 2026-10-13). So ask the user to search and open the paper in the main machine's
   「取全文用的浏览器」, then call `~/bin/litcall cnki_download '{}'` (no arguments) — it saves the article that is open there.
   One paper at a time: ask for the next one only after this one is saved.
+  Since 0.15.1 a successful `cnki_download` also **files the paper into the evidence library** (`library_id`; DOI read from the
+  CNKI page or the PDF, title / authors / journal / year from the CNKI page), so it can go into a topic (`topic_add`) like any
+  other paper. A paper with no DOI anywhere stays only in the export folder (`warnings: not_in_library`).
 - **Chinese journal articles: try the journal's own website before CNKI** (2026-10-13). Many Chinese journals publish every
   article on their own site with a free PDF — e.g. 功能高分子学报 (gngfzxb.ecust.edu.cn) had a 2026 online-first paper as a
   free 11-page PDF. Their DOIs (`10.xxxx/j.cnki.…`) resolve only to CNKI, so don't rely on doi.org: web-search
