@@ -14,7 +14,7 @@
 
 | 函数 | 干什么 |
 |---|---|
-| `find(q='', corr='', author='', team='', year_from=None, year_to=None, journal='', has=(), abstract=False, limit=30)` | 检索，返回结果列表 |
+| `find(q='', corr='', author='', team='', year_from=None, year_to=None, journal='', has=(), abstract=False, limit=30, topic='')` | 检索，返回结果列表（topic = 只看某个专题）|
 | `render(rows, total)` | 渲染给人看 |
 | `detail(pid)` | 一篇的完整卡片（作者 / 单位 / 摘要 / 团队 / 文件）|
 | `norm(text)` / `tokens(text)` / `is_doi(text)` | 纯函数（测试用）|
@@ -135,12 +135,18 @@ def _person_match(q, authors, roster):
 
 
 def find(q='', corr='', author='', team='', year_from=None, year_to=None, journal='',
-         has=(), abstract=False, limit=30):
-    from tools.library import teams
+         has=(), abstract=False, limit=30, topic=''):
+    from tools.library import teams, topics
     index, roster, links = _data()
     team_i = teams.find_team(roster, team) if team else None
     if team and team_i is None:
         return [], 0
+    in_topic = None
+    if topic:
+        if topics.get(topic) is None:
+            return [], 0
+        in_topic = topics.pids(topic)
+    member = topics.membership()
     need = [HAS.get(h) or h for h in has if h]
     q = (q or '').strip()
     m = _DOI.search(q)
@@ -175,6 +181,8 @@ def find(q='', corr='', author='', team='', year_from=None, year_to=None, journa
         if author and not _person_match(author, authors, roster):
             continue
         lk = links.get(pid) or {}
+        if in_topic is not None and pid not in in_topic:
+            continue
         if team_i is not None and lk.get('primary') != team_i and team_i not in (lk.get('others') or []):
             continue
         score = score_doi
@@ -211,6 +219,7 @@ def find(q='', corr='', author='', team='', year_from=None, year_to=None, journa
                     'corr': cs, 'n_authors': len(authors),
                     'team': _team_label(roster, tm) if tm is not None else '',
                     'coop': [_team_label(roster, i) for i in (lk.get('others') or [])],
+                    'topics': member.get(r['id'], []),
                     'has': {k: bool(r.get(k)) for k in ('pdf', 'si', 'fulltext', 'summary', 'structured')}})
     return out, len(rows)
 
@@ -256,4 +265,10 @@ def detail(pid):
             'team': _team_label(roster, lk['primary']) if lk.get('primary') is not None else '',
             'coop': [_team_label(roster, i) for i in (lk.get('others') or [])],
             'has': {k: bool(r.get(k)) for k in ('pdf', 'si', 'fulltext', 'summary', 'structured')},
+            'topics': _topics_of(r['id']),
             'files': files, 'in_zotero': bool(r.get('in_zotero'))}
+
+
+def _topics_of(pid):
+    from tools.library import topics
+    return topics.topics_of(pid)

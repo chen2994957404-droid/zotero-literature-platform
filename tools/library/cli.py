@@ -14,6 +14,10 @@
     python -m tools.library 检索 boronic --摘要 --有 精读             # 连摘要一起搜；只要已精读的
     python -m tools.library 检索 --团队 龚兴龙 --刊 "Adv"            # 某团队（含合作）、期刊名里带 Adv
     python -m tools.library 检索 --建索引                            # 从 OpenAlex 取作者 + 摘要（免费额度约 25 次）
+    python -m tools.library 专题                         # 全部专题（Claude Science 或人建的一组文献）
+    python -m tools.library 专题 综述：硼酸酯               # 一个专题里的文献
+    python -m tools.library 专题 综述：硼酸酯 --加 10.1021/xxx --加 doi_10.1002-yyy [--备注 第3节]   # 每篇一个 --加
+    python -m tools.library 专题 综述：硼酸酯 --去 10.1021/xxx
     python -m tools.library 团队                         # 研究团队名单 + 每组挂了几篇（读缓存，不联网）
     python -m tools.library 团队 武培怡                   # 一个组：大导 / 小导 / 已独立 + 本组与合作文章
     python -m tools.library 团队 --重建                   # 重新取作者、挂组（OpenAlex 免费额度约 25 次）
@@ -61,6 +65,34 @@ def main():
             has=[h for h in (opt('--有', '') or opt('--has', '')).replace('，', ',').split(',') if h],
             abstract=flag('--摘要') or flag('--abstract'), limit=int(opt('--n', 30)))
         print(dbsearch.render(rows, total))
+        return 0
+
+    if action in ('专题', 'topics'):
+        from shared.kernel import catalog
+        from tools.library import topics
+        from shared.kernel.cli import opts
+        name = pos(1)
+        if not name:
+            ts = topics.list_topics()
+            print('\n'.join(f"{t['n']:>4} 篇  {t['name']}" + (f"  —— {t['note']}" if t['note'] else '') for t in ts)
+                  or '还没有专题')
+            return 0
+        add, rm = opts('--加'), opts('--去')
+        if add:
+            r = topics.add(name, add, note=opt('--备注', '') or '', by='命令行')
+            print(f"新加 {len(r['added'])} 篇，原来就在 {len(r['already'])} 篇" + (f"，库里没有：{r['missing']}" if r['missing'] else ''))
+            return 0
+        if rm:
+            r = topics.remove(name, rm)
+            print(f"拿掉 {len(r['removed'])} 篇")
+            return 0
+        if topics.get(name) is None:
+            print(f'没有专题「{name}」')
+            return 1
+        for x in topics.items(name):
+            rec = catalog.record(x['pid'])
+            print(f"{rec.get('year') or '?'} · {' '.join((rec.get('title') or '').split())[:90]} · {x['pid']}"
+                  + (f"（{x['note']}）" if x['note'] else ''))
         return 0
 
     if action in ('团队', 'teams'):

@@ -3,9 +3,11 @@ import { onMounted, reactive, ref } from 'vue'
 import { api } from './api.js'
 import PaperDetail from './components/PaperDetail.vue'
 
-const f = reactive({ q: '', corr: '', author: '', team: '', year_from: '', year_to: '', journal: '', has: [], abstract: false })
+const f = reactive({ q: '', corr: '', author: '', team: '', topic: '', year_from: '', year_to: '', journal: '', has: [], abstract: false })
 const HAS = [['pdf', '有正文'], ['si', '有 SI'], ['summary', '已精读']]
 const teams = ref([])
+const topics = ref([])
+const topicNote = () => topics.value.find((t) => t.name === f.topic)?.note || ''
 const meta = ref(null)
 const rows = ref([])
 const total = ref(null)
@@ -29,7 +31,7 @@ async function run() {
 }
 
 function reset() {
-  Object.assign(f, { q: '', corr: '', author: '', team: '', year_from: '', year_to: '', journal: '', has: [], abstract: false })
+  Object.assign(f, { q: '', corr: '', author: '', team: '', topic: '', year_from: '', year_to: '', journal: '', has: [], abstract: false })
   run()
 }
 
@@ -38,9 +40,14 @@ function byTeam(label) {
   run()
 }
 
+function byTopic(name) {
+  f.topic = name
+  run()
+}
+
 onMounted(async () => {
   try {
-    ;[teams.value, meta.value] = await Promise.all([api.teams(), api.meta()])
+    ;[teams.value, meta.value, topics.value] = await Promise.all([api.teams(), api.meta(), api.topics()])
   } catch (e) {
     error.value = '连不上后台：' + (e.message || e)
   }
@@ -60,6 +67,13 @@ onMounted(async () => {
 
   <div class="layout">
     <aside class="filters">
+      <label>专题
+        <select v-model="f.topic" @change="run">
+          <option value="">全部</option>
+          <option v-for="t in topics" :key="t.name" :value="t.name">{{ t.name }}（{{ t.n }}）</option>
+        </select>
+      </label>
+      <p v-if="f.topic && topicNote()" class="muted small topicnote">{{ topicNote() }}</p>
       <label>通讯作者<input v-model="f.corr" placeholder="中文名或拼音" @keyup.enter="run" /></label>
       <label>任意作者<input v-model="f.author" placeholder="中文名或拼音" @keyup.enter="run" /></label>
       <label>团队
@@ -102,6 +116,7 @@ onMounted(async () => {
             <span v-if="r.corr.length">通讯：{{ r.corr.join('、') }}</span>
           </div>
           <div class="tags">
+            <span v-for="t in r.topics" :key="'tp' + t" class="tag topic" @click.stop="byTopic(t)">专题：{{ t }}</span>
             <span v-if="r.team" class="tag team" @click.stop="byTeam(r.team)">组：{{ r.team }}</span>
             <span v-for="c in r.coop" :key="c" class="tag">合作：{{ c }}</span>
             <span v-if="r.has.pdf" class="tag ok">正文</span>
@@ -112,7 +127,7 @@ onMounted(async () => {
       </ul>
     </main>
 
-    <PaperDetail :id="picked" @team="byTeam" />
+    <PaperDetail :id="picked" @team="byTeam" @topic="byTopic" />
   </div>
 </template>
 
@@ -143,6 +158,8 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .tag { font-size: 12px; padding: 1px 7px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); }
 .tag.ok { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
 .tag.team { color: var(--accent); border-color: var(--accent); cursor: pointer; }
+.tag.topic { color: var(--warn); border-color: var(--warn); cursor: pointer; }
+.topicnote { margin: -6px 0 0; white-space: pre-wrap; }
 .muted { color: var(--muted); }
 .small { font-size: 13px; }
 .error { color: #c0392b; }

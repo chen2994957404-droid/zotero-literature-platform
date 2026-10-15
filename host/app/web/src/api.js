@@ -8,10 +8,11 @@ async function get(url) {
 export const api = {
   meta: () => get('/api/meta'),
   teams: () => get('/api/teams'),
+  topics: () => get('/api/topics'),
   paper: (id) => get('/api/paper/' + encodeURIComponent(id)),
   search(f) {
     const p = new URLSearchParams()
-    for (const k of ['q', 'corr', 'author', 'team', 'year_from', 'year_to', 'journal']) if (f[k]) p.set(k, f[k])
+    for (const k of ['q', 'corr', 'author', 'team', 'topic', 'year_from', 'year_to', 'journal']) if (f[k]) p.set(k, f[k])
     if (f.has.length) p.set('has', f.has.join(','))
     if (f.abstract) p.set('abstract', 'true')
     p.set('limit', f.limit || 100)

@@ -584,6 +584,14 @@ def teams():
     return os.path.join(STATE, 'teams.json')
 
 
+def topics_db():
+    """state/topics.db —— 专题（一个名字 + 一批文献，比如「综述：XX」用到的参考文献）。
+
+    人和 agent（Claude Science）整理出来的，**不可重建**；SQLite 是因为应用、MCP 服务、命令行会同时读写。
+    """
+    return os.path.join(STATE, 'topics.db')
+
+
 def app_jobs_db():
     """state/app_jobs.db —— 文献库应用发起的作业（目前只有单篇精读）的队列与结果。
 

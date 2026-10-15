@@ -25,7 +25,7 @@ from shared.kernel import catalog, paths
 from shared.kernel.cli import opt
 from host.app import jobs
 from tools import deepread
-from tools.library import dbsearch, oaindex, teams
+from tools.library import dbsearch, oaindex, teams, topics
 
 HOST = '127.0.0.1'
 PORT = 8780
@@ -52,12 +52,28 @@ def meta():
 
 @app.get('/api/search')
 def search(q: str = '', corr: str = '', author: str = '', team: str = '', year_from: str = '',
-           year_to: str = '', journal: str = '', has: str = '', abstract: bool = False, limit: int = 50):
+           year_to: str = '', journal: str = '', has: str = '', abstract: bool = False, limit: int = 50,
+           topic: str = ''):
     rows, total = dbsearch.find(q=q, corr=corr, author=author, team=team,
                                 year_from=year_from or None, year_to=year_to or None, journal=journal,
                                 has=[h for h in has.split(',') if h], abstract=abstract,
-                                limit=max(1, min(limit, 500)))
+                                limit=max(1, min(limit, 500)), topic=topic)
     return {'total': total, 'rows': rows}
+
+
+@app.get('/api/topics')
+def topic_list():
+    """专题（Claude Science 或人建的一组文献，比如「综述：XX」的参考文献）。"""
+    return [{'name': t['name'], 'note': t['note'], 'n': t['n'], 'created_by': t['created_by'],
+             'updated_at': t['updated_at']} for t in topics.list_topics()]
+
+
+@app.get('/api/topics/{name}')
+def topic_detail(name: str):
+    t = topics.get(name)
+    if t is None:
+        raise HTTPException(404, '没有这个专题')
+    return {'name': t['name'], 'note': t['note'], 'items': topics.items(name)}
 
 
 @app.get('/api/paper/{pid}')

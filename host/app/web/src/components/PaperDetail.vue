@@ -3,7 +3,7 @@ import { computed, onUnmounted, ref, watch } from 'vue'
 import { api } from '../api.js'
 
 const props = defineProps({ id: { type: String, default: '' } })
-const emit = defineEmits(['team'])
+const emit = defineEmits(['team', 'topic'])
 const d = ref(null)
 const error = ref('')
 
@@ -116,6 +116,12 @@ const links = computed(() => {
         <span v-if="drError" class="error small">{{ drError }}</span>
       </div>
 
+      <div v-if="d.topics && d.topics.length" class="teams">
+        <span v-for="t in d.topics" :key="t.name" class="tag topic" :title="t.note || ''" @click="emit('topic', t.name)">
+          专题：{{ t.name }}<template v-if="t.note"> · {{ t.note }}</template>
+        </span>
+      </div>
+
       <div v-if="d.team || d.coop.length" class="teams">
         <span v-if="d.team" class="tag team" @click="emit('team', d.team)">组：{{ d.team }}</span>
         <span v-for="c in d.coop" :key="c" class="tag team" @click="emit('team', c)">合作：{{ c }}</span>
@@ -164,4 +170,5 @@ sup { font-size: 10px; color: var(--muted); margin-left: 1px; }
 .muted { color: var(--muted); }
 .small { font-size: 13px; }
 .error { color: #c0392b; }
+.tag.topic { color: var(--warn); border-color: var(--warn); }
 </style>

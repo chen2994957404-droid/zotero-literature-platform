@@ -18,6 +18,13 @@ Typical path: `paper_status` / `library_db_search` / `library_retrieve` → `lib
 (→ `paper_files`, `figure_image`). Reference lists, data extraction and web search are yours to do (OpenAlex etc.). Not in the library → `paper_fulltext` with `allowFetch:true`,
 then poll `fulltext_status` with `wait_s`.
 
+**Topics for the user (server 0.15): `topic_add`, `topic_items`, `topic_list`, `topic_remove`.** When you work on a
+review or any task that gathers papers, put the papers you use into a named topic, e.g.
+`topic_add {"topic":"综述：动态硼酸酯弹性体","refs":["10.1021/...", ...],"note":"第3节：自修复机理"}` — DOIs or ids,
+up to 200 per call, the topic is created if missing, papers not yet in the library come back in `missing`
+(fetch them with `paper_fulltext` first). The user browses topics in his library app (a 专题 filter), so name topics
+in Chinese the way he would, and use `note` to say why each paper is there. `topic_remove` only takes papers out of the topic.
+
 What to expect (server 0.3):
 - **Tiers.** A paper is readable seconds after its PDF lands (`tier: "text"`: local text extraction,
   sections and paragraphs addressable, no table structure). MineRU upgrades it in the background to

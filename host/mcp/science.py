@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.14.3'
+VERSION = '0.15.0'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -101,6 +101,7 @@ VERSION = '0.14.3'
 #   下载额度只数真下到的（ONLY_OK_COUNTS），没下到的只占间隔、不扣篇数。
 # v0.14.2（2026-10-13）：cnki_download 先找浏览器里已经开着的同一篇（人刚过完验证的那页），在它上面点下载，不再新开一页又被验证。
 # v0.14.3（同日，用户实测「手动检索不弹」）：cnki_download 不给 n / url = 下人在浏览器里打开着的那篇（人打开、程序取）。
+# v0.15.0（2026-10-15 用户提）：topic_add / topic_remove / topic_list / topic_items —— 专题：把写综述用到的一批文献放进一个有名字的组，用户在文献库应用里按专题筛。
 
 # 原样借用的（输出本来就合适）
 BORROW = ()     # 2026-10-04 用户定：只给它做不到的（取全文）。数值库它自己会抽，不借了；ping 自己挂
@@ -149,7 +150,10 @@ PoLyInfo（聚合物实测性质）：`polyinfo_search` → `polyinfo_samples` �
 `cnki_detail`（摘要、关键词、导师、学位论文的整本目录、专利主权项）。两次至少隔 30 秒、每天 30 次；拼图验证码同上（cnki_current）。
 全文：`cnki_download`（n 或 url）一次一篇，存成 PDF 回路径；两次至少隔 60 秒、每天 5 篇 —— 只下眼前真要读的。
 CCDC（单个晶体结构）`ccdc_search` / `ccdc_detail`；JCR（一本刊的 JIF 与分区）`jcr_journal`；Scopus（检索、被引列表）`scopus_search` /
-`scopus_citing` / `scopus_page`。这三家条款都不许程序批量取 —— 只查眼前问题需要的那一两条；额度见 `webdb_status`。"""
+`scopus_citing` / `scopus_page`。这三家条款都不许程序批量取 —— 只查眼前问题需要的那一两条；额度见 `webdb_status`。
+专题（给用户看的分组）：`topic_add` 把一批文献（DOI 或 id）放进一个有名字的专题，比如「综述：动态硼酸酯弹性体」，
+每篇可带一句 note（如「第 3 节：自修复机理」）；用户在他的文献库应用里按专题一筛就能看到。`topic_list` / `topic_items` 看，
+`topic_remove` 拿掉（文献本身不动）。只能放证据库里已有的，没有的回在 missing 里 —— 先 paper_fulltext 取进来再加。"""
 
 _DOI_PREFIX = re.compile(r'(?i)^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)')
 
@@ -244,6 +248,40 @@ def _db_search(a):
     doi = norm_doi(q)
     rows = library.db_search(doi or q, limit=int(a.get('limit') or 25))
     return _out('%d 篇匹配「%s」' % (len(rows), q), {'papers': [_card(r) for r in rows]})
+
+
+def _topic_add(a):
+    from tools.library import topics
+    refs = [x for x in (a.get('refs') or []) if str(x).strip()]
+    r = topics.add(a.get('topic') or '', refs, note=(a.get('note') or '').strip(), by='Claude Science',
+                   topic_note=a.get('topic_note'))
+    return _out('专题「%s」：新加 %d 篇，原来就在 %d 篇，库里没有 %d 篇'
+                % (r['topic'], len(r['added']), len(r['already']), len(r['missing'])), r)
+
+
+def _topic_remove(a):
+    from tools.library import topics
+    r = topics.remove(a.get('topic') or '', [x for x in (a.get('refs') or []) if str(x).strip()])
+    return _out('专题「%s」：拿掉 %d 篇' % (r['topic'], len(r['removed'])), r)
+
+
+def _topic_list(a):
+    from tools.library import topics
+    ts = [{'name': t['name'], 'note': t['note'], 'n': t['n'], 'created_by': t['created_by']} for t in topics.list_topics()]
+    return _out('%d 个专题' % len(ts), {'topics': ts})
+
+
+def _topic_items(a):
+    from tools.library import topics
+    from shared.kernel import catalog
+    t = topics.get(a.get('topic') or '')
+    if t is None:
+        raise ValueError('没有专题「%s」' % a.get('topic'))
+    its = topics.items(t['name'])
+    for x in its:
+        rec = catalog.record(x['pid'])
+        x.update(doi=rec.get('doi') or '', title=' '.join((rec.get('title') or '').split())[:200], year=rec.get('year'))
+    return _out('专题「%s」%d 篇' % (t['name'], len(its)), {'topic': t['name'], 'note': t['note'], 'items': its})
 
 
 def dedupe_hits(rows):
@@ -1635,6 +1673,15 @@ def _sweep(d, keep_s=3 * 86400):
 _KEY = {'type': 'string', 'description': '证据库 id 或 DOI'}
 
 TOOLS = [
+    ('topic_add', '把一批文献放进一个专题（给用户看的分组，比如「综述：XX」用到的参考文献）；专题不存在就新建。'
+     'refs 给 DOI 或证据库 id；note 是这批每篇的备注（可空）；topic_note 是专题本身的说明（可空，给了就覆盖）。'
+     '只收证据库里已有的，没有的回在 missing。重复加不报错。',
+     {'topic': {'type': 'string'}, 'refs': {'type': 'array', 'items': {'type': 'string'}, 'maxItems': 200},
+      'note': {'type': 'string'}, 'topic_note': {'type': 'string'}}, ['topic', 'refs'], _topic_add),
+    ('topic_remove', '从专题里拿掉几篇（文献本身不动）。', {'topic': {'type': 'string'},
+     'refs': {'type': 'array', 'items': {'type': 'string'}}}, ['topic', 'refs'], _topic_remove),
+    ('topic_list', '全部专题：名字、说明、篇数、谁建的。', {}, [], _topic_list),
+    ('topic_items', '一个专题里的文献：id、DOI、标题、年份、每篇的备注。', {'topic': {'type': 'string'}}, ['topic'], _topic_items),
     ('library_db_search', '证据库里有没有：按标题 / DOI / 期刊子串搜，回目录卡（有无正文、SI、已解析、已精读、已结构化）。',
      {'query': {'type': 'string'}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 200}}, ['query'], _db_search),
     ('library_retrieve', '向量检索证据库：最相近的段落 + 文献 id + 节地址（拿去 library_section 读上下文）。'
