@@ -124,6 +124,13 @@ def main():
     check('作者行去掉单位上标', cnki.split_authors('王海平1王国丽1罗杰1易瑞吉2宋坤隆2') == ['王海平', '王国丽', '罗杰', '易瑞吉', '宋坤隆']
           and cnki.split_authors('代文文,张朋旗,张 凯') == ['代文文', '张朋旗', '张凯'])
     NL = chr(10)
+    # 2026-10-15 真页面：检索只有 1 条结果，正文 1021 字，屏幕外的拼图弹层字也算在正文里 —— 不许判成被挡
+    widget = '安全验证     拖动下方拼图完成验证                 AI生成'
+    short_results = '总库 检索 CNKI AI 出版来源 ... 学术期刊 | 1 | 学位论文 | 0 ...' + widget + ' 安全验证 刷新验证码'
+    check('结果很少的检索页 + 屏幕外拼图弹层的字 ≠ 被挡（10-13、10-14 两次误报）',
+          not cnki.is_verify_page('检索-中国知网', cnki.strip_widget_text(short_results, widget + ' 安全验证 刷新验证码'))
+          and cnki.is_verify_page('检索-中国知网', short_results)   # 不去掉弹层字就会误报：守卫要真的守着这件事
+          and cnki.is_verify_page('安全验证', cnki.strip_widget_text('', widget)))
     check('DOI：中文排版里的空格和全角符号', cnki.doi_from_text('DOI: 10. 19936/j. cnki. 2096－8000. 20251028. 010 聚硼')
           == '10.19936/j.cnki.2096-8000.20251028.010' and cnki.doi_from_text('没有') == ''
           # 2026-10-15 真 PDF 里的三种：断行、全角、后面紧跟英文词

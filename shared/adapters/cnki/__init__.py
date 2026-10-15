@@ -103,6 +103,18 @@ def is_verify_page(title, body=''):
     return bool(b) and len(b) < 1500 and '安全验证' in b and '摘要' not in b
 
 
+def strip_widget_text(body, widget_text):
+    """正文里去掉藏在屏幕外的拼图弹层自带的字。
+
+    ⚠ 2026-10-15 查实的误报：知网每一页都挂着拼图弹层（`#tcaptcha_transform_dy`，平时移到 top=-1000000），
+    它里面写着「安全验证 拖动下方拼图完成验证」，而且**算在 innerText 里**。结果只有一两条的检索页正文很短，
+    `is_verify_page` 一看「短 + 有安全验证 + 没有摘要」就判成被挡 —— 页面其实好好的，人去看也没有弹窗
+    （10-13、10-14 两次「拖完又被挡」「我没看到弹窗」都是它）。所以判整页验证之前先把弹层的字拿掉。
+    """
+    b, w = body or '', (widget_text or '').strip()
+    return b.replace(w, '') if w else b
+
+
 _DOI_IN_TEXT = re.compile(r'(10\.\d{4,9}/[A-Za-z0-9._\-()/:;]+)')
 _SOURCE_LINE = re.compile(r'^\s*(\S[^.\n]*?)\s*\.\s*((?:19|20)\d{2})\s*[,，]', re.M)
 
@@ -263,6 +275,7 @@ def _result(**kw):
 # 浏览器
 # ══════════════════════════════════════════════════════════════════════
 
+_WIDGET_TEXT_JS = """() => { const e = document.getElementById('tcaptcha_transform_dy'); return e ? (e.innerText || '') : ''; }"""
 _CAP_JS = """() => { const e = document.getElementById('tcaptcha_transform_dy'); if (!e) return null;
   const r = e.getBoundingClientRect(), s = getComputedStyle(e);
   return {top: r.top, w: r.width, h: r.height, op: s.opacity, disp: s.display, vis: s.visibility}; }"""
@@ -340,7 +353,7 @@ def _captcha(pg):
     except Exception:
         pass
     try:
-        return is_verify_page(pg.title(), _body(pg)[:2000])
+        return is_verify_page(pg.title(), strip_widget_text(_body(pg), pg.evaluate(_WIDGET_TEXT_JS))[:2000])
     except Exception:
         return False
 
