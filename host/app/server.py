@@ -39,7 +39,12 @@ app = FastAPI(title='文献库', docs_url='/api/docs', openapi_url='/api/openapi
 async def only_local_host(request: Request, call_next):
     if request.headers.get('host', '') not in ALLOWED_HOSTS:
         return JSONResponse({'error': 'Host 不对：只接受本机访问'}, status_code=403)
-    return await call_next(request)
+    resp = await call_next(request)
+    # 页面本身不让浏览器缓存：前台更新后（打包文件名带指纹，index.html 不带）不刷新也能拿到新版
+    # （2026-10-15 用户说「打开怎么没看到专题」—— 浏览器还在用旧页面）
+    if not request.url.path.startswith('/assets/'):
+        resp.headers['Cache-Control'] = 'no-cache'
+    return resp
 
 
 @app.get('/api/meta')

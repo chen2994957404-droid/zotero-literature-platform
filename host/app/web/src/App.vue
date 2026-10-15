@@ -74,6 +74,7 @@ onMounted(async () => {
         </select>
       </label>
       <p v-if="f.topic && topicNote()" class="muted small topicnote">{{ topicNote() }}</p>
+      <p v-if="!topics.length" class="muted small topicnote">还没有专题。让 Claude Science「把用到的文献放进专题『综述：XXX』」，这里就会出现。</p>
       <label>通讯作者<input v-model="f.corr" placeholder="中文名或拼音" @keyup.enter="run" /></label>
       <label>任意作者<input v-model="f.author" placeholder="中文名或拼音" @keyup.enter="run" /></label>
       <label>团队
