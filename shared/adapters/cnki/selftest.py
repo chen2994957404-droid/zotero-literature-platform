@@ -123,8 +123,16 @@ def main():
           == {'journal': '塑料工业', 'year': '2026'} and cnki.parse_source('没有')['journal'] == '')
     check('作者行去掉单位上标', cnki.split_authors('王海平1王国丽1罗杰1易瑞吉2宋坤隆2') == ['王海平', '王国丽', '罗杰', '易瑞吉', '宋坤隆']
           and cnki.split_authors('代文文,张朋旗,张 凯') == ['代文文', '张朋旗', '张凯'])
+    NL = chr(10)
     check('DOI：中文排版里的空格和全角符号', cnki.doi_from_text('DOI: 10. 19936/j. cnki. 2096－8000. 20251028. 010 聚硼')
-          == '10.19936/j.cnki.2096-8000.20251028.010' and cnki.doi_from_text('没有') == '')
+          == '10.19936/j.cnki.2096-8000.20251028.010' and cnki.doi_from_text('没有') == ''
+          # 2026-10-15 真 PDF 里的三种：断行、全角、后面紧跟英文词
+          and cnki.doi_from_text(NL.join(['DOI:10.', '3969/j.', 'issn.', '1001-9731.', '2025.', '05.', '010', '0 引 言']))
+          == '10.3969/j.issn.1001-9731.2025.05.010'
+          and cnki.doi_from_text(NL.join(['DOI :10．14028／j．cnki．1003－3726．2012．02．005', '', 'ViSi（OEt）3']))
+          == '10.14028/j.cnki.1003-3726.2012.02.005'
+          and cnki.doi_from_text(NL.join(['DOI：10. 19491/j. issn. 1001‐9278. 2025. 11. 006', 'Polyborosiloxane： adv']))
+          == '10.19491/j.issn.1001-9278.2025.11.006')
     check('PDF 文件名：去掉不许的字、截长', cnki.pdf_name('聚硼硅氧烷/硅橡胶: "综述"?') == '聚硼硅氧烷 硅橡胶 综述.pdf'
           and len(cnki.pdf_name('长' * 200)) == 84 and cnki.pdf_name('', 'https://x/abc?v=Zz9') .startswith('cnki_'))
     try:

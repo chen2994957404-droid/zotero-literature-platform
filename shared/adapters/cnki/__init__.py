@@ -103,7 +103,7 @@ def is_verify_page(title, body=''):
     return bool(b) and len(b) < 1500 and '安全验证' in b and '摘要' not in b
 
 
-_DOI_IN_TEXT = re.compile(r'(10\.\d{4,9}/[^\s，。；;）)]+)')
+_DOI_IN_TEXT = re.compile(r'(10\.\d{4,9}/[A-Za-z0-9._\-()/:;]+)')
 _SOURCE_LINE = re.compile(r'^\s*(\S[^.\n]*?)\s*\.\s*((?:19|20)\d{2})\s*[,，]', re.M)
 
 
@@ -120,11 +120,15 @@ def split_authors(line):
 
 
 def doi_from_text(text):
-    """PDF / 页面文字里的 DOI。中文期刊排版常在 DOI 里夹空格、用全角点（「10. 19936/j. cnki. 2096－8000」），先归一再找。"""
-    t = (text or '').replace('．', '.').replace('－', '-').replace('／', '/')
-    t = re.sub(r'(?<=[\d./a-zA-Z-])\s+(?=[\d./a-zA-Z-])', '', t)
+    """PDF / 页面文字里的 DOI。中文期刊排版常在 DOI 里断行、夹空格、用全角符号
+    （「10. 19936/j. cnki. 2096－8000」、「10.」换行「3969/j.」换行「issn.」）—— 只把紧跟在 . / - 后面的空白去掉，
+    别的空白就是 DOI 的尽头（否则会把后面的「ViSi」「Polyborosiloxane」也粘进来，2026-10-15 实测）。"""
+    t = (text or '')
+    for a, b in (('．', '.'), ('／', '/'), ('－', '-'), ('‐', '-'), ('‑', '-'), ('–', '-'), ('：', ':')):
+        t = t.replace(a, b)
+    t = re.sub(r'(?<=[./-])\s+', '', t)
     m = _DOI_IN_TEXT.search(t)
-    return m.group(1).rstrip('.') if m else ''
+    return m.group(1).rstrip('.,;:)') if m else ''
 
 
 def parse_total(text):
