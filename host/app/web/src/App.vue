@@ -4,7 +4,7 @@ import { api } from './api.js'
 import PaperDetail from './components/PaperDetail.vue'
 
 const f = reactive({ q: '', corr: '', author: '', team: '', topic: '', year_from: '', year_to: '', journal: '', has: [], abstract: false })
-const HAS = [['pdf', '有正文'], ['si', '有 SI'], ['summary', '已精读']]
+const HAS = [['pdf', '有正文'], ['si', '有 SI']]
 const teams = ref([])
 const topics = ref([])
 const topicNote = () => topics.value.find((t) => t.name === f.topic)?.note || ''
@@ -122,7 +122,6 @@ onMounted(async () => {
             <span v-for="c in r.coop" :key="c" class="tag">合作：{{ c }}</span>
             <span v-if="r.has.pdf" class="tag ok">正文</span>
             <span v-if="r.has.si" class="tag ok">SI</span>
-            <span v-if="r.has.summary" class="tag ok">精读</span>
           </div>
         </li>
       </ul>
