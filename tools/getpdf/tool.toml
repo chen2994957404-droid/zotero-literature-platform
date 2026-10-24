@@ -11,7 +11,6 @@ side_effects  = [
   "fulltext 会花 MineRU 解析额度，并写 data/raw/<id>/（正本 PDF 与解析产物）",
 ]
 requires_role = "prod"          # 向出版商发真实请求 + 花 MineRU 额度，只在主力机做
-prompts       = []
 
 # ── 允许模型自己发起的入口 ─────────────────────────────────────────────
 # 判据是**代价的量级与可逆性**：

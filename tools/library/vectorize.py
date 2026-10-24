@@ -52,9 +52,9 @@ def _embed_all(texts):
     return out
 
 
-# ── 精层：精读产物 full.md → 向量库 ────────────────────────────────────
+# ── 解析好的全文 full.md → 向量库 ────────────────────────────────────
 def deep_one(key, coll, existing, log=print):
-    """向量化单篇精读产物：读 full.md → 切块 → embedding → 入库。
+    """向量化单篇解析好的全文：读 full.md → 切块 → embedding → 入库。
 
     返回 (是否新处理, 块数)。没解析产物、或已入库，都返回 (False, 0)。
 

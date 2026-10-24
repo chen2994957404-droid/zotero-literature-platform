@@ -18,7 +18,7 @@
 
 ```
 docs/  ← 跨工具的档案（另有 4 份日志直接躺在下面）
-    explain/（6）、howto/（3）、reference/（9）、incidents/（2）  ← 为什么 / 怎么做 / 事实 / 坑
+    explain/（3）、howto/（2）、reference/（5）、incidents/（2）  ← 为什么 / 怎么做 / 事实 / 坑
 host/  ← 平台自身：让平台活着的东西（没人 import 它）（8 块）
     app、codegen、deploy、doctor、ingest、mcp、panel、watcher
 launch/  ← 给人双击的入口（常用 4 个；不常用/ 里 3 个备用与开发用）
@@ -27,14 +27,14 @@ launch/  ← 给人双击的入口（常用 4 个；不常用/ 里 3 个备用�
 outputs/  ← 外部 agent 的产物 / 草稿，不进版本库
 scratch/  ← 外部 agent 的产物 / 草稿，不进版本库
 shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
-    kernel/  ← 基础设施：谁都依赖它，它不依赖任何人（11 块）
-        cli、config、subproc、budget.py、catalog.py、errors.py、heartbeat.py、jobs.py、log.py、paths.py、role.py
+    kernel/  ← 基础设施：谁都依赖它，它不依赖任何人（10 块）
+        cli、config、subproc、catalog.py、errors.py、heartbeat.py、jobs.py、log.py、paths.py、role.py
     domain/  ← 纯逻辑：不联网、不知道文件放在哪（1 块）
-        schema
-    adapters/  ← 外接口：唯一允许联网/用第三方库的一环（17 块）
-        ccdc、chemdb、cnki、crossref、embed、jcr、llm_client、openalex、pdf_fetch、pdf_parse、polyinfo、pubchem、scopus、tansoole、units、unpaywall、vectordb
-tests/ （6 个脚本）
-    test_architecture.py、test_budget.py、test_llm_routing.py、test_no_undefined_names.py、test_principles.py、test_types.py
+        outline
+    adapters/  ← 外接口：唯一允许联网/用第三方库的一环（15 块）
+        ccdc、chemdb、cnki、crossref、embed、jcr、openalex、pdf_fetch、pdf_parse、polyinfo、pubchem、scopus、tansoole、unpaywall、vectordb
+tests/ （4 个脚本）
+    test_architecture.py、test_no_undefined_names.py、test_principles.py、test_types.py
 toolbox/ （0 个脚本）
 tools/  ← 工具包：一个工具 = 一个自包含的包（2 块）
     getpdf、library
@@ -44,7 +44,7 @@ tools/  ← 工具包：一个工具 = 一个自包含的包（2 块）
 （data/ 是数据目录（五层），3000+ 文件，**不要去 glob 它**）
 ```
 
-**可枚举的模块 23 个**（`tools/` 工具包 + `shared/` 共用件，每个都有 `__init__.py` 与 `selftest.py`） · **还没切进 `tools/` 的老文件夹 1 个**
+**可枚举的模块 21 个**（`tools/` 工具包 + `shared/` 共用件，每个都有 `__init__.py` 与 `selftest.py`）
 
 进度、健康状况、下一步做什么 → 见 `HANDOVER.md`
 
@@ -104,12 +104,12 @@ A 机默认不跑常驻服务、不跑花钱的批量作业（`ROLE=dev`）；A 
 - `data/curated/<id>/meta.json` · `outline.json` · `figures/` — 目录卡、骨架（章节菜单）、按版面裁好的整图（可重裁）
 - `data/serving/vector_db/` — 向量库（本地 bge-m3），供 `library_retrieve` 按意思找段落
 - `data/serving/oa_index.json` · `data/state/teams.json` · `topics.db` — 作者/摘要索引（可重建）、研究团队名单（人工，不可重建）、专题
-- `data/serving/cod_boron/` — 含硼晶体结构（2.6 GB，代码里没人用，来历待查，用户定先留着）
 
 ## 模型
 
-向量化 `bge-m3`（本地免费，走路由表的 `EMBED` 用途：`shared/kernel/config/routing.py`）。
-平台自己已不调用生成式大模型；控制面板里的通道 / 密钥设置还在，留给以后要用时。
+向量化 `bge-m3`（本机 Ollama，免费；本机设置 `OLLAMA_HOST`，模型 `EMBED_MODEL` 默认 bge-m3，换模型 = 向量库重建）。
+平台自己**不调生成式大模型**：2026-10-24 大模型的通道 / 用途 / 账本（`routing`、`budget`、`llm_client`）整套撤掉了，
+控制面板里只剩 MineRU 与 OpenAlex 两把密钥。以后真要接回来，额度闸要跟着一起回来（见下面「第三道闸」那段）。
 
 ## 运维现状（不用管，已自动化）
 
@@ -213,11 +213,12 @@ host  →  tools  →  shared.domain / shared.adapters  →  shared.kernel
 
 ⚠ 而且要知道：**弹窗那道闸不是硬的。** `confirm` 是 Claude Code 专有标记，
 换个客户端（Antigravity）会被直接忽略 —— 2026-09-10 外部 agent 批量精读 10 篇（精读已于 2026-10-23 删掉），
-全程无人确认，余额从 2.48 掉到 1.04 元。真正硬的是服务端的当日额度闸
-（`shared/kernel/budget.py`，在控制面板设 `DAILY_LLM_CALLS` / `DAILY_LLM_TOKENS`）。
+全程无人确认，余额从 2.48 掉到 1.04 元。所以硬闸必须在服务端：现在放开的两个入口
+（取一篇 / 一次最多 25 篇全文）由 `/science` 服务端强制间隔与上限；原来管花钱的当日额度闸 `budget.py`
+随大模型一起撤了 —— **以后再接任何花钱的调用，先把服务端额度闸接回来**。
 **加白名单之前先问：如果客户端不弹窗，这件事我还敢让它自己做吗？**
 
-提示词进 `prompts/<名>_v<N>.txt`，**只增不改**，版本在 `tool.toml` 里声明。
+提示词（以后若有）进 `prompts/<名>_v<N>.txt`，**只增不改**（读取器 2026-10-24 随最后一个用户删了，git 历史里有）。
 
 ## `.claude/` 全部是生成物，**手写即违规**（有守卫）
 

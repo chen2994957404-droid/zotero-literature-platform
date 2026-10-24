@@ -12,7 +12,7 @@ import os
 
 import pytest
 
-from shared.domain.schema import outline as O
+from shared.domain import outline as O
 from shared.kernel import paths
 from tools import library
 
@@ -135,7 +135,7 @@ class Test缓存:
     def test_算法或清洗规则变了_旧缓存要重算_取节不能错位(self, paper, monkeypatch):
         """2026-09-30 Claude Science 实测：clean_body 改过而 full.md 没动，按修改时间判新鲜
         就一直用旧缓存 —— 位置整体错开（取节开头被截几个字）、还留着老算法的重复段落编号。"""
-        from shared.domain.schema import outline as O
+        from shared.domain import outline as O
         library.outline(paper)
         monkeypatch.setattr(O, 'OUTLINE_VERSION', O.OUTLINE_VERSION + 1)
         assert library.outline(paper)['cached'] is False

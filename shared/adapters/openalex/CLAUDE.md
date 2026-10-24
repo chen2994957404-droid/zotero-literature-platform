@@ -8,11 +8,7 @@ OpenAlex 学术检索 API 的唯一入口（免费、无需密钥）。**属于 
 
 重构前同一个 API 被**三处各实现了一遍**：
 
-| 处 | 状况 |
-|---|---|
-| `adapters/snowball` | 有退避重试、礼貌 UA、字段裁剪 —— 实现最好 |
-| `tools/discover`（旧 paper_discovery）| 裸 urlopen，无重试 |
-| `找新文献/find_papers.py` | 裸 urlopen，无重试，又抄了一遍摘要还原 |
+（雪球扩展 / 找新文献 / 方向地图，三样 2026-10 都已删掉。）
 
 后果一：OpenAlex 一限流，snowball 会退避重试，另外两个直接失败。
 后果二（更隐蔽）：**字段名各叫各的**，于是 `paper_discovery` 发 `cited_by`、
@@ -23,22 +19,16 @@ OpenAlex 学术检索 API 的唯一入口（免费、无需密钥）。**属于 
 ## 接口
 
 ```python
-from adapters import openalex
-items, total = openalex.search('polyborosiloxane', limit=25, year_from=2015)
-w = openalex.work_by_doi('10.1021/xxx')     # 查不到返回 None
+from shared.adapters import openalex
+items, total = openalex.search('polyborosiloxane', limit=25, year_from=2015)   # Claude Science 的题名检索
+rows = openalex.works_by_dois(dois)         # 作者 / 摘要索引（tools/library/oaindex）
 openalex.restore_abstract(inv)              # 倒排索引摘要 → 正常文本
 openalex.normalize(work)                    # OpenAlex work → 统一文献字典
-items, cut = openalex.semantic_search('一段话', {'publication_year': '2023-2026'})  # 按意思检索
 ```
 
-### 语义检索 `semantic_search`（2026-09-26 加）
+语义检索、前向引用、期刊指标 2026-10-24 随找文献整套删了（git 历史里有）。
 
-按**意思**找（GTE-Large 向量，标题 + 摘要），补精确检索「换个说法就搜不到」的盲区。
-实测限制：**每次最多 50 条、不能翻页**；**排序参数被忽略**，要新文章必须加年份过滤；
-输入超过 1500 字服务端直接报 400（官方文档写 2000，实测 1500），我们先截到 1500 并如实返回 `truncated=True`；没摘要的文章（Elsevier 居多）只按标题匹配。
-$0.001/次。
-
-## 统一文献字典（与 adapters.sciverse 同构）
+## 统一文献字典
 
 ```
 title · doi · year · venue · citations · abstract · is_oa · oa_url
@@ -50,12 +40,12 @@ openalex_id · first_author
 ## 行为
 
 - 429 / 5xx 自动退避重试（批量跑时必然撞上限流）
-- 失败抛 `core.errors` 分类异常：限流 → `RateLimited`，其余 → `ExternalServiceError`
+- 失败抛 `shared.kernel.errors` 分类异常：限流 → `RateLimited`，其余 → `ExternalServiceError`
 - 摘要用倒排索引存储（OpenAlex 为规避版权的历史设计），必须还原才能用 ——
   而摘要正是判断「跟我的方向相不相关」的主要依据
 
 ## 验证
 
 ```
-python adapters/openalex/selftest.py     # 前半段离线，后半段真调一次 API
+python shared/adapters/openalex/selftest.py [--live]    # 离线验字段；--live 真调一次 API
 ```

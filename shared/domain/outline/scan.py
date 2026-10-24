@@ -23,11 +23,12 @@
     location/section/in_table
   - `nearest_ref(md, pos)` → 这个位置最近的 `Table N` / `Fig. N`
 
-**它不产出「测量」，只产出候选**。谁是哪个样品的哪个性能，那一步在上层。
+**它不产出「测量」，只产出候选**。现在的用途是给骨架数「这节有几个数、表里有几行」，
+以及 `clean_body` 把 MineRU 的 LaTeX 残渣洗成人能读的正文（取节、算签名都先过它）。
 """
 import re
 
-from . import parse_property, normalize_property_name, PROPERTY_ALIASES
+from .props import parse_property, normalize_property_name, PROPERTY_ALIASES
 
 # 单位表：写全一点，宁可多抓（上层还会筛），也别漏掉整类性能。
 # 顺序有讲究：长的在前，否则 'MPa' 会被 'Pa' 先吃掉。
@@ -226,50 +227,6 @@ def _respectively(md, cands):
         if len(best) == len(names):
             for c, n in zip(best, names):
                 c['sample_hint'] = n
-
-
-def guess_property(context):
-    """从上下文里猜这是什么性能 —— **只认词表，认不出就留空**。
-
-    认不出不是失败：那正是该交给模型的那一小部分。
-    """
-    low = context.lower()
-    best, best_pos = '', None
-    for canon, aliases in _PROP_HINTS:
-        for a in aliases:
-            i = low.rfind(a)
-            if i >= 0 and (best_pos is None or i > best_pos):
-                best, best_pos = canon, i
-    return best
-
-
-def _hints():
-    from . import PROPERTY_ALIASES
-    return sorted(((canon, tuple(a.lower() for a in aliases))
-                   for canon, aliases in PROPERTY_ALIASES.items()),
-                  key=lambda kv: -max(len(a) for a in kv[1]))
-
-
-_PROP_HINTS = _hints()
-
-
-def scan_measurements(md, window=90):
-    """候选 → 「能进测量层的那些」：认得出性能名、且拆得出数的。
-
-    归属哪个样品这里**不猜** —— 那要理解上下文，是模型的活。
-    """
-    out = []
-    for c in scan_numbers(md, window=window):
-        name = guess_property(c['context'])
-        if not name or c['value'] is None:
-            continue
-        out.append({'sample_id': '', 'name': normalize_property_name(name),
-                    'raw_name': name, 'value': c['value'],
-                    'value_max': c['value_max'], 'unit': c['unit'],
-                    'cmp': c['cmp'], 'condition': '', 'location': c['location'],
-                    'section': 'main', 'method': 'script', 'raw': c['raw'],
-                    'context': c['context']})
-    return out
 
 
 # ── 表格：脚本最该干、模型最容易读错的地方 ────────────────────────────

@@ -58,7 +58,7 @@
 
 - 摘要页加载 `piccache.cnki.net/nxgp/clientverify/…/index.umd.min.js`：里面是 **FingerprintJS**（给浏览器算一个「指纹」编号）+ 知网自己的滑块，
   弹不弹由知网服务器（`kns.cnki.net/verify-api/get|check`）判，**规则在服务器上，看不到**。脚本里没有查 webdriver / 后台标签之类的代码。
-- 取全文用的浏览器（独立的 Edge 配置 `zotero-getpdf-browser`）`navigator.webdriver=false`、启动参数没有 --enable-automation。
+- 取全文用的浏览器（独立的 Edge 配置 `zotero-getpdf-browser`，名字是历史遗留）`navigator.webdriver=false`、启动参数没有 --enable-automation。
 - 所以「为什么人用不弹、程序用老弹」只能推测：同一个浏览器指纹上，访问的样子不像人（固定间隔检索、直接打开摘要页网址、不经结果页点进去、一天十几次）。
   分辨办法：人自己在**取全文用的浏览器**里正常用知网，弹得多 → 这个浏览器的指纹已被记上；不弹 → 是程序的访问方式。
 - **不做「装得更像人」去绕开验证**：那是知网明确不想要的自动访问，出了事落在全校出口 IP 上。被挡就停、交给人。

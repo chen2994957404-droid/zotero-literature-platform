@@ -561,7 +561,7 @@ def reanchor(pid, addr, title='', quote='', si=False):
     - 给了 title：sectionId 那一节的标题对不上 → 按标题找回那一节（原来是段地址的，退到整节）。
     - 都没给：照 sectionId 取，只把那节现在的标题带回去，让调用方自己核。
     """
-    from shared.domain.schema import outline as O
+    from shared.domain import outline as O
     from shared.kernel import paths
     from tools import library
     o = library.outline(pid)
@@ -1723,7 +1723,7 @@ TOOLS = [
      'refs': {'type': 'array', 'items': {'type': 'string'}}}, ['topic', 'refs'], _topic_remove),
     ('topic_list', '全部专题：名字、说明、篇数、谁建的。', {}, [], _topic_list),
     ('topic_items', '一个专题里的文献：id、DOI、标题、年份、每篇的备注。', {'topic': {'type': 'string'}}, ['topic'], _topic_items),
-    ('library_db_search', '证据库里有没有：按标题 / DOI / 期刊子串搜，回目录卡（有无正文、SI、已解析、已精读、已结构化）。',
+    ('library_db_search', '证据库里有没有：按标题 / DOI / 期刊子串搜，回目录卡（有无正文、SI、已解析）。',
      {'query': {'type': 'string'}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 200}}, ['query'], _db_search),
     ('library_retrieve', '向量检索证据库：最相近的段落 + 文献 id + 节地址（拿去 library_section 读上下文）。'
      '只有一行标题的碎片已滤掉；per_paper=1 每篇最多一段。',
@@ -1742,7 +1742,7 @@ TOOLS = [
       'title': {'type': 'string'}, 'quote': {'type': 'string'},
       'format': {'type': 'string', 'enum': ['html', 'csv', 'json']},
       'maxChars': {'type': 'integer', 'minimum': 100, 'maximum': 200000}}, [], _section),
-    ('paper_files', '一篇手上的文件（正文 PDF / SI 原件 / 解析 Markdown / 图片目录 / 中文精读），B 机 WSL 路径；'
+    ('paper_files', '一篇手上的文件（正文 PDF / SI 原件 / 解析 Markdown / 图片目录），B 机 WSL 路径；'
      '另给「图号 → 图片文件」对照。',
      {'itemKey': _KEY}, ['itemKey'], _paper_files),
     ('paper_fulltext', '给 DOI 取全文（学校订阅）→ 正本 + SI 落地并解析。后台串行跑，一次最多 25 篇，'

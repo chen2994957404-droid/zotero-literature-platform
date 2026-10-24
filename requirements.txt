@@ -5,7 +5,6 @@ chromadb==1.5.9
 python-docx==1.2.0
 PyMuPDF==1.27.2
 keyring==25.7.0
-pint==0.26.1
 fastapi==0.143.0
 uvicorn==0.52.4
 playwright==1.62.0
@@ -15,7 +14,6 @@ playwright==1.62.0
 # - python-docx: 读 .docx 格式的 SI（Elsevier 常用）
 # - PyMuPDF    : 从 PDF 按版面裁整图（host/mcp/figure_crop）
 # - keyring    : 密钥存进系统凭据库
-# - pint       : 单位解析与量纲（shared/adapters/units，骨架里的数字扫描用）
 # - fastapi / uvicorn : 文献库应用的后台（host/app）
 # - playwright : 驱动一个已经开着的真实浏览器取付费全文、查网页库（shared/adapters/pdf_fetch 等）。
 #                只有运行端要装；编程端不装也能 import、能跑测试（延迟 import）。

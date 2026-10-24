@@ -5,7 +5,7 @@
 """
 import pytest
 
-from shared.domain.schema import outline as O
+from shared.domain import outline as O
 
 
 @pytest.mark.parametrize('title, kind', [

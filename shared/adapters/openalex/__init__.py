@@ -5,14 +5,14 @@
 
 重构前，同一个 OpenAlex API 被**三个地方各自实现了一遍**：
 
-    shared/adapters/snowball          有退避重试、有礼貌 UA、有字段裁剪  ← 实现最好
-    pipelines/paper_discovery  裸 urlopen，无重试
-    找新文献/find_papers.py     裸 urlopen，无重试，又抄了一遍摘要还原
+    （雪球扩展、找新文献、方向地图三处各一份；这三样 2026-10 都已删掉）
 
 三份实现意味着三种行为：OpenAlex 一限流，snowball 会退避重试，另外两个直接失败。
 而且**字段名各叫各的**，于是出了一个只在特定路径下才发作的 bug（见下）。
 
 现在：HTTP、重试、摘要还原、字段归一，只有这一个文件负责。
+2026-10-24 起只剩两个用户：作者 / 摘要索引（`tools/library/oaindex`，按 DOI 批量取）
+与 Claude Science 的题名检索（`host/mcp/science`）；语义检索、前向引用、期刊指标随找文献整套删了。
 
 ## 统一的文献字典（全平台通用）
 
@@ -357,169 +357,4 @@ def works_singleton(ids, select=FIELDS, on_progress=None, allow_partial=True):
         raise errors.ExternalServiceError(
             'OpenAlex 单条取用有 %d / %d 条失败' % (len(failed), len(uniq)),
             service='openalex')
-    return out
-
-# ── 精确过滤取用（与 search() 的模糊相关性排序是两回事）──────────────
-# 为什么要有这个（实测得出，不是洁癖）：
-# `search()` 走的是**相关性排序**，而相关性受被引数影响 ——
-# 建 impact 窄带时它把大刊综述和高被引泛论文顶了上来，
-# 结果 2328 篇种子里**只有 37% 的标题跟抗冲有关，17% 是综述**。
-# `title_and_abstract.search` 是**过滤器**：词必须真的出现在标题或摘要里。
-# 配合 type:article 排除综述，命中质量完全不同。
-def works_by_filter(filters, limit=200, select=FIELDS, sort=None, mailto=POLITE_MAILTO):
-    """按 OpenAlex filter 语法取一页结果。filters 是 {字段: 值} 或已拼好的字符串。
-
-    返回 (items, total)。items 是归一化后的统一文献字典。
-    常用字段：
-        title_and_abstract.search  词必须出现在标题或摘要（不是模糊相关性）
-        type                       article / review / book-chapter ...
-        publication_year           >2009 这种区间写法
-        is_retracted               false
-    """
-    f = _filter_str(filters)
-    url = '%s/works?filter=%s&per-page=%d&select=%s&mailto=%s' % (
-        BASE, urllib.parse.quote(f, safe=':|,><=/.'), min(int(limit), 200),
-        select, urllib.parse.quote(mailto))
-    if sort:
-        url += '&sort=' + urllib.parse.quote(sort)
-    d = get(url)
-    items = [normalize(w) for w in d.get('results', [])]
-    return items, (d.get('meta') or {}).get('count', len(items))
-
-
-# ── 语义（向量）检索（2026-09-26 加）───────────────────────────────────
-# 为什么要有：精确检索要求词真的出现，**换了说法的同一件事完全搜不到**。
-# 2026-09-24 实测「剪切硬化 + 动态键」：语义检索找到了「动态共价 tetra-PEG 的剪切增稠」
-# 这类一个 "shear stiffening" 都没写的文章 —— 精确检索永远搜不到它们。两者互补，不是替代。
-# OpenAlex 用 GTE-Large 把每篇的标题 + 摘要向量化（https://help.openalex.org/guides/semantic-search）。
-#
-# ⚠ 实测出来的三条限制（官方文档只写了第一条）：
-#   ① 每次最多 50 条，**不能翻页**（page=2 返回空，per-page=100 报 400）
-#   ② **排序参数被悄悄忽略**，不加年份过滤返回的多是老文章 → 要「新的」必须带年份过滤
-#   ③ 输入**超过 1500 字直接报 400**（官方文档写的是「只用前 2000 字」，2026-09-26 实测不对：
-#      「Search query too long … the limit is 1500」）—— 所以我们自己先截到 1500；没摘要的文章（Elsevier 居多，踩坑 #188）只能按标题匹配
-# 计费：$0.001/次（与全文搜索同价），免费 key $1/天 ≈ 1000 次。
-SEMANTIC_MAX = 50
-SEMANTIC_MAX_CHARS = 1500
-
-
-def _filter_str(filters):
-    if isinstance(filters, dict):
-        return ','.join('%s:%s' % (k, v) for k, v in filters.items() if v not in (None, ''))
-    return str(filters or '')
-
-
-def semantic_url(text, filters=None, limit=SEMANTIC_MAX, select=FIELDS, mailto=POLITE_MAILTO):
-    """拼语义检索的地址（纯函数，自测用）。返回 (url, truncated)。"""
-    text = ' '.join((text or '').split())
-    if not text:
-        raise errors.BadInputError('语义检索的输入不能为空')
-    truncated = len(text) > SEMANTIC_MAX_CHARS
-    url = '%s/works?search.semantic=%s&per-page=%d&select=%s&mailto=%s' % (
-        BASE, urllib.parse.quote(text[:SEMANTIC_MAX_CHARS]),
-        max(1, min(int(limit), SEMANTIC_MAX)), select, urllib.parse.quote(mailto))
-    f = _filter_str(filters)
-    if f:
-        url += '&filter=' + urllib.parse.quote(f, safe=':|,><=/.')
-    return url, truncated
-
-
-def semantic_search(text, filters=None, limit=SEMANTIC_MAX, select=FIELDS):
-    """按**意思**检索：一段话（问题描述、一篇摘要）→ 意思最近的至多 50 篇。
-
-    filters 同 `works_by_filter`（如 {'publication_year': '2023-2026'}）；
-    `cited_by_count` 与 `last_known_institutions.country_code` 两个过滤官方不支持。
-    返回 `(items, truncated)`：items 按相似度降序；truncated=输入超过 1500 字被截断。
-    """
-    url, truncated = semantic_url(text, filters, limit, select)
-    d = get(url)
-    return [normalize(w) for w in d.get('results', [])], truncated
-
-
-SEMANTIC_SPACING = 1.1      # 官方限速每秒 1 次语义检索；错开 1.1 秒发
-SEMANTIC_WORKERS = 4
-
-
-def semantic_many(jobs, limit=SEMANTIC_MAX, select=FIELDS):
-    """一批语义检索并发发出（每隔 1.1 秒发一个，最多 4 个同时在路上）→ 与 jobs 同序的 [(items, truncated)]。
-
-    为什么要并发（2026-09-26 实测）：单次 5–8 秒，按年切 3 片 × 2 篇种子串行跑了 62 秒，
-    超过 MCP 约 60 秒的调用超时；错开 1.1 秒并发后 4 次共 10 秒，没有被限流。
-    jobs = [(text, filters), ...]。任何一个失败就抛出（不静默返回残缺结果，同 `_batch_filter` 的纪律）。
-    """
-    import concurrent.futures as cf
-    jobs = list(jobs)
-    if len(jobs) <= 1:
-        return [semantic_search(t, f, limit, select) for t, f in jobs]
-    with cf.ThreadPoolExecutor(max_workers=SEMANTIC_WORKERS) as ex:
-        futs = []
-        for i, (t, f) in enumerate(jobs):
-            if i:
-                time.sleep(SEMANTIC_SPACING)
-            futs.append(ex.submit(semantic_search, t, f, limit, select))
-        return [fu.result() for fu in futs]
-
-
-def cited_by(work_id, limit=200, select=FIELDS, mailto=POLITE_MAILTO, page_all=False):
-    """谁引用了这篇（前向引用）。返回 (citing_works, total)。
-
-    这是**前向雪球**的原语，也是「跟进厚度 / CD 指数」的唯一数据来源 ——
-    库里原本只有「种子引了谁」（后向），没有「谁引了种子」。
-    后者才能回答「一个漂亮结果有没有人真的跟进」。
-
-    ⚠ 成本：一篇一次 list 查询（$0.0001）。3700 篇种子约 $0.37，
-    在免费 key 的 $1/天 里，但要留意别一天里反复重跑。
-    page_all=True 时对被引很多的论文翻页取全（每页 200，会成倍花钱）。
-    """
-    wid = str(work_id).rsplit('/', 1)[-1]
-    out, page, total = [], 1, 0
-    while True:
-        url = ('%s/works?filter=cites:%s&per-page=%d&page=%d&select=%s&mailto=%s'
-               % (BASE, wid, min(int(limit), 200), page, select,
-                  urllib.parse.quote(mailto)))
-        d = get(_ := url)
-        res = d.get('results', [])
-        total = (d.get('meta') or {}).get('count', len(res))
-        out.extend(res)
-        if not page_all or not res or len(out) >= min(total, limit):
-            break
-        page += 1
-    return out, total
-
-
-# ── 期刊本身（sources 端点）────────────────────────────────────────────
-# `works` 端点只给「这篇发在哪」（刊名 / ISSN / 出版商），给不出**这本刊有多重**。
-# 刊级指标住在另一个端点 `/sources`：`summary_stats.2yr_mean_citedness`
-# （就是影响因子那个口径）、`h_index`、以及是不是开放获取、在不在 DOAJ。
-SOURCE_FIELDS = ('id,display_name,issn_l,issn,type,is_oa,is_in_doaj,'
-                 'host_organization_name,works_count,cited_by_count,summary_stats')
-
-
-def sources_by_issn(issns, on_progress=None, mailto=POLITE_MAILTO):
-    """一批 ISSN → `{issn_l: 刊的元数据与指标}`。
-
-    走 `/sources?filter=issn:a|b|c`。同一本刊有纸质与电子两个 ISSN，
-    返回时**每个 ISSN 都指向同一条记录**（调用方拿手上那个查得到就行）。
-    """
-    vals = sorted({str(i).strip() for i in issns if i})
-    out = {}
-    for i in range(0, len(vals), BATCH):
-        chunk = vals[i:i + BATCH]
-        f = 'issn:%s' % '|'.join(chunk)
-        url = '%s/sources?filter=%s&per-page=%d&select=%s&mailto=%s' % (
-            BASE, urllib.parse.quote(f, safe=':|/.'), BATCH, SOURCE_FIELDS,
-            urllib.parse.quote(mailto))
-        for wait in _BACKOFF + (None,):
-            try:
-                for s in get(url).get('results', []):
-                    for key in ([s.get('issn_l')] + list(s.get('issn') or [])):
-                        if key:
-                            out[key] = s
-                break
-            except errors.PlatformError:
-                if wait is None:
-                    raise
-                time.sleep(wait)
-        if on_progress:
-            on_progress(min(i + BATCH, len(vals)), len(vals), len(out))
     return out

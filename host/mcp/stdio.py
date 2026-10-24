@@ -102,7 +102,7 @@ class MCPStdioServer:
 
         **工具是模型可以自己调的**，所以默认只许注册只读且不花钱的东西。
 
-        `confirm=True` 用于「花钱但代价是单篇级、可重来」的入口（精读一篇、
+        `confirm=True` 用于「有代价但只是单篇级、可重来」的入口（取一篇全文、
         抽一篇、读一张图）：它会给这个工具打上 `anthropic/requiresUserInteraction`，
         于是 Claude Code **每次调用都弹权限窗，而且不给「不再询问」的选项** ——
         allow 规则绕不过去，`dontAsk` 模式下直接拒绝而不是偷偷跑。

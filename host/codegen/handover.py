@@ -83,8 +83,7 @@ def _members(p):
     此前这里用的是「目录在不在」，于是两处口径对不上，出过两种事故：
       · 删包时只 `git rm`，目录以「只剩 __pycache__」的形态活着，结构树照画（踩坑 #87）
       · `tools/<t>/{tests,evals,prompts}/` 这些配套目录被当成块，把真正的成员淹掉
-    同名不同物也只有 `__init__.py` 分得开：`shared/kernel/prompts/` 是货真价实的
-    一块（提示词读取器），而 `tools/<t>/prompts/` 只是几个 .txt。
+    同名不同物也只有 `__init__.py` 分得开：真正的一块有 `__init__.py`，配套目录只是几个文件。
     """
     def is_block(x):
         d = os.path.join(p, x)

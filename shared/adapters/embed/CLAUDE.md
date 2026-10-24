@@ -22,6 +22,7 @@
 | 函数 | 用途 |
 |---|---|
 | `embed(texts)` | **批量**接口，传 list 返回 list |
+| `alive()` | 本机 Ollama 通不通 |
 | `chunk(text, max_chars=800)` | 切块 |
 | `strip_references(text)` | 去掉参考文献部分（否则参考文献会污染检索） |
 
@@ -32,16 +33,21 @@
   （表现为「失明」：服务通但什么都没有）。
 - 接口是批量的，取单个要 `embed([t])[0]`。
 
+## 配置
+
+本机 Ollama 地址 `OLLAMA_HOST`（控制面板「本机设置」可改）；模型 `EMBED_MODEL`，默认 `bge-m3`。
+**换模型 = 整个向量库要重建**（两家的向量互不兼容）。2026-10-24 前它走大模型路由表，路由表撤了之后只走本地。
+
 ## 谁在用它
 
-问答线（vectorize / ask）。
+建向量库（`tools/library/vectorize`，落地流水线会调）与库内检索（`tools/library.retrieve`，Claude Science 的 `library_retrieve`）。
 
 改这里的对外接口 = 可能弄坏上面所有调用者。**改签名前先想清楚兼容性。**
 
 ## 改完必须做
 
 ```
-python selftest.py                       # 本块自测，必须全过
-python ../../host/doctor/health_check.py     # 全局体检，确认没碰坏别人
+python shared/adapters/embed/selftest.py [--live]   # 离线验切块；--live 才真调本机 bge-m3
+python host/doctor/health_check.py --offline
 ```
 自测不过就是没改完。**没有自测覆盖的新功能，等于没写。**

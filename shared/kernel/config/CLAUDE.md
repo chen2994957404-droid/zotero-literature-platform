@@ -15,21 +15,21 @@
 
 ## 职责
 
-统一、可靠地拿到配置。加载顺序：**进程环境变量 → 项目根 `.env` 文件**。
+统一、可靠地拿到配置。加载顺序：**进程环境变量 → 系统凭据库（密钥才查）→ 项目根 `.env` 文件**。
 
 ## 对外接口
 
 | 函数 | 用途 |
 |---|---|
-| `get_key(name, required=False)` | 取密钥（DEEPSEEK_KEY 等） |
-| `get_model(name)` | 取某环节该用的模型（DEEPREAD_MODEL / EXTRACT_MODEL / ASK_MODEL…） |
-| `get_site(name)` | 取本机设置（Zotero 用户ID、附件目录、Ollama 地址…） |
+| `get_key(name, required=False)` | 取密钥（MINERU_TOKEN / OPENALEX_KEY） |
+| `get_site(name)` | 取本机设置（机器角色、自动建库开关、Ollama 地址、Unpaywall 邮箱…） |
 | `need_site(name)` | 同上，但没配就**明确报错并告知怎么配** |
 | `set_keys({...})` | 写回 `.env`（原子替换 + 自动备份），控制面板用它 |
 | `mask(v)` | 脱敏显示，只留后 4 位 |
 | `site_missing()` | 哪些必填项还没配（新电脑装机时提示用） |
 | `is_secret(name)` | 这个名字是不是密钥（固定表 + `_KEY`/`_TOKEN` 后缀规则），密钥只进凭据库 |
-| `routing.channels()` / `routing.purposes()` / `routing.resolve(purpose)` | **大模型的通道表与用途表**（子模块 `routing.py`，2026-09-11）：官方几家内置，中转站由用户在面板加；每个用途指定主用通道 + 模型 + 备用通道。存 `llm_routing.json`（不进 git，不含密钥值） |
+
+大模型的通道 / 用途 / 账本（`routing.py`、`budget.py`）2026-10-24 撤掉了：平台已不调生成式大模型。
 
 ## 为什么存在（实测教训）
 
@@ -39,8 +39,8 @@
 ## 铁律
 
 1. **源码里绝不出现明文密钥**，一律走本模块。体检有专门一项在把关。
-2. **不要给必填项留「读不到就用默认值」的兜底**。那会把开发者本人的 Zotero 用户ID
-   留在源码里（传 GitHub 即泄露），而且别人装上会静默连到陌生人的库。
+2. **不要给必填项留「读不到就用默认值」的兜底**。那会把开发者本人的账号信息
+   留在源码里（传 GitHub 即泄露），而且别人装上会静默连到陌生人的账号。
    **静默用错值，比直接报错危险得多。**
 3. `.env` 与 `.env.bak*` 已在 .gitignore，永远不要提交。
 

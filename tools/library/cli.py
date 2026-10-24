@@ -21,7 +21,7 @@
     python -m tools.library 团队                         # 研究团队名单 + 每组挂了几篇（读缓存，不联网）
     python -m tools.library 团队 武培怡                   # 一个组：大导 / 小导 / 已独立 + 本组与合作文章
     python -m tools.library 团队 --重建                   # 重新取作者、挂组（OpenAlex 免费额度约 25 次）
-    python -m tools.library 盘点 [--明细]                # 库里有什么：类型 / 正文 / SI 三态 / 精读
+    python -m tools.library 盘点 [--明细]                # 库里有什么：类型 / 正文 / SI 三态 / 已解析
 
 全部只读（「团队 --重建」「检索 --建索引」只写可重建的索引）。2026-10-13 起 Zotero 移出平台，查 Zotero 的命令都删了。
 """

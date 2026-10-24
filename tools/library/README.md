@@ -10,21 +10,17 @@ python -m tools.library 库                          # 证据库有多大
 python -m tools.library 库 硼                        # 按标题 / DOI / 期刊搜
 python -m tools.library 检索 10.1021-acs.macromol    # DOI（可以只写一部分、斜杠横杠都行）
 python -m tools.library 检索 --通讯 武培怡 --年 2024-2026
-python -m tools.library 检索 polyborosiloxane --摘要 --有 精读
+python -m tools.library 检索 polyborosiloxane --摘要 --有 si
 python -m tools.library 团队                         # 研究团队 + 每组篇数
 python -m tools.library 团队 武培怡                   # 一个组：大导 / 小导 / 已独立 + 文章
 python -m tools.library 找 "boronic ester exchange"  # 库内按意思找段落（零成本）
 python -m tools.library 引文 doi_10.1021-acs.macromol.6c00733   # 参考文献，标出库里已有的
-python -m tools.library 盘点                         # 库里有什么：正文 / SI 三态 / 精读
+python -m tools.library 盘点                         # 库里有什么：正文 / SI 三态 / 已解析
 ```
 
-## 跟另外两个「查库」的分别
+## 它不做什么
 
-| 想干什么 | 用谁 | 花钱吗 |
-|---|---|---|
-| 库里有没有这篇？某个团队有哪些？ | **library** | 不 |
-| 我库里关于自修复机理有什么？（要一段中文回答）| `ask` | 花 |
-| 拉伸强度 > 10 MPa 的体系有哪些？ | `paperdb` | 不 |
+库里没有的去取 → `getpdf`；综合回答、比数值、读曲线 → 交给 Claude Science（它通过 `/science` 接口读这里）。
 
 ## 保证
 

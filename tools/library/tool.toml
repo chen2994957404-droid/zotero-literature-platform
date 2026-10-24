@@ -9,4 +9,3 @@ expose        = "tool"
 costs_money   = false
 side_effects  = []
 requires_role = "none"
-prompts       = []

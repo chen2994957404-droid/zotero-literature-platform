@@ -6,10 +6,10 @@
 ## 这个工具是什么
 
 **证据库的只读门面**：有没有这篇、手上有什么、库内向量检索、骨架菜单与按节取原文、
-参考文献、单元库；以及按条件检索（DOI / 标题词 / 作者 / 通讯 / 团队…）和研究团队。
+参考文献；以及按条件检索（DOI / 标题词 / 作者 / 通讯 / 团队…）、研究团队、专题。
 
-它是平台里**模型可以随便调的工具包**之一 —— 全部只读、全部免费。
-别的工具要么花钱（大模型）要么改数据，所以它们在 MCP 上都是 prompt。
+它是平台里**模型可以随便调的工具包** —— 全部只读、全部免费。
+另一个工具 `getpdf`（取全文）会去敲出版商，整批的只给人点。
 
 **2026-10-13 Zotero 移出平台**：这里原来一半是「查 Zotero」（搜条目、合集、标签、最近、PDF 路径、全文索引），
 连同 `shared/adapters/zotero_client` 一起删了。旧代码在 git 标签 `zotero-before-removal`。
@@ -18,11 +18,13 @@
 
 | 文件 | 干什么 |
 |---|---|
-| `__init__.py` | 证据库：`db_*`、`retrieve`、`refs`、`outline` / `section`、`units` + 渲染 |
-| `dbsearch.py` | 检索：`find()`（DOI / 标题词 / 作者 / 通讯 / 团队 / 年份 / 期刊 / 有无正文 SI 精读）、`detail()`（一篇的完整卡片）|
+| `__init__.py` | 证据库：`db_*`、`retrieve`、`refs`、`outline` / `section` + 渲染 |
+| `dbsearch.py` | 检索：`find()`（DOI / 标题词 / 作者 / 通讯 / 团队 / 年份 / 期刊 / 有无正文 / SI）、`detail()`（一篇的完整卡片）|
 | `oaindex.py` | 作者 + 摘要索引（OpenAlex 取一次，存 `serving/oa_index.json`，可重建）|
 | `teams.py` | 研究团队：名单（`state/teams.json`，人工查证）× 作者索引 → 文章挂到团队（`serving/team_links.json`）|
 | `census.py` | 盘点：证据库里有什么 |
+| `topics.py` | 专题（`state/topics.db`）：用户或 Claude Science 把几篇归成一组 |
+| `vectorize.py` | 建向量库：解析好的全文 / SI → 切块 → bge-m3 → 向量库（落地流水线调它）|
 | `cli.py` | 人的命令行入口（`python -m tools.library <动作>`）|
 | `mcp.py` | 只读 MCP 工具（只做参数转换）|
 | `tool.toml` | 工具清单：`expose="tool"`、不花钱、无副作用 |

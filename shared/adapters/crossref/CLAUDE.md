@@ -4,17 +4,16 @@
 
 ## 这是什么
 
-**一个原子模块**：一个 DOI → 这篇文献的书目信息（标题/作者/期刊/年份/摘要），
-以及把它摆成 Zotero 条目该有的样子。
+**一个原子模块**：一个 DOI → 这篇文献的书目信息（标题/作者/期刊/年份/摘要）；按题名反查 DOI。
 
 ## 职责
 
 - 只做「问 Crossref 要元数据」和「字段对齐」这两件不可再分的事。
-- **不写 Zotero**（那是 `zotero_client` 的活），**不决定要不要收**（那是工具层的活）。
+- **不决定要不要收**（那是工具层的活）。
 
 ## 为什么存在（2026-08-30 R3 窗建）
 
-按 DOI 收文献这条线原本把 HTTP 请求直接写在 `找新文献/import_by_doi.py` 里，
+按 DOI 收文献这条线原本把 HTTP 请求直接写在工具脚本里，
 是「联网只在 adapters」（强制规范 #5）的破口。强制规范守的是这个承诺：
 **换掉外部服务只改一个文件**。元数据源以后想换成 DataCite / OpenAlex，
 只需要在这里换实现，工具层一行不动。
@@ -24,17 +23,17 @@
 | 函数 | 说明 |
 |---|---|
 | `work(doi)` | → Crossref 的 message 字典；DOI 不存在抛 `DoiNotFound` |
-| `to_zotero_item(m, tags=None)` | message → Zotero `journalArticle` 条目字典 |
+| `to_zotero_item(m, tags=None)` | message → 一份扁平的条目字典（名字是历史遗留：取全文落地时拿它填目录卡）|
+| `match_title(title, ...)` / `title_similarity(a, b)` | 按题名找 DOI（Claude Science 的「按标题补 DOI」）|
 | `normalize(m)` | message → 本平台统一的文献字典（与 `openalex.normalize` 同形，多 `created` 登记日） |
-| `journal_works_since(issn, since)` | 一本刊从某天起**新登记**的正式论文（2026-09-15 加，给 `tools/journalwatch`） |
 
 两个异常分得很清楚：`DoiNotFound`（重试没用，跳过这条）
 vs `CrossrefError`（对方抖动，可重试）。调用方据此决定批量作业是跳过还是重来。
 
 ## 谁在用
 
-- `tools/discover/importer.py` —— 按 DOI 收进 Zotero
-- `tools/journalwatch` —— 盯新刊（按 ISSN + 登记日列新文章）
+- `tools/getpdf` —— 收一篇时取元数据填目录卡
+- `host/mcp/science.py` —— 取全文前的预检（查无此 DOI 的当场退回）、按题名补 DOI
 
 ## 改完必须做
 

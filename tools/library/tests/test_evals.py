@@ -50,6 +50,6 @@ def test_limit说几条就最多几条(sample):
 
 
 def test_每条都带id和title(sample):
-    """下游（精读、抽取、问答）全靠这两个字段定位一篇文献，缺一个就断链。"""
+    """下游（文献库应用、Claude Science）全靠这两个字段定位一篇文献，缺一个就断链。"""
     bad = [r for r in dbsearch.find(q='a', limit=10)[0] if not r.get('id') or 'title' not in r]
     assert not bad, f'缺字段：{bad[:3]}'

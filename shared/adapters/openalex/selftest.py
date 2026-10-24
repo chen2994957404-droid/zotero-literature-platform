@@ -2,7 +2,7 @@
 """openalex 自测：字段归一对不对、摘要还原对不对、真调一次 API 通不通。
 用法: python shared/adapters/openalex/selftest.py
 
-前半段离线（用假的 work 记录），后半段真连 OpenAlex（免费无需密钥）。
+离线验字段归一（用假的 work 记录）；加 --live 才真连 OpenAlex。
 **重点验字段名**：引用数必须叫 `citations` —— 重构前这里出过事，
 paper_discovery 发 `cited_by`、discover 读 `cited`，两边对不上，
 结果走 OpenAlex 检索时引用数永远是 0，还连累了按被引排序。
@@ -73,44 +73,11 @@ def main():
     except errors.BadInputError:
         print('  [PASS] 空检索词被挡住'); ok += 1
 
-    total += 1
-    url, cut = openalex.semantic_url('  shear   stiffening gel ', {'publication_year': '2023-2026'}, limit=999)
-    if ('search.semantic=shear%20stiffening%20gel' in url and 'per-page=50' in url
-            and 'filter=publication_year:2023-2026' in url and not cut):
-        print('  [PASS] 语义检索地址：空白归一、条数封顶 50、年份过滤拼对'); ok += 1
-    else:
-        print(f'  [FAIL] 语义检索地址不对: {url}')
-
-    total += 1
-    url, cut = openalex.semantic_url('x' * 2500)
-    if cut and 'x' * 1500 in url and 'x' * 1501 not in url:
-        print('  [PASS] 超过 1500 字如实标 truncated 并截断（服务端超 1500 报 400）'); ok += 1
-    else:
-        print('  [FAIL] 1500 字截断不对')
-
-    total += 1
-    try:
-        openalex.semantic_url('  ')
-        print('  [FAIL] 空的语义输入竟然没报错')
-    except errors.BadInputError:
-        print('  [PASS] 空的语义输入被挡住'); ok += 1
-
-    # ── 联网部分 ──
-    if flag('--live'):
-        total += 1
-        try:
-            items, _cut = openalex.semantic_search(
-                'polymer gel that stiffens under impact because of dynamic crosslinks',
-                {'publication_year': '2023-2026'}, limit=5)
-            if items and all(2023 <= (it.get('year') or 0) <= 2026 for it in items):
-                print(f'  [PASS] 真实语义检索通：{len(items)} 篇，年份过滤生效'); ok += 1
-            else:
-                print(f'  [FAIL] 真实语义检索返回异常: {[it.get("year") for it in items]}')
-        except errors.PlatformError as e:
-            print(f'  [SKIP] 连不上 OpenAlex: {e}')
-            total -= 1
-    else:
-        print('  [SKIP] 语义检索真调用（加 --live 才跑，每次 $0.001）')
+    # ── 联网部分（加 --live 才跑：自测必须离线、任何机器上都能全绿）──
+    if not flag('--live'):
+        print('  [SKIP] 真实检索（加 --live 才跑）')
+        print(f'  {ok}/{total} 通过')
+        return 0 if ok == total else 1
 
     total += 1
     try:

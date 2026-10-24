@@ -321,8 +321,7 @@ A call that isn't finished within `wait_s` returns `PENDING` + `job_id` → `che
 - **CCDC** (Access Structures, CSD + ICSD published entries): list ≤30 per search (`truncated: true` if more —
   be more specific): refcode, deposition (CCDC number), space_group, cell, name. `ccdc_detail` adds data_doi
   (10.5517/…), deposited_on and the associated paper(s) with DOI. **No CIF / geometry** — if bond lengths are needed,
-  ask the user to download that one CIF; the platform's COD statistics on organic B–O structures live in
-  `data/serving/cod_boron/结论.md`. CCDC sometimes shows a validation page → `CAPTCHA_REQUIRED`; the user fills it,
+  ask the user to download that one CIF. CCDC sometimes shows a validation page → `CAPTCHA_REQUIRED`; the user fills it,
   then `ccdc_current`.
 - **JCR**: `journal` = title, issn, eissn, publisher, edition, year, jif, jif_no_self, jci, oa_pct and
   `ranks[{category, year, rank, quartile, percentile}]`. Example: Macromolecules 2025 JIF 5.7 (4.9 w/o self-cites),

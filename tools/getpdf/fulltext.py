@@ -547,7 +547,7 @@ def summarize(results):
     tail = ''
     if ok:
         # 2026-09-14：做完直接把菜单带回来，模型少一次调用。骨架是纯脚本、几十毫秒；
-        # 不 import tools.library（工具隔离），直接用 shared.domain.schema.outline。
+        # 不 import tools.library（工具隔离），直接用 shared.domain.outline。
         menus = [_menu_of(r['id']) for r in ok]
         tail = ('\n\n菜单（按地址用 library_section 取节 / 段 / 表，别一口气读全文）：\n'
                 + '\n\n'.join(menus))
@@ -557,7 +557,7 @@ def summarize(results):
 def _menu_of(pid):
     """这篇的骨架菜单文本。有缓存用缓存（落地流水线 / library 都会写），没有就现算。"""
     import json
-    from shared.domain.schema import outline as _outline
+    from shared.domain import outline as _outline
     try:
         cache = paths.outline(pid)
         si_p = paths.si_fulltext(pid)

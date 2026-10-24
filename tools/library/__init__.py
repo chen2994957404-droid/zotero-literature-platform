@@ -1,13 +1,9 @@
 # -*- coding: utf-8 -*-
-"""library · 查证据库：有没有这篇、库内检索、骨架与按节读原文、参考文献、单元库、检索 / 团队。
+"""library · 查证据库：有没有这篇、库内检索、骨架与按节读原文、参考文献、检索 / 团队 / 专题。
 
 **全部只读、全部免费。** agent 可以随便调、不用问人的工具包 —— 别的工具要么花钱要么改数据。
 
-与另外两个「查库」的分工（选错工具是模型最常犯的错，SKILL.md 里也写了）：
-
-    library  → 查 **证据库**：有没有、手上有什么、按意思找段落、读某一节。免费、秒回
-    ask      → **问**我的库，大模型读向量库后中文作答并附来源。花钱
-    paperdb  → 查 **抽取出来的结构化数值**（拉伸强度 > 10 MPa 这种）。免费
+综合回答、比数值、读曲线不在这里 —— 那些交给 Claude Science（2026-10-23 起问答 / 数值库已删）。
 
 **对外契约**（`cli.py` / `mcp.py` 只许调这些）：
 
@@ -18,7 +14,6 @@
 | `refs(key)`                  | 参考文献条目，标出库里已有的 |
 | `outline(key)`               | **骨架菜单**：每节的地址/类别/字数/数字密度（缓存，免费）|
 | `section(key, sec_id, si=)`  | **按地址取一节原文** —— 模型点菜的那一口 |
-| `units(key)`                 | 单元库（最小信息单元）|
 | `render_*`                   | 渲染成人/模型可读的 markdown |
 另有子模块：`dbsearch`（检索：DOI / 标题词 / 作者 / 通讯 / 团队…）、`teams`（研究团队）、`oaindex`（作者摘要索引）、`census`（盘点）。
 
@@ -41,11 +36,10 @@ MAX_CHARS = 20000          # 取全文的默认上限（再多模型也读不完
 # ══════════════════════════════════════════════════════════════════════
 
 # ── 证据库（全集）──────────────────────────────────────────────────────
-# 2026-09-13 起：证据库（data/raw + curated）是全集，Zotero 是用户挑出来读的子集。
-# 「我有没有这篇」先问这里（零网络、秒回），Zotero 那一半在下面那组函数。
+# 证据库（data/raw + curated）是唯一的库。「我有没有这篇」问这里（零网络、秒回）。
 
 def db_stats():
-    """证据库有多大、每种产物各几篇（正本 / SI / 解析 / 在 Zotero）。"""
+    """证据库有多大、每种产物各几篇（正本 / SI / 解析）。"""
     return catalog.stats()
 
 
@@ -92,7 +86,8 @@ def retrieve(query, n=8, where='all'):
 
 def _locate(key, doc, si=False):
     """一段向量库文本 → 它在骨架里的地址（节 / 段）。找不到返回 ''。"""
-    from shared.domain.schema import outline as _outline, scan
+    from shared.domain import outline as _outline
+    from shared.domain.outline import scan
     try:
         o = outline(key)
     except Exception:
@@ -146,7 +141,8 @@ def refs(key):
     """
     key = catalog.resolve(key)        # 旧的 Zotero 编号也认（2026-10-12 起目录改成 doi_ 编号）
     import re
-    from shared.domain.schema import outline as _outline, scan
+    from shared.domain import outline as _outline
+    from shared.domain.outline import scan
     o = outline(key)
     if not o.get('available'):
         return []
@@ -241,7 +237,7 @@ def outline(key, refresh=False):
     缓存带签名（`outline.signature`：文本 + 算法版本），对不上就重算。
     """
     key = catalog.resolve(key)        # 旧的 Zotero 编号也认（2026-10-12 起目录改成 doi_ 编号）
-    from shared.domain.schema import outline as _outline
+    from shared.domain import outline as _outline
     md_path = paths.fulltext(key)
     if not os.path.exists(md_path):
         return {'itemKey': key, 'available': False,
@@ -277,7 +273,7 @@ def section(key, sec_id, max_chars=MAX_CHARS, si=False):
     而不是把 5 万字符的全文塞进上下文。
     """
     key = catalog.resolve(key)        # 旧的 Zotero 编号也认（2026-10-12 起目录改成 doi_ 编号）
-    from shared.domain.schema import outline as _outline
+    from shared.domain import outline as _outline
     o = outline(key)
     if not o.get('available'):
         return {'itemKey': key, 'id': sec_id, 'text': '', 'chars': 0,
@@ -300,7 +296,7 @@ def section(key, sec_id, max_chars=MAX_CHARS, si=False):
 
 def render_outline(d):
     """骨架 → 给模型看的菜单文本（几百 token）。"""
-    from shared.domain.schema import outline as _outline
+    from shared.domain import outline as _outline
     if not d.get('available'):
         return '%s：%s' % (d.get('itemKey', ''), d.get('why', '没有骨架'))
     st = d.get('stats') or {}

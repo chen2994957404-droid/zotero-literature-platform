@@ -461,6 +461,8 @@ NOISE_DIRS = {
 NON_WORKFLOW_DIRS = NOISE_DIRS | {
     'shared', 'host', 'tools',              # 重构后的三个顶层代码包
     'docs', 'tests', 'specs', 'launch',
+    'toolbox',                              # 跟文献无关的通用小工具，各自有测试
+    'scratch', 'outputs',                   # 外部 agent 的草稿 / 产物，不进版本库（2026-10-24：曾被报成「还没切进 tools/ 的老文件夹」）
 }
 
 

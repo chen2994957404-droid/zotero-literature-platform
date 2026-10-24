@@ -5,11 +5,11 @@
 ## 现状：**已经填好了，但默认不跑**（2026-09-01）
 
 ```
-python -m pytest tools/library -m live      # 在开着 Zotero 的机器上
+python -m pytest tools/library -m live      # 在主力机（有证据库数据）上跑
 ```
 
 为什么是 `live`：这块要回答的是「在**用户真实的库里**，搜一个词能不能把该出来的
-搜出来」。拿造出来的假库测，测的是 urllib 通不通，不是检索质量。
+搜出来」。拿造出来的假库测，测的是代码通不通，不是检索质量。
 
 为什么**不**写死「搜 XX 应该返回 ABCD1234」：用户删一篇、改个标题就会红，
 而那种红不代表出问题。改成验对任何库都成立的**不变量**，见 `golden/README.md`。
@@ -22,5 +22,4 @@ python -m pytest tools/library -m live      # 在开着 Zotero 的机器上
 | `scorers/` | 评分器：**纯函数**，拿到产出就能打分，不需要联网也不需要真实数据 |
 | `thresholds.toml` | 阈值的唯一出处 —— 别在 .py 里再写一遍数字 |
 
-跑评测的测试写在 `../tests/` 里（`tools/library/tests/test_evals.py`），
-参照 `tools/deepread/tests/test_evals.py` 的写法。
+跑评测的测试写在 `../tests/test_evals.py`。

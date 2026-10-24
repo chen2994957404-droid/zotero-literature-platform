@@ -11,8 +11,6 @@ Crossref 免费、无需密钥。礼貌起见 User-Agent 带项目名（官方�
 对外接口：
   - work(doi)            → Crossref 的 message 原始字典；查不到抛 CrossrefError
   - to_zotero_item(m, tags) → message → Zotero journalArticle 条目字典
-  - journal_works_since(issn, since) → 这本刊从某天起新登记的文章（2026-09-15 加，给「盯新刊」用）
-  - journal_works(issn, filters, cursor) → 按任意 filter 翻页取（回填几年用）
   - normalize(m)         → message → 本平台统一的文献字典（与 openalex.normalize 同形）
 
 `to_zotero_item` 放在这里而不是调用方：**字段名对齐属于「外部世界长什么样」**，
@@ -141,47 +139,6 @@ _NOT_A_PAPER = re.compile(r'^(Correction|Corrigendum|Erratum|Retraction|Expressi
 
 _SELECT = ('DOI,title,author,container-title,ISSN,publisher,type,issued,created,'
            'published-online,published-print,abstract,reference,is-referenced-by-count')
-
-
-def _clean(items, types):
-    out = [normalize(m) for m in items]
-    if types:
-        out = [w for w in out if w['type'] in types]
-    # 更正 / 撤稿 / 勘误在 Crossref 里也是 journal-article，只能按标题认
-    # Nature 系的新闻 / 评论 / 研究简报用 10.1038/d4xxxx- 这种 DOI（研究论文是 s4xxxx-），按前缀就能认
-    return [w for w in out if w['doi'] and w['title'] and not _NOT_A_PAPER.match(w['title'])
-            and not w['doi'].startswith('10.1038/d4')]
-
-
-def journal_works(issn, filters, rows=1000, cursor='*', types=('journal-article',), timeout=120):
-    """一本刊按 Crossref filter 取**一页** → (items, next_cursor, total)。翻页把 next_cursor 传回来，
-    没有下一页时 next_cursor 为 ''。filters 是 'from-pub-date:2023-09-15,until-pub-date:2026-09-15' 这种字符串。
-    深翻页只能用 cursor（offset 上限 10000），所以回填三年用这个，别用 offset。
-    """
-    path = ('/journals/%s/works?filter=%s&rows=%d&cursor=%s&select=%s'
-            % (urllib.parse.quote(str(issn).strip()), filters, min(int(rows), 1000),
-               urllib.parse.quote(cursor, safe=''), _SELECT))
-    msg = get(path, timeout=timeout)['message']
-    items = msg.get('items') or []
-    nxt = msg.get('next-cursor') or ''
-    if len(items) < min(int(rows), 1000):
-        nxt = ''                                      # 最后一页（Crossref 仍会给 cursor，别再翻）
-    return _clean(items, types), nxt, msg.get('total-results') or 0
-
-
-def journal_works_since(issn, since, rows=1000, types=('journal-article',), timeout=90):
-    """一本刊（ISSN）从 `since`（YYYY-MM-DD）起**新登记**的文章 → [normalize 后的字典]。
-
-    按 **登记日**（`from-created-date`）而不是出版日筛：出版社注册 DOI 的那一刻
-    Crossref 就有了，比 OpenAlex 收录早几天到几周（2026-09-15 实测 Adv. Mater.
-    一周：Crossref 91 篇 / OpenAlex 71 篇）—— 「盯新刊」要的就是这个最早时刻。
-
-    `types` 只留正式论文（Nature/Science 的新闻、社论、勘误都在同一本刊下）。
-    一页最多 1000 条；一本刊一周远到不了，超了就说明 `since` 给得太远，调用方缩窗口。
-    """
-    path = ('/journals/%s/works?filter=from-created-date:%s&rows=%d&sort=created&order=desc&select=%s'
-            % (urllib.parse.quote(str(issn).strip()), since, min(int(rows), 1000), _SELECT))
-    return _clean(get(path, timeout=timeout)['message'].get('items') or [], types)
 
 
 def to_zotero_item(m, tags=None):

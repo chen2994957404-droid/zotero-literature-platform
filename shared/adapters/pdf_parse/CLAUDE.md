@@ -33,14 +33,13 @@ PDF → 结构化文本 + 图坐标（调 MineRU 云服务）。
 
 ## 注意
 
-- 解析结果**在精读线和抽取线之间共享**，不重复解析（省钱省时间）。
-  改产物结构会同时影响两条线。
+- 解析结果是 Claude Science 读文献的料（全文、骨架、整图都从它来），改产物结构要连着骨架（`shared/domain/outline`）一起看。
 - 需要 `MINERU_TOKEN`（走 `config`）。
 - 自测刻意**不真的调 MineRU**（省额度），只验接口契约。这是有意的取舍。
 
 ## 谁在用它
 
-精读线（`tools/deepread` 的 `_ensure_parsed` 与 `si.read_si`）、抽取线（`tools.extract.batch.ensure_fullmd`）。
+落地流水线（`host/ingest`）、取全文（`tools/getpdf` 的 `land` 与 `fulltext`）、体检与控制面板（查 MineRU 密钥还能不能用）。
 
 改这里的对外接口 = 可能弄坏上面所有调用者。**改签名前先想清楚兼容性。**
 

@@ -9,8 +9,7 @@
 
 R4 窗（2026-08-31）改成**聚合**：服务端自己不知道有哪些工具，
 它去 `tools/*/tool.toml` 现读现挂。加一个能力 = 新建一个 `tools/<名>/` 文件夹，
-**这个文件夹一个字都不用改**。此前是 `zotero_server.py` 里手写 10 个工具的注册表，
-加一个能力要改三处，于是没人加。
+**这个文件夹一个字都不用改**。
 
 ## 各文件职责
 
@@ -20,6 +19,7 @@ R4 窗（2026-08-31）改成**聚合**：服务端自己不知道有哪些工具
 | `registry.py` | 读 `tools/*/tool.toml`、import 各 `tools/<t>/mcp.py` 调 `register(server)`、校验自洽 |
 | `stdio.py` | 手写 MCP stdio 协议层（JSON-RPC 2.0 + 换行分隔，零第三方依赖）|
 | `selftest.py` | 协议层离线自测（不联网、不依赖用户数据）|
+| `figure_crop/` | 按 `layout.json` 的坐标从原 PDF 裁整张 Figure（给 `figure_image` / `paper_files` 的图号对照）|
 | `http_transport.py` | Streamable HTTP 传输（只绑 127.0.0.1，跨机走 SSH 隧道）；一个进程可挂多个端点 |
 | `science.py` | **给 Claude Science 的面**（端点 `/science`，v0.3 按它 10-04 的需求文档改）：11 个工具（2026-10-04 收窄：只给取全文 + 读取回来的全文），全部回 structuredContent；itemKey 可给 DOI；取全文一次 ≤25 篇（串行 + 20 秒 + 同时只一个作业，服务端强制）；结果带 code/retryable/stage/tier/route；`fulltext_retry` 续跑、`paper_status` 一次看清一批；**任何返回超 50 KB 落文件只回路径**；表格出 CSV/JSON；节可 offset 分页。**v0.4–0.5（2026-10-08）**加 `chemdb_status` / `chemdb_search` / `chemdb_page`（结构化字段、当天缓存不扣次数、SciFinder 筛选排序、按标题补 DOI）：借主力机已登录的浏览器搜 SciFinder / Reaxys、读结果页文字（`shared/adapters/chemdb`）；两次至少隔 30 秒、每库每天 `CHEMDB_DAILY`（默认 20）次，服务端强制，账本 `paths.runtime("chemdb_usage.json")`（主力机上是 data/logs/）。**v0.8（2026-10-09）**加 `polyinfo_status` / `polyinfo_search` / `polyinfo_samples` / `polyinfo_sample` / `polyinfo_current`（`shared/adapters/polyinfo`）：同一个浏览器查 NIMS PoLyInfo，同一套账本 / 缓存 / 作业；更保守：两次至少隔 45 秒、每天 `POLYINFO_DAILY`（默认 15）次；样品详情页每次要人机验证 → 回 `CAPTCHA_REQUIRED` + 桌面提醒，人点完 `polyinfo_current` 读（不扣次数）。**v0.9**加 `cnki_status` / `cnki_search` / `cnki_page` / `cnki_detail` / `cnki_current`（`shared/adapters/cnki`）：中国知网学位论文 / 期刊 / 中国专利，学校 IP 授权；30 秒间隔、每天 `CNKI_DAILY`（默认 30）次；只读不下载 |
 | `litcall.py` | 一行调一个工具（**只用标准库**，跑在 B 机 WSL）：握手、调用、只打印结构化结果；`--list` / `--batch` / `--version`；batch 总输出过 48 KB 的条目落到 `~/.cache/litcall/` |
@@ -33,15 +33,16 @@ R4 窗（2026-08-31）改成**聚合**：服务端自己不知道有哪些工具
 | 类 | 谁能触发 | 判据 |
 |---|---|---|
 | `tool` | **模型可以自己调** | 只读且免费 |
-| `resource` | 模型可以自己读 | 只读数据（对比表这种）|
+| `resource` | 模型可以自己读 | 只读数据 |
 | `prompt` | **人在客户端里点** | 花钱的、有副作用的一律走这里 |
 
 **一条铁律，`registry.check()` 强制**：
 `costs_money=true` 或 `side_effects` 非空的工具包，**不许注册 tool 类**。
 钱和副作用必须停在人这一侧。故意违反会让 `--list` 变红、自测变红。
 
-现状：`library` 与 `paperdb` 是 tool；`extract` 出 3 份 resource；
-其余 8 个工具包各出 1 条 prompt。
+现状（2026-10-24）：只剩两个工具包 —— `library` 全是 tool（只读、免费）；
+`getpdf` 是 prompt（整批取全文只给人点），单篇的 `getpdf_one` / `paper_fulltext` 经白名单放开成 tool。
+Claude Science 走的是另一条路：`science.py` 的 `/science` 端点，自己挂了一套工具，不经过这张清单。
 
 ## 协议实现到什么程度
 
@@ -67,25 +68,21 @@ args: [ <项目根>/host/mcp/server.py ]
 
 Claude Code（`--scope user` = 全局生效）：
 ```
-claude mcp add zotero --scope user -- python "<项目根>\host\mcp\server.py"
+claude mcp add literature --scope user -- python "<项目根>\host\mcp\server.py"
 ```
 Codex CLI（`~/.codex/config.toml`）：
 ```toml
-[mcp_servers.zotero]
+[mcp_servers.literature]
 command = "python"
 args = ["<项目根>\\host\\mcp\\server.py"]
 ```
 若某客户端握手报协议版本不兼容：改 `stdio.py` 顶部 `PROTOCOL_VERSION` 一行。
 多客户端可同时连接（各起独立进程）。
 
-⚠ **B 机（主力机）上的现有配置指向的是老路径 `MCP服务/zotero_server.py`，
-工具名也变了**（`search_items` → `library_search`）。合并回 main 时要重新注册 ——
-这件事记在 REBUILD.md R7 窗的交接项里。
-
 ## 写操作留给谁
 
 MCP 面**不做写操作**（2026-10-13 起 Zotero 移出平台，原来那些「写 Zotero」的入口都删了）。
-花钱的（精读、全库抽取）在 MCP 上是 prompt，由人点、由人确认，并且各自带机器角色守卫。
+整批取全文在 MCP 上是 prompt，由人点、由人确认（量大会触发出版商风控，封的是整个学校的 IP）。
 
 ## 改完必须做
 
