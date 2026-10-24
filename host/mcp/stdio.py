@@ -8,7 +8,7 @@ except Exception:
 """host.mcp.stdio · 极简 MCP stdio 服务端协议层（零第三方依赖）
 
 谁调用它：MCP 客户端（Claude Code / Cursor / DSH 等）以「子进程 + stdin/stdout」方式
-启动本服务；上层的 zotero_server.py 等注册好业务工具后调 serve() 跑起来。
+启动本服务；上层的 server.py 注册好业务工具后调 serve() 跑起来。
 
 为什么手写协议、不引官方 mcp SDK（决策依据，详见 变更记录 2026-08-26）：
   - 平台「少依赖」架构准则：一个只读工具面只需 ~200 行，引 SDK 会拖进 pydantic/httpx 等一堆包；
@@ -50,8 +50,8 @@ def _hint(e):
     """给异常补一句「该往哪查」。模型拿到裸 `WinError 10061` 只会瞎猜参数（2026-09-18 MCP 全量走查发现）。"""
     msg = str(e)
     if '10061' in msg or isinstance(e, ConnectionRefusedError) or 'Connection refused' in msg:
-        return ('\n（连接被拒 = 它依赖的本机服务没在跑，不是参数问题：library_* 系列靠 Zotero 桌面，'
-                'library_retrieve / ask 靠 Ollama。换一个不依赖它的工具，或请用户把那个程序打开。）')
+        return ('\n（连接被拒 = 它依赖的本机服务没在跑，不是参数问题：library_retrieve 靠本机 Ollama，'
+                '取全文靠「取全文用的浏览器」。换一个不依赖它的工具，或请用户把那个程序打开。）')
     return ''
 
 

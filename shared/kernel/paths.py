@@ -48,7 +48,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 #   state    索引与进度，**不是真相**：state.db（处理记录）。
 #            例外是 teams.json（研究团队名单，人工查证）与 topics.db（专题）—— 重建不了。
 #   logs     运行日志与心跳。
-#   backup   快照（Zotero 标签）。
+#   backup   快照（移出平台前的 Zotero 标签快照，留给以后单独做 Zotero 功能时参考）。
 #   （2026-10-23/24 精读、抽取、雷达库、方向地图、评价集等整套删掉，这里只写现在还有的。）
 #
 # ⚠ **偏离 REBUILD.md 第四节的映射表一处，理由如下**（同 R3/R4/R5 的
@@ -66,7 +66,7 @@ CURATED = os.path.join(DATA, 'curated')    # 我们的流水线产出（精读�
 SERVING = os.path.join(DATA, 'serving')    # 随时可重建的服务层
 STATE = os.path.join(DATA, 'state')        # 索引与进度，不是真相
 LOGS = os.path.join(DATA, 'logs')          # 运行日志
-BACKUP = os.path.join(DATA, 'backup')      # 快照（Zotero 标签、structured 覆盖前）
+BACKUP = os.path.join(DATA, 'backup')      # 快照
 
 VECTOR_DB = os.path.join(SERVING, 'vector_db')    # Chroma 向量库（可重建）
 INCOMING = os.path.join(RAW, '_incoming')         # 临时处理区（可清空）
@@ -81,36 +81,23 @@ CHEMDB_EXPORTS = os.path.join(RAW, '_chemdb_exports')  # 人从 SciFinder / Reax
 # 没有默认值 —— 有默认值就会有人忘了传，然后两条窄带的数据混进同一个库。
 
 
-class BadBandError(errors.BadInputError):
-    """窄带 id 不合法。必须是小写字母数字下划线短横（做目录名要安全）。"""
-
 # ── 文献 id 的形状（2026-09-07 放宽，用户拍板）──────────────────────
-# **原来这里写死 `^[A-Z0-9]{8}$` —— 即「文献的身份证 = Zotero 条目编号」。**
-# 直接后果：一篇文献想在库里有位置，必须先是用户 Zotero 里的一条。
-# 于是方向层那上万条公开文献只能另开一个目录、另起一套 id，
-# 并在 paperdb / digitize / extract 里到处写「不是 8 位就跳过」的补丁。
+# 原来写死 `^[A-Z0-9]{8}$`，即「文献的身份证 = Zotero 条目编号」—— 一篇文献想进库必须先在 Zotero 里。
+# 2026-09-07 用户定：库是公共账本，不该被某个软件的编号限制住。2026-10-12 起老编号目录都改名成 doi_ 编号，
+# 2026-10-13 Zotero 移出平台；老编号只剩两个用处：7 篇没 DOI 的还用它当目录名，旧引用里写的老编号要认得。
 #
-# 用户的判断（2026-09-07）：
-#   **数据库是这个领域的公共账本，Zotero 是他个人的阅读桌。**
-#   账本不该被书架的编号限制住 —— Zotero 编号降级成「这篇我个人收藏了」这个属性。
-#
-# 所以身份证改成**来源无关的文献 id**，三种合法形状：
-#   `2T6H4S3D`                  Zotero 条目编号（8 位大写字母数字）—— 老数据原样有效
-#   `W2741809687`               OpenAlex 作品 id —— 方向层本来就在用
+# 合法形状：
+#   `2T6H4S3D`                  老编号（8 位大写字母数字，原 Zotero 条目编号）—— 原样有效
+#   `W2741809687`               OpenAlex 作品 id
 #   `doi_10.1021-acs.macro...`  由 DOI 生成（见 `paper_id_from_doi`）—— 两边都没有时用
 #   `cnki_slgy202603021`        知网的文件名（见 `paper_id_from_cnki`）—— 没有 DOI 的中文文献（2026-10-15 加）
 # 加一种来源 = 往 `_ID_PREFIXES` 里加一个前缀，不用改别的地方。
 #
-# **对账靠 DOI，不靠 id**：同一篇文献在不同来源下可能拿到不同 id，
-# 谁跟谁是同一篇由 `papers.doi` 回答（见 tools/paperdb）。
-ZOTERO_KEY_RE = re.compile(r'^[A-Z0-9]{8}$')
+# **对账靠 DOI，不靠 id**：同一篇文献在不同来源下可能拿到不同 id，谁跟谁是同一篇看目录卡里的 DOI。
+OLD_ID_RE = re.compile(r'^[A-Z0-9]{8}$')
 OA_ID_RE = re.compile(r'^W\d{4,12}$')
 _ID_PREFIXES = ('doi', 'cnki')
 SLUG_ID_RE = re.compile(r'^(?:%s)_[a-z0-9][a-z0-9._-]{0,79}$' % '|'.join(_ID_PREFIXES))
-
-# 旧名字保留：既有代码里 `KEY_RE.match(x)` 问的都是「这是不是 Zotero 编号」，
-# 那个含义没变，变的只是「文献 id 不再只有这一种」。新代码请用 is_zotero_key()。
-KEY_RE = ZOTERO_KEY_RE
 
 
 class BadKeyError(errors.BadInputError):
@@ -125,30 +112,26 @@ def check_key(key):
     """校验并规范化一个文献 id。不合法就抛 BadKeyError。
 
     这是数据契约第 1 条（一篇文献一个目录，目录名 = 文献 id）的执行点。
-    Zotero 编号与 OpenAlex id 归一成大写，前缀式 id 归一成小写 ——
+    老编号与 OpenAlex id 归一成大写，前缀式 id 归一成小写 ——
     **同一篇永远只算出同一个目录名**，这是全系统不错位的前提。
     """
     s = str(key).strip() if key is not None else ''
     up = s.upper()
-    if ZOTERO_KEY_RE.match(up) or OA_ID_RE.match(up):
+    if OLD_ID_RE.match(up) or OA_ID_RE.match(up):
         return up
     low = s.lower()
     if SLUG_ID_RE.match(low):
         return low
     raise BadKeyError(
         f'不是合法的文献 id: {key!r}'
-        f'（应为 8 位 Zotero 编号如 2T6H4S3D、OpenAlex id 如 W2741809687，'
+        f'（应为 8 位老编号如 2T6H4S3D、OpenAlex id 如 W2741809687，'
         f'或 doi_ / cnki_ 开头的 id —— 用 paths.paper_id_from_doi() / paper_id_from_cnki() 生成）')
 
 
-def is_zotero_key(key):
-    """这个 id 是不是 Zotero 条目编号（即：这篇在用户自己的库里）？
-
-    取代此前散在各处的 `KEY_RE.match(k)` —— 那个写法问的是形状，
-    真正想知道的是**这篇在不在他的阅读桌上**。名字写对了，读代码的人才不会误解。
-    """
+def is_old_id(key):
+    """这个 id 是不是老编号（8 位，原 Zotero 条目编号）？给「按老编号找到现在的目录」用。"""
     try:
-        return bool(ZOTERO_KEY_RE.match(check_key(key)))
+        return bool(OLD_ID_RE.match(check_key(key)))
     except BadKeyError:
         return False
 
@@ -280,10 +263,7 @@ def si_fulltext(key):
 def local_pdf(key):
     """★ raw/<key>/main.pdf —— 正文 PDF 的**本地正本**。
 
-    2026-09-06 加。在它之前，正文 PDF 的唯一存放处是 Zotero 的 storage ——
-    于是「取一批文献」必须同时「传一批附件」，而附件传不上去（体积、配额）
-    就整条线卡住。用户的判断：**建库本来就不需要 Zotero**，
-    先把文献落到本地，需要哪篇再传。所以正本在这里，Zotero 是它的一份拷贝。
+    2026-09-06 起正文的正本就在这里（之前只存在 Zotero 里，取一批文献就得传一批附件，常常卡住）。
     """
     return os.path.join(paper_raw_dir(key), 'main.pdf')
 
@@ -331,15 +311,6 @@ def outline(key):
     所以它住 curated 而不是 raw（跟 curves.json / chunk_measurements.json 同待遇）。
     """
     return os.path.join(paper_dir(key), 'outline.json')
-
-# ── 方向层：摘要抽出来的记录 ──────────────────────────────────────────
-# 为什么另起一个目录而不是塞进 structured/：两边的**代价与可信度**不同 ——
-# structured/ 是读全文（+SI）抽的，abstracts/ 只读得到摘要。
-# 分目录 = 分档，`tier` 才有据可依。
-# （2026-09-07 前这里的理由是「方向层没有 Zotero key，不该伪造一个」；
-#  身份证放宽之后那个理由已经不成立了，但**分目录这件事仍然对**，理由换成上面这条。）
-# 两个目录、同一种记录格式（schema 的 samples/measurements），
-# `tools/paperdb` 两边都读 —— 于是方向层与细节层住进同一张表，靠 tier 分辨。
 
 # ── 日志与杂项 ────────────────────────────────────────────────────────
 def log(name, create_dir=True):
@@ -401,11 +372,8 @@ def last_search():
 def all_keys():
     """列出所有已归档文献的 id（已按契约过滤掉非法目录名）。
 
-    **id 不一定是 Zotero 编号**（2026-09-07 起）：库里可能有他没收藏的文献。
-    要挑出「他自己库里那些」，用 `is_zotero_key()` 过滤。
-
-    以 **curated/** 为准：只解析了没精读的半成品不算「已归档」，
-    要查那种半成品用 host/doctor/artifact_gaps。
+    以 **curated/** 为准（有目录卡才算「已归档」）；只落了原件还没登记的半成品
+    用 host/doctor/artifact_gaps 查。
     """
     if not os.path.isdir(CURATED):
         return []
@@ -413,7 +381,7 @@ def all_keys():
     for name in os.listdir(CURATED):
         if not os.path.isdir(os.path.join(CURATED, name)):
             continue
-        try:                       # 认所有合法文献 id，不再只认 Zotero 编号
+        try:                       # 认所有合法文献 id
             keys.append(check_key(name))
         except BadKeyError:
             continue               # 不合契约的目录名（临时文件、手工建的）一律不算

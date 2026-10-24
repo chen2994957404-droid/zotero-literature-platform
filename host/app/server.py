@@ -8,7 +8,7 @@
 检索、文献卡片在 `tools.library.dbsearch`，团队在 `tools.library.teams`。
 
 安全：只绑 127.0.0.1；Host 头必须是本机 + 本端口（挡 DNS 重绑定，同控制面板踩坑 #47）。
-全部只读：不写证据库、不写 Zotero、不花钱。
+全部只读：不写证据库、不花钱。
 """
 import os, sys
 # 【标准开头】强制 UTF-8 输出（项目已装成 Python 包，import 无需再塞 sys.path）
@@ -107,7 +107,7 @@ def files(pid: str, kind: str):
     if kind not in _FILES:
         raise HTTPException(404, '没有这种文件')
     try:
-        p = _FILES[kind](catalog.resolve(pid))     # 旧的 Zotero 编号也认
+        p = _FILES[kind](catalog.resolve(pid))     # 老编号也认
     except paths.BadKeyError:
         raise HTTPException(404, 'id 不合法')
     if not p or not os.path.isfile(p):

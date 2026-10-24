@@ -19,7 +19,7 @@ except Exception:
 | `name` / `one_line`  | 工具名 / 一句话说明（给人和模型看的第一印象）|
 | `expose`             | 主暴露方式：tool / resource / prompt / internal |
 | `costs_money`        | 跑一次会不会花钱 |
-| `side_effects`       | 会改哪些外部状态（写 Zotero、写数据目录…）|
+| `side_effects`       | 会改哪些外部状态（向出版商取件、写数据目录…）|
 | `requires_role`      | 需要哪档机器角色：none / test / prod |
 
 **安全铁律，本文件负责执行**（`check()`）—— 2026-09-01 从「一律不许」改成**三档**：
@@ -34,7 +34,7 @@ except Exception:
 |---|---|---|
 | 单次、便宜、可重来 | 问一次库、抽一篇、读一张图 | `tool` + `confirm=True` |
 | 全库作业 | 全库重抽 / 向量化、建方向图 | `prompt`（人点） |
-| 不可逆写 Zotero | 删条目、批量改名、改标签、按 DOI 导入 | `prompt`（人点） |
+| 整批 / 不可逆 | 整批取全文（量大触发出版商风控）| `prompt`（人点） |
 
 `confirm=True` 会给工具打上 `anthropic/requiresUserInteraction`，
 Claude Code 于是**每次调用都弹窗，且不给「不再询问」的选项**

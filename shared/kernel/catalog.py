@@ -1,30 +1,25 @@
 # -*- coding: utf-8 -*-
 """shared.kernel.catalog —— 证据库目录：本地到底有哪些文献、每篇手上有什么。
 
-**为什么需要它**（2026-09-13 用户拍板「Zotero 只是我个人取出来看的那一部分」）：
-此前「这篇我有没有」这个问题全系统都是去问 Zotero（`zotero_client.library_index` /
-`getpdf.doi_index`）。那等于说**库 = Zotero**。用户定的核心归属是反过来的：
-    证据库（data/raw + data/curated）是全集，Zotero 是他自己挑出来读的子集。
-所以「有没有」必须先问本地，Zotero 只是补充。这个文件就是「问本地」的唯一入口。
+**为什么需要它**：「这篇我有没有」全系统只问这一处 —— 证据库（data/raw + data/curated）是唯一的库。
+（2026-09-13 前这个问题是去问 Zotero 的；2026-10-13 Zotero 移出平台。）
 
 **真相是什么**：
     · `curated/<id>/meta.json`   —— 一篇一份的元数据（标题 / DOI / 年份 / 期刊 / 来源）
     · `raw/<id>/` 里实际躺着的文件 —— main.pdf、si.*、parsed/full.md …
 本模块**不另建索引文件**：几百到几千个小 JSON 现扫是毫秒级的，
-一个「可能跟文件不同步」的索引带来的 bug 比它省的时间贵得多（同 paperdb 的判据）。
+一个「可能跟文件不同步」的索引带来的 bug 比它省的时间贵得多。
 但**进程内**可以缓存（2026-09-16 加，踩坑 #161）：`by_doi()` 一次扫 1000 个文件约半秒，
-盯新刊 / 回填一天要问它几千次。缓存以两层目录的 mtime 为印章 —— 别的进程落了新文献
+批量取全文时一次要问它几千次。缓存以两层目录的 mtime 为印章 —— 别的进程落了新文献
 （新建目录）印章就变；本进程 `register()` 直接清缓存。meta.json 被别的进程改 DOI 这种事
 不在印章里，但 DOI 落地后不会再变。
 
-**只依赖 paths**（kernel 不依赖任何人）：不联网、不问 Zotero。
-Zotero 那一半在 `shared.adapters.zotero_client`，两边靠 DOI 对账，由调用方合并。
+**只依赖 paths**（kernel 不依赖任何人）：不联网。
 
 用法：
     from shared.kernel import catalog
     catalog.find('10.1021/acs.macromol.5b00210')   # → 'doi_10.1021-acs.macromol.5b00210' 或 ''
     catalog.register(pid, doi=..., title=..., year=..., journal=..., source='fetch')
-    titles, dois = catalog.have_index()             # 跟 zotero_client.library_index 同形状
     for r in catalog.scan(): ...                     # 每篇一条：手上有什么一目了然
 """
 import io
@@ -35,14 +30,15 @@ import time
 
 from shared.kernel import paths
 
-# meta.json 里本模块认得的字段。**只补不覆盖**是 register 的默认行为 ——
-# 用户可能手工改过标题；精读流水线写的 model/time 也不该被落地这一步冲掉。
+# meta.json 里本模块认得的字段。**只补不覆盖**是 register 的默认行为 —— 用户可能手工改过标题。
+# `zotero_key` 是存在 1300 多份目录卡里的**数据字段名**（这篇的老编号），改名要动全部目录卡，所以字段名保留；
+# 代码里一律叫「老编号」（`old_id`）。
 FIELDS = ('doi', 'title', 'year', 'journal', 'authors', 'source', 'landed_at',
           'zotero_key')
 
-# 来源：这篇是怎么进证据库的。给人看、也给「回流 Zotero」那一步判断用。
+# 来源：这篇是怎么进证据库的（给人看）。
 SRC_FETCH = 'fetch'          # 借浏览器向出版商取的
-SRC_ZOTERO = 'zotero'        # 从用户 Zotero 的附件复制过来的
+SRC_ZOTERO = 'zotero'        # 当年从 Zotero 附件复制过来的（如实记录来历；不再产生新的）
 SRC_LOCAL = 'local'          # 用户手上的文件直接给的
 
 
@@ -54,7 +50,7 @@ def norm_doi(doi):
 
 
 def norm_title(title):
-    """标题归一（只留字母数字）—— 跟 zotero_client.library_index 同一种归法。"""
+    """标题归一（只留字母数字），按标题对账用。"""
     return re.sub(r'[^a-z0-9]', '', (title or '').lower())
 
 
@@ -170,8 +166,7 @@ def record(pid):
         'year': year_of(meta),
         'journal': meta.get('journal') or meta.get('publicationTitle') or '',
         'source': meta.get('source') or '',
-        'zotero_key': meta.get('zotero_key') or (pid if paths.is_zotero_key(pid) else ''),
-        'in_zotero': bool(meta.get('zotero_key')) or paths.is_zotero_key(pid),
+        'old_id': meta.get('zotero_key') or (pid if paths.is_old_id(pid) else ''),
         'pdf': os.path.isfile(paths.local_pdf(pid)),
         'si': bool(si),
         'fulltext': os.path.isfile(paths.fulltext(pid)),
@@ -184,7 +179,7 @@ def scan():
     return [record(p) for p in ids()]
 
 
-_CACHE: dict = {'stamp': None, 'by_doi': None, 'zstamp': None, 'by_zkey': None}
+_CACHE: dict = {'stamp': None, 'by_doi': None, 'ostamp': None, 'by_old': None}
 
 
 def _stamp():
@@ -198,12 +193,12 @@ def _stamp():
 def _cache_clear():
     _CACHE['stamp'] = None
     _CACHE['by_doi'] = None
-    _CACHE['zstamp'] = None
-    _CACHE['by_zkey'] = None
+    _CACHE['ostamp'] = None
+    _CACHE['by_old'] = None
 
 
 def by_doi():
-    """DOI → id。同一个 DOI 出现在两个目录下时**优先 Zotero 编号**（老数据在那边）。进程内缓存，见模块说明。"""
+    """DOI → id。同一个 DOI 出现在两个目录下时**优先老编号**（老数据在那边）。进程内缓存，见模块说明。"""
     st = _stamp()
     if st is not None and _CACHE['stamp'] == st and _CACHE['by_doi'] is not None:
         return dict(_CACHE['by_doi'])
@@ -219,7 +214,7 @@ def _scan_by_doi():
         d = doi_of(read_meta(pid))
         if not d:
             continue
-        if d not in out or (paths.is_zotero_key(pid) and not paths.is_zotero_key(out[d])):
+        if d not in out or (paths.is_old_id(pid) and not paths.is_old_id(out[d])):
             out[d] = pid
     return out
 
@@ -232,48 +227,33 @@ def find(doi):
     return by_doi().get(d, '')
 
 
-def by_zotero_key():
-    """Zotero 编号 → 现在的文献 id（目录卡里登记的 zotero_key 属性）。进程内缓存，同 by_doi 的印章。"""
+def by_old_id():
+    """老编号 → 现在的文献 id（目录卡里登记的 zotero_key 字段）。进程内缓存，同 by_doi 的印章。"""
     st = _stamp()
-    if st is not None and _CACHE.get('zstamp') == st and _CACHE.get('by_zkey') is not None:
-        return dict(_CACHE['by_zkey'])
+    if st is not None and _CACHE.get('ostamp') == st and _CACHE.get('by_old') is not None:
+        return dict(_CACHE['by_old'])
     out = {}
     for pid in ids():
         z = (read_meta(pid).get('zotero_key') or '').strip()
         if z and (z not in out or z == pid):
             out[z] = pid
     if st is not None:
-        _CACHE['zstamp'], _CACHE['by_zkey'] = st, dict(out)
+        _CACHE['ostamp'], _CACHE['by_old'] = st, dict(out)
     return out
 
 
 def resolve(pid):
-    """旧编号 → 现在的编号（2026-10-12 起 Zotero 编号目录改名成 doi_ 编号，跟 Zotero 拆开）。
+    """老编号 → 现在的编号（2026-10-12 起老编号目录改名成 doi_ 编号）。
 
-    目录还在 → 原样返回；是 Zotero 编号但目录已改名 → 按目录卡里登记的 zotero_key 找到新 id；
+    目录还在 → 原样返回；是老编号但目录已改名 → 按目录卡里登记的 zotero_key 找到新 id；
     都不是 → 原样返回（交给调用方按「没有」处理）。不合法的 id 抛 BadKeyError。
     对照表不另存一份：目录卡里的 zotero_key 就是它，单一正本。"""
     pid = paths.check_key(pid)
     if os.path.isdir(paths.paper_dir(pid)) or os.path.isdir(paths.paper_raw_dir(pid)):
         return pid
-    if paths.is_zotero_key(pid):
-        return by_zotero_key().get(pid, pid)
+    if paths.is_old_id(pid):
+        return by_old_id().get(pid, pid)
     return pid
-
-
-def have_index():
-    """(归一标题集合, DOI 集合) —— 与 `zotero_client.library_index()` 同形状，
-    调用方把两者并起来就是「我有没有」的完整答案。"""
-    titles, dois = set(), set()
-    for pid in ids():
-        meta = read_meta(pid)
-        t = norm_title(meta.get('title'))
-        if t:
-            titles.add(t)
-        d = doi_of(meta)
-        if d:
-            dois.add(d)
-    return titles, dois
 
 
 _DASHES = dict.fromkeys(map(ord, '‐‑‒–—―−﹘﹣－'), '-')
@@ -318,7 +298,7 @@ def search(text, limit=25):
 def stats():
     """证据库有多大、每种产物各几篇。"""
     rows = scan()
-    keys = ('pdf', 'si', 'fulltext', 'si_fulltext', 'in_zotero')
+    keys = ('pdf', 'si', 'fulltext', 'si_fulltext')
     out = {'papers': len(rows), 'with_doi': sum(1 for r in rows if r['doi'])}
     for k in keys:
         out[k] = sum(1 for r in rows if r[k])

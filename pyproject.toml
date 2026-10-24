@@ -19,7 +19,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "literature-platform"
 version = "2.0.0.dev0"
-description = "文献自动化科研平台（证据库为核心，Zotero 是最重要的来源与展示面）"
+description = "文献平台：原件（正文 + SI）与加工好给 Claude Science 读的数据"
 requires-python = ">=3.11"
 
 # 运行期依赖，与 requirements.txt 保持一致（刻意保持极少，见架构准则「少依赖」）
@@ -64,7 +64,7 @@ norecursedirs = ["template"]
 #   marker 的说明从一开始就写着「默认不跑」，但在 2026-09-01 之前**没有任何东西
 #   在执行它** —— 只是没人用过这个 marker，所以谁都没发现。第一次真的标了
 #   `@pytest.mark.live`（tools/library 的金标）就穿帮了：它们照跑不误。
-#   后果不是「多跑几条」：没开 Zotero 的机器上 `pytest` 会红，
+#   后果不是「多跑几条」：没开某个外部服务的机器上 `pytest` 会红，
 #   而「离线测试必须永远全绿」是本项目最重要的一条强制规范 —— 它一旦会因为
 #   「本机没开某个服务」变红，人就会开始习惯性忽略红色。
 # `--import-mode=importlib`：允许不同工具下有同名测试文件。
@@ -74,5 +74,5 @@ norecursedirs = ["template"]
 #   工具包就是要每个工具长得一样，同名测试文件只会越来越多。
 addopts = '-q --strict-markers -m "not live" --import-mode=importlib'
 markers = [
-    "live: 需要真实外部服务（Zotero / Ollama / 各云 API），默认不跑；用 -m live 单独跑",
+    "live: 需要真实外部服务或真实数据（Ollama / 各云 API / 证据库），默认不跑；用 -m live 单独跑",
 ]

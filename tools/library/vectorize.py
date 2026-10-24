@@ -81,7 +81,7 @@ def deep_one(key, coll, existing, log=print):
     metas = [{'key': key, 'title': title, 'doi': meta.get('DOI', ''),
               'source': 'main', 'chunk': i} for i in range(len(chunks))]
     coll.add(ids, chunks, metas, _embed_all(chunks))
-    # 精层进来了，同一篇的粗层块就该退场：它们讲同一件事，但那份是 Zotero 全文索引
+    # 精层进来了，同一篇的粗层块就该退场：它们讲同一件事，但那份是当年从 Zotero 全文索引
     # 抽的，质量低一档，留着只会跟精层互相挤占检索名额。
     dropped = coll.delete_by(key=key, source='library')
     if dropped > 0:

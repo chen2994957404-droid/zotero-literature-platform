@@ -2,8 +2,8 @@
 """proc_lock · 单实例锁基础件（原子能力：保证同一个程序同时只跑一份）
 
 解决的真实问题（踩坑 #30）：
-zotero_watcher 反复出现 2 个实例并存 —— 任务计划自启一份、看门狗又启一份，
-两份同时轮询同一个 Zotero 库，会抢同一篇文献的处理权，导致重复精读、重复上传。
+常驻服务曾反复出现 2 个实例并存 —— 任务计划自启一份、看门狗又启一份，
+两份抢同一批活，同一篇文献被处理两遍（MineRU 额度白花一份）。
 
 **为什么用锁而不是靠看门狗去杀**：
 杀是事后补救，永远有时间窗（旧的还没死、新的已经在跑）；
@@ -13,7 +13,7 @@ zotero_watcher 反复出现 2 个实例并存 —— 任务计划自启一份、
 
 用法：
     from host.ingest.proc_lock import single_instance
-    if not single_instance('zotero_watcher'):
+    if not single_instance('ingest_loop'):
         sys.exit('已有一份在跑，本次退出')
     # 往下就是唯一实例
 

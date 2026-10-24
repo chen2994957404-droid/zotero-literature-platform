@@ -33,39 +33,30 @@ def main():
         print(f'  [FAIL] 标题相似度 {a} / {b}')
 
     total += 1
-    it = crossref.to_zotero_item(SAMPLE, tags=['待处理'])
-    if (it['itemType'] == 'journalArticle'
-            and it['title'].startswith('Shear stiffening')
-            and it['publicationTitle'] == 'Advanced Materials'
-            and it['DOI'] == '10.1002/adma.202100000'):
-        print('  [PASS] Crossref 字段 → Zotero 条目'); ok += 1
+    it = crossref.to_meta(SAMPLE)
+    if (it['title'].startswith('Shear stiffening') and it['journal'] == 'Advanced Materials'
+            and it['doi'] == '10.1002/adma.202100000'):
+        print('  [PASS] Crossref 字段 → 目录卡字段'); ok += 1
     else:
         print(f'  [FAIL] 字段映射不对：{it}')
 
     total += 1
-    if it['date'] == '2021-5':
-        print('  [PASS] 日期优先取 published-print（不是 issued）'); ok += 1
+    if it['year'] == '2021':
+        print('  [PASS] 年份优先取 published-print（不是 issued）'); ok += 1
     else:
-        print(f'  [FAIL] 日期取错了：{it["date"]}')
+        print(f'  [FAIL] 年份取错了：{it["year"]}')
 
     total += 1
-    if it['abstractNote'] == 'A gel that stiffens.' and '<jats:' not in it['abstractNote']:
+    if it['abstract'] == 'A gel that stiffens.' and '<jats:' not in it['abstract']:
         print('  [PASS] 摘要去掉 JATS 标签'); ok += 1
     else:
-        print(f'  [FAIL] 摘要没洗干净：{it["abstractNote"]}')
+        print(f'  [FAIL] 摘要没洗干净：{it["abstract"]}')
 
     total += 1
-    names = [c['lastName'] for c in it['creators']]
-    if names == ['Wang', 'Consortium X']:
+    if it['authors'] == ['Wang X.', 'Consortium X']:
         print('  [PASS] 作者含机构名（只有 name 没有 family）也不丢'); ok += 1
     else:
-        print(f'  [FAIL] 作者解析不对：{names}')
-
-    total += 1
-    if it['tags'] == [{'tag': '待处理'}] and crossref.to_zotero_item(SAMPLE)['tags'] == []:
-        print('  [PASS] 不传标签就不打标签（精读要花钱，别顺手触发）'); ok += 1
-    else:
-        print('  [FAIL] 标签处理不对')
+        print(f'  [FAIL] 作者解析不对：{it["authors"]}')
 
     total += 1
     try:

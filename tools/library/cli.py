@@ -2,7 +2,7 @@
 """查库的命令行入口（只解析参数，一行业务逻辑都没有）。
 
 用法:
-    python -m tools.library 库                          # 证据库有多大（全集；Zotero 只是子集）
+    python -m tools.library 库                          # 证据库有多大
     python -m tools.library 库 硼                        # 按标题/DOI/期刊搜证据库（不联网）
     python -m tools.library 库 10.1021/acs.macromol.5b00210
     python -m tools.library 找 "boronic ester hydrogen bond competition"   # 库内向量检索（零成本）
@@ -137,7 +137,7 @@ def main():
             return 0
         s = library.db_stats()
         print(f"证据库 {s['papers']} 篇（带 DOI {s['with_doi']}）· 有正文 {s['pdf']} · 有 SI {s['si']} · "
-              f"已解析 {s['fulltext']}（SI {s['si_fulltext']}）· 其中在 Zotero 的 {s['in_zotero']}")
+              f"已解析 {s['fulltext']}（SI {s['si_fulltext']}）")
         return 0
 
     print(__doc__)

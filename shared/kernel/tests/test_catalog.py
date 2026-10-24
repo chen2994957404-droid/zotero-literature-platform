@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""证据库目录：**「有没有这篇」先问本地**（2026-09-13 用户拍板：证据库是全集，Zotero 是子集）。
+"""证据库目录：**「有没有这篇」问本地**（证据库是唯一的库）。
 
-全离线：目录指到临时目录，不碰真实数据、不问 Zotero。
+全离线：目录指到临时目录，不碰真实数据。
 """
 import io
 import os
@@ -48,7 +48,7 @@ def test_老数据的大写DOI键也认(env):
     io.open(paths.meta(pid), 'w', encoding='utf-8').write(
         '{"key": "BBBB2222", "title": "old", "DOI": "%s", "date": "2025-11"}' % DOI.upper())
     r = catalog.record(pid)
-    assert r['doi'] == DOI and r['year'] == 2025 and r['in_zotero']
+    assert r['doi'] == DOI and r['year'] == 2025 and r['old_id'] == pid
     assert catalog.find(DOI) == pid
 
 
@@ -56,7 +56,7 @@ def test_目录卡如实反映手上有什么(env):
     pid = paths.paper_id_from_doi(DOI)
     catalog.register(pid, doi=DOI, title='T')
     r = catalog.record(pid)
-    assert not r['pdf'] and not r['fulltext'] and not r['in_zotero']
+    assert not r['pdf'] and not r['fulltext'] and not r['old_id']
     os.makedirs(os.path.dirname(paths.local_pdf(pid)), exist_ok=True)
     io.open(paths.local_pdf(pid), 'wb').write(b'%PDF')
     os.makedirs(paths.parsed_dir(pid), exist_ok=True)
@@ -79,15 +79,8 @@ def test_临时区和非法目录名不算文献(env):
     assert catalog.ids() == []
 
 
-def test_have_index与Zotero那份同形状_可直接并集(env):
-    pid = paths.paper_id_from_doi(DOI)
-    catalog.register(pid, doi=DOI, title='Room-Temperature Self-Healing Polymers')
-    titles, dois = catalog.have_index()
-    assert DOI in dois and 'roomtemperatureselfhealingpolymers' in titles
-
-
-def test_同一DOI两个目录时优先Zotero编号(env):
-    """老数据在 Zotero 编号那边（精读、抽取都在），别让 doi_ 目录把它顶掉。"""
+def test_同一DOI两个目录时优先老编号(env):
+    """老数据在老编号那边，别让 doi_ 目录把它顶掉。"""
     catalog.register(paths.paper_id_from_doi(DOI), doi=DOI)
     catalog.register('CCCC3333', doi=DOI)
     assert catalog.find(DOI) == 'CCCC3333'

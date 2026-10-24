@@ -215,8 +215,8 @@ def _copy(src, dst):
     """把文件收成正本（已经在就不动）。返回是否真收了。
 
     来源在临时处理区（`paths.INCOMING`）的**搬**而不是复制 —— 2026-09-15 量过主力机：
-    `_incoming` 里躺着 12 GB 早已落地的副本，占了 raw 的三成。别处来的（Zotero 附件、
-    调用方给的文件）仍然复制，那不是我们的东西。
+    `_incoming` 里躺着 12 GB 早已落地的副本，占了 raw 的三成。别处来的（调用方给的文件）
+    仍然复制，那不是我们的东西。
     """
     if os.path.exists(dst) and os.path.getsize(dst) > 0:
         return False
@@ -239,12 +239,9 @@ def _register_meta(pid, doi, source):
     if not have.get('title'):
         try:
             from shared.adapters import crossref
-            it = crossref.to_zotero_item(crossref.work(doi))
-            names = [(c.get('lastName') or '') + ' ' + (c.get('firstName') or '')
-                     for c in (it.get('creators') or [])]
-            fields.update(title=it.get('title'), journal=it.get('publicationTitle'),
-                          year=(it.get('date') or '')[:4],
-                          authors=[n.strip() for n in names if n.strip()][:20])
+            it = crossref.to_meta(crossref.work(doi))
+            fields.update(title=it['title'], journal=it['journal'], year=it['year'],
+                          authors=it['authors'][:20])
         except Exception as e:
             log.info(f'{doi} 取元数据没成（不影响落地）：{type(e).__name__}: {e}')
     return catalog.register(pid, **fields)

@@ -405,7 +405,7 @@ def main():
         print('本机是编程端，不注册也不重启常驻服务（跳过）')
 
     # ── 5. 离线体检：这一档必须全绿 ──
-    step(5, total, '离线体检（不依赖 Zotero/Ollama，必须全绿）')
+    step(5, total, '离线体检（不依赖 Ollama 等外部服务，必须全绿）')
     ok, _ = run([sys.executable, os.path.join('host', 'doctor', 'health_check.py'), '--offline'],
                 timeout=1200)
     if not ok:
@@ -413,7 +413,7 @@ def main():
         return 1
 
     # ── 6. 完整体检 ──
-    step(6, total, '完整体检（检查 Zotero / Ollama / 自启任务）')
+    step(6, total, '完整体检（检查 MineRU 密钥 / Ollama / 自启任务）')
     run([sys.executable, os.path.join('host', 'doctor', 'health_check.py')], timeout=1800)
 
     check_unpushed()

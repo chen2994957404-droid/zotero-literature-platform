@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """shared.kernel.role 的单元测试 —— 机器角色守卫。
 
-这道闸挡的是**真实数据被污染**：两台机器共用同一个 Zotero 账号，
+这道闸挡的是**真实数据被污染**：数据的权威副本只在主力机，
 编程端一旦回写，改的就是用户的真实文献库，而且立刻同步到主力机。
 所以这里的重点不是「函数能不能跑」，是**默认行为必须站在安全那一侧**。
 """
@@ -46,27 +46,27 @@ class TestDefault:
 class TestRequireProd:
     def test_运行端放行(self, as_role):
         as_role(role.PROD)
-        role.require_prod('写回 Zotero')        # 不抛异常即通过
+        role.require_prod('起常驻服务')        # 不抛异常即通过
 
     def test_编程端拦截(self, as_role):
         as_role(role.DEV)
         with pytest.raises(errors.WrongMachineError):
-            role.require_prod('写回 Zotero')
+            role.require_prod('起常驻服务')
 
     def test_报错里要说清是什么操作和怎么办(self, as_role):
         """报错最终是给一个不懂编程的人看的，必须能自解。"""
         as_role(role.DEV)
         with pytest.raises(errors.WrongMachineError) as e:
-            role.require_prod('删除 Zotero 条目')
+            role.require_prod('整批取全文')
         msg = str(e.value)
-        assert '删除 Zotero 条目' in msg          # 是什么操作
+        assert '整批取全文' in msg          # 是什么操作
         assert '控制面板' in msg                   # 怎么改
         assert '--force' in msg                    # 怎么越过
         assert '两台机器的分工' in msg              # 去哪看详情
 
     def test_force可以越过(self, as_role, capsys):
         as_role(role.DEV)
-        role.require_prod('写回 Zotero', force=True)
+        role.require_prod('起常驻服务', force=True)
         assert '--force' in capsys.readouterr().out, '越过时必须留一行警告，不能悄悄放行'
 
     def test_没配过角色时报错要点出这一点(self, monkeypatch):

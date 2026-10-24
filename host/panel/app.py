@@ -12,7 +12,7 @@
   - 动：重启 watcher / Ollama 等后台服务
 
 刻意**不做**的（不可逆或要花钱，继续走人工确认）：
-  删除数据、全库重抽、改 Zotero 库、触发批量精读。
+  删除数据、整批取全文。
 
 安全：只绑定 127.0.0.1（外部机器访问不到）；密钥默认脱敏显示。
 
@@ -75,7 +75,7 @@ def collect_status():
             status, msg = H.FAIL, f'{type(e).__name__}: {e}'
         level = {H.OK: 'ok', H.WARN: 'warn'}.get(status, 'fail')
         return {'name': name, 'level': level, 'msg': msg}
-    # Zotero / Ollama 没开时各要等 2 秒才被拒绝，串着就是 4 秒；并行只等最慢的一个
+    # 服务没开时各要等 2 秒才被拒绝，串着就是好几秒；并行只等最慢的一个
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=len(checks)) as pool:
         return list(pool.map(_run, checks))
@@ -84,8 +84,8 @@ def collect_status():
 def collect_all():
     """面板一页要的全部数据。**各项并行取**（2026-09-17）。
 
-    每 15 秒刷新一次，原来是十一项串着取：Zotero 探一次 2 秒、Ollama 探一次 2 秒、
-    警报里再探一次 Zotero 2 秒、PowerShell 查进程 1 秒…… 服务没开的机器上一次刷新 7 秒，
+    每 15 秒刷新一次，原来是十一项串着取：每个服务探一次 2 秒、PowerShell 查进程 1 秒……
+    服务没开的机器上一次刷新 7 秒，
     页面大半时间在转圈。这些项互不依赖，并行之后取决于最慢的一项（≈2 秒）。
     """
     from concurrent.futures import ThreadPoolExecutor
@@ -139,28 +139,12 @@ def collect_processes():
 
 
 def collect_alerts():
-    """从日志里挑出「还没恢复」的故障，直接摆到面板上。
+    """把「还没恢复」的故障直接摆到面板上：常驻服务 / 批量作业卡住或没报活。
 
-    为什么需要：心跳正常 ≠ 工作正常。曾出现 watcher 心跳照常写、
-    实际每轮都连不上 Zotero、静默停摆 19 分钟的情况（踩坑 #33）。
-    只看心跳会被骗，必须把失败本身暴露出来。
+    为什么需要：心跳正常 ≠ 工作正常（踩坑 #33）。原来这里还读精读监听的日志找「轮询失败」，
+    那个监听 2026-10-13 随 Zotero 删了，日志再没人写 —— 2026-10-24 拿掉那一段。
     """
     alerts = []
-    p = paths.log('zotero_watcher')
-    try:
-        with open(p, encoding='utf-8', errors='replace') as f:
-            tail = f.readlines()[-200:]
-    except Exception:
-        tail = []
-    i_fail = i_ok = -1
-    for i, ln in enumerate(tail):
-        if '[轮询失败]' in ln or '[持续异常]' in ln:
-            i_fail = i
-        elif '[已恢复]' in ln or '[心跳]' in ln:
-            i_ok = i
-    # 最后一条失败**出现在**最后一条正常之后 = 现在仍然是坏的
-    if i_fail > i_ok:
-        alerts.append({'level': 'fail', 'text': tail[i_fail].strip()[-160:]})
     # 常驻服务 / 批量作业卡住了（2026-09-16 加：取件卡半小时、Edge 死三小时都没人知道）
     try:
         from shared.kernel import heartbeat

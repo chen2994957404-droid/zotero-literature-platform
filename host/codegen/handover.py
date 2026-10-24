@@ -389,7 +389,7 @@ def build():
     a('- **【调研先行原则】先看真实世界，别用记忆代替调研。**'
       '涉及外部现状/具体数字/API 行为，必须查、必须测。')
     a('- 改完**先跑体检再重启服务**：`python host/doctor/health_check.py`')
-    a('- 花钱、不可逆、影响 Zotero 库的操作，**先问用户**。')
+    a('- 花钱、删数据等不可逆的操作，**先问用户**。')
     a('- 每个改动记 `docs/变更记录.md`，踩坑记 `docs/incidents/踩坑记录.md`，并 git commit。')
     return '\n'.join(L)
 

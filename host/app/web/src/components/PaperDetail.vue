@@ -79,7 +79,7 @@ const links = computed(() => {
       <p v-if="d.abstract" class="abstract">{{ d.abstract }}</p>
       <p v-else class="muted small">OpenAlex 没有这篇的摘要</p>
 
-      <p class="muted small">证据库编号 {{ d.id }}{{ d.in_zotero ? ' · 也在 Zotero 里' : '' }}</p>
+      <p class="muted small">证据库编号 {{ d.id }}</p>
     </template>
   </section>
 </template>

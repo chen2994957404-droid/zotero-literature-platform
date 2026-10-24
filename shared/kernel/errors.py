@@ -4,7 +4,7 @@
 **为什么需要它**（见 docs/explain/架构重构_v2总体设计.md 阶段 1 第 7 项）：
 
 重构前，一个步骤失败了，调用方**没有办法知道该怎么办**。
-`zotero_watcher` 拉起子进程，只拿得到退出码和一坨 stdout；
+常驻服务拉起子进程，只拿得到退出码和一坨 stdout；
 模块抛出来的也多是裸 `Exception` / `RuntimeError`。于是所有失败都被同等对待 ——
 「MineRU 这一秒过载了」和「你传的 key 根本不合法」走同一条路，
 结果要么该重试的没重试，要么不该重试的白重试一轮。
@@ -58,7 +58,7 @@ class BadInputError(PlatformError, ValueError):
 
 
 class ConfigError(PlatformError):
-    """用户还没配好（缺密钥、缺 Zotero 用户 ID、模型名写错）。
+    """用户还没配好（缺密钥、本机设置没填）。
 
     抛这个的时候，消息里要写清**用户该去哪儿做什么**，
     因为它最终会显示给一个不懂编程的人看。
@@ -75,9 +75,8 @@ class DataError(PlatformError):
 class WrongMachineError(PlatformError):
     """这台机器不该做这件事（见 docs/howto/两台机器的分工.md）。
 
-    典型场景：在编程端（A 机）试图写回 Zotero、启动 watcher、跑全库批量作业。
-    两台机器共用同一个 Zotero 账号，编程端一回写就污染真实文献库，
-    而且会立刻同步到主力机 —— 这类错误没有「重试」一说，
+    典型场景：在编程端（A 机）试图起常驻服务、跑整批作业。
+    数据的权威副本在主力机，编程端乱跑会长出一份对不上的数据 —— 这类错误没有「重试」一说，
     要么换机器做，要么明确知道自己在干什么再加 --force。
     """
 
@@ -96,11 +95,11 @@ class ExternalServiceError(PlatformError):
 
     def __init__(self, msg, service=None):
         super().__init__(msg)
-        self.service = service      # 'mineru' / 'zotero' / 'deepseek' / 'ollama' …
+        self.service = service      # 'mineru' / 'openalex' / 'crossref' / 'ollama' …
 
 
 class ServiceUnavailable(ExternalServiceError):
-    """服务没在跑（Ollama 没启动、Zotero 桌面没开）。
+    """服务没在跑（Ollama 没启动、取全文用的浏览器没开）。
 
     技术上可重试，但通常需要用户先把服务打开 —— 消息里要说清是哪个。
     """

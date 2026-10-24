@@ -23,7 +23,7 @@
 | 函数 | 说明 |
 |---|---|
 | `work(doi)` | → Crossref 的 message 字典；DOI 不存在抛 `DoiNotFound` |
-| `to_zotero_item(m, tags=None)` | message → 一份扁平的条目字典（名字是历史遗留：取全文落地时拿它填目录卡）|
+| `to_meta(m)` | message → 目录卡要的扁平字段（标题 / 期刊 / 年份 / 作者 / 摘要）|
 | `match_title(title, ...)` / `title_similarity(a, b)` | 按题名找 DOI（Claude Science 的「按标题补 DOI」）|
 | `normalize(m)` | message → 本平台统一的文献字典（与 `openalex.normalize` 同形，多 `created` 登记日） |
 
@@ -38,6 +38,6 @@ vs `CrossrefError`（对方抖动，可重试）。调用方据此决定批量�
 ## 改完必须做
 
 ```
-python shared/adapters/crossref/selftest.py     # 6 条离线 + 1 条联网（不通则 SKIP）
+python shared/adapters/crossref/selftest.py     # 5 条离线 + 1 条联网（不通则 SKIP）
 python -m pytest -q                              # 架构守卫
 ```

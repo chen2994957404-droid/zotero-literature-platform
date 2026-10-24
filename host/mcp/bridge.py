@@ -6,7 +6,7 @@
 Claude Science 的 Remote 连接器**只收公网 https 地址**，原话：
 「Remote MCP servers must be reachable at a public https URL. For a server running on
 this machine, add it as a local (stdio) server instead」。
-而平台的服务绝不上公网（它能取全文、能写 Zotero，见 http_transport.py 的安全一节）。
+而平台的服务绝不上公网（它能借学校权限取全文，见 http_transport.py 的安全一节）。
 所以反过来：客户端以「本机命令」拉起本文件，本文件把 stdin 上的每条 JSON-RPC
 原样 POST 给 `http://127.0.0.1:8778/science`（A 机现成隧道 → B 机服务），答复写回 stdout。
 

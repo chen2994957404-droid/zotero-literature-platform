@@ -223,7 +223,7 @@ def _resolve(k):
             raise ValueError(f'证据库里没有 DOI {doi}（用 paper_fulltext 把它拿进来）')
         return pid
     try:
-        return catalog.resolve(k)          # 旧的 Zotero 编号也认（2026-10-12 起目录改成 doi_ 编号）
+        return catalog.resolve(k)          # 老编号也认（2026-10-12 起目录改成 doi_ 编号）
     except paths.BadKeyError:
         raise ValueError(f'「{k}」既不是证据库 id 也不是 DOI')
 
@@ -236,7 +236,6 @@ def _out(text, data):
 # 库：有没有 / 全库清单 / 按意思找
 # ══════════════════════════════════════════════════════════════════════
 
-# 不带 in_zotero：Claude Science 那条路不跟 Zotero 扯上关系（2026-09-30 用户定）
 _CARD_KEYS = ('id', 'doi', 'title', 'year', 'journal', 'pdf', 'si',
               'fulltext', 'si_fulltext')
 
@@ -288,7 +287,7 @@ def _topic_items(a):
 
 
 def dedupe_hits(rows):
-    """同一篇存了两份（Zotero 编号与 doi_ 各一份）时，同一段会出现两次 —— 按 DOI + 开头去重。"""
+    """同一篇存了两份（老编号与 doi_ 各一份）时，同一段会出现两次 —— 按 DOI + 开头去重。"""
     seen, out = set(), []
     for r in rows:
         key = ((r.get('doi') or r.get('id') or '').lower(), (r.get('text') or '')[:200])

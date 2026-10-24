@@ -20,7 +20,7 @@ watcher 是常驻服务，日志文件只会一直长下去。
 ```python
 from shared.kernel.log import get_logger
 
-log = get_logger('zotero_watcher')
+log = get_logger('ingest')
 
 log('开始处理', key)          # 像 print 一样用（这是为了让老代码零成本迁移）
 log.warn('PDF 找不到')
