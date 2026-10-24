@@ -14,7 +14,7 @@
 
 现在：HTTP、重试、摘要还原、字段归一，只有这一个文件负责。
 
-## 统一的文献字典（与 shared.adapters.sciverse 同构，全平台通用）
+## 统一的文献字典（全平台通用）
 
     {'title', 'doi', 'year', 'venue', 'citations', 'abstract', 'abstract_truncated',
      'is_oa', 'oa_status', 'publisher', 'oa_url', 'openalex_id', 'first_author'}

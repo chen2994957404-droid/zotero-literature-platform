@@ -238,7 +238,7 @@ def _out(text, data):
 
 # 不带 in_zotero：Claude Science 那条路不跟 Zotero 扯上关系（2026-09-30 用户定）
 _CARD_KEYS = ('id', 'doi', 'title', 'year', 'journal', 'pdf', 'si',
-              'fulltext', 'si_fulltext', 'summary', 'structured')
+              'fulltext', 'si_fulltext')
 
 
 def _card(r):
@@ -409,7 +409,7 @@ def full_figures(pid, crop=None):
         except ValueError:
             pass
     if crop is None:
-        from shared.domain.figure_crop import crop_figures as crop
+        from host.mcp.figure_crop import crop_figures as crop
     try:
         figs = crop(parsed)
     except Exception:
@@ -648,7 +648,7 @@ def paper_files(key):
     from shared.kernel import paths
     cands = {'main_pdf': paths.local_pdf(key), 'si_original': paths.find_local_si(key),
              'main_md': paths.fulltext(key), 'si_md': paths.si_fulltext(key),
-             'images_dir': paths.images_dir(key), 'summary_html': paths.summary(key)}
+             'images_dir': paths.images_dir(key)}
     return {k: p for k, p in cands.items() if p and os.path.exists(p)}
 
 
@@ -658,7 +658,7 @@ MAX_IMAGE_KB = 36      # base64 会大三分之一，36 KB 的图回出去约 48
 def _figure_image(a):
     """一张图直接回成小 JPEG（base64）：不用传文件、不用等界面批准（2026-10-04 Claude Science：取一张图等了 20 多分钟）。"""
     import base64
-    from shared.domain.figure_crop import shrink_jpeg
+    from host.mcp.figure_crop import shrink_jpeg
     pid = _resolve(a.get('itemKey'))
     want = str(a.get('fig') or '').strip()
     key = _fig_key('figure ' + want if want.isdigit() else want)

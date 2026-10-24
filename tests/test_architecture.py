@@ -53,7 +53,7 @@ def _rel(p):
 # ══════════════════════════════════════════════════════════════════════
 # 允许直接写数据根目录字面量的文件（数据契约的实现处 + 它的测试 + 搬家脚本）
 PATHS_OWNERS = {'shared/kernel/paths.py', 'tests/test_architecture.py',
-                'shared/kernel/tests/test_paths.py', 'host/deploy/migrate_data.py'}
+                'shared/kernel/tests/test_paths.py'}
 
 # 「这一行在拼路径」的特征
 _PATH_BUILDING = ('os.path.join', 'glob', 'open(', 'os.makedirs',
@@ -1030,25 +1030,15 @@ def test_引导脚本不许在模块顶层import项目包():
 #   真正硬的是服务端的当日额度闸（`shared/kernel/budget.py`）。
 #   **所以往这张表里加东西之前，先问「如果没有弹窗，这件事我还敢让它自己做吗」。**
 AGENT_TOOLS_APPROVED = {
-    'ask_library': '问一次自己的库。单次、几分钱、只读，问错了再问一次即可。',
-    'askworld_ask': '问全世界一个问题。单次、只读（side_effects 为空），可重来。',
-    'extract_one': '抽**一篇**的结构化字段。单次、可重来；全库增量抽取仍走 prompt。',
-    'digitize_figure': '读**一张**图。单次、可重来；整篇每张都读仍走 prompt。',
     'getpdf_one': '取**一篇**的 PDF。不花钱、盘上有了会跳过；'
                   '一整批的量能触发出版商风控（封的是整个机构的 IP），所以只放开单篇。',
     'paper_fulltext': 'DOI → 可读全文，默认最多 3 篇；前两层（缓存/本地正本）零成本，'
                       '只有第三层才真去敲出版商。',
-    'journalwatch_recent': '列出盯着的刊最近新登记的论文。只问 Crossref（免费、不要密钥），'
-                           '只读，不取全文；重复调用只是再列一遍。',
 }
 
 # 永远不给模型自己发起的**那一类**。列在这里是为了让边界可读，
 # 也让「有人想把它挪进白名单」时先撞上这段话。
 HUMAN_ONLY = {
-    'discover': '一次检索要打好几个外部源、算嵌入，量级由不得模型定。',
-    'direction': '建一条窄带是几百次请求、十几分钟的全库作业。',
-    'deepread': '整篇精读跑几分钟且最贵 —— 只给人点（文献库应用的按钮或 prompt）。',
-    'extract': '全库增量抽取是全库作业。',
     'getpdf': '整批取 PDF 会触发出版商风控，**被封的是整个机构的 IP**，'
               '代价不可逆、也不由本人承担。',
 }

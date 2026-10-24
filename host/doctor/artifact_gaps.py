@@ -2,10 +2,7 @@
 """查库里的半成品：哪些文献缺核心产物，以及它们停在了哪一步。
 
 **为什么需要它**：主力机体检报「缺核心产物的文献：4 篇」，但只给了 key，
-看不出是「解析失败」还是「精读做了一半」。而这两种情况的处理办法完全不同。
-
-半成品最可能的来源，是精读中途 watcher 被看门狗误杀（踩坑见 shared/kernel/heartbeat.py）。
-那个 bug 已修，但**之前留下的半成品不会自己消失**，得找出来重做。
+看不出是「没解析」还是「缺元数据」。而这两种情况的处理办法不同。
 
 本脚本**只读**，不删不改任何东西 —— 要重做哪几篇由你决定。
 
@@ -34,7 +31,7 @@ def inspect(key):
     missing, present = paths.missing_artifacts(key)
     size = 0
     # R6 起一篇文献占**两个**目录：raw（解析产物，占绝大部分体积）+ curated
-    # （精读产物）。只走一个的话报出来的「占多大」会小一个数量级。
+    # （目录卡、骨架、整图）。只走一个的话报出来的「占多大」会小一个数量级。
     for d in (paths.paper_raw_dir(key), paths.paper_dir(key)):
         for dirpath, _dirs, files in os.walk(d):
             for f in files:
@@ -54,19 +51,12 @@ def diagnose(missing, present):
     """
     if not missing:
         return '完整', ''
-    # 精读全做完了，只是元数据没落盘 —— 最省事的一类，别当成半成品重跑
-    if missing == ['meta'] and 'summary' in present:
-        return ('精读已完成，只差元数据',
-                '把这一行发给 Claude 按 DOI 补一下目录卡即可 —— '
-                '**不调大模型、不花钱**。千万别在应用里点「精读」重跑整篇')
-    if 'fulltext' not in present:
-        return ('解析就没成功', '在文献库应用里点这篇的「精读」即可，整篇会从头做一遍')
-    if 'summary' in missing:
-        return ('正文解析好了，精读没做完',
-                '在文献库应用里点这篇的「精读」；解析结果还在，不会重复花 MineRU 的钱')
+    if 'fulltext' not in present or 'layout' in missing:
+        return ('还没解析（或解析不完整）',
+                '跑一次落地流水线 `python -m host.ingest` 补上 —— 只用 MineRU 额度，不花大模型的钱')
     if 'meta' in missing:
         return ('缺元数据', '把这一行发给 Claude 按 DOI 补目录卡，不花钱')
-    return ('产物不齐', '把这一行发给 Claude 判断，先别急着重跑（重跑要花钱）')
+    return ('产物不齐', '把这一行发给 Claude 判断')
 
 
 def main():
@@ -101,8 +91,7 @@ def main():
             print(f'   建议：{advice}')
         print('')
 
-    print('注意：本脚本只看不改。要重做的话，在文献库应用里点这几篇的「精读」，')
-    print('精读监听会自动接手（它现在不会再被看门狗中途杀掉了）。')
+    print('注意：本脚本只看不改。')
     return 0
 
 

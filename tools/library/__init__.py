@@ -45,7 +45,7 @@ MAX_CHARS = 20000          # 取全文的默认上限（再多模型也读不完
 # 「我有没有这篇」先问这里（零网络、秒回），Zotero 那一半在下面那组函数。
 
 def db_stats():
-    """证据库有多大、每种产物各几篇（正本 / SI / 解析 / 精读 / 结构化 / 在 Zotero）。"""
+    """证据库有多大、每种产物各几篇（正本 / SI / 解析 / 在 Zotero）。"""
     return catalog.stats()
 
 
@@ -224,34 +224,11 @@ def render_db(rows):
     out = []
     for r in rows:
         have = ''.join(('正' if r['pdf'] else '·', 'S' if r['si'] else '·',
-                        '析' if r['fulltext'] else '·', '精' if r['summary'] else '·',
-                        '构' if r['structured'] else '·'))
+                        '析' if r['fulltext'] else '·'))
         out.append(f'{r["id"]:<38} [{have}] {r["year"] or "????"}  {r["title"][:70]}'
                    + (f'\n{"":<38} DOI:{r["doi"]}' if r['doi'] else ''))
-    out.append('（[正S析精构] = 有正文 / 有SI / 已解析 / 已精读 / 已结构化）')
+    out.append('（[正S析] = 有正文 / 有SI / 已解析）')
     return '\n'.join(out)
-
-
-def units(key, type_=None, limit=200):
-    """这篇的**单元库**（2026-09-22）：拆出来的最小信息单元（数值事实 / 实体 / 主张…），每条带原文引用与生产者。
-
-    抽取 / 精读 / 审稿都往里写，这里只读。`type_` 限定一类；没有文件返回空。
-    """
-    key = catalog.resolve(key)        # 旧的 Zotero 编号也认（2026-10-12 起目录改成 doi_ 编号）
-    from shared.kernel import units_store
-    rows = units_store.load(key)
-    if type_:
-        rows = [u for u in rows if u.get('type') == type_]
-    return {'key': key, 'stats': units_store.stats(units_store.load(key)), 'units': rows[:limit], 'total': len(rows)}
-
-
-def render_units(d):
-    L = ['%s 的单元库：%s（共 %d 条）' % (d['key'], d['stats'] or '空', d['total'])]
-    for u in d['units']:
-        f = u.get('fields') or {}
-        body = ' · '.join('%s=%s' % (k, v) for k, v in f.items() if v)
-        L.append('- [%s] %s  ←「%s」' % (u['type'], body[:120], (u.get('src') or {}).get('quote', '')[:60]))
-    return '\n'.join(L)
 
 
 def outline(key, refresh=False):

@@ -111,17 +111,14 @@ def collect():
         if not CORE_OK:
             raise RuntimeError('包没装好，读不到数据契约')
         keys = paths.all_keys()
-        import glob
-        n_struct = len(glob.glob(os.path.join(paths.STRUCTURED, '*.json')))
         data = [f'library 已归档文献：{len(keys)} 篇',
-                f'structured 抽取结果：{n_struct} 条',
                 f'向量库目录：{"在" if os.path.isdir(paths.VECTOR_DB) else "缺失"}']
         try:
             from shared.adapters import vectordb
             data.append(f'向量库块数：{vectordb.open_store().count()}')
         except Exception as e:
             data.append(f'向量库块数：读不到（{type(e).__name__}: {e}）')
-        # 产物完整性：半成品最常见的来源是精读中途被打断（踩坑 #61）。
+        # 产物完整性：半成品多是解析没做完。
         # 直接把「停在哪一步、要不要重花钱」写进报告 —— 用户不必再单独跑一个脚本。
         gaps = []
         for k in keys:

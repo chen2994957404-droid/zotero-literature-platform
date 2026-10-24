@@ -24,7 +24,7 @@ BACKOFF = 600            # 一轮全失败（服务没起来）时退避多久
 
 def _report(c, say=print):
     say(f'做完：解析 {c["parsed"]} 篇 · SI {c["si_parsed"]} 篇 · 骨架 {c["outlined"]} 篇 · '
-          f'向量化 {c["vectorized"]} 篇 · 单元库 {c.get("units", 0)} 篇 · 画像 {c.get("profile", 0)} 篇 · 失败 {c["failed"]} 篇')
+          f'向量化 {c["vectorized"]} 篇 · 失败 {c["failed"]} 篇')
     bad = ingest.failures()
     if bad:
         say('等重试的（一天后再试）：')
@@ -34,7 +34,7 @@ def _report(c, say=print):
 
 def loop():
     """常驻：单实例锁在 run_backlog 里（抢不到就这轮让开），报活在这里。"""
-    from shared.kernel.proc_lock import single_instance, holder
+    from host.ingest.proc_lock import single_instance, holder
     if not single_instance('ingest_loop'):
         ingest.log(f'已有一份落地流水线常驻在跑（PID={holder("ingest_loop")}），本次退出')
         return 0

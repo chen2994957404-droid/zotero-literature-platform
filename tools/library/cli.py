@@ -11,7 +11,7 @@
     python -m tools.library 检索 10.1021/jacs.3c13392              # DOI 直接定位
     python -m tools.library 检索 "ionic skin"                       # 标题 / 作者 / 期刊里的词（每个词都要命中）
     python -m tools.library 检索 --通讯 武培怡 --年 2024-2026        # 通讯作者（中文名走团队名单，拼音不管顺序）
-    python -m tools.library 检索 boronic --摘要 --有 精读             # 连摘要一起搜；只要已精读的
+    python -m tools.library 检索 boronic --摘要 --有 SI               # 连摘要一起搜；只要有 SI 的
     python -m tools.library 检索 --团队 龚兴龙 --刊 "Adv"            # 某团队（含合作）、期刊名里带 Adv
     python -m tools.library 检索 --建索引                            # 从 OpenAlex 取作者 + 摘要（免费额度约 25 次）
     python -m tools.library 专题                         # 全部专题（Claude Science 或人建的一组文献）
@@ -137,16 +137,7 @@ def main():
             return 0
         s = library.db_stats()
         print(f"证据库 {s['papers']} 篇（带 DOI {s['with_doi']}）· 有正文 {s['pdf']} · 有 SI {s['si']} · "
-              f"已解析 {s['fulltext']}（SI {s['si_fulltext']}）· 已精读 {s['summary']} · "
-              f"已结构化 {s['structured']} · 其中在 Zotero 的 {s['in_zotero']}")
-        return 0
-
-    if action in ('units', '单元'):
-        key = pos(1)
-        if not key:
-            print('用法：python -m tools.library 单元 <文献id> [--type fact]')
-            return 2
-        print(library.render_units(library.units(key, type_=opt('--type'))))
+              f"已解析 {s['fulltext']}（SI {s['si_fulltext']}）· 其中在 Zotero 的 {s['in_zotero']}")
         return 0
 
     print(__doc__)

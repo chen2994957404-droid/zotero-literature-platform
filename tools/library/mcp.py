@@ -40,7 +40,7 @@ def register(server):
     server.register_tool(
         'library_db_search',
         '搜**证据库**（平台自己的库）：'
-        '按标题 / DOI / 期刊 子串，返回每篇的 id 和手上有什么（正文/SI/已解析/已精读/已结构化）。'
+        '按标题 / DOI / 期刊 子串，返回每篇的 id 和手上有什么（正文/SI/已解析）。'
         '不联网、秒回。**问「有没有这篇」先用它**。',
         {'type': 'object', 'properties': {
             'query': {'type': 'string', 'description': '标题片段、DOI 或期刊名'},
@@ -51,8 +51,7 @@ def register(server):
     server.register_tool(
         'library_retrieve',
         '在证据库里**找哪里讲了 X**：向量检索，返回最相近的几段原文 + 文献 id + 骨架地址'
-        '（s5.p3 这种）。零成本、不过大模型、不替你判断 —— 这是「搜库 → 点节 → 读」的第一步；'
-        '要中文综合回答才用 ask_library（花钱）。',
+        '（s5.p3 这种）。零成本、不过大模型、不替你判断 —— 这是「搜库 → 点节 → 读」的第一步。',
         {'type': 'object', 'properties': {
             'query': {'type': 'string', 'description': '要找的内容，英文或中文都行'},
             'n': {'type': 'integer', 'minimum': 1, 'maximum': 30, 'description': '取几段，默认 8'},
@@ -70,7 +69,7 @@ def register(server):
         lambda a: library.render_refs(library.refs(_k(a)), _k(a)))
 
     server.register_tool(
-        'library_db_stats', '证据库有多大：篇数，以及有正文/SI/已解析/已精读/已结构化各几篇。',
+        'library_db_stats', '证据库有多大：篇数，以及有正文/SI/已解析各几篇。',
         {'type': 'object', 'properties': {}},
         lambda a: _db_stats())
 
@@ -118,5 +117,4 @@ def _section(r):
 def _db_stats():
     s = library.db_stats()
     return (f"证据库 {s['papers']} 篇（带 DOI {s['with_doi']}）· 有正文 {s['pdf']} · 有 SI {s['si']} · "
-            f"已解析 {s['fulltext']}（SI {s['si_fulltext']}）· 已精读 {s['summary']} · "
-            f"已结构化 {s['structured']}")
+            f"已解析 {s['fulltext']}（SI {s['si_fulltext']}）")

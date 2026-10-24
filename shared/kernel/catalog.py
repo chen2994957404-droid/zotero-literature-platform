@@ -176,24 +176,7 @@ def record(pid):
         'si': bool(si),
         'fulltext': os.path.isfile(paths.fulltext(pid)),
         'si_fulltext': os.path.isfile(paths.si_fulltext(pid)),
-        'summary': os.path.isfile(paths.summary(pid)),
-        'structured': os.path.isfile(paths.structured(pid)),
     }
-
-
-def level_of(rec):
-    """这篇在四级里到哪一级（2026-09-16 用户定的分级）：
-    0 只有登记 / 1 有正文文本（解析过） / 2 有原件 PDF / 3 有精读。
-    级别是**从手上有什么推出来的**，不另存字段 —— 文件在就是在，不会跟索引对不上。
-    雷达库里那些（只有题目摘要）不在证据库，是 0 级；证据库里只登记没正本的也算 0。
-    """
-    if rec.get('summary'):
-        return 3
-    if rec.get('pdf'):
-        return 2
-    if rec.get('fulltext'):
-        return 1
-    return 0
 
 
 def scan():
@@ -335,7 +318,7 @@ def search(text, limit=25):
 def stats():
     """证据库有多大、每种产物各几篇。"""
     rows = scan()
-    keys = ('pdf', 'si', 'fulltext', 'si_fulltext', 'summary', 'structured', 'in_zotero')
+    keys = ('pdf', 'si', 'fulltext', 'si_fulltext', 'in_zotero')
     out = {'papers': len(rows), 'with_doi': sum(1 for r in rows if r['doi'])}
     for k in keys:
         out[k] = sum(1 for r in rows if r[k])

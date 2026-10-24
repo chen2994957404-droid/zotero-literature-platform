@@ -9,7 +9,6 @@
 | 进程 | 干什么 | 形态 |
 |---|---|---|
 | `host.ingest --loop`   | 落地流水线：正本一到就解析 / 骨架 / 向量化（不花模型钱） | 常驻（AUTO_BUILD=1 才拉）|
-| `host.daily`           | 每天一次：盯新刊 + 补摘要 + 自动升 1 级取件 | 跑完就退出，一天拉一次（AUTO_BUILD=1 才拉）|
 
 **为什么拆开**（用户 2026-09-17 定）：这三件事原来全挤在 watcher 的一个循环里串着做 ——
 每天一次的盯新刊要补几千篇摘要、借浏览器取十篇文献，一跑就是几十分钟，
@@ -173,8 +172,8 @@ def active_services(auto_build):
 # 孙子进程照跑旧代码（踩坑 #62）—— 面板的重启按钮与 `host.deploy.update` 都从这里取，别各写一份。
 # 认的是**命令行里的模块路径**（同 SERVICES 的 pat），不认锁文件：锁文件里的 PID 活没活要问 tasklist，
 # 那一步在无窗口会话里会误判（2026-09-17 部署时拿着一个早死的 PID 报「已停掉」，真活着的没停）。
-CHILD_LOCKS = ('ingest_loop', 'daily')     # 各自的单实例锁名（面板显示用）
-_CHILD_PATS = [(s['name'], s['pat'], s['beacon']) for s in SERVICES] + [('daily', "'host[" + chr(92) * 2 + "./]daily'", '')]
+CHILD_LOCKS = ('ingest_loop',)     # 各自的单实例锁名（面板显示用）
+_CHILD_PATS = [(s['name'], s['pat'], s['beacon']) for s in SERVICES]
 
 
 def kill_children(run=None):
@@ -195,12 +194,6 @@ def kill_children(run=None):
                 except OSError:
                     pass
     return killed
-
-
-# ── 每日一次的作业 ───────────────────────────────────────────────────────────
-DAILY_MODULE = 'host.daily'
-DAILY_AFTER = 2 * 3600     # 每天 02:00 之后才拉（那会儿没人在打标签，Crossref / OpenAlex 也空）
-DAILY_STAMP = 'daily_last_run'   # paths.runtime 里记「上次拉起是哪天」
 
 
 def ages(beacon=BEACON):
@@ -243,45 +236,6 @@ def restart_service(svc):
     log(f'已重启 {svc["name"]}（{svc["module"]}，后台无窗口）')
 
 
-def _read_stamp():
-    try:
-        return open(paths.runtime(DAILY_STAMP + '.txt'), encoding='utf-8').read().strip()
-    except Exception:
-        return ''
-
-
-def _write_stamp(day):
-    try:
-        with open(paths.runtime(DAILY_STAMP + '.txt'), 'w', encoding='utf-8') as f:
-            f.write(day)
-    except Exception:
-        pass
-
-
-def daily_due(now=None, last_day=None):
-    """今天该拉每日作业了吗。**纯函数**，便于测：
-
-    - 今天已经拉过 → 不
-    - 还没到 DAILY_AFTER（凌晨两点）→ 不（刚开机是白天也一样，等到明天凌晨；
-      但如果**昨天根本没跑**，比如机器昨晚关着，那今天一到点就补）
-    """
-    now = now or time.time()
-    lt = time.localtime(now)
-    today = time.strftime('%Y-%m-%d', lt)
-    last_day = _read_stamp() if last_day is None else last_day
-    if last_day == today:
-        return False
-    since_midnight = lt.tm_hour * 3600 + lt.tm_min * 60 + lt.tm_sec
-    return since_midnight >= DAILY_AFTER
-
-
-def launch_daily():
-    """拉一次每日作业。作业自己有单实例锁，重复拉是安全的。"""
-    _write_stamp(time.strftime('%Y-%m-%d'))
-    spawn_module(DAILY_MODULE)
-    log(f'已拉起每日作业（{DAILY_MODULE}：盯新刊 + 补摘要 + 升 1 级取件）')
-
-
 from shared.kernel.log import get_logger
 log = get_logger('watchdog')   # 统一日志：时间戳 + 落盘 + 自动轮转
 
@@ -289,11 +243,11 @@ log = get_logger('watchdog')   # 统一日志：时间戳 + 落盘 + 自动轮�
 def main():
     # 机器角色守卫：常驻服务只能在运行端（主力机）跑。
     # 两台都跑会重复跑落地流水线、重复取件。
-    role.require_prod('看门狗（守护落地流水线 / 每日作业 / 端口服务）', force=flag('--force'))
+    role.require_prod('看门狗（守护落地流水线 / 端口服务）', force=flag('--force'))
     auto = auto_build_on()
     services = active_services(auto)
     log(f'看门狗启动。管 {len(services)} 个常驻进程（{"、".join(s["name"] for s in services) or "无"}）'
-        f'{" + 每日作业" if auto else "；后台自动建库已关，不拉落地流水线与每日作业"}'
+        f'{"" if auto else "；后台自动建库已关，不拉落地流水线"}'
         '；'
         f'报活阈值 {STALE}s，无进展阈值 {NO_PROGRESS}s，检查间隔 {CHECK}s')
     # 开关刚关上时，上一轮拉起的进程可能还活着 —— 停掉，否则它会一直跑下去
@@ -326,11 +280,6 @@ def main():
                 last_port.pop('getpdf_browser', None)      # 刚关掉，下一轮立刻拉，不等宽限
         except Exception as e:
             log(f'查取全文浏览器失败：{type(e).__name__}: {e}')
-        try:
-            if auto and daily_due(now):
-                launch_daily()
-        except Exception as e:
-            log(f'拉每日作业失败：{type(e).__name__}: {e}')
         time.sleep(CHECK)
 
 

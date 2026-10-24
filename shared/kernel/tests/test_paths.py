@@ -89,8 +89,8 @@ class TestPaperId:
         pid = paths.paper_id_from_doi('10.1021/acs.x1')
         assert paths.fulltext(pid).replace(os.sep, '/').endswith(
             'data/raw/doi_10.1021-acs.x1/parsed/full.md')
-        assert paths.structured(pid).replace(os.sep, '/').endswith(
-            'doi_10.1021-acs.x1.json')
+        assert paths.meta(pid).replace(os.sep, '/').endswith(
+            'data/curated/doi_10.1021-acs.x1/meta.json')
 
 
 class TestPaperArtifacts:
@@ -119,28 +119,11 @@ class TestPaperArtifacts:
         assert self._rel(paths.local_si(self.KEY)) == 'data/raw/2T6H4S3D/si.pdf'
         assert self._rel(paths.local_si(self.KEY, '.DOCX')) == 'data/raw/2T6H4S3D/si.docx'
 
-    def test_精读(self):
-        assert self._rel(paths.summary(self.KEY)).endswith('curated/2T6H4S3D/summary.html')
-
-    def test_SI精读(self):
-        assert self._rel(paths.si_summary(self.KEY)).endswith('curated/2T6H4S3D/si_summary.html')
-
-    def test_合并精读(self):
-        assert self._rel(paths.summary_full(self.KEY)).endswith('curated/2T6H4S3D/summary_full.html')
-
     def test_元数据(self):
         assert self._rel(paths.meta(self.KEY)).endswith('curated/2T6H4S3D/meta.json')
 
-    def test_结构化(self):
-        assert self._rel(paths.structured(self.KEY)) == 'data/serving/structured/2T6H4S3D.json'
-
-    def test_对比表(self):
-        assert self._rel(paths.compare()) == 'data/serving/structured/compare.md'
-        assert self._rel(paths.compare('compare_PBS')) == 'data/serving/structured/compare_PBS.md'
-
     def test_全都是绝对路径(self):
-        for fn in (paths.paper_dir, paths.fulltext, paths.layout, paths.summary,
-                   paths.si_summary, paths.summary_full, paths.meta, paths.structured):
+        for fn in (paths.paper_dir, paths.fulltext, paths.layout, paths.meta, paths.outline):
             assert os.path.isabs(fn(self.KEY)), fn.__name__
 
     def test_非法key在拼路径时就被挡住(self):
@@ -191,4 +174,4 @@ class TestHas:
             paths.has('2T6H4S3D', 'nonexistent_artifact')
 
     def test_非法key返回False而不是抛错(self):
-        assert paths.has('not-a-key', 'summary') is False
+        assert paths.has('not-a-key', 'fulltext') is False

@@ -20,10 +20,9 @@ def env(tmp_path, monkeypatch):
         d = tmp_path / name.lower()
         d.mkdir()
         monkeypatch.setattr(paths, name, str(d))
-    monkeypatch.setattr(paths, 'STRUCTURED', str(tmp_path / 'serving' / 'structured'))
     # 单实例锁也指到临时目录：主力机上 watcher 正抱着真实的 ingest 锁，
     # 测试会「让开」而一篇不做（2026-09-14 部署时体检就这么红过一次）
-    from shared.kernel import proc_lock
+    from host.ingest import proc_lock
     monkeypatch.setattr(proc_lock, 'LOCK_DIR', str(tmp_path / 'locks'))
     calls = {'parse': 0}
 
@@ -36,19 +35,6 @@ def env(tmp_path, monkeypatch):
 
     monkeypatch.setattr('shared.adapters.pdf_parse.parse_pdf', fake_parse)
 
-    def fake_units(pid, model, log=print, sample_model=None):     # 单元库那步要本地大模型；编程端没有 → 0 条会被当失败，这里装作抽到了
-        calls['units'] = calls.get('units', 0) + 1
-        io.open(paths.units(pid), 'w', encoding='utf-8').write('{"units": [1]}')
-        return 1, paths.units(pid)
-
-    monkeypatch.setattr('tools.extract.fine_fact.extract_to_store', fake_units)
-    monkeypatch.setattr('tools.extract.fine_action.extract_to_store', fake_units)
-
-    def fake_profile(pid, model, log=print):
-        io.open(paths.profile(pid), 'w', encoding='utf-8').write('{"type": "synthesis"}')
-        return {'type': 'synthesis', 'source': 'model'}
-
-    monkeypatch.setattr('tools.deepread.profile.classify_to_store', fake_profile)
     return calls
 
 

@@ -57,7 +57,7 @@ Claude Code 于是**每次调用都弹窗，且不给「不再询问」的选项
 """
 import tomllib
 
-from shared.kernel import prompts as _prompts
+from host.mcp import prompts as _prompts
 
 from shared.kernel import paths
 

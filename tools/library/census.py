@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""盘点：证据库里到底有什么 —— 手上有什么（正文 / 解析 / SI 三态 / 精读 / 结构化）。
+"""盘点：证据库里到底有什么 —— 手上有什么（正文 / 解析 / SI 三态）。
 
 用户 2026-09-17 问：「库里有毕业论文、专利、有 SI 的、没加 SI 的、本来就没 SI 的，有统计吗」—— 以前没有。
 原来两边各数一遍（Zotero 那半按条目类型分类）；2026-10-13 Zotero 移出平台，只盘证据库。
@@ -35,8 +35,6 @@ def census():
     return {'evidence': {'total': len(ev),
                          'pdf': sum(r['pdf'] for r in ev),
                          'fulltext': sum(r['fulltext'] for r in ev),
-                         'summary': sum(r['summary'] for r in ev),
-                         'structured': sum(r['structured'] for r in ev),
                          'no_doi': sum(1 for r in ev if not r['doi']),
                          'si': Counter(r['si_status'] for r in ev if r['pdf'])},
             'rows_evidence': ev}
@@ -51,8 +49,6 @@ def render(c, detail=False):
              '| | 篇 |', '|---|---|',
              '| 有正文原件 PDF | %d |' % e['pdf'],
              '| 解析过（有全文文本） | %d |' % e['fulltext'],
-             '| 有精读 | %d |' % e['summary'],
-             '| 有结构化记录 | %d |' % e['structured'],
              '| 没有 DOI（学位论文 / 专利 / 手动加的多在这） | %d |' % e['no_doi'],
              '',
              '有正文的 %d 篇里，SI 的情况：' % e['pdf'],

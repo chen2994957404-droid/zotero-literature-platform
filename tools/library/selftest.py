@@ -13,7 +13,7 @@ from tools import library
 from tools.library import dbsearch
 
 ROWS = [{'id': 'doi_10.1000-x', 'doi': '10.1000/x', 'title': 'A boron elastomer', 'year': 2024,
-         'pdf': True, 'si': False, 'fulltext': True, 'summary': False, 'structured': True}]
+         'pdf': True, 'si': False, 'fulltext': True}]
 
 
 def main():

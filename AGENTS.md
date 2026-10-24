@@ -18,33 +18,33 @@
 
 ```
 docs/  ← 跨工具的档案（另有 4 份日志直接躺在下面）
-    explain/（8）、howto/（3）、reference/（19）、incidents/（2）  ← 为什么 / 怎么做 / 事实 / 坑
-host/  ← 平台自身：让平台活着的东西（没人 import 它）（9 块）
-    app、codegen、daily、deploy、doctor、ingest、mcp、panel、watcher
-launch/  ← 给人双击的入口（常用 4 个；不常用/ 里 6 个备用与开发用）
+    explain/（6）、howto/（3）、reference/（9）、incidents/（2）  ← 为什么 / 怎么做 / 事实 / 坑
+host/  ← 平台自身：让平台活着的东西（没人 import 它）（8 块）
+    app、codegen、deploy、doctor、ingest、mcp、panel、watcher
+launch/  ← 给人双击的入口（常用 4 个；不常用/ 里 3 个备用与开发用）
     取全文用的浏览器.bat、控制面板.bat、设置与密钥.bat、运行与日志.bat
-    不常用/：更新平台.bat、比一比两个模型.bat、诊断报告.bat、连上文献平台（Antigravity用）.bat、重抽缺SI的文献.bat、重跑精读PRO.bat
+    不常用/：更新平台.bat、诊断报告.bat、连上文献平台（Antigravity用）.bat
 outputs/  ← 外部 agent 的产物 / 草稿，不进版本库
 scratch/  ← 外部 agent 的产物 / 草稿，不进版本库
 shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
-    kernel/  ← 基础设施：谁都依赖它，它不依赖任何人（15 块）
-        cli、config、proc_lock、prompts、subproc、budget.py、catalog.py、errors.py、heartbeat.py、jobs.py、log.py、mcp_prompt.py、paths.py、role.py、units_store.py
-    domain/  ← 纯逻辑：不联网、不知道文件放在哪（6 块）
-        figure_crop、glossary、libmatch、numcheck、schema、stopwords
-    adapters/  ← 外接口：唯一允许联网/用第三方库的一环（24 块）
-        ccdc、chemdb、cnki、crossref、embed、jcr、llm_client、ner、openalex、pdf_fetch、pdf_parse、polyinfo、pubchem、query_expand、sciverse、scopus、semanticscholar、sentences、snowball、tansoole、typesafe、units、unpaywall、vectordb
+    kernel/  ← 基础设施：谁都依赖它，它不依赖任何人（11 块）
+        cli、config、subproc、budget.py、catalog.py、errors.py、heartbeat.py、jobs.py、log.py、paths.py、role.py
+    domain/  ← 纯逻辑：不联网、不知道文件放在哪（1 块）
+        schema
+    adapters/  ← 外接口：唯一允许联网/用第三方库的一环（17 块）
+        ccdc、chemdb、cnki、crossref、embed、jcr、llm_client、openalex、pdf_fetch、pdf_parse、polyinfo、pubchem、scopus、tansoole、units、unpaywall、vectordb
 tests/ （6 个脚本）
     test_architecture.py、test_budget.py、test_llm_routing.py、test_no_undefined_names.py、test_principles.py、test_types.py
 toolbox/ （0 个脚本）
-tools/  ← 工具包：一个工具 = 一个自包含的包（12 块）
-    ask、askworld、deepread、digitize、direction、discover、extract、getpdf、journalwatch、library、litsearch、paperdb
+tools/  ← 工具包：一个工具 = 一个自包含的包（2 块）
+    getpdf、library
 
 根目录文件：AGENTS.md、BA_TRIS_DMAEMA_三元共聚20g小试实验指南.md、CLAUDE.md、LICENSE、README.md、REBUILD.md、conftest.py、pyproject.toml、pyrightconfig.json、requirements.txt、各部分的关系.md
 
 （data/ 是数据目录（五层），3000+ 文件，**不要去 glob 它**）
 ```
 
-**可枚举的模块 47 个**（`tools/` 工具包 + `shared/` 共用件，每个都有 `__init__.py` 与 `selftest.py`） · **还没切进 `tools/` 的老文件夹 1 个**
+**可枚举的模块 23 个**（`tools/` 工具包 + `shared/` 共用件，每个都有 `__init__.py` 与 `selftest.py`） · **还没切进 `tools/` 的老文件夹 1 个**
 
 进度、健康状况、下一步做什么 → 见 `HANDOVER.md`
 
@@ -56,7 +56,7 @@ tools/  ← 工具包：一个工具 = 一个自包含的包（12 块）
 每块靠什么外部东西、踩过哪些坑、最近改过什么，按块聚合。知道它怎么做的，才猜得到它会坏在哪。
 
 上面那棵树就是全部结构，不必再扫 —— `data/` 有 3000+ 个数据文件，
-glob 根目录会直接淹掉上下文（实测：前 100 个结果全是精读图片）。
+glob 根目录会直接淹掉上下文（实测：前 100 个结果全是解析出来的图片）。
 
 `HANDOVER.md` 由 `python host/codegen/handover.py` 生成，全部抓自系统真实状态：
 当前健康状况、最近十次改动、评测集进展、待办、最近踩的坑。
@@ -78,52 +78,38 @@ A 机默认不跑常驻服务、不跑花钱的批量作业（`ROLE=dev`）；A 
 | `troubleshoot` | 报错 / 卡住 / 没反应 / 数字不对 / 明明改了却没变 |
 | `code-redlines` | **要动任何 .py 之前**（七条强制规范 + 四条硬规则 + 验证顺序）|
 | `research-first` | 要做新东西、选技术路线、或要断言外部世界现状 |
-| `deep-research` | 用户要**研究透一个方向 / 判断想法有没有人做过 / 出带出处的调研报告**：通用章法（分面 + 同义词族 → 四种经典检索策略 → 滚雪球准则 → 质疑空集 → 饱和判据 → 报告形状），不绑定课题 |
 | `two-machines` | 部署 / 连 B / 起常驻服务（连机器的机械细节在**全局**技能 `remote-machine`，源在 `toolbox/remote-machine/`）|
-| 十个工具各一份 | 要用某个工具时（含**什么时候别用我**）|
+| `library` · `getpdf` 各一份 | 要用某个工具时（含**什么时候别用我**）|
 
 ---
 
 # 第一部分 · 能力速查（用户提科研需求时看这里）
 
+**2026-10-23 用户定的形状**：平台只管两样 —— **原始数据**（正文 PDF + SI）和**加工到最适合 agent 读的数据**
+（解析全文、骨架、整图、向量库），给 **Claude Science** 用。读文献、找新文献、比数值、读曲线都交给 Claude Science 自己做；
+中文精读、结构化抽取、数值库、找文献 / 盯新刊 / 方向地图、问库问答这些已整套删掉（代码在 git 历史里）。
+
 | 用户说 | 你怎么做 |
 |--------|---------|
-| 「库里有没有 XX 这篇」「手上有哪些文献」| `python -m tools.library 库 XX`（**先问证据库**，零网络、秒回；结果标出每篇有正文/SI/已解析/已精读没有）|
+| 「库里有没有 XX 这篇」「手上有哪些文献」| `python -m tools.library 库 XX`（零网络、秒回；结果标出每篇有正文 / SI / 已解析没有）|
 | 「按 DOI / 标题词 / 通讯作者 / 团队 / 年份 / 期刊找」| `python -m tools.library 检索 …`（他自己用的是文献库应用里的检索页，同一套）|
 | 「某个研究团队有哪些文章」| `python -m tools.library 团队 XX`（名单在 `data/state/teams.json`，人工查证）|
-| 「我库里关于 XX 有什么？」| `python -m tools.ask "问题"`（RAG，中文答 + 附来源。**只是找某篇在不在，用上面那条更便宜**）|
-| 「帮我找 XX 方向的文献」| `python -m tools.discover "关键词"`（拆检索式 + 雪球 + 按「跟他多相关」排序）|
-| 「我在找**新方向**」「别被我现有的库拖累」| `python -m tools.discover "关键词" --新方向`（只按贴题排，不按近库排）；或直接用 `lit_search` 对抗式检索（它本来就不看库）。**别用 `ask`** —— 那是问他自己的库 |
-| 「把这个方向研究透」「我想在 A 上引入 B，有人做过吗」| 读 `deep-research` skill 照章法走：`library_retrieve`（库内找原料，零成本）→ `lit_search`（标 可读/库里有）→ `library_outline`/`library_section`（点节、段、表）→ `library_refs`（库内顺引用）→ 报告带出处 |
-| 「帮我横向比较 XX」「这方向有什么空白」| 读 `data/serving/structured/compare.md`；PBS 方向另有 `compare_PBS.md` |
-| 「精读某篇文献」| 让他在**文献库应用**里打开这篇、点「精读这篇」（会先说明要做什么、要花钱，确认后排队）。**状态机自动判断**：只有正文→正文精读；有 SI→全文精读；已精读的只补缺的 |
-| 「把某批文献的数据抽出来」| `python -m tools.extract KEY1 KEY2 --parse` |
-| 「拉伸强度超过 10 MPa 的有哪些」| `python -m tools.paperdb --find ...`（能比大小的数值库）|
-| 「全世界有没有人做过 XX」| `python -m tools.askworld "问题"`（Sciverse 取原文片段，**带出处**）|
-| 「把论文图里的曲线变成数据」| `python -m tools.digitize 图片路径`，**必须用云端大模型**（本地 7B 会编假数据）|
-| 「帮我想想研究方向」| 读 compare 表找「机理 × 性能」的空白格，或 `python -m tools.direction` |
-| 「期刊分级 / 这本刊可不可信」| `python -m tools.journalwatch.grading --list` |
+| 「把这几篇（DOI）收进来」| `python -m tools.getpdf DOI …`（借真实浏览器取正文 + SI，落地后自动解析 → 骨架 → 向量化）|
+| 「读某篇 / 讲了什么」「全世界有没有人做过」「比数值、读曲线」| 交给 **Claude Science**（它连 `/science` 接口：`library_*` 读库、`paper_fulltext` 取全文、各网页库）|
 
 ## 现成数据资产
 
-- `data/serving/structured/compare.md` — 横向对比表（2026-08-28 实测 175 条：39 精层 + 136 粗层）
-- `data/serving/structured/compare_reviews.md` · `compare_PBS.md` — 综述单列 · PBS 精层子表（10 篇）
-- `data/serving/structured/concept_matrix.md` — **概念矩阵**（动态键家族 × 性能，谁做了几篇；空格即空白。`python -m tools.paperdb --概念矩阵` 重建）
-- `data/raw/<KEY>/parsed/full.md` — 解析出的全文 ｜ `data/curated/<KEY>/summary.html` — 中文精读
-- `data/serving/vector_db/` — 向量库（2026-09-07 在 B 机实测 13906 块：粗层 10418 + **精层 2873** + SI 615，供 `tools/ask` 检索）
-  ✅ **精层已补齐**：42 篇有 `parsed/full.md` 的全部在库；有 SI 原件的也全进了；同一篇两档并存 0 篇（精层入库时粗层自动退场）。（2026-09-06 前这里只有 276 块 —— 判重问错了问题，见踩坑 #126；代码当天修好并已在主力机跑过。）
+- `data/raw/<id>/main.pdf` · `si.*` — 原件正本
+- `data/raw/<id>/parsed/full.md` · `si_parsed/full.md` — 解析出的全文（含 `images/`、`layout.json`）
+- `data/curated/<id>/meta.json` · `outline.json` · `figures/` — 目录卡、骨架（章节菜单）、按版面裁好的整图（可重裁）
+- `data/serving/vector_db/` — 向量库（本地 bge-m3），供 `library_retrieve` 按意思找段落
+- `data/serving/oa_index.json` · `data/state/teams.json` · `topics.db` — 作者/摘要索引（可重建）、研究团队名单（人工，不可重建）、专题
+- `data/serving/cod_boron/` — 含硼晶体结构（2.6 GB，代码里没人用，来历待查，用户定先留着）
 
-## 语言约定与模型分工（别搞混）
+## 模型
 
-**给用户看的用中文**（精读 HTML、问答答案）；**机器数据用原生英文**（结构化抽取、
-图表数据 —— 用户本来就读英文文献，中间数据是给 LLM 用的）。
-
-向量化 `bge-m3`（本地免费）· 其余环节走**路由表**（控制面板「① 通道 / ② 用途 / ③ 账本」，
-`shared/kernel/config/routing.py`）：每个用途指定主用通道 + 模型 + 备用通道，
-中转站（如阿里云优惠额度）当正式通道加进去即可。图表数字化**必须云端视觉模型**。
-原则仍是**输出少的活上 pro，输出多的上 flash** —— 但注意 DeepSeek 的现状（2026-09-11 查证）：
-flash 的正式名已是 `deepseek-flash`（旧名 `deepseek-v4-flash` 靠转发仍能用）；
-**9 月 14 日起 `deepseek-v4-pro` 会被官方静默路由到 Flash 并按 Flash 计费**，V4.1 Pro 尚未发布。
+向量化 `bge-m3`（本地免费，走路由表的 `EMBED` 用途：`shared/kernel/config/routing.py`）。
+平台自己已不调用生成式大模型；控制面板里的通道 / 密钥设置还在，留给以后要用时。
 
 ## 运维现状（不用管，已自动化）
 
@@ -182,10 +168,9 @@ flash 的正式名已是 `deepseek-flash`（旧名 `deepseek-v4-flash` 靠转发
 - **「有没有这篇」问证据库目录 `shared.kernel.catalog`**（零网络）。
 - 正本在 `data/raw/<id>/`（`main.pdf` / `si.*` / `parsed/`），目录在 `curated/<id>/meta.json`。
   **「收一篇」= `getpdf.land()`：落正本 + 登记**。
-- 精读 / 解析找 PDF 与 SI **只认本地正本**。有范文（公众号推文 `reference.md`）的，推文当正文精读、我们只补 SI（2026-09-15 用户定）。
-- 精读由人在文献库应用里点（`host/app/runner.py`，一篇一篇排队，不回写任何地方）。
+- 解析找 PDF 与 SI **只认本地正本**。
 - 作者 / 通讯 / 单位 / 摘要索引在 `serving/oa_index.json`（OpenAlex 取一次，可重建）；研究团队名单 `state/teams.json`（人工查证，不可重建）。
-- ⏸ **2026-09-27 起后台自动建库已停**（本机设置 `AUTO_BUILD=0`，用户定）：落地流水线、每日盯新刊取件都不跑；下面这条在开关打开时才生效。
+- ⏸ **2026-09-27 起后台自动建库已停**（本机设置 `AUTO_BUILD=0`，用户定）：落地流水线不常驻；下面这条在开关打开时才生效（关着时可手动 `python -m host.ingest` 清积压）。
 - **落地即自动**（`host/ingest`）：正本一到，MineRU 解析 → 骨架 → 向量化自动做完，
   一分钱大模型的钱不花；之后模型就能 `library_outline` → `library_section` 自己读它。
 
@@ -224,11 +209,10 @@ host  →  tools  →  shared.domain / shared.adapters  →  shared.kernel
 往 `agent_tools` 加一个名字，必须同时在 `tests/test_architecture.py` 的
 `AGENT_TOOLS_APPROVED` 里登记**并写明理由**，否则守卫变红。
 第二处存在的意义就是逼人把「为什么它是单次/便宜/可重来」写成一句话。
-`discover` / `direction` / 整批 `getpdf` / 整篇 `deepread` 列在
-`HUMAN_ONLY` 里，**永远只给人点**。
+整批 `getpdf` 列在 `HUMAN_ONLY` 里，**永远只给人点**。
 
 ⚠ 而且要知道：**弹窗那道闸不是硬的。** `confirm` 是 Claude Code 专有标记，
-换个客户端（Antigravity）会被直接忽略 —— 2026-09-10 外部 agent 批量精读 10 篇，
+换个客户端（Antigravity）会被直接忽略 —— 2026-09-10 外部 agent 批量精读 10 篇（精读已于 2026-10-23 删掉），
 全程无人确认，余额从 2.48 掉到 1.04 元。真正硬的是服务端的当日额度闸
 （`shared/kernel/budget.py`，在控制面板设 `DAILY_LLM_CALLS` / `DAILY_LLM_TOKENS`）。
 **加白名单之前先问：如果客户端不弹窗，这件事我还敢让它自己做吗？**
@@ -264,7 +248,7 @@ python host/codegen/handover.py     # → HANDOVER.md + 本文件的结构树 + 
 ## 已知环境坑（速记，细节见 `troubleshoot` skill）
 
 PowerShell 控制台中文乱码 → **先用 Read 工具确认真实内容**，再判断是显示还是数据。
-**MCP 调用约 60 秒超时** → 精读、全库抽取、大模型读图会超时但后台继续，发起后轮询文件。
+**MCP 调用约 60 秒超时** → 取全文这类慢活会超时但后台继续，发起后轮询（`fulltext_status`）。
 文档：`docs/explain/` 为什么 · `docs/howto/` 怎么做 · `docs/reference/` 事实 ·
 `docs/incidents/` 坑 · `docs/变更记录.md` · `docs/待办与需求.md`
 · `docs/项目结构导览.md`（给人的结构地图，含**还没处理好的清单**）

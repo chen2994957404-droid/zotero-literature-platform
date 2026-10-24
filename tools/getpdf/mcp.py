@@ -13,7 +13,7 @@ except Exception:
     pass
 
 from shared.adapters import pdf_fetch
-from shared.kernel.mcp_prompt import card
+from tools.getpdf.mcp_prompt import card
 
 
 def _one(a):

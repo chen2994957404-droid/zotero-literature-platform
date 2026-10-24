@@ -57,17 +57,6 @@ def build_server():
                     '跑完会给出每篇的 id 与来源，然后用 library_outline 看菜单。',
                     {'type': 'object', 'properties': {}},
                     lambda a: {'text': _fulltext_status()})
-    # 「这篇精读到哪一步了」——只读、零成本，跟 ping 同类挂在平台层（2026-09-10 的判例）。
-    # 2026-10-13 起不再看 Zotero 标签：精读在文献库应用里点，这里报本地产物 + 应用作业队列里最近一次。
-    s.register_tool('deepread_status',
-                    '看某篇文献精读到哪一步了（只读、零成本、不弹窗）：本地有哪些精读产物、'
-                    '文献库应用里最近一次精读作业的状态。精读本身由人在应用里点。',
-                    {'type': 'object',
-                     'properties': {'itemKey': {'type': 'string',
-                                                'description': '证据库里的文献 id（旧的 Zotero 编号也认）'}},
-                     'required': ['itemKey']},
-                    lambda a: {'text': _deepread_status(a.get('itemKey') or ''),
-                               'structured': _deepread_status_raw(a.get('itemKey') or '')})
     s._report = registry.register_all(s)      # --list 与自测要看这份账
     # 某个工具包 import 就炸时，registry 只把错记进账本，服务照样起来 —— 结果是那一包的
     # 工具「凭空消失」，模型只看到「未知工具」，没人知道为什么（踩坑 #173）。起服务时喊出来。
@@ -75,32 +64,6 @@ def build_server():
         if got.get('error'):
             print(f'⚠ 工具包 {name} 没挂上（它的工具这次全都不可用）：{got["error"]}', file=sys.stderr)
     return s
-
-
-def _deepread_status_raw(key):
-    import os
-    from shared.kernel import catalog, paths
-    from host.app import jobs
-    from tools import deepread
-    pid = catalog.resolve(key)
-    return {'key': pid, 'plan': deepread.plan(pid), 'job': jobs.of(pid),
-            'summary': os.path.exists(paths.summary(pid)),
-            'summary_full': os.path.exists(paths.summary_full(pid))}
-
-
-def _deepread_status(key):
-    """→ 给人/模型看的一行话。不猜、不报错：查不到就说查不到。"""
-    if not key:
-        return '要给 itemKey（证据库里的文献 id）。'
-    try:
-        d = _deepread_status_raw(key)
-    except Exception as e:
-        return f'{key}：查不了（{type(e).__name__}: {str(e)[:80]}）'
-    made = [n for k, n in (('summary', '正文精读'), ('summary_full', '正文+SI 合并版')) if d[k]]
-    job = d['job']
-    return ('{0}\n  本地产物：{1}\n  应用里最近一次精读：{2}\n  现在点的话：{3}'.format(
-        d['key'], '、'.join(made) or '（还没有）',
-        (job['state'] + ' ' + (job.get('note') or '')) if job else '（没点过）', d['plan']['note']))
 
 
 def _fulltext_status():

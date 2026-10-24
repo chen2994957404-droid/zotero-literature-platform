@@ -490,7 +490,7 @@ def main():
             for i in range(40):
                 pg.draw_circle((20 * i, 15 * i), 30, color=(i / 40, 0.3, 0.6), fill=(0.2, i / 40, 0.4))
             pg.get_pixmap(matrix=fitz.Matrix(2, 2)).save(png)
-            from shared.domain.figure_crop import shrink_jpeg
+            from host.mcp.figure_crop import shrink_jpeg
             small = shrink_jpeg(png, 30000)
             check('看图：缩成 ≤30 KB 的 JPEG（base64 后压在 50 KB 线内）',
                   0 < len(small) <= 30000 and small[:2] == b'\xff\xd8', str(len(small)))

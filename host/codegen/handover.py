@@ -209,8 +209,6 @@ def next_step():
     h = _HEALTH_CACHE.get('data') or {}
     if h.get('problems'):
         steps.append('**先修体检报的问题**（见上一节），其余都往后放')
-    # 精读评测集不再催用户评分（2026-09-22 用户定：验收交给机器，他攒够了自己说）。
-    # 机器的尺子是审稿校准（范文误报率 / 塞错查全率），见 docs/explain/本地化拆解规划.md。
     for item in todo_head(3):
         steps.append(item + '（待办第一组，逐条见 `docs/待办与需求.md`）')
     if not steps:
@@ -264,15 +262,6 @@ def flows():
                     break
         rows.append((d, len(glob.glob(os.path.join(p, '*.py'))), desc))
     return rows
-
-
-def evalset_state():
-    try:
-        from tools.deepread import evals as E
-        s = E.stats()
-        return s
-    except Exception:
-        return None
 
 
 def recent_pitfalls(n=5):
@@ -346,26 +335,6 @@ def build():
     for d, s in recent_commits(10):
         a(f'- `{d}` {s}')
     a('')
-
-    ev = evalset_state()
-    if ev is not None:
-        a('## 精读质量评测集')
-        a('')
-        a(f'- 已评价 **{ev["total"]}** 篇（好 {ev["good"]} / 差 {ev["bad"]}）')
-        if ev['ready']:
-            a(f'- ✅ **好 ≥{ev["min_good"]} 篇、差 ≥{ev["min_bad"]} 篇已达标 —— '
-              f'可以做「自动质量分」校准了**')
-            c = ev['compare']
-            a(f'- 好 vs 差 的客观差异：字数 {c["chars"]["good"]}/{c["chars"]["bad"]}、'
-              f'图 {c["figures"]["good"]}/{c["figures"]["bad"]}、'
-              f'数值 {c["numbers"]["good"]}/{c["numbers"]["bad"]}、'
-              f'章节 {c["sections"]["good"]}/{c["sections"]["bad"]}')
-        else:
-            a(f'- 不催评（用户想评时自己评）。精读质量的机器尺子是审稿校准：'
-              '范文误报率 / 塞错查全率，见 `docs/explain/本地化拆解规划.md`')
-        if ev['reasons']:
-            a(f'- 差评原因排行：{"、".join(f"{k}×{v}" for k, v in ev["reasons"][:4])}')
-        a('')
 
     a('## 项目组成')
     a('')

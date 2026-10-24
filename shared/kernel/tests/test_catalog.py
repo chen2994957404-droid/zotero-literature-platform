@@ -19,7 +19,6 @@ def env(tmp_path, monkeypatch):
         d = tmp_path / name.lower()
         d.mkdir()
         monkeypatch.setattr(paths, name, str(d))
-    monkeypatch.setattr(paths, 'STRUCTURED', str(tmp_path / 'serving' / 'structured'))
     return tmp_path
 
 
@@ -116,11 +115,3 @@ def test_by_doi缓存_落新文献后自动失效(tmp_path, monkeypatch):
     os.makedirs(str(tmp_path / 'curated' / 'BBBB2222'))
     open(str(tmp_path / 'curated' / 'BBBB2222' / 'meta.json'), 'w').write('{"doi": "10.1/y"}')
     assert catalog.find('10.1/y') == 'BBBB2222'
-
-
-def test_level_of():
-    from shared.kernel import catalog
-    assert catalog.level_of({}) == 0
-    assert catalog.level_of({'fulltext': True}) == 1
-    assert catalog.level_of({'fulltext': True, 'pdf': True}) == 2
-    assert catalog.level_of({'pdf': True, 'summary': True}) == 3

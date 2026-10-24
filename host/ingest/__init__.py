@@ -12,13 +12,13 @@
 |---|---|---|---|
 | 解析 | PDF → Markdown（MineRU）；SI 同理（docx 直接读字） | MineRU 额度（免费、量大） | `raw/<id>/parsed/full.md`、`si_parsed/full.md` |
 | 骨架 | 全文 → 章节菜单，供模型「点菜」 | 零 | `curated/<id>/outline.json` |
-| 向量化 | 切块 → 本地 bge-m3 → 向量库，供 `ask` 检索 | 零（本地） | `serving/vector_db/` |
+| 向量化 | 切块 → 本地 bge-m3 → 向量库，供 `library_retrieve` 按意思检索 | 零（本地） | `serving/vector_db/` |
 
-**精读不在这里** —— 那是给人看的、花钱的，仍由用户打「待处理」标签触发。
+读的人是 Claude Science 这类外部 agent（`host/mcp/science.py`）。
 
 ## 它为什么住在 host/
 
-跨了三个工具（getpdf 的正本、library 的骨架、ask 的向量化）+ 一个 adapter（pdf_parse）。
+跨了两个工具（getpdf 的正本、library 的骨架与向量化）+ 一个 adapter（pdf_parse）。
 跨工具编排只能上浮到 host（硬规则 2 与 4）。
 
 ## 两个入口
@@ -75,10 +75,7 @@ def backlog():
         need_main = r['pdf'] and not _structured(pid) and not _failed_recently(pid, 'parse')
         need_si = r['si'] and not _structured(pid, si=True) and not _failed_recently(pid, 'parse_si')
         need_outline = r['fulltext'] and not os.path.isfile(paths.outline(pid))
-        need_units = r['fulltext'] and not os.path.isfile(paths.units(pid)) and not _failed_recently(pid, 'units')
-        need_profile = r['fulltext'] and not os.path.isfile(paths.profile(pid)) and not _failed_recently(pid, 'profile')
-        need_card = r['fulltext'] and not os.path.isfile(paths.card(pid)) and not _failed_recently(pid, 'card')
-        if need_main or need_si or need_outline or need_units or need_profile or need_card:
+        if need_main or need_si or need_outline:
             out.append(pid)
     return out
 
@@ -150,77 +147,11 @@ def _outline(pid, say):
     return 'fail:outline'
 
 
-def _profile(pid, say):
-    """论文类型画像（2026-09-22）：合成 / 器件 / 机理 / 综述，4B 一次四选一，几秒钟。有 full.md 且没有 profile.json 才做。"""
-    if not os.path.isfile(paths.fulltext(pid)) or os.path.isfile(paths.profile(pid)):
-        return 'skip'
-    from shared.kernel.config import get_model
-    from tools.deepread import profile
-    model = get_model('PROFILE_MODEL')
-    t0 = time.time()
-    try:
-        with jobs.track(pid, 'profile', producer=profile.PRODUCER, model=model):
-            r = profile.classify_to_store(pid, model, log=lambda *a: None)
-    except Exception as e:
-        say(f'  × 画像失败：{type(e).__name__}: {str(e)[:120]}')
-        return f'fail:{type(e).__name__}'
-    say(f'  ✓ 画像 {profile.ZH[r["type"]]}（{r["source"]}）{time.time() - t0:.0f}s')
-    return 'done'
-
-
-def _card(pid, say):
-    """整篇卡片（2026-09-23）：材料体系 / 动态键家族 / 自修复 / 核心发现，4B 读标题 + 摘要 + 结论，十几秒。
-    接替老的整篇抽取里那几个整篇级字段（数值归单元库）。要在画像之后：doc_type 读 profile.json。"""
-    if not os.path.isfile(paths.fulltext(pid)) or os.path.isfile(paths.card(pid)):
-        return 'skip'
-    from shared.kernel.config import get_model
-    from tools.extract import paper_card
-    model = get_model('CARD_MODEL')
-    t0 = time.time()
-    try:
-        with jobs.track(pid, 'card', producer=paper_card.PRODUCER, model=model):
-            c = paper_card.card_to_store(pid, model, log=lambda *a: None)
-    except Exception as e:
-        say(f'  × 卡片失败：{type(e).__name__}: {str(e)[:120]}')
-        return f'fail:{type(e).__name__}'
-    say(f'  ✓ 卡片 {"、".join(c["bond_families"]) or "无动态键"}（{model}）{time.time() - t0:.0f}s')
-    return 'done'
-
-
-def _units(pid, say):
-    """单元库（2026-09-22）：数值事实 → curated/<id>/units.json。本地 4B，一篇约一分钟，免费。
-    有 full.md 且没有 units.json（或 units.json 比 full.md 旧）才做；失败记进状态库，隔天再试。"""
-    if not os.path.isfile(paths.fulltext(pid)):
-        return 'skip'
-    up = paths.units(pid)
-    if os.path.isfile(up) and os.path.getmtime(up) >= os.path.getmtime(paths.fulltext(pid)):
-        return 'skip'
-    from shared.kernel.config import get_model
-    from tools.extract import fine_fact, fine_action
-    model = get_model('UNITS_MODEL')            # ⚠ 别用 EXTRACT_MODEL：主力机 .env 里它还是老的云端名，喂给 Ollama 就是 404 → 0 条（2026-09-22 踩过）
-    t0 = time.time()
-    try:
-        with jobs.track(pid, 'units', producer='fine_fact', model=model):
-            n, _ = fine_fact.extract_to_store(pid, model, log=lambda *a: None)
-            n_act, _ = fine_action.extract_to_store(pid, model, log=lambda *a: None)     # 合成动作（2026-09-22，同一个模型、同一步）
-            if n == 0:                          # 材料论文不可能一个数都没有：0 条 = 模型没答上（喂错模型 / Ollama 没起），当失败记，隔天再试
-                try:
-                    os.remove(up)               # 空库不能留：留着就永远「已做过」
-                except OSError:
-                    pass
-                raise RuntimeError('0 条数值事实，多半是模型没答（%s）' % model)
-    except Exception as e:
-        say(f'  × 单元库失败：{type(e).__name__}: {str(e)[:120]}')
-        return f'fail:{type(e).__name__}'
-    say(f'  ✓ 单元库 {n} 条数值事实 + {n_act} 条动作 {time.time() - t0:.0f}s（{model}）')
-    return 'done'
-
-
 def _vectorize(pid, coll, have_main, have_si, say):
     """精层向量化（正文 + SI）。coll 为 None 时跳过（向量库没开）。"""
     if coll is None:
         return 'skip'
-    from tools.ask import vectorize as V
+    from tools.library import vectorize as V
     done = []
     try:
         new, n = V.deep_one(pid, coll, have_main, log=lambda s: None)
@@ -243,7 +174,7 @@ def _vectorize(pid, coll, have_main, have_si, say):
 def _open_vectors(say):
     """打开向量库 + 两档已入库集合。开不了（Ollama 没跑 / 没装 chroma）就返回 None。"""
     try:
-        from tools.ask import vectorize as V
+        from tools.library import vectorize as V
         coll = V.get_collection()
         return coll, V._indexed_keys(coll, 'main'), V._si_indexed_keys(coll)
     except Exception as e:
@@ -262,9 +193,6 @@ def ingest_one(pid, vectors=None, say=print, prefix=''):
     out['outline'] = _outline(pid, say)
     coll, have_main, have_si = vectors or (None, set(), set())
     out['vector'] = _vectorize(pid, coll, have_main, have_si, say)
-    out['units'] = _units(pid, say)
-    out['profile'] = _profile(pid, say)
-    out['card'] = _card(pid, say)
     return out
 
 
@@ -278,8 +206,8 @@ def run_backlog(limit=None, say=print, with_vectors=True):
     watcher 每轮顺手做的那两篇会挑到同一篇，两个进程同时解析一篇 = 白花一次 MineRU。
     抢不到锁就返回全零，不排队不报错。
     """
-    from shared.kernel.proc_lock import single_instance, release
-    counts = {'parsed': 0, 'si_parsed': 0, 'outlined': 0, 'vectorized': 0, 'units': 0, 'profile': 0, 'card': 0, 'failed': 0}
+    from host.ingest.proc_lock import single_instance, release
+    counts = {'parsed': 0, 'si_parsed': 0, 'outlined': 0, 'vectorized': 0, 'failed': 0}
     if not single_instance(LOCK):
         say('另一份落地流水线正在跑，这次让开')
         return counts
@@ -320,9 +248,6 @@ def _run_backlog(limit, say, with_vectors, counts):
         counts['si_parsed'] += r['si'] == 'done'
         counts['outlined'] += r['outline'] == 'done'
         counts['vectorized'] += r['vector'] == 'done'
-        counts['units'] += r.get('units') == 'done'
-        counts['profile'] += r.get('profile') == 'done'
-        counts['card'] += r.get('card') == 'done'
         counts['failed'] += any(str(v).startswith('fail') for v in r.values())
     if todo:
         heartbeat.done('ingest')

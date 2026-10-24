@@ -108,34 +108,6 @@ def test_进程表的正则认不到看门狗自己(wd):
         assert re.search(pat, f'python -m {svc["module"]} {" ".join(svc["args"])}')
 
 
-class TestDailyDue:
-    def _at(self, hhmm):
-        # 用「今天」而不是写死某一天：launch_daily 落的印章是今天的日期，
-        # 写死 2026-09-17 的话，一到 9 月 18 日「拉过之后不再拉」那条就红（2026-09-18 主力机体检真红了）
-        import time
-        lt = time.localtime()
-        h, mi = map(int, hhmm.split(':'))
-        return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, h, mi, 0, 0, 0, -1))
-
-    def test_今天拉过就不再拉(self, wd):
-        assert not wd.daily_due(self._at('03:00'), last_day=__import__('time').strftime('%Y-%m-%d'))
-
-    def test_没到凌晨两点不拉(self, wd):
-        assert not wd.daily_due(self._at('01:59'), last_day='2026-09-16')
-
-    def test_过了两点且今天没拉过就拉(self, wd):
-        assert wd.daily_due(self._at('02:00'), last_day='2026-09-16')
-        assert wd.daily_due(self._at('15:00'), last_day='')      # 从没跑过：白天开机也补上
-
-    def test_拉过之后印章落盘(self, wd, monkeypatch):
-        monkeypatch.setattr(wd, 'spawn_module', lambda *a, **k: None)
-        # 别往真的 watchdog.log 里写「已拉起每日作业」—— 主力机上跑体检时这行混进生产日志，
-        # 看起来像每日作业被拉了三次（2026-09-17 实测把自己吓了一跳）
-        monkeypatch.setattr(wd, 'log', lambda *a, **k: None)
-        wd.launch_daily()
-        assert not wd.daily_due(self._at('23:00'))
-
-
 # ── 按端口守的两样（2026-09-29：MCP HTTP 服务 + 取全文浏览器加进自启）──────────
 
 def test_端口在监听就不拉_不在就拉_宽限期内不重复拉(wd):

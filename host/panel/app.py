@@ -51,7 +51,6 @@ KEY_NAMES = [
     # 免费档的代价不是钱是数据：Google 明说免费档「内容会用于改进产品」。
     # 所以这一项永远是可选的，且这句提示要留在用户看得见的地方。
     ('GEMINI_KEY',      'Google Gemini（可空；免费档，内容会被 Google 用于改进产品）', False),
-    ('SCIVERSE_KEY',    'Sciverse（全球文献检索，可空）', False),
     # OpenAlex 2026-02 起按量计费：无 key 只有 $0.10/天，免费 key 有 $1/天（10 倍）。
     # 不填也能跑，只是方向地图那类批量作业一天就把额度打光（踩坑 #77）。
     ('OPENALEX_KEY',    'OpenAlex（方向地图检索，建议填）', False),
@@ -105,9 +104,9 @@ def collect_all():
     from concurrent.futures import ThreadPoolExecutor
     parts = {
         'status': collect_status, 'processes': collect_processes,
-        'heartbeat': collect_heartbeat, 'progress': collect_progress,
+        'progress': collect_progress,
         'alerts': collect_alerts, 'version': collect_version,
-        'config': collect_config, 'recent': collect_recent_reads,
+        'config': collect_config,
         'jobs': collect_jobs, 'structure': collect_blocks,
     }
 
@@ -126,8 +125,7 @@ def collect_all():
 def collect_processes():
     """本平台相关的 python 进程。用 CIM 查，比 wmic 可靠。"""
     ps = ("Get-CimInstance Win32_Process -Filter \"Name like 'python%'\" | "
-          "Where-Object {$_.CommandLine -match 'deepread|watchdog|watcher|ingest|daily|"
-          "extract|vectorize|curate|discover|direction|panel'} | "
+          "Where-Object {$_.CommandLine -match 'watchdog|ingest|vectorize|getpdf|host[.]mcp|host[.]app|panel'} | "
           "Select-Object ProcessId,CreationDate,CommandLine | ConvertTo-Json -Compress")
     # 走 subproc 模块：面板每 15 秒刷新一次，裸调 powershell 会不停闪窗口（踩坑 #31）
     try:
@@ -187,8 +185,7 @@ def collect_alerts():
     return alerts
 
 
-JOB_LABELS = {'watcher': '精读监听', 'ingest': '落地流水线', 'daily': '每日作业（盯新刊 + 升1级）',
-              'getpdf': '取全文', 'journalwatch-backfill': '雷达回填'}
+JOB_LABELS = {'ingest': '落地流水线', 'getpdf': '取全文'}
 
 
 def collect_progress():
@@ -198,15 +195,6 @@ def collect_progress():
         return [dict(o, label=JOB_LABELS.get(o['name'], o['name'])) for o in heartbeat.overview()]
     except Exception:
         return []
-
-
-def collect_heartbeat():
-    """watcher 心跳距今多久（秒）。None 表示没有心跳文件。"""
-    hb = paths.runtime('watcher_heartbeat.txt')
-    try:
-        return int(time.time() - int(open(hb, encoding='utf-8').read().strip()))
-    except Exception:
-        return None
 
 
 def collect_version():
@@ -397,132 +385,6 @@ SITE_OPTIONS = {
 }
 
 
-# ───────────────────── 找文献（后台任务 + 轮询） ─────────────────────
-# 完整检索要 1~2 分钟（查询扩展 + 多式检索 + 雪球 + 向量对照），
-# 不能让浏览器干等。做成「发起 → 轮询进度 → 取结果」，这也是本项目处理长任务的一贯做法。
-_JOB = {'state': 'idle', 'log': [], 'result': None, 'query': '', 'started': 0}
-_JOB_LOCK = threading.Lock()
-
-
-def _job_log(msg):
-    with _JOB_LOCK:
-        _JOB['log'].append(msg)
-        if len(_JOB['log']) > 60:
-            del _JOB['log'][:-60]
-
-
-def _run_search(params):
-    try:
-        from tools.discover import run_discovery
-        r = run_discovery(
-            params['query'], limit=params.get('limit', 25),
-            n_queries=params.get('n_queries', 5), mode=params.get('mode', 'survey'),
-            year_from=params.get('year_from') or None,
-            snowball_seeds=params.get('seeds', 3),
-            topic_floor=params.get('floor', 0.45),
-            explore=bool(params.get('explore')),      # 新方向：不按「跟我的库像不像」排
-            log=_job_log)
-        rows = []
-        for i, (p, m, score) in enumerate(r['rows'], 1):
-            rows.append({
-                'n': i, 'title': p.get('title') or '', 'doi': p.get('doi') or '',
-                'year': p.get('year'), 'venue': (p.get('venue') or '')[:40],
-                'citations': p.get('citations') or 0, 'is_oa': bool(p.get('is_oa')),
-                'status': m.get('status'),
-                # 新方向模式下给用户看的「相关度」是贴题度；近库度单独给，当事实摆着
-                'relevance': (m.get('topic_sim') if r.get('explore') else m.get('relevance')),
-                'lib_sim': m.get('lib_sim'), 'explore': bool(r.get('explore')),
-                'topic_sim': m.get('topic_sim'), 'lib_sim': m.get('lib_sim'),
-                'from': p.get('from') or 'search',
-                'nearest': (m.get('nearest') or {}).get('title', ''),
-            })
-        with _JOB_LOCK:
-            _JOB['result'] = {
-                'rows': rows, 'queries': r['queries'], 'seeds': r['seeds'],
-                'snow_added': r['snow_added'], 'filtered': r['filtered'],
-                'total_pool': r['total_pool'],
-                'contrib': [{'q': c[0], 'got': c[1], 'new': c[2], 'err': c[3]}
-                            for c in r['contrib']],
-            }
-            _JOB['state'] = 'done'
-    except Exception as e:
-        import traceback
-        _job_log(f'检索失败：{type(e).__name__}: {str(e)[:200]}')
-        _job_log(traceback.format_exc()[-400:])
-        with _JOB_LOCK:
-            _JOB['state'] = 'error'
-
-
-def action_search(params):
-    """发起检索。同一时间只允许一个任务，避免并发烧额度。"""
-    q = (params.get('query') or '').strip()
-    if not q:
-        return False, '请输入要找什么'
-    with _JOB_LOCK:
-        if _JOB['state'] == 'running':
-            return False, '已有一个检索在跑，请等它结束'
-        _JOB.update({'state': 'running', 'log': [], 'result': None,
-                     'query': q, 'started': time.time()})
-    threading.Thread(target=_run_search, args=(params,), daemon=True).start()
-    return True, '检索已开始'
-
-
-def action_collect(payload):
-    """「收进库」—— 2026-10-13 起 Zotero 移出平台，不再往 Zotero 里建条目。
-
-    收进证据库 = 用取全文把正文 + SI 拿下来（借浏览器，一篇约一分钟，面板等不了），所以这里只给出命令。
-    """
-    dois = [d for d in (payload.get('dois') or []) if d]
-    if not dois:
-        return False, '没有选中任何文献'
-    try:
-        from tools.discover.match import build_index
-        _, have = build_index(force=True)
-    except Exception:
-        have = set()
-    todo = [d for d in dois if d.lower() not in have]
-    if not todo:
-        return True, f'选中的 {len(dois)} 篇证据库里都已经有了'
-    return True, ('Zotero 已移出平台。收进证据库请运行：python -m tools.getpdf ' + ' '.join(todo)
-                  + (f'（另有 {len(dois) - len(todo)} 篇库里已有）' if len(todo) < len(dois) else ''))
-
-
-def collect_review():
-    """待评价队列：Zotero 里打了「读完」、但评测集里还没记录的。
-
-    **评价不回写 Zotero** —— 用户的标签栏永远只有「在读/读完」两个，
-    不会再堆积（他被 707 个自动标签坑过）。已评价与否记在本地评测集里。
-    """
-    from tools.deepread import evals as E
-    out = {'pending': [], 'stats': E.stats(), 'reasons': E.REASONS,
-           'reading': 0, 'read': 0}
-    # 2026-10-13 起 Zotero 移出平台：「待评价」原来按 Zotero 的「读完 / 在读」标签挑，
-    # 现在没有这个来源了。评测集本身（E.stats / action_rate）照旧；以后在文献库应用里按篇评价。
-    out['note'] = 'Zotero 已移出平台，待评价清单暂时没有来源（评测集照旧保存）'
-    return out
-
-
-def action_rate(payload):
-    """保存一条精读评价。"""
-    from tools.deepread import evals as E
-    key = (payload.get('key') or '').strip()
-    verdict = payload.get('verdict')
-    if not key or verdict not in ('good', 'bad'):
-        return False, '参数不对'
-    try:
-        E.save(key, verdict, reasons=payload.get('reasons') or [],
-               note=payload.get('note') or '', title=payload.get('title') or '')
-        s = E.stats()
-        tip = ''
-        if s['ready']:
-            tip = (f'（好 ≥{s["min_good"]} 篇、差 ≥{s["min_bad"]} 篇已达标，'
-                   f'可以做自动质量分校准了）')
-        return True, f"已记录：{'好' if verdict == 'good' else '差'}。" \
-                     f"评测集共 {s['total']} 条{tip}"
-    except Exception as e:
-        return False, str(e)[:150]
-
-
 def collect_blocks():
     """模块与工作流一览。说明取自各文件夹的 CLAUDE.md 首段，不另写一份。
 
@@ -589,8 +451,8 @@ def action_selftest(name):
         return False, f'{name}：{e}'
 
 
-def collect_logs(name='zotero_watcher', lines=40):
-    safe = {'zotero_watcher', 'watchdog', 'ingest', 'daily', 'auto_sync'}      # 白名单，防路径穿越
+def collect_logs(name='watchdog', lines=40):
+    safe = {'watchdog', 'ingest', 'getpdf', 'mcp_http'}      # 白名单，防路径穿越
     if name not in safe:
         return ['(不允许的日志名)']
     p = paths.log(name)
@@ -613,62 +475,34 @@ def collect_jobs(recent=8):
     """
     try:
         from shared.kernel import jobs
-        from shared.domain import schema as _schema
-        from tools.deepread import main_text as _mt
     except Exception as e:
         return {'ok': False, 'msg': f'状态库读不到：{e}'}
 
-    zh = {'parse': '解析 PDF', 'main_summary': '正文精读', 'si_summary': 'SI 精读',
-          'merge': '合并', 'extract': '结构化抽取'}
+    zh = {'parse': '解析正文', 'parse_si': '解析 SI', 'outline': '骨架', 'vectorize': '向量化'}
     try:
         summary = jobs.summary()
         steps = [{'step': k, 'label': zh.get(k, k),
                   'ok': v.get(jobs.OK, 0), 'failed': v.get(jobs.FAILED, 0),
                   'running': v.get(jobs.RUNNING, 0)}
-                 for k, v in sorted(summary.items(), key=lambda kv: list(zh).index(kv[0])
-                                    if kv[0] in zh else 99)]
+                 for k, v in sorted(summary.items(), key=lambda kv: list(zh).index(kv[0])) if k in zh]   # 精读 / 抽取那些旧步骤的历史记录不再显示
         # 卡了超过 30 分钟还挂着 running 的，多半是进程被杀/断电留下的
         stuck = [{'key': r['item_key'], 'step': zh.get(r['step'], r['step'])}
-                 for r in jobs.running(older_than=1800)]
-        rows = jobs.recent(recent)
+                 for r in jobs.running(older_than=1800) if r['step'] in zh]
+        rows = [r for r in jobs.recent(200) if r['step'] in zh][:recent]
         recent_rows = [{
             'key': r['item_key'], 'step': zh.get(r['step'], r['step']),
             'status': r['status'], 'model': r['model'] or '',
             'when': time.strftime('%m-%d %H:%M', time.localtime(r['started_at'])),
             'secs': round((r['finished_at'] or r['started_at']) - r['started_at']),
             'error': (r['error'] or '')[:120]} for r in rows]
-        # 「该重跑的」：提示词/字段升级之后，旧产物自动进清单
-        todo = {'精读': jobs.stale('main_summary', prompt_ver=_mt.PROMPT_VER),
-                '抽取': jobs.stale('extract', schema_ver=_schema.SCHEMA_VER)}
-        return {'ok': True, 'steps': steps, 'stuck': stuck, 'recent': recent_rows,
-                'todo': {k: len(v) for k, v in todo.items() if v},
-                'prompt_ver': _mt.PROMPT_VER, 'schema_ver': _schema.SCHEMA_VER}
+        return {'ok': True, 'steps': steps, 'stuck': stuck, 'recent': recent_rows}
     except Exception as e:
         return {'ok': False, 'msg': f'读状态库出错：{e}'}
 
 
-def collect_recent_reads(n=8):
-    """最近处理过的文献：按 summary.html 修改时间排序，附正文字数用于识别废品。"""
-    import glob, re
-    rows = []
-    for f in glob.glob(os.path.join(paths.CURATED, '*', 'summary.html')):
-        try:
-            st = os.path.getmtime(f)
-            h = open(f, encoding='utf-8', errors='replace').read()
-            txt = re.sub(r'\s+', '', re.sub(r'<[^>]+>', '', re.sub(r'<img[^>]*>', '', h)))
-            rows.append({'key': os.path.basename(os.path.dirname(f)),
-                         'when': time.strftime('%m-%d %H:%M', time.localtime(st)),
-                         'chars': len(txt), 'figs': h.count('<img'),
-                         'bad': len(txt) < 3000})     # 低于底线 = 疑似废品
-        except Exception:
-            continue
-    rows.sort(key=lambda r: r['when'], reverse=True)
-    return rows[:n]
-
-
 # ───────────────────────── 动作（可逆，低风险） ─────────────────────────
 
-# 任务 → 它真正干活的那个进程持有的锁名（`shared.kernel.proc_lock`）。
+# 任务 → 它真正干活的那个进程持有的锁名（`host.ingest.proc_lock`）。
 # 重启任务时要连这个进程一起停，否则新配置进不去（见 action_restart）。
 # 2026-09-17 起看门狗管三个进程：精读监听、落地流水线常驻、每日作业 —— 重启任务要把它们全停掉，
 # 锁名收在 host.watcher.watchdog.CHILD_LOCKS（部署脚本也用它），别在这里另抄一份
@@ -790,37 +624,6 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(PAGE.encode('utf-8'), ctype='text/html')
         if p == '/api/all':
             return self._send(collect_all())
-        if p == '/summary':
-            # 直接在面板里打开精读 —— 看完就地评价
-            import urllib.parse as _up
-            from shared.kernel import catalog
-            q = _up.parse_qs(self.path.partition('?')[2])
-            key = (q.get('key') or [''])[0]
-            # 只认合法的文献 id（doi_… 或旧的 8 位编号），杜绝路径穿越
-            try:
-                key = catalog.resolve(key)
-            except paths.BadKeyError:
-                key = ''
-            if not key:
-                # 中文不能写在 b'' 字节串里，要显式编码
-                return self._send('<h3>无效的文献编号</h3>'.encode('utf-8'),
-                                  400, 'text/html')
-            fp = paths.summary(key)
-            if not os.path.exists(fp):
-                return self._send('<h3>这篇还没有精读结果</h3>'.encode('utf-8'),
-                                  404, 'text/html')
-            with open(fp, 'rb') as f:
-                return self._send(f.read(), ctype='text/html')
-        if p == '/api/review':
-            return self._send(collect_review())
-        if p == '/api/search_status':
-            with _JOB_LOCK:
-                return self._send({
-                    'state': _JOB['state'], 'query': _JOB['query'],
-                    'log': list(_JOB['log']),
-                    'elapsed': int(time.time() - _JOB['started']) if _JOB['started'] else 0,
-                    'result': _JOB['result'],
-                })
         if p == '/api/models':
             # 这条通道能用哪些模型（不花钱）。列不出来就 ok=False，前端退回手输。
             import urllib.parse
@@ -829,7 +632,7 @@ class Handler(BaseHTTPRequestHandler):
         if p == '/api/logs':
             import urllib.parse
             q = urllib.parse.parse_qs(self.path.partition('?')[2])
-            return self._send({'lines': collect_logs(q.get('name', ['zotero_watcher'])[0])})
+            return self._send({'lines': collect_logs(q.get('name', ['watchdog'])[0])})
         return self._send({'error': 'not found'}, 404)
 
     def do_POST(self):
@@ -845,12 +648,6 @@ class Handler(BaseHTTPRequestHandler):
             ok, msg = action_restart(payload.get('task', ''))
         elif self.path == '/api/selftest':
             ok, msg = action_selftest(payload.get('name', ''))
-        elif self.path == '/api/search':
-            ok, msg = action_search(payload)
-        elif self.path == '/api/collect':
-            ok, msg = action_collect(payload)
-        elif self.path == '/api/rate':
-            ok, msg = action_rate(payload)
         elif self.path == '/api/handover':
             # 生成交接文件：换新对话时让 AI 知道「我们停在哪」
             r = _run([sys.executable,
@@ -921,52 +718,6 @@ body[data-page="daily"] .card[data-page="daily"],body[data-page="settings"] .car
 
 <div id="alertbox"></div>
 
-<div class="card" data-page="daily">
-  <h2>找文献</h2>
-  <div class="hint" style="margin-bottom:12px">
-    会自动拆成多个检索式 + 沿引用网络扩展 + 排除你库里已有的，按「跟你多相关」排序。
-    <b>英文关键词效果好很多</b>（材料领域好文献几乎都是英文）。</div>
-  <div class="row" style="border:0;padding-bottom:4px">
-    <input id="q" style="width:420px" placeholder="例：polyborosiloxane shear stiffening mechanism"
-           onkeydown="if(event.key==='Enter')doSearch()">
-    <select id="mode">
-      <option value="survey">系统调研（求全）</option>
-      <option value="problem">解决问题（求准）</option>
-    </select>
-    <select id="seeds">
-      <option value="3">雪球种子 3 篇</option>
-      <option value="5">雪球种子 5 篇</option>
-      <option value="0">不用雪球（快）</option>
-    </select>
-    <label title="默认排序会把「离你库远」的文献压下去 —— 深耕现有方向时对，找新方向时反。勾上就只按跟本次主题贴不贴排">
-      <input type="checkbox" id="explore"> 找新方向（不按我库的相近度排）</label>
-    <button onclick="doSearch()" id="btnSearch">开始找</button>
-  </div>
-  <pre id="searchlog" style="display:none;max-height:150px"></pre>
-  <div id="searchsum" class="hint" style="margin-top:8px"></div>
-  <div id="results"></div>
-  <div id="collectbar" style="display:none;margin-top:12px">
-    <button onclick="doCollect(false)">收下选中的（不精读）</button>
-    <button onclick="doCollect(true)" style="background:#c0392b">收下并立刻精读</button>
-    <span class="hint" style="margin-left:10px">精读会消耗解析与大模型额度</span>
-  </div>
-</div>
-
-<div class="card" data-page="daily">
-  <h2>精读评价</h2>
-  <div class="hint" style="margin-bottom:10px">
-    在 Zotero 给看完的文献打「<b>读完</b>」标签，就会出现在这里。
-    评价只存在本平台，<b>不回写 Zotero</b>，你的标签栏永远只有「在读 / 读完」两个。<br>
-    目的：把你的判断变成系统能自动算的标准 —— 以后精读质量退化，系统能自己发现。</div>
-  <div id="reviewsum" class="hint"></div>
-  <div id="review"></div>
-  <div style="margin-top:14px;padding-top:12px;border-top:1px solid #f0f0f0">
-    <button class="ghost" onclick="genHandover(this)">生成交接文件</button>
-    <span class="hint" style="margin-left:8px">
-      换新对话前点一下，新对话读 <code>HANDOVER.md</code> 就知道我们停在哪（约 40 秒）</span>
-  </div>
-</div>
-
 <div class="card" data-page="logs"><h2>运行状态</h2><div id="status"></div></div>
 
 <div class="card" data-page="logs"><h2>正在运行的进程</h2><div id="procs"></div></div>
@@ -993,17 +744,20 @@ body[data-page="daily"] .card[data-page="daily"],body[data-page="settings"] .car
   <div id="blocks"></div>
 </div>
 
-<div class="card" data-page="daily"><h2>精读进度</h2><div id="jobs"></div></div>
-<div class="card" data-page="daily"><h2>最近处理的文献</h2><div id="recent"></div></div>
+<div class="card" data-page="daily"><h2>落地处理进度（解析 → 骨架 → 向量化）</h2><div id="jobs"></div></div>
+<div class="card" data-page="daily"><h2>交接</h2>
+  <button class="ghost" onclick="genHandover(this)">生成交接文件</button>
+  <span class="hint" style="margin-left:8px">
+    换新对话前点一下，新对话读 <code>HANDOVER.md</code> 就知道我们停在哪（约 40 秒）</span>
+</div>
 
 <div class="card" data-page="logs"><h2>日志</h2>
   <div style="margin-bottom:10px">
     <select id="logname" onchange="loadLog()">
-      <option value="zotero_watcher">精读监听</option>
       <option value="watchdog">看门狗</option>
       <option value="ingest">落地流水线</option>
-      <option value="daily">每日作业</option>
-      <option value="auto_sync">自动同步</option>
+      <option value="getpdf">取全文</option>
+      <option value="mcp_http">MCP 服务</option>
     </select>
     <button class="ghost" onclick="loadLog()">刷新日志</button>
   </div>
@@ -1062,16 +816,11 @@ async function load(force){
     `<div class="row"><span class="dot ${s.level}"></span>
      <span class="nm">${esc(s.name)}</span><span class="msg">${esc(s.msg)}</span></div>`).join('');
 
-  const hb=d.heartbeat;
-  let hbTxt = hb===null ? '<span class="bad">无心跳文件</span>'
-      : hb>300 ? `<span class="bad">${hb} 秒未更新（疑似卡死）</span>`
-      : `${hb} 秒前（正常）`;
   const stateTxt = {running:'在跑', stuck:'<b>卡住</b>', dead:'<b>没报活</b>', done:'做完', idle:'空闲'};
   const progRows = (d.progress||[]).map(o=>
     `<div class="row"><span class="dot ${o.state==='running'||o.state==='done'?'ok':'fail'}"></span>
      <span class="nm">${esc(o.label)}</span><span class="msg ${o.state==='stuck'||o.state==='dead'?'bad':''}">${stateTxt[o.state]||o.state} · ${esc(o.note)}</span></div>`).join('');
-  $('#procs').innerHTML =
-    `<div class="row"><span class="nm">精读监听心跳</span><span class="msg">${hbTxt}</span></div>` + progRows
+  $('#procs').innerHTML = progRows
     + (d.processes.length
         ? `<table><tr><th>PID</th><th>脚本</th></tr>` +
           d.processes.map(p=>`<tr><td>${p.pid}</td><td class="${p.dup?'bad':''}">${esc(p.script)}${p.dup?' ⚠重复实例':''}</td></tr>`).join('')
@@ -1142,17 +891,13 @@ async function load(force){
   if(!jb.ok){
     $('#jobs').innerHTML = `<div class="hint">${esc(jb.msg||'读不到状态库')}</div>`;
   } else if(!(jb.steps||[]).length){
-    $('#jobs').innerHTML = '<div class="hint">状态库还是空的 —— 打个「待处理」标签跑一篇就有了</div>';
+    $('#jobs').innerHTML = '<div class="hint">状态库还是空的 —— 有文献落地解析后就有了</div>';
   } else {
     const stuck = (jb.stuck||[]).length
       ? `<div class="bad">⚠ 卡住超过 30 分钟：`
         + jb.stuck.map(x=>`${esc(x.key)}（${esc(x.step)}）`).join('、')
-        + `（多半是进程被杀或断电，重新打一次「待处理」即可）</div>` : '';
-    const todo = Object.keys(jb.todo||{}).length
-      ? `<div class="hint">升级后该重跑：`
-        + Object.entries(jb.todo).map(([k,v])=>`${esc(k)} ${v} 篇`).join('、')
-        + `（提示词 v${jb.prompt_ver} / 字段 v${jb.schema_ver}）</div>` : '';
-    $('#jobs').innerHTML = stuck + todo
+        + `（多半是进程被杀或断电，落地流水线会自己重试）</div>` : '';
+    $('#jobs').innerHTML = stuck
       + `<table><tr><th>步骤</th><th>成功</th><th>失败</th><th>在跑</th></tr>`
       + jb.steps.map(s=>`<tr><td>${esc(s.label)}</td><td>${s.ok}</td>
           <td class="${s.failed?'bad':''}">${s.failed||''}</td>
@@ -1167,12 +912,6 @@ async function load(force){
       + `</table>`;
   }
 
-  $('#recent').innerHTML = d.recent.length
-    ? `<table><tr><th>时间</th><th>文献</th><th>正文字数</th><th>图</th></tr>`
-      + d.recent.map(r=>`<tr><td>${esc(r.when)}</td><td>${esc(r.key)}</td>
-        <td class="${r.bad?'bad':''}">${r.chars}${r.bad?' ⚠偏短':''}</td>
-        <td>${r.figs}</td></tr>`).join('') + `</table>`
-    : '<div class="hint">还没有精读记录</div>';
 }
 
 // ⚠ 这一段必须在 load() 外面。它曾被塞在 load() 函数体中间（2026-09-11 起）——
@@ -1272,148 +1011,11 @@ async function restart(task){
 }
 
 let REASONS=[];
-async function loadReview(){
-  let d; try{ d=await (await fetch('/api/review')).json(); }catch(e){ return; }
-  REASONS=d.reasons||[];
-  const s=d.stats||{};
-  let sum=`已评价 ${s.total||0} 篇（好 ${s.good||0} / 差 ${s.bad||0}）`;
-  if(d.reading!==undefined) sum+=` · Zotero 里在读 ${d.reading} 篇、读完 ${d.read} 篇`;
-  if(s.ready) sum+=' · <b style="color:#35c15f">样本已够，可做自动质量分校准</b>';
-  else if((s.total||0)>0) sum+=' · 好/差各满 3 篇后可做自动校准';
-  if(s.compare && (s.good||0)+(s.bad||0)>0){
-    const c=s.compare;
-    sum+=`<br><span class="hint">你说好的 vs 差的：字数 ${c.chars.good}/${c.chars.bad} ·
-      图 ${c.figures.good}/${c.figures.bad} · 数值 ${c.numbers.good}/${c.numbers.bad} ·
-      章节 ${c.sections.good}/${c.sections.bad}</span>`;
-  }
-  // 口径变了而旧快照没重算 —— 不说出来的话，将来的校准会建立在两把尺子上。
-  // 这个提示只在真有旧快照时出现，平时不占版面。
-  if((s.stale||[]).length){
-    sum+=`<br><span class="msg warn">有 ${s.stale.length} 条评价是用旧的指标口径算的`
-      +`（现在是 v${s.metrics_ver}）。精读文件还在的话，`
-      +`跑一次 <code>python -c "from tools.deepread import evals; evals.recompute()"</code> 刷齐。</span>`;
-  }
-  $('#reviewsum').innerHTML=sum;
-
-  if(d.error){ $('#review').innerHTML=`<div class="row"><span class="msg bad">${esc(d.error)}</span></div>`; return; }
-  const p=d.pending||[];
-  if(!p.length){
-    $('#review').innerHTML='<div class="hint" style="padding-top:8px">'
-      +'没有待评价的。去 Zotero 给看完的文献打「读完」标签即可。</div>';
-    return;
-  }
-  $('#review').innerHTML=p.map(x=>{
-    const sn=x.snapshot;
-    const meta=sn?`${sn.chars} 字 · ${sn.figures} 图 · ${sn.numbers} 处数值 · ${sn.sections} 个章节 · ${sn.mtime}`
-                 :'<span class="bad">没有精读结果</span>';
-    return `<div class="row" style="display:block;padding:12px 0">
-      <div><b>${esc(x.title)}</b></div>
-      <div class="hint" style="margin:4px 0 8px">${meta}</div>
-      <div style="margin-bottom:8px">
-        ${x.has_summary?`<a href="/summary?key=${x.key}" target="_blank"><button class="ghost">打开精读看看</button></a>`:''}
-        <button onclick="rate('${x.key}','good',this)">这篇精读得好</button>
-        <button onclick="showBad('${x.key}')" style="background:#c0392b">精读得差</button>
-      </div>
-      <div id="bad_${x.key}" style="display:none;padding:10px;background:#fff6f5;border-radius:8px">
-        <div class="hint" style="margin-bottom:6px">差在哪？（可多选，也可以不选直接提交）</div>
-        ${REASONS.map(r=>`<label style="margin-right:14px;font-size:13px">
-          <input type="checkbox" class="rs_${x.key}" value="${r[0]}"> ${esc(r[1])}</label>`).join('')}
-        <div style="margin-top:8px">
-          <input id="note_${x.key}" style="width:400px" placeholder="补充说明（可不填）">
-          <button onclick="rate('${x.key}','bad',this)">提交</button>
-        </div>
-      </div></div>`;}).join('');
-}
-
 async function genHandover(btn){
   btn.disabled=true; const t=btn.textContent; btn.textContent='生成中（约40秒）…';
   const r=await (await fetch('/api/handover',{method:'POST',
     headers:{'Content-Type':'application/json'},body:'{}'})).json();
   toast(r.msg); btn.disabled=false; btn.textContent=t;
-}
-
-function showBad(key){
-  const el=document.getElementById('bad_'+key);
-  el.style.display = el.style.display==='none' ? 'block' : 'none';
-}
-
-async function rate(key, verdict, btn){
-  btn.disabled=true;
-  const reasons=[...document.querySelectorAll('.rs_'+key+':checked')].map(e=>e.value);
-  const noteEl=document.getElementById('note_'+key);
-  const title=btn.closest('.row').querySelector('b').textContent;
-  const r=await (await fetch('/api/rate',{method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({key,verdict,reasons,note:noteEl?noteEl.value:'',title})})).json();
-  toast(r.msg);
-  if(r.ok) loadReview(); else btn.disabled=false;
-}
-
-let searchTimer=null;
-async function doSearch(){
-  const q=$('#q').value.trim();
-  if(!q){toast('请输入要找什么');return;}
-  $('#btnSearch').disabled=true; $('#btnSearch').textContent='检索中…';
-  $('#searchlog').style.display='block'; $('#searchlog').textContent='正在开始…';
-  $('#results').innerHTML=''; $('#collectbar').style.display='none'; $('#searchsum').textContent='';
-  const r=await (await fetch('/api/search',{method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({query:q, mode:$('#mode').value, explore:$('#explore').checked,
-      seeds:parseInt($('#seeds').value), limit:25, n_queries:5})})).json();
-  if(!r.ok){toast(r.msg); $('#btnSearch').disabled=false; $('#btnSearch').textContent='开始找'; return;}
-  clearInterval(searchTimer);
-  searchTimer=setInterval(pollSearch,2000);
-}
-
-async function pollSearch(){
-  const s=await (await fetch('/api/search_status')).json();
-  $('#searchlog').textContent=(s.log||[]).join('\n')+`\n（已用 ${s.elapsed} 秒）`;
-  $('#searchlog').scrollTop=$('#searchlog').scrollHeight;
-  if(s.state==='running') return;
-  clearInterval(searchTimer);
-  $('#btnSearch').disabled=false; $('#btnSearch').textContent='开始找';
-  if(s.state==='error'){toast('检索失败，详情见上面日志');return;}
-  renderResults(s.result);
-}
-
-function renderResults(res){
-  if(!res||!res.rows||!res.rows.length){$('#results').innerHTML='<div class="hint">没找到结果，换个说法试试</div>';return;}
-  const newOnes=res.rows.filter(r=>r.status==='new');
-  $('#searchsum').innerHTML=
-    `检索式 ${res.queries.length} 个 · 候选池 ${res.total_pool} 篇`
-    + (res.snow_added?` （其中雪球贡献 <b>${res.snow_added}</b> 篇关键词搜不到的）`:'')
-    + (res.filtered?` · 滤掉 ${res.filtered} 篇跨方向的`:'')
-    + ` · <b>新文献 ${newOnes.length} 篇</b>，库里已有 ${res.rows.length-newOnes.length} 篇`;
-  $('#results').innerHTML=
-    `<table><tr><th style="width:28px"></th><th>文献</th><th style="width:150px">相关度</th>
-     <th style="width:60px">被引</th></tr>`
-    + res.rows.map(r=>{
-        const have=r.status!=='new';
-        const bar='█'.repeat(Math.round((r.relevance||0)*10));
-        const src={backward:'引用源头',forward:'跟进工作'}[r.from]||'';
-        return `<tr style="${have?'opacity:.45':''}">
-          <td>${have?'':`<input type="checkbox" class="pick" data-doi="${esc(r.doi)}">`}</td>
-          <td><b>${esc(r.title.slice(0,88))}</b><br>
-            <span class="hint">${r.year||'????'} · ${esc(r.venue)}
-            ${r.is_oa?' · 开放获取':''}${src?' · '+src:''}
-            ${have?' · <b>库里已有</b>':''}
-            ${r.nearest&&!have?'<br>↳ 与你库中《'+esc(r.nearest.slice(0,54))+'》最接近':''}</span></td>
-          <td>${r.relevance} ${bar}<br><span class="hint">贴题${r.topic_sim} 近库${r.lib_sim}</span></td>
-          <td>${r.citations}</td></tr>`;}).join('')
-    + `</table>`;
-  $('#collectbar').style.display=newOnes.length?'block':'none';
-}
-
-async function doCollect(deep){
-  const dois=[...document.querySelectorAll('.pick:checked')].map(e=>e.dataset.doi).filter(Boolean);
-  if(!dois.length){toast('先勾选要收的文献');return;}
-  if(deep && !confirm(`确认收下 ${dois.length} 篇并立刻精读？\n精读会消耗解析与大模型额度。`))return;
-  toast('正在收下…');
-  const r=await (await fetch('/api/collect',{method:'POST',
-    headers:{'Content-Type':'application/json'},body:JSON.stringify({dois,deep})})).json();
-  toast(r.msg);
-  if(r.ok) document.querySelectorAll('.pick:checked').forEach(e=>{
-    e.checked=false; e.closest('tr').style.opacity=.45;});
 }
 
 async function clearEnv(name){
@@ -1463,7 +1065,7 @@ async function loadLog(){
   $('#log').scrollTop=$('#log').scrollHeight;
 }
 
-load(); loadLog(); loadReview(); setInterval(load,15000);
+load(); loadLog(); setInterval(load,15000);
 </script></html>"""
 
 

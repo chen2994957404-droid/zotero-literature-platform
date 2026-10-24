@@ -26,13 +26,12 @@ import unicodedata
 
 from shared.kernel import catalog, paths
 
-HAS = {'正文': 'pdf', 'pdf': 'pdf', 'si': 'si', 'SI': 'si', '精读': 'summary', 'summary': 'summary',
-       '解析': 'fulltext', 'fulltext': 'fulltext', '结构化': 'structured', 'structured': 'structured'}
+HAS = {'正文': 'pdf', 'pdf': 'pdf', 'si': 'si', 'SI': 'si', '解析': 'fulltext', 'fulltext': 'fulltext'}
 _DOI = re.compile(r'10\.\d{4,9}/\S+', re.I)
 
 # ── 进程内缓存（2026-10-11）：应用后台是常驻进程，每次检索都现扫 1207 张目录卡要 1.2 秒 ──
 # 目录卡：有文献增删（两层目录的 mtime 变）立刻重扫；否则最多 SCAN_TTL 秒重扫一次 ——
-# 单篇里新出了精读 / SI 不改顶层目录的 mtime，靠这个上限兜住，最多晚一分钟看到。
+# 单篇里新出了 SI 不改顶层目录的 mtime，靠这个上限兜住，最多晚一分钟看到。
 # 索引文件（作者 / 名单 / 团队对照）按文件 mtime：重建了就重读，读一次不到 0.1 秒。
 SCAN_TTL = 60
 _CACHE = {}
@@ -220,7 +219,7 @@ def find(q='', corr='', author='', team='', year_from=None, year_to=None, journa
                     'team': _team_label(roster, tm) if tm is not None else '',
                     'coop': [_team_label(roster, i) for i in (lk.get('others') or [])],
                     'topics': member.get(r['id'], []),
-                    'has': {k: bool(r.get(k)) for k in ('pdf', 'si', 'fulltext', 'summary', 'structured')}})
+                    'has': {k: bool(r.get(k)) for k in ('pdf', 'si', 'fulltext')}})
     return out, len(rows)
 
 
@@ -234,7 +233,7 @@ def render(rows, total):
         return '没找到。'
     lines = [f'共 {total} 篇' + (f'，列前 {len(rows)}' if total > len(rows) else '')]
     for r in rows:
-        tags = ''.join(f'[{n}]' for k, n in (('pdf', '正文'), ('si', 'SI'), ('summary', '精读')) if r['has'][k])
+        tags = ''.join(f'[{n}]' for k, n in (('pdf', '正文'), ('si', 'SI')) if r['has'][k])
         team = f" · 组：{r['team']}" if r['team'] else ''
         coop = f"（合作：{'、'.join(r['coop'])}）" if r['coop'] else ''
         lines.append(f"\n{r['year'] or '?'} · {r['title'][:110]}\n"
@@ -255,16 +254,13 @@ def detail(pid):
     e = index.get(r['id'], {})
     lk = links.get(r['id']) or {}
     files = {'pdf': os.path.isfile(paths.local_pdf(r['id'])),
-             'si': bool(paths.find_local_si(r['id'])),
-             'summary': os.path.isfile(paths.summary(r['id'])),
-             'si_summary': os.path.isfile(paths.si_summary(r['id'])),
-             'summary_full': os.path.isfile(paths.summary_full(r['id']))}
+             'si': bool(paths.find_local_si(r['id']))}
     return {'id': r['id'], 'title': ' '.join((r.get('title') or '').split()), 'doi': r.get('doi') or '',
             'year': r.get('year') or e.get('year'), 'journal': r.get('journal') or e.get('venue') or '',
             'authors': e.get('authors') or [], 'abstract': e.get('abstract') or '',
             'team': _team_label(roster, lk['primary']) if lk.get('primary') is not None else '',
             'coop': [_team_label(roster, i) for i in (lk.get('others') or [])],
-            'has': {k: bool(r.get(k)) for k in ('pdf', 'si', 'fulltext', 'summary', 'structured')},
+            'has': {k: bool(r.get(k)) for k in ('pdf', 'si', 'fulltext')},
             'topics': _topics_of(r['id']),
             'files': files, 'in_zotero': bool(r.get('in_zotero'))}
 

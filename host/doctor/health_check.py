@@ -347,11 +347,8 @@ def c_modules():
 # R2 窗（2026-08-30）起，工具是包不是散脚本 —— 「按文件名找」会在搬家后
 # 直接失效（找不到就报 FAIL），而模块名是这些工具的对外契约，本来就该稳定。
 KEY_MODULES = [
-    'tools.deepread', 'tools.deepread.batch',
-    'tools.extract', 'tools.extract.batch', 'tools.paperdb',
-    'tools.ask', 'tools.ask.vectorize', 'tools.askworld',
-    'tools.discover', 'tools.direction', 'host.watcher.watchdog',
-    'tools.library', 'host.mcp.server', 'host.app.server',
+    'tools.library', 'tools.library.vectorize', 'tools.getpdf', 'host.ingest',
+    'host.watcher.watchdog', 'host.mcp.server', 'host.mcp.science', 'host.app.server',
 ]
 # R3 窗（2026-08-30）起十个工具全是包，散脚本入口连同 find_script 一起退休了。
 # R4 窗（2026-08-31）加 tools.library（新工具包）与 host.mcp.server（聚合后的 MCP 入口）。
@@ -394,9 +391,8 @@ def c_no_selftest():
 
 def c_data():
     n_lib = len([d for d in glob.glob(os.path.join(paths.CURATED, '*') + os.sep) if os.path.isdir(d)])
-    n_struct = len(glob.glob(os.path.join(paths.STRUCTURED, '*.json')))
     vdb = os.path.exists(paths.VECTOR_DB)
-    msg = f'library {n_lib} 篇 / structured {n_struct} 条 / 向量库{"在" if vdb else "缺失"}'
+    msg = f'library {n_lib} 篇 / 向量库{"在" if vdb else "缺失"}'
     from shared.kernel import role
     if role.is_test():
         if n_lib == 0:

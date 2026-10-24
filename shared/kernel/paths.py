@@ -69,9 +69,7 @@ STATE = os.path.join(DATA, 'state')        # 索引与进度，不是真相
 LOGS = os.path.join(DATA, 'logs')          # 运行日志
 BACKUP = os.path.join(DATA, 'backup')      # 快照（Zotero 标签、structured 覆盖前）
 
-STRUCTURED = os.path.join(SERVING, 'structured')  # 结构化抽取产物
 VECTOR_DB = os.path.join(SERVING, 'vector_db')    # Chroma 向量库（可重建）
-DIRECTION = os.path.join(SERVING, 'direction')    # 方向地图：种子/引用网络/聚类
 INCOMING = os.path.join(RAW, '_incoming')         # 临时处理区（可清空）
 CHEMDB_EXPORTS = os.path.join(RAW, '_chemdb_exports')  # 人从 SciFinder / Reaxys 手动导出的表（Excel / RIS），原样放
 
@@ -82,57 +80,10 @@ CHEMDB_EXPORTS = os.path.join(RAW, '_chemdb_exports')  # 人从 SciFinder / Reax
 # ⚠ **按「窄带」分库，不是单例。** 用户会陆续做多条窄带（抗冲、别的方向……），
 # 加一条窄带必须是「加一份配置」而不是「改代码」。所以 band 是必填参数，
 # 没有默认值 —— 有默认值就会有人忘了传，然后两条窄带的数据混进同一个库。
-BAND_RE = re.compile(r'^[a-z0-9][a-z0-9_-]{0,31}$')
 
 
 class BadBandError(errors.BadInputError):
     """窄带 id 不合法。必须是小写字母数字下划线短横（做目录名要安全）。"""
-
-
-def check_band(band):
-    """校验窄带 id。不合法就抛 BadBandError。"""
-    b = str(band or '').strip().lower()
-    if not BAND_RE.match(b):
-        raise BadBandError(
-            f'不是合法的窄带 id: {band!r}（小写字母开头，只含 a-z 0-9 _ -，最长 32 位）')
-    return b
-
-
-def direction_dir(band, create=False):
-    """<direction>/<band>/ —— 一条窄带的全部产物。"""
-    d = os.path.join(DIRECTION, check_band(band))
-    if create:
-        os.makedirs(d, exist_ok=True)
-    return d
-
-
-def direction_db(band):
-    """某条窄带的 SQLite 库：论文 / 引用边 / 种子 / 聚类都在这一个文件里。"""
-    return os.path.join(direction_dir(band), 'map.db')
-
-
-def direction_spec(band):
-    """某条窄带的定义文件（检索式、关键词、边界判据）。加窄带就是加这个。"""
-    return os.path.join(direction_dir(band), 'band.json')
-
-
-def direction_file(name, band, create_dir=False):
-    """某条窄带目录下的其它产物（导出的 json、网页版地图等）。"""
-    return os.path.join(direction_dir(band, create=create_dir), name)
-
-
-def direction_bands():
-    """现有的窄带 id 列表（目录里有 map.db 或 band.json 的才算）。"""
-    if not os.path.isdir(DIRECTION):
-        return []
-    out = []
-    for n in sorted(os.listdir(DIRECTION)):
-        d = os.path.join(DIRECTION, n)
-        if os.path.isdir(d) and (os.path.isfile(os.path.join(d, 'map.db'))
-                                 or os.path.isfile(os.path.join(d, 'band.json'))):
-            out.append(n)
-    return out
-
 
 # ── 文献 id 的形状（2026-09-07 放宽，用户拍板）──────────────────────
 # **原来这里写死 `^[A-Z0-9]{8}$` —— 即「文献的身份证 = Zotero 条目编号」。**
@@ -354,67 +305,9 @@ def find_local_si(key):
             return p
     return ''
 
-
-def summary(key):
-    """★ summary.html —— 正文的中文图文精读（图已内嵌 base64，可独立打开）。"""
-    return os.path.join(paper_dir(key), 'summary.html')
-
-
-def si_summary(key):
-    """si_summary.html —— 补充材料（SI）的实验细节精读。"""
-    return os.path.join(paper_dir(key), 'si_summary.html')
-
-
-def summary_full(key):
-    """summary_full.html —— 正文 + SI 合并后的全文精读。"""
-    return os.path.join(paper_dir(key), 'summary_full.html')
-
-
 def meta(key):
     """★ meta.json —— 元数据（标题/DOI/日期/由谁何时生成）。"""
     return os.path.join(paper_dir(key), 'meta.json')
-
-
-def deepread_parts(key):
-    """curated/<key>/deepread_parts.json —— 分段精读的分栏缓存（断点续跑 / 只重跑一栏）。可重建。"""
-    return os.path.join(paper_dir(key), 'deepread_parts.json')
-
-
-def units(key):
-    """curated/<key>/units.json —— **单元库**：这篇拆出来的最小信息单元（实体 / 数值事实 / 动作 / 图面板 / 主张…），
-    每条带原文引用与生产者。精读、抽取、审稿、问答都读它（2026-09-22 立，形状见 shared.domain.schema.units）。可重建。"""
-    return os.path.join(paper_dir(key), 'units.json')
-
-
-def profile(key):
-    """curated/<key>/profile.json —— 论文类型画像（合成 / 器件 / 机理 / 综述），落地流水线用小模型判一次，谁都能读。"""
-    return os.path.join(paper_dir(key), 'profile.json')
-
-
-def card(key):
-    """curated/<key>/card.json —— 整篇卡片：材料体系 / 动态键家族 / 自修复 / 核心发现 / 局限（2026-09-23 立）。
-    本地小模型从标题 + 摘要 + 结论判出、脚本核过；接替老的整篇抽取里那几个整篇级字段。可重建。"""
-    return os.path.join(paper_dir(key), 'card.json')
-
-
-def review_report(key):
-    """curated/<key>/review.json —— 审稿报告：精读写完后另一个模型对着原文逐句判的结果（可重建）。
-
-    过不了的会带 needs_human=True，面板/交接文件据此列「待人看」清单。
-    """
-    return os.path.join(paper_dir(key), 'review.json')
-
-
-
-def curves(key):
-    """★ curated/<key>/curves.json —— 从图上抠下来的曲线数值（tools.digitize 的产物）。
-
-    为什么要落盘（2026-09-06）：此前 `digitize_paper()` 读完图就把结果返回给调用方，
-    **谁也没存** —— 每问一次同一张图就要再花一次云端视觉模型的钱，
-    而且抠出来的数据进不了查询库。图只需读一次，数值应该跟精读产物一样长期留着。
-    """
-    return os.path.join(paper_dir(key), 'curves.json')
-
 
 def figures_dir(key, create=False):
     """curated/<key>/figures/ —— 按版面坐标裁好的**整张** Figure（PNG + index.json），给调用方看图用。
@@ -440,51 +333,6 @@ def outline(key):
     """
     return os.path.join(paper_dir(key), 'outline.json')
 
-
-def chunk_measurements(key):
-    """★ curated/<key>/chunk_measurements.json —— 拆段扫正文抽到的数值。
-
-    为什么单独一份、而不是并进 `structured/<key>.json`（2026-09-07）：
-    那份是「整篇过一次大模型」的产物，重抽一次就整个覆盖。
-    拆段扫正文是**另一条流水线、另一种代价**（几百次小请求），
-    混在一起会出现「重抽一次，几百次小请求的成果没了」——
-    而且没人看得出来它没了。分开放，两条线各自可重跑。
-
-    跟 `curves()` 是同一个道理：都是花过钱才拿到的派生数据，都由 paperdb 编进索引。
-    """
-    return os.path.join(paper_dir(key), 'chunk_measurements.json')
-
-
-def glossary():
-    """serving/glossary.json —— 领域术语表（缩写 → 中文译名），从范文挖出来的，**可重建**：
-    `python -m tools.deepread --建术语表`。精读 / 问答生成时注入、生成后校验（shared.domain.glossary）。"""
-    return os.path.join(SERVING, 'glossary.json')
-
-
-# ── 结构化抽取产物 ────────────────────────────────────────────────────
-def structured(key):
-    """★ structured/<key>.json —— 单篇的结构化字段。"""
-    return os.path.join(STRUCTURED, check_key(key) + '.json')
-
-
-def structured_backup(stamp):
-    """backup/structured_<stamp>/ —— 覆盖已有抽取结果之前的备份落点。
-
-    为什么要有（踩坑 #16）：曾经拿低档结果覆盖了高档结果，丢了真数据。
-    重抽前先把旧的挪进这里，出事能原样搬回来。
-    """
-    return os.path.join(BACKUP, 'structured_' + str(stamp))
-
-
-def journals():
-    """★ serving/journals.json —— 期刊分级（tools.journalwatch.grading 的产物）。
-
-    为什么单独一份而不是塞进每篇记录：刊是**共享的**，188 篇可能只涉及 60 本刊；
-    分级还会随指标更新而变，塞进每篇就得改 188 个文件。
-    """
-    return os.path.join(SERVING, 'journals.json')
-
-
 # ── 方向层：摘要抽出来的记录 ──────────────────────────────────────────
 # 为什么另起一个目录而不是塞进 structured/：两边的**代价与可信度**不同 ——
 # structured/ 是读全文（+SI）抽的，abstracts/ 只读得到摘要。
@@ -493,42 +341,6 @@ def journals():
 #  身份证放宽之后那个理由已经不成立了，但**分目录这件事仍然对**，理由换成上面这条。）
 # 两个目录、同一种记录格式（schema 的 samples/measurements），
 # `tools/paperdb` 两边都读 —— 于是方向层与细节层住进同一张表，靠 tier 分辨。
-ABSTRACTS = os.path.join(SERVING, 'abstracts')
-_OA_RE = OA_ID_RE
-
-
-def check_work_id(work_id):
-    """校验 OpenAlex 作品 id（`W2741809807`）。允许整条 URL，返回短 id。"""
-    w = str(work_id).strip().rsplit('/', 1)[-1].upper()
-    if not _OA_RE.match(w):
-        raise BadKeyError('不是合法的 OpenAlex 作品 id: %r（应形如 W2741809807）' % (work_id,))
-    return w
-
-
-def abstract_record(work_id):
-    """★ serving/abstracts/<Wxxx>.json —— 一篇公开文献从摘要抽出来的记录。"""
-    return os.path.join(ABSTRACTS, check_work_id(work_id) + '.json')
-
-
-def all_work_ids():
-    """列出所有已抽过摘要的作品 id。"""
-    if not os.path.isdir(ABSTRACTS):
-        return []
-    out = []
-    for name in os.listdir(ABSTRACTS):
-        if name.endswith('.json') and _OA_RE.match(name[:-5].upper()):
-            out.append(name[:-5].upper())
-    return sorted(out)
-
-
-def compare(name='compare'):
-    """★ structured/<name>.md —— 横向对比表（找 idea 的载体）。
-
-    name 取值：'compare'（研究论文总表）、'compare_reviews'（综述）、
-    'compare_PBS'（聚硼硅氧烷精层子表）、'compare_domain' 等。
-    """
-    return os.path.join(STRUCTURED, name + '.md')
-
 
 # ── 日志与杂项 ────────────────────────────────────────────────────────
 def log(name, create_dir=True):
@@ -543,44 +355,12 @@ def runtime(name):
     os.makedirs(LOGS, exist_ok=True)
     return os.path.join(LOGS, name)
 
-
-def search_record(stamp, create_dir=False):
-    """state/searches/<stamp>.json —— 一次找文献的**检索留档**（2026-09-14）。
-
-    PRISMA-S 的子集：检索式原文、来源、日期、过滤条件、各步数量、种子、结果 id。
-    有了它报告才能回放（「这个结论是搜了什么得出来的」），也才能隔一段时间重跑对比。
-    可重建层（state）：删了只丢历史。
-    """
-    d = os.path.join(STATE, 'searches')
-    if create_dir:
-        os.makedirs(d, exist_ok=True)
-    return os.path.join(d, str(stamp) + '.json')
-
-
 def state_db():
     """state/state.db —— 任务状态库（谁做到哪一步，见 shared/kernel/jobs.py）。
 
     **可重建**：删掉只丢历史与溯源，产物文件才是真相。
     """
     return os.path.join(STATE, 'state.db')
-
-
-def papers_db():
-    """state/papers.db —— 文献查询库（结构化字段 + 能比大小的性能数值）。
-
-    **可重建**：由 `structured/*.json` 整库生成（见 tools/paperdb），
-    删掉零代价。真相永远是那些 JSON。
-    """
-    return os.path.join(STATE, 'papers.db')
-
-
-def evalset():
-    """state/evalset.json —— 精读质量评测集（用户的人工评价，**不可重建**）。
-
-    住在 state 层但**必须进版本库** —— 这一层别的东西都是索引，只有它是真相。
-    """
-    return os.path.join(STATE, 'evalset.json')
-
 
 def teams():
     """state/teams.json —— 研究团队名单（大导 / 小导 / 已独立，每条带依据，**不可重建**）。
@@ -599,19 +379,6 @@ def topics_db():
     """
     return os.path.join(STATE, 'topics.db')
 
-
-def app_jobs_db():
-    """state/app_jobs.db —— 文献库应用发起的作业（目前只有单篇精读）的队列与结果。
-
-    索引性质：删了只丢「谁什么时候点过」，产物（精读 HTML）照样在各自目录里。"""
-    return os.path.join(STATE, 'app_jobs.db')
-
-
-def rekey_backup(stamp):
-    """backup/rekey_<stamp>/ —— 文献编号从 Zotero 编号改成 doi_ 那一次的备份与对照日志（撤回靠它）。"""
-    return os.path.join(BACKUP, 'rekey_' + re.sub(r'[^0-9A-Za-z_-]+', '-', str(stamp)))
-
-
 def oa_index():
     """serving/oa_index.json —— 证据库每篇的作者（含通讯标记、单位）+ 摘要，从 OpenAlex 取一次。
 
@@ -627,50 +394,9 @@ def team_links():
     """
     return os.path.join(SERVING, 'team_links.json')
 
-
-def unit_study_dir(tag):
-    """state/unit_study/<tag>/ —— 单元拆解研究的产物（每篇一份单元 JSON + summary.json + report.md）。可重建。"""
-    return os.path.join(STATE, 'unit_study', re.sub(r'[^A-Za-z0-9._-]+', '-', str(tag)))
-
-
-
-
-
 def last_search():
     """state/_last_search.json —— 上一次「找新文献」的结果暂存。"""
     return os.path.join(STATE, '_last_search.json')
-
-
-def journal_watch():
-    """serving/journal_watch.json —— 用户盯着的刊物清单（名字 + ISSN），他自己编辑。
-
-    住 serving 而不是 state：它是**人定的**，不是程序算出来的，删了不能重建。
-    没有这个文件时 `tools.journalwatch` 会用一份种子清单把它建出来。
-    """
-    return os.path.join(SERVING, 'journal_watch.json')
-
-
-def radar_db():
-    """serving/radar.db —— 「0 级」文献雷达：盯着的刊里每篇的题目 / 摘要 / 作者 / 参考文献 DOI。
-
-    不是证据库（那要有正本），是**雷达**：知道外面出了什么、跟我的库像不像、引了我库里哪几篇。
-    全部来自 Crossref，删了能重新拉（所以住 serving）。一条 4 KB，三年 28 本刊约 25 万条 ≈ 1 GB。
-    """
-    return os.path.join(SERVING, 'radar.db')
-
-
-def journal_watch_seen():
-    """state/journal_watch_seen.json —— 盯新刊时已经见过的 DOI（首见日期）+ 每本刊上次查到哪天。
-
-    删了只会让下次把最近几天的当成「新」再列一遍，不丢任何真相。
-    """
-    return os.path.join(STATE, 'journal_watch_seen.json')
-
-
-def junk_list(ext='json'):
-    """state/待删条目清单.<ext> —— 库房维护的待删清单。"""
-    return os.path.join(STATE, '待删条目清单.' + ext)
-
 
 # ── 遍历 ──────────────────────────────────────────────────────────────
 def all_keys():
@@ -784,15 +510,14 @@ def block_dir(name):
     return None
 
 
-# 精读一篇会依次产出这些东西。**顺序就是流水线的顺序** ——
-# 看「从哪一个开始缺」，就知道它死在哪一步。这份清单即数据契约的一部分。
-PAPER_ARTIFACTS = ('fulltext', 'layout', 'meta', 'summary')
+# 一篇落地后会依次有这些东西（2026-10-23 起不再有精读）。**顺序就是流水线的顺序** ——
+# 看「从哪一个开始缺」，就知道它停在哪一步。这份清单即数据契约的一部分。
+PAPER_ARTIFACTS = ('fulltext', 'layout', 'meta')
 
 
 def missing_artifacts(key, kinds=PAPER_ARTIFACTS):
     """这篇文献缺哪些核心产物。返回 (缺的, 有的)。
 
-    半成品最常见的来源是精读中途被打断（踩坑 #61）。
     契约在这里定义，「该怎么办」的建议属于工具层，不放这儿。
     """
     missing, present = [], []
@@ -802,10 +527,3 @@ def missing_artifacts(key, kinds=PAPER_ARTIFACTS):
         except Exception:
             missing.append(kind)
     return missing, present
-
-
-def is_workflow_dir(name):
-    """这个顶层目录名算不算一条「工作流线」（用于体检、面板、交接文件的自动发现）。"""
-    return (name not in NON_WORKFLOW_DIRS
-            and not name.startswith(('.', 'zotero_backup'))
-            and not name.endswith('.egg-info'))

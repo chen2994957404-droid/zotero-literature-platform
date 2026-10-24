@@ -38,7 +38,6 @@ def env(tmp_path, monkeypatch):
         d = tmp_path / name.lower()
         d.mkdir()
         monkeypatch.setattr(paths, name, str(d))
-    monkeypatch.setattr(paths, 'STRUCTURED', str(tmp_path / 'serving' / 'structured'))
     key = 'AAAA0001'
     os.makedirs(paths.parsed_dir(key), exist_ok=True)
     io.open(paths.fulltext(key), 'w', encoding='utf-8').write(MD)

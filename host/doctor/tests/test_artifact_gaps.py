@@ -19,7 +19,7 @@ MODULE = os.path.join(paths.ROOT, 'host', 'doctor', 'artifact_gaps.py')
 def gaps(tmp_path, monkeypatch):
     """加载脚本，并把两个数据层都指到临时目录。
 
-    R6 起一篇文献跨两层：解析产物在 raw、精读产物在 curated。
+    R6 起一篇文献跨两层：解析产物在 raw、目录卡在 curated。
     这里把 raw 也指过去，`make()` 造的 parsed/full.md 才落得进沙箱。
     """
     lib = tmp_path / 'curated'
@@ -41,41 +41,34 @@ def make(lib, key, files):
     return d
 
 
-ALL = ['parsed/full.md', 'parsed/layout.json', 'meta.json', 'summary.html']
+ALL = ['parsed/full.md', 'parsed/layout.json', 'meta.json']
 
 
 class TestInspect:
     def test_产物齐全时不算缺(self, gaps, tmp_path):
         make(tmp_path / 'curated', 'AAAAAAAA', ALL)
         missing, present, _size = gaps.inspect('AAAAAAAA')
-        assert missing == [] and len(present) == 4
+        assert missing == [] and len(present) == 3
 
     def test_能认出缺哪些(self, gaps, tmp_path):
-        make(tmp_path / 'curated', 'BBBBBBBB', ['parsed/full.md', 'meta.json'])
+        make(tmp_path / 'curated', 'BBBBBBBB', ['parsed/full.md', 'parsed/layout.json'])
         missing, present, _ = gaps.inspect('BBBBBBBB')
-        assert 'summary' in missing and 'fulltext' in present
+        assert missing == ['meta'] and 'fulltext' in present
 
     def test_空目录算全缺(self, gaps, tmp_path):
         os.makedirs(str(tmp_path / 'curated' / 'CCCCCCCC'))
         missing, present, size = gaps.inspect('CCCCCCCC')
-        assert len(missing) == 4 and present == [] and size == 0
+        assert len(missing) == 3 and present == [] and size == 0
 
 
 class TestDiagnose:
-    def test_解析就没成(self, gaps):
-        stage, advice = gaps.diagnose(missing=['fulltext', 'summary'], present=[])
-        assert '解析' in stage and '精读' in advice
+    def test_没解析_建议跑落地流水线且说明不花大模型钱(self, gaps):
+        stage, advice = gaps.diagnose(missing=['fulltext', 'layout'], present=['meta'])
+        assert '解析' in stage and 'host.ingest' in advice and '不花大模型' in advice
 
-    def test_精读没做完(self, gaps):
-        """**这是被误杀最典型的形态**：正文在了，精读报告没出来。
-
-        建议里必须点出「解析结果还在，不会重复花 MineRU 的钱」——
-        用户最关心的就是重做要不要再花一次。
-        """
-        stage, advice = gaps.diagnose(missing=['summary'],
-                                      present=['fulltext', 'layout', 'meta'])
-        assert '精读没做完' in stage
-        assert 'MineRU' in advice
+    def test_只缺元数据(self, gaps):
+        stage, advice = gaps.diagnose(missing=['meta'], present=['fulltext', 'layout'])
+        assert '元数据' in stage and '不花钱' in advice
 
     def test_完整时不给建议(self, gaps):
         assert gaps.diagnose(missing=[], present=['fulltext'])[0] == '完整'
