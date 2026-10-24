@@ -88,8 +88,6 @@ workflow_data/_last_search.json
 *.backup
 
 # 大模型路由表（每台机器各一份，含中转站地址与密钥名，不含密钥值）
-llm_routing.json
-llm_routing.json.tmp
 
 # --- 根目录只许住登记过的文件（2026-09-13）---
 # 外部 agent（Antigravity）把实验指南之类的产物直接丢在项目根，`git add -A` 一把就带进仓库

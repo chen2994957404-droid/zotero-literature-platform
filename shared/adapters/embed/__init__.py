@@ -5,7 +5,7 @@
 （去参考文献、切块）。此前 embed/strip_references/chunk 在 vectorize.py 和
 vectorize_library.py 各有一份重复拷贝，收敛成单一原子模块。
 
-原子模块的特征：embedding 只做「文本→向量」的映射，不理解内容（区别于 llm_client 的生成）。
+原子模块的特征：embedding 只做「文本→向量」的映射，不理解内容。
 strip_references / chunk 是可复用的文本预处理原子操作。
 
 对外接口：
@@ -13,9 +13,9 @@ strip_references / chunk 是可复用的文本预处理原子操作。
   - strip_references(text)    → 去掉参考文献及之后部分的正文
   - chunk(text, max_chars)    → list[文本块]（按段落切，去图片标记）
 
-配置：走路由表（控制面板「② 谁用哪条通道」里的「向量化」，2026-09-11 起）。
-  老的 EMBED_MODEL / OLLAMA_HOST 仍认，作为默认值。
-  ⚠ 向量化**没有备用通道**：换嵌入模型 = 整个向量库要重建。
+配置：本机 Ollama（OLLAMA_HOST，控制面板可改）+ 模型 EMBED_MODEL（默认 bge-m3）。
+  2026-10-24 平台不再调生成式大模型，路由表随之撤掉，向量化回到只走本地。
+  ⚠ 换嵌入模型 = 整个向量库要重建（两家的向量互不兼容）。
 """
 import os, re, json, urllib.request
 
@@ -26,61 +26,25 @@ except Exception:                      # 模块要能被单独拷走用，取不
     _cfg_site = lambda n: os.environ.get(n) or _DEFAULTS.get(n, '')
 
 
-def _embed_url():
+def _host():
     # 地址走 config（控制面板「Ollama 地址」可改），不再写死（强制规范 #3）
-    host = _cfg_site('OLLAMA_HOST') or _DEFAULTS['OLLAMA_HOST']
-    return host + '/api/embed'
+    return (_cfg_site('OLLAMA_HOST') or _DEFAULTS['OLLAMA_HOST']).rstrip('/')
 
 
-def _route():
-    """向量化走哪条通道、用哪个模型 —— 查路由表（2026-09-11 起）。
-
-    路由表读不到（模块被单独拷走）就退回老路：本机 Ollama + EMBED_MODEL 环境变量。
-    ⚠ 向量化**没有备用通道**（路由表在 resolve 里就只给主用）：换嵌入模型会让
-      整个向量库作废，两家的向量互不兼容。这条约束在 routing.PURPOSES['EMBED'] 上。
-    """
+def _model():
     try:
-        from shared.kernel.config import routing
-        name, ch, model = routing.resolve('EMBED')[0]
-        return name, ch, model
+        from shared.kernel.config import get_key
+        return get_key('EMBED_MODEL', default='bge-m3')
     except Exception:
-        return ('ollama-本地', {'kind': 'ollama', 'base': _cfg_site('OLLAMA_HOST')
-                                or _DEFAULTS['OLLAMA_HOST'], 'key': ''},
-                os.environ.get('EMBED_MODEL', 'bge-m3'))
+        return os.environ.get('EMBED_MODEL', 'bge-m3')
 
 
 def embed(texts):
-    """批量文本 → 向量。texts 是 str 列表，返回等长的向量列表。
-
-    本地 Ollama 走 `/api/embed`；OpenAI 兼容的云端通道走 `/embeddings`
-    （两家的请求体与返回结构都不同，一处翻译）。云端的记账，本地的免费不记。
-    """
-    name, ch, model = _route()
-    base = (ch.get('base') or '').rstrip('/')
-    if ch.get('kind') == 'ollama':
-        body = json.dumps({'model': model, 'input': texts}).encode()
-        req = urllib.request.Request(base + '/api/embed', data=body,
-                                     headers={'Content-Type': 'application/json'})
-        return json.loads(urllib.request.urlopen(req, timeout=300).read())['embeddings']
-
-    # OpenAI 兼容：POST /embeddings，返回 data[i].embedding（按 index 排好）
-    from shared.kernel.config import get_key
-    key = get_key(ch['key']) if ch.get('key') else ''
-    ep = base if base.endswith('/embeddings') else base + '/embeddings'
-    body = json.dumps({'model': model, 'input': texts}, ensure_ascii=False).encode('utf-8')
-    req = urllib.request.Request(ep, data=body, method='POST',
-                                 headers={'Content-Type': 'application/json',
-                                          'Authorization': f'Bearer {key}'})
-    r = json.loads(urllib.request.urlopen(req, timeout=300).read())
-    rows = sorted(r.get('data') or [], key=lambda d: d.get('index', 0))
-    try:
-        from shared.kernel import budget
-        u = r.get('usage') or {}
-        budget.record(prompt=u.get('prompt_tokens') or u.get('total_tokens') or 0,
-                      completion=0, model=model, purpose='EMBED', channel=name)
-    except Exception:
-        pass
-    return [d['embedding'] for d in rows]
+    """批量文本 → 向量（本机 Ollama 的 /api/embed）。texts 是 str 列表，返回等长的向量列表。"""
+    body = json.dumps({'model': _model(), 'input': texts}).encode()
+    req = urllib.request.Request(_host() + '/api/embed', data=body,
+                                 headers={'Content-Type': 'application/json'})
+    return json.loads(urllib.request.urlopen(req, timeout=300).read())['embeddings']
 
 
 def embed_batched(texts, size=48, max_chars=1200):
@@ -149,9 +113,8 @@ def alive(timeout=6):
 
     R3 窗收进来的：库房维护的定时同步原本自己 urlopen 探 /api/tags。
     """
-    host = _cfg_site('OLLAMA_HOST') or _DEFAULTS['OLLAMA_HOST']
     try:
-        urllib.request.urlopen(host + '/api/tags', timeout=timeout)
+        urllib.request.urlopen(_host() + '/api/tags', timeout=timeout)
         return True
     except Exception:
         return False

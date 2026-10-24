@@ -8,7 +8,7 @@
 
 能做什么（都是可逆、零风险的事）：
   - 看：各服务是否正常、哪些进程在跑、数据资产统计、最近日志
-  - 改：API 密钥、各环节用哪个模型（写入 .env，自动备份旧版）
+  - 改：API 密钥、本机设置（写入凭据库 / .env，自动备份旧版）
   - 动：重启 watcher / Ollama 等后台服务
 
 刻意**不做**的（不可逆或要花钱，继续走人工确认）：
@@ -34,8 +34,8 @@ from shared.kernel.cli import flag
 
 ROOT = _ROOT
 
-from shared.kernel.config import (SITE_SETTINGS, get_key, set_keys, get_model, mask,
-                            MODEL_SETTINGS, ENV_FILE, SITE_SETTINGS, get_site,
+from shared.kernel.config import (SITE_SETTINGS, get_key, set_keys, mask,
+                            ENV_FILE, get_site,
                             keyring_status, key_location,
                             migrate_secrets_to_keyring, env_shadow, clear_env_key)
 from shared.kernel.subproc import run as _run, powershell   # 统一走静默子进程调用
@@ -45,28 +45,15 @@ _STARTED = time.strftime('%m-%d %H:%M:%S')   # 本面板进程的启动时刻
 HOST = '127.0.0.1'          # 只监听本机，外部访问不到
 
 KEY_NAMES = [
-    ('DEEPSEEK_KEY',    'DeepSeek（精读/抽取/问答）', True),
     ('MINERU_TOKEN',    'MineRU（PDF 解析）',         True),
-    ('SILICONFLOW_KEY', '硅基流动（图表数字化，可空）', False),
-    # 免费档的代价不是钱是数据：Google 明说免费档「内容会用于改进产品」。
-    # 所以这一项永远是可选的，且这句提示要留在用户看得见的地方。
-    ('GEMINI_KEY',      'Google Gemini（可空；免费档，内容会被 Google 用于改进产品）', False),
     # OpenAlex 2026-02 起按量计费：无 key 只有 $0.10/天，免费 key 有 $1/天（10 倍）。
-    # 不填也能跑，只是方向地图那类批量作业一天就把额度打光（踩坑 #77）。
-    ('OPENALEX_KEY',    'OpenAlex（方向地图检索，建议填）', False),
-    # Semantic Scholar：免费 key，每秒 1 次。给雷达补一句话摘要（TLDR）、引用意图、开放获取直链。
-    ('S2_API_KEY',      'Semantic Scholar（雷达补 TLDR / 引用意图，可空）', False),
-    # 阿里云百炼：模型名以 qwen 开头就会自动走这里，不用另选「哪一家」。
-    ('DASHSCOPE_KEY',   '阿里云百炼（通义千问，可空；新号有 90 天免费额度）', False),
-    # TypeSafe Jev（2026-09-18 试用）：只做判断不写字的模型，接口不是 OpenAI 兼容，
-    # 所以不进路由表的「通道」，先只存密钥；适配器与实测另做。
-    ('TYPESAFE_KEY',    'TypeSafe Jev（判断模型，试用中，可空）', False),
+    ('OPENALEX_KEY',    'OpenAlex（作者 / 摘要索引，建议填）', False),
 ]
 
 # 面板可重启的后台服务：任务计划名 → 显示名
 SERVICES = {
     'ZoteroLiteratureWatcher': '看门狗（守文献库应用 / MCP 服务 / 取全文浏览器）',   # 任务名是历史遗留
-    'OllamaService':           '本地 Ollama（问答/向量化）',
+    'OllamaService':           '本地 Ollama（向量化）',
 }
 
 
@@ -230,7 +217,7 @@ def action_clear_env_key(payload):
 
 
 def action_check_keys(_payload=None):
-    """当场验一验三把密钥到底**能不能用**（不花钱，只查余额/有效性接口）。
+    """当场验一验密钥到底**能不能用**（不花钱，只查余额/有效性接口）。
 
     为什么面板必须有这一条（2026-08-28 真事）：面板此前只显示密钥「存在哪」
     （🔒 凭据库 / ⚠ 明文），不显示「有没有用」。于是 DeepSeek 密钥已经 401 了，
@@ -241,12 +228,11 @@ def action_check_keys(_payload=None):
     密钥只有本机交互式会话读得到，所以这个按钮只能在本机点，也只该在本机点。
     """
     try:
-        from shared.adapters.llm_client import check_key as _ds
         from shared.adapters.pdf_parse import check_token as _mineru
     except Exception as e:
         return False, f'适配层加载失败：{e}'
     lines, all_ok = [], True
-    for name, fn_ in (('DeepSeek（精读/抽取）', _ds), ('MineRU（PDF 解析）', _mineru)):
+    for name, fn_ in (('MineRU（PDF 解析）', _mineru),):
         try:
             ok, msg = fn_()
         except Exception as e:
@@ -259,7 +245,7 @@ def action_check_keys(_payload=None):
 
 
 def collect_config():
-    """密钥（脱敏）与模型设置。**绝不返回密钥明文**。"""
+    """密钥（脱敏）与本机设置。**绝不返回密钥明文**。"""
     kr_ok, kr_backend = keyring_status()
     keys = [{'name': n, 'label': lb, 'required': rq,
              'set': bool(get_key(n)), 'masked': mask(get_key(n)),
@@ -269,110 +255,13 @@ def collect_config():
         'keys': keys,
         'plain_count': sum(1 for k in keys if k['where'] == '.env明文'),
         'keyring': {'ok': kr_ok, 'backend': kr_backend},
-        'models': [{'name': n, 'label': MODEL_SETTINGS[n][0],
-                    'value': get_model(n), 'default': MODEL_SETTINGS[n][1]}
-                   for n in MODEL_SETTINGS],
         # options 由后端给：前端写死过一次选项，结果 shared.kernel.role 加了第三档
         # 面板却选不到，而且保存时会把 test 悄悄退回 dev（同踩坑 #58 一族）。
         'sites': [{'name': n, 'label': lb, 'value': get_site(n), 'help': hp,
                    'options': SITE_OPTIONS.get(n, [])}
                   for n, lb, _d, hp in SITE_SETTINGS],
         'env_file': ENV_FILE,
-        # 今天花了多少。**光能填限额、看不见用量，等于让人盲填** ——
-        # 用户得先看见「一篇精读大概多少 token」才定得出那个数。
-        # 这里只是把 shared.kernel.budget 的账原样端出来，面板不算账（面板铁律）。
-        'budget': _budget_today(),
-        # 大模型的通道 / 用途 / 备用（2026-09-11，用户拍板的三段式）。
-        # 面板只是把路由表原样端出来 + 收回去，不算账、不猜家（面板铁律）。
-        'routing': _routing_view(),
     }
-
-
-_MODELS_CACHE = {}
-
-
-def collect_models(channel):
-    """面板下拉用：{ok, models, msg}。按通道缓存在面板进程里（改了通道地址或密钥后
-    保存路由会清掉），免得每次重画都去敲一遍接口。"""
-    if channel in _MODELS_CACHE:
-        return _MODELS_CACHE[channel]
-    try:
-        from shared.adapters import llm_client
-        ok, ids, msg = llm_client.list_models(channel)
-    except Exception as e:
-        ok, ids, msg = False, [], f'列不了：{type(e).__name__}'
-    out = {'ok': bool(ok), 'models': ids, 'msg': msg}
-    if ok:
-        _MODELS_CACHE[channel] = out
-    return out
-
-
-def _routing_view():
-    """通道表 + 用途表 + 体检问题，给面板画。取不到就说取不到。"""
-    try:
-        from shared.kernel.config import routing, get_key
-        chs = routing.channels()
-        for c in chs.values():
-            c['key_set'] = bool(get_key(c['key'])) if c.get('key') else True
-        return {'channels': chs, 'purposes': routing.purposes(),
-                'problems': routing.problems(),
-                'caps_all': ['text', 'json', 'thinking', 'vision'],
-                'file': routing.ROUTING_FILE}
-    except Exception as e:
-        return {'error': f'{type(e).__name__}: {e}'}
-
-
-def action_save_routing(payload):
-    """保存通道表与用途表。密钥**不在这里**（走 /api/config，进凭据库）。
-
-    只收两样：用户加的通道（内置的不落盘，除非被改了地址/密钥名）和用途表。
-    """
-    from shared.kernel.config import routing
-    chans_in = (payload or {}).get('channels') or {}
-    purps_in = (payload or {}).get('purposes') or {}
-    chans = {}
-    for name, c in chans_in.items():
-        name = (name or '').strip()
-        if not name or not isinstance(c, dict):
-            continue
-        base = (c.get('base') or '').strip().rstrip('/')
-        if not base:
-            continue
-        row = {'base': base, 'key': (c.get('key') or '').strip(),
-               'kind': (c.get('kind') or 'openai').strip(),
-               'caps': [x for x in (c.get('caps') or []) if x]}
-        # 内置通道没改动就不落盘 —— 免得把代码里的默认值复制一份进用户文件
-        b = routing.BUILTIN_CHANNELS.get(name)
-        if b and b['base'] == base and b['key'] == row['key'] \
-                and sorted(b['caps']) == sorted(row['caps']):
-            continue
-        chans[name] = row
-    purps = {}
-    for pid, u in purps_in.items():
-        if pid not in routing.PURPOSES or not isinstance(u, dict):
-            continue
-        purps[pid] = {k: (u.get(k) or '').strip()
-                      for k in ('channel', 'model', 'fallback', 'fallback_model')}
-    routing.save(channels=chans, purposes=purps)
-    _MODELS_CACHE.clear()          # 通道地址/密钥可能变了，模型清单重新拉
-    probs = routing.problems()
-    bad = [m for lvl, m in probs if lvl == 'fail']
-    warn = [m for lvl, m in probs if lvl == 'warn']
-    msg = f'已保存：{len(chans)} 条自定义通道、{len(purps)} 个用途'
-    if bad:
-        msg += '；⚠ ' + '；'.join(bad[:2])
-    elif warn:
-        msg += f'；{len(warn)} 条提醒（见下方）'
-    return True, msg
-
-
-def _budget_today():
-    """当日大模型用量与上限。取不到就说取不到 —— 面板不猜、不报错。"""
-    try:
-        from shared.kernel import budget
-        return budget.today()
-    except Exception as e:
-        return {'error': f'{type(e).__name__}: {e}'}
 
 
 # 哪些本机设置是「选一个」而不是「填一段」。**选项从 shared.kernel.role 取，不在前端写死**。
@@ -541,7 +430,7 @@ def action_restart(task_name):
 
 
 def action_save_config(payload):
-    """保存密钥 / 本机设置 / 模型。空值自动跳过（不会误清空），旧 .env 自动备份。
+    """保存密钥 / 本机设置。空值自动跳过（不会误清空），旧 .env 自动备份。
 
     ⚠ 白名单里**必须包含 SITE_SETTINGS**。原来只写了密钥和模型，于是
     「本机设置」在页面上显示得出来、也改得动，**一保存就被静默丢弃** ——
@@ -550,16 +439,7 @@ def action_save_config(payload):
     「界面看着能改，其实存不进去」是最难自查的一类 bug，所以在这里钉死。
     """
     allowed = ({n for n, _, _ in KEY_NAMES}
-               | {s[0] for s in SITE_SETTINGS}      # 漏掉过一次
-               | set(MODEL_SETTINGS))
-    # 通道表里引用的密钥名（用户给中转站起的，如 ALIYUN_RELAY_KEY）也允许 ——
-    # is_secret() 按后缀认，它们只会进凭据库，不会明文落盘
-    try:
-        from shared.kernel.config import routing, is_secret
-        allowed |= {c.get('key') for c in routing.channels().values()
-                    if c.get('key') and is_secret(c['key'])}
-    except Exception:
-        pass
+               | {s[0] for s in SITE_SETTINGS})     # 漏掉过一次
     updates = {k: v for k, v in (payload or {}).items() if k in allowed}
     written = set_keys(updates)
     if not written:
@@ -624,11 +504,6 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(PAGE.encode('utf-8'), ctype='text/html')
         if p == '/api/all':
             return self._send(collect_all())
-        if p == '/api/models':
-            # 这条通道能用哪些模型（不花钱）。列不出来就 ok=False，前端退回手输。
-            import urllib.parse
-            q = urllib.parse.parse_qs(self.path.partition('?')[2])
-            return self._send(collect_models(q.get('channel', [''])[0]))
         if p == '/api/logs':
             import urllib.parse
             q = urllib.parse.parse_qs(self.path.partition('?')[2])
@@ -662,8 +537,6 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == '/api/migrate_secrets':
             moved, msg = migrate_secrets_to_keyring()
             ok = bool(moved) or '没有需要迁移' in msg
-        elif self.path == '/api/routing':
-            ok, msg = action_save_routing(payload)
         elif self.path == '/api/config':
             ok, msg = action_save_config(payload)
         else:
@@ -724,7 +597,7 @@ body[data-page="daily"] .card[data-page="daily"],body[data-page="settings"] .car
 
 <div class="card" data-page="logs"><h2>后台服务（卡住了点重启）</h2><div id="svcs"></div></div>
 
-<div class="card" data-page="settings"><h2>密钥 · 本机设置 · 模型</h2>
+<div class="card" data-page="settings"><h2>密钥 · 本机设置</h2>
   <div class="hint" style="margin-bottom:10px">
     密钥只显示后 4 位。留空表示不改动，不会清空已有配置。保存前自动备份旧配置。</div>
   <div id="krbar"></div>
@@ -767,7 +640,7 @@ body[data-page="daily"] .card[data-page="daily"],body[data-page="settings"] .car
 <div id="toast"></div>
 <script>
 const $=s=>document.querySelector(s);
-// 三个页面、一个后台：`/` 日常（找文献 / 评价 / 进度），`/settings` 设置（密钥 / 通道 / 模型 / 项目组成 / 模块），
+// 三个页面、一个后台：`/` 日常（找文献 / 评价 / 进度），`/settings` 设置（密钥 / 本机设置 / 项目组成 / 模块），
 // `/logs` 运行与日志（运行状态 / 进程 / 后台服务 / 日志）。
 // 拆开的原因：用户只会主动点日常那几样，管理项堆在一起太杂（2026-09-17）。
 const PATH = location.pathname.replace(/\/+$/,'');
@@ -840,7 +713,7 @@ async function load(force){
              <button onclick="migrate()">迁移到系统凭据库</button></div>`
         : `<div class="row"><span class="msg" style="color:#35c15f">✓ 密钥都已存入系统凭据库，硬盘上没有明文</span></div>`)
     + `<div class="row"><span class="msg hint">「存进去了」不等于「还能用」—— 密钥会被吊销、会过期</span>
-         <button onclick="checkKeys()">测一测这三把密钥（不花钱）</button></div>
+         <button onclick="checkKeys()">测一测密钥（不花钱）</button></div>
        <div id="keychk" class="hint" style="white-space:pre-line;padding:2px 0 0"></div>`;
 
   if(force || !cfgReady){
@@ -870,9 +743,8 @@ async function load(force){
          </select></div>`
       : `<div class="row"><span class="lbl">${esc(s.label)}</span>
          <input id="k_${s.name}" value="${esc(s.value||'')}" placeholder="${esc(s.help)}">
-         </div>`).join('')
-  + renderRouting(d.config.routing, d.config.budget);
-  cfgReady=true; fillModelLists(); }
+         </div>`).join('');
+  cfgReady=true; }
 
   const st = d.structure || {flows:[],blocks:[]};
   $('#flows').innerHTML = `<table><tr><th>文件夹</th><th>是什么</th><th>脚本数</th><th>说明书</th></tr>`
@@ -914,94 +786,6 @@ async function load(force){
 
 }
 
-// ⚠ 这一段必须在 load() 外面。它曾被塞在 load() 函数体中间（2026-09-11 起）——
-//   于是 var RT、renderRouting、saveRouting 全成了 load 的局部变量，
-//   页面上 onchange="RT.purposes[...]" 与「保存通道与用途」按钮一直是 ReferenceError，
-//   路由表从没保存成功过（2026-09-17 做模型下拉时才抓到）。
-// ── 大模型：通道 / 用途 / 账本（2026-09-11，用户拍板的三段式）────────────
-// 面板只画表、收表，不算账、不猜家。逻辑全在 shared.kernel.config.routing。
-var RT = null;      // 当前编辑中的路由表（通道 + 用途），保存时整体送回
-// ⚠ 用 var 不用 let：这段代码写在 load() 后面，而 load() 一进页面就跑；
-//   let 有暂时性死区，先用到就是 ReferenceError（2026-09-11 真打开页面才抓到）。
-function renderRouting(r, b){
-  if(!r || r.error) return `<h3 style="margin:18px 0 6px;font-size:15px">大模型</h3><div class="hint bad">${esc((r&&r.error)||'读不到路由表')}</div>`;
-  RT = {channels: JSON.parse(JSON.stringify(r.channels)), purposes: JSON.parse(JSON.stringify(r.purposes))};
-  const chNames = Object.keys(RT.channels);
-  const capsAll = r.caps_all || [];
-  // ① 通道
-  let h = `<h3 style="margin:18px 0 6px;font-size:15px">① 大模型通道<span class="hint" style="font-weight:normal">（填入对应的 API：官方的、中转站的都在这里；密钥值仍进凭据库）</span></h3>
-  <table><tr><th>名字</th><th>地址</th><th>密钥名</th><th>密钥值</th><th>能力</th><th></th></tr>`
-  + chNames.map(n=>{const c=RT.channels[n]; return `<tr>
-    <td><b>${esc(n)}</b>${c.builtin?'<div class="hint">内置</div>':''}</td>
-    <td><input style="width:260px" value="${esc(c.base||'')}" onchange="RT.channels['${esc(n)}'].base=this.value"></td>
-    <td><input style="width:150px" value="${esc(c.key||'')}" placeholder="如 ALIYUN_RELAY_KEY" onchange="RT.channels['${esc(n)}'].key=this.value.trim()"></td>
-    <td>${c.key?`<input id="k_${esc(c.key)}" style="width:150px" placeholder="${c.key_set?'已配置，留空即不改':'⚠ 未配置'}">`:'<span class="hint">（不用）</span>'}</td>
-    <td>${capsAll.map(cap=>`<label style="margin-right:6px"><input type="checkbox" ${((c.caps||[]).includes(cap))?'checked':''} onchange="rtCap('${esc(n)}','${cap}',this.checked)">${cap}</label>`).join('')}</td>
-    <td>${c.builtin?'':`<button class="ghost" onclick="rtDelChannel('${esc(n)}')">删</button>`}</td></tr>`;}).join('')
-  + `<tr><td><input id="rt_new_name" placeholder="新通道名字，如 阿里云-优惠中转" style="width:170px"></td>
-       <td><input id="rt_new_base" placeholder="OpenAI 兼容地址，到 /v1 为止" style="width:260px"></td>
-       <td><input id="rt_new_key" placeholder="密钥名（要以 _KEY 结尾）" style="width:150px"></td>
-       <td colspan="2"><span class="hint">先加通道并保存，再回来填密钥值</span></td>
-       <td><button class="ghost" onclick="rtAddChannel()">加一条</button></td></tr></table>`;
-  // ② 用途
-  h += `<h3 style="margin:18px 0 6px;font-size:15px">② 谁用哪条通道<span class="hint" style="font-weight:normal">（每个环节：走哪条通道 + 用哪个模型；主用不行自动切备用）</span></h3>
-  <div class="hint" style="margin:-4px 0 8px">「本地能行吗」一列是按实测/推断给的估算（鼠标放上去看依据）：<span style="color:#35c15f">●</span> 能用 <span style="color:#f0ad2e">●</span> 差一截 <span style="color:#e2504a">●</span> 别用本地。挑模型时先看这一列，再决定通道。</div>
-  <table><tr><th>用途</th><th>本地能行吗</th><th>主用通道</th><th>模型</th><th>备用通道</th><th>备用模型</th><th>状态</th></tr>`
-  + Object.keys(RT.purposes).map(pid=>{const u=RT.purposes[pid]; const sel=(id,val,allowEmpty)=>`<select onchange="RT.purposes['${pid}'].${id}=this.value;this.parentNode.nextElementSibling.querySelector('input').setAttribute('list','ml_'+chIdx(this.value))">${allowEmpty?`<option value="">（无）</option>`:''}${chNames.map(n=>`<option value="${esc(n)}"${val===n?' selected':''}>${esc(n)}</option>`).join('')}</select>`;
-    const LV={ok:['#35c15f','能用'],meh:['#f0ad2e','差一截'],no:['#e2504a','别用本地'],only:['#4a9de0','本来就本地']}[u.local]||['#ccc','没评估'];
-    return `<tr><td><b>${esc(u.label)}</b><div class="hint">${(u.needs||[]).join('/')}${u.note?'<br>⚠ '+esc(u.note):''}</div></td>
-     <td title="${esc(u.local_why||'')}" style="cursor:help"><span style="color:${LV[0]}">●</span> ${LV[1]}<div class="hint" style="max-width:220px;font-size:11px">${esc((u.local_why||'').split('；')[0])}</div></td>
-     <td>${sel('channel',u.channel,false)}</td>
-     <td><input style="width:190px" list="ml_${chIdx(u.channel)}" value="${esc(u.model||'')}" placeholder="点一下选，也能手输" onchange="RT.purposes['${pid}'].model=this.value.trim()"></td>
-     <td>${u.no_fallback?'<span class="hint">不许配备用<br>（换模型=向量库重建）</span>':sel('fallback',u.fallback,true)}</td>
-     <td>${u.no_fallback?'':`<input style="width:150px" list="ml_${chIdx(u.fallback)}" value="${esc(u.fallback_model||'')}" placeholder="留空=同主用" onchange="RT.purposes['${pid}'].fallback_model=this.value.trim()">`}</td>
-     <td>${u.inferred?'<span class="bad">按模型名猜的</span>':'<span class="ok">已指定</span>'}</td></tr>`;}).join('')
-  + `</table>` + chNames.map(n=>`<datalist id="ml_${chIdx(n)}"></datalist>`).join('')
-  + `<div id="ml_status" class="hint" style="margin-top:4px">正在向各通道询问可用的模型清单…</div>`
-  + `<div class="row" style="margin-top:8px"><button onclick="saveRouting()">保存通道与用途</button>
-     <span class="hint">保存到 ${esc(r.file||'llm_routing.json')}（不进版本库；密钥值请在上表填好后点最上面的「保存」）</span></div>`;
-  if(r.problems && r.problems.length){
-    h += `<div style="margin:8px 0">` + r.problems.map(([lvl,m])=>`<div class="msg ${lvl==='fail'?'bad':''}">${lvl==='fail'?'✗':'⚠'} ${esc(m)}</div>`).join('') + `</div>`;
-  }
-  // ③ 账本
-  const bp = (b && b.by_purpose) || {};
-  const rows = Object.keys(bp).flatMap(pid=>Object.keys(bp[pid]).map(k=>({pid, k, ...bp[pid][k]})));
-  h += `<h3 style="margin:18px 0 6px;font-size:15px">③ 今天谁调了哪条通道<span class="hint" style="font-weight:normal">（按 用途 × 通道/模型；换天自动清零）</span></h3>`
-    + (rows.length ? `<table><tr><th>用途</th><th>通道/模型</th><th>次数</th><th>产出 token</th></tr>`
-        + rows.sort((a,b2)=>b2.completion-a.completion).map(x=>`<tr><td>${esc((RT.purposes[x.pid]||{}).label||x.pid)}</td><td>${esc(x.k)}</td><td>${x.calls}</td><td>${x.completion}</td></tr>`).join('') + `</table>`
-      : `<div class="hint">今天还没有调用</div>`)
-    + (b && (b.limit_calls||b.limit_tokens||b.limit_yuan) ? `<div class="hint">上限：${b.limit_calls?`次数 ${b.calls}/${b.limit_calls}`:''} ${b.limit_tokens?`产出 ${b.completion}/${b.limit_tokens}`:''} ${b.limit_yuan?`花费 ${(b.yuan||0).toFixed(2)}/${b.limit_yuan} 元（按高峰价估）`:''}</div>`
-      : `<div class="msg bad">⚠ 没设当日上限 —— 外部 agent 可以无人确认地花钱。在上面「本机设置」里填 DAILY_LLM_YUAN（元）</div>`);
-  return h;
-}
-// 模型名不用手敲：每条通道问一次 GET /models（不花钱），灌进 <datalist>，
-// 输入框点一下就是下拉、打字能筛、通道没实现这个接口时照样能手输（2026-09-17）。
-function chIdx(n){ return RT ? Math.max(0, Object.keys(RT.channels).indexOf(n)) : 0; }
-async function fillModelLists(){
-  if(!RT) return; const notes=[];
-  await Promise.all(Object.keys(RT.channels).map(async n=>{
-    let r; try{ r=await (await fetch('/api/models?channel='+encodeURIComponent(n))).json(); }catch(e){ return; }
-    const dl=document.getElementById('ml_'+chIdx(n)); if(!dl) return;
-    dl.innerHTML=(r.models||[]).map(m=>`<option value="${esc(m)}">`).join('');
-    notes.push(`${esc(n)}：${r.ok?r.models.length+' 个可选':'⚠ '+esc(r.msg)}`);
-  }));
-  const st=$('#ml_status'); if(st) st.innerHTML='模型清单（问的是各通道自己，中转站列出的就是这把密钥放开的）· '+notes.join(' · ');
-}
-function rtCap(n, cap, on){ const c=RT.channels[n]; c.caps=(c.caps||[]).filter(x=>x!==cap); if(on) c.caps.push(cap); }
-function rtDelChannel(n){ if(!confirm('删掉通道「'+n+'」？')) return; delete RT.channels[n]; saveRouting(); }
-function rtAddChannel(){
-  const n=$('#rt_new_name').value.trim(), base=$('#rt_new_base').value.trim(), key=$('#rt_new_key').value.trim();
-  if(!n||!base){ toast('名字和地址都要填'); return; }
-  if(key && !/_(KEY|TOKEN)$/.test(key)){ toast('密钥名要以 _KEY 或 _TOKEN 结尾，这样它才会进凭据库而不是明文落盘'); return; }
-  RT.channels[n]={base, key, kind:'openai', caps:['text','json']};
-  saveRouting();
-}
-async function saveRouting(){
-  if(!RT) return;
-  const r=await (await fetch('/api/routing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(RT)})).json();
-  toast(r.msg); load(true);
-}
-
 
 async function restart(task){
   toast('正在重启…');
@@ -1010,7 +794,6 @@ async function restart(task){
   toast(r.msg); setTimeout(load,2500);
 }
 
-let REASONS=[];
 async function genHandover(btn){
   btn.disabled=true; const t=btn.textContent; btn.textContent='生成中（约40秒）…';
   const r=await (await fetch('/api/handover',{method:'POST',
@@ -1030,7 +813,7 @@ async function checkKeys(){
   const r=await (await fetch('/api/check_keys',{method:'POST',
     headers:{'Content-Type':'application/json'},body:'{}'})).json();
   $('#keychk').innerHTML=esc(r.msg||'').replace(/\n/g,'<br>');
-  toast(r.ok?'三把密钥都有效':'有密钥失效，看下面');
+  toast(r.ok?'密钥有效':'有密钥失效，看下面');
 }
 
 async function migrate(){

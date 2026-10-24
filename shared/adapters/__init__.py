@@ -15,6 +15,6 @@
     · 失败时抛 `shared.kernel.errors` 里的分类异常，让调用方知道该不该重试
     · 依赖只能向下（shared.kernel），不许 import shared.domain / tools / host
 
-`llm_client` 是范例：外层 `chat` / `chat_json` 没变过，
-内层实现已经换过 DeepSeek → Ollama → 硅基流动三家。
+`pdf_parse` 是范例：外层 `parse_document` 没变过，内层是 MineRU；
+换一家 PDF 解析服务只改这一个文件。
 """

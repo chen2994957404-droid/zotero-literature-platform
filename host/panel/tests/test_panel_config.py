@@ -17,7 +17,7 @@ from shared.kernel import paths, role
 
 panel = pytest.importorskip('host.panel.app')
 
-from shared.kernel.config import SITE_SETTINGS, MODEL_SETTINGS      # noqa: E402
+from shared.kernel.config import SITE_SETTINGS      # noqa: E402
 
 
 def test_角色下拉必须覆盖所有角色():
@@ -44,8 +44,7 @@ def test_选项由后端下发而不是前端写死():
 def test_所有本机设置都在保存白名单里():
     """踩坑 #58：白名单漏了一类，界面改得动、一保存被静默丢弃。"""
     allowed = ({n for n, _, _ in panel.KEY_NAMES}
-               | {s[0] for s in SITE_SETTINGS}
-               | set(MODEL_SETTINGS))
+               | {s[0] for s in SITE_SETTINGS})
     for name, *_ in SITE_SETTINGS:
         assert name in allowed, f'{name} 保存不进去'
 

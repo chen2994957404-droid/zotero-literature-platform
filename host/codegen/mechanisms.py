@@ -142,8 +142,8 @@ def _pitfalls_for(name, pits):
     if len(base) >= 6:
         pats.append(r'b%sb' % re.escape(base))
     extra = {'pdf_fetch': ['取件', '取全文'], 'pdf_parse': ['MineRU'], 
-             'watcher': ['看门狗', '心跳'], 'llm_client': ['DeepSeek', 'Ollama'], 'vectordb': ['chromadb', '向量库'],
-             'embed': ['bge-m3', '向量化'], 'figure_crop': ['裁图'], 'heartbeat': ['心跳'], 'budget': ['账本', '额度']}
+             'watcher': ['看门狗', '心跳'], 'vectordb': ['chromadb', '向量库'],
+             'embed': ['bge-m3', '向量化'], 'figure_crop': ['裁图'], 'heartbeat': ['心跳']}
     pats += [re.escape(x) for x in extra.get(base, [])]
     rx = re.compile('|'.join(pats))
     hits = [(n, t) for n, t, body in pits if rx.search(t) or rx.search(body)]

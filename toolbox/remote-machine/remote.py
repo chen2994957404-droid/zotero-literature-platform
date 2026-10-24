@@ -590,7 +590,7 @@ def cmd_deploy():
     timeout = int(opt('--timeout') or 1800)
     # 走 job 通道（对面自己的登录会话）而不是 ssh 会话（2026-09-17）：
     # 上线脚本最后一步是完整体检，ssh 会话里读不到凭据库（陷阱 1），体检必然报
-    # 「缺 DEEPSEEK_KEY / MINERU_TOKEN」两个 FAIL —— 每次部署都要人去分辨那是假红。
+    # 「缺 MINERU_TOKEN」这类 FAIL —— 每次部署都要人去分辨那是假红。
     # 通道没装（或明确 --ssh）才退回 ssh。
     if M['job_task'] and not flag('--ssh'):
         return cmd_job(M['deploy_cmd'], wait=True, timeout=timeout)

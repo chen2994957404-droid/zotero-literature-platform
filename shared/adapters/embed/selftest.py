@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-"""embed 自测：用本地 bge-m3（零成本）验证 embed / chunk / strip_references。
-用法: python shared/adapters/embed/selftest.py
-需本地 Ollama 跑着 bge-m3。
+"""embed 自测：离线验 chunk / strip_references；加 --live 才真去问本机 Ollama 的 bge-m3。
+用法: python shared/adapters/embed/selftest.py [--live]
+自测必须离线、任何机器上都能全绿（编程端没装 Ollama），联网那条藏在 --live 后面。
 """
 import sys, os
 from shared.adapters.embed import embed, chunk, strip_references
+from shared.kernel.cli import flag
 
 def main():
     ok = 0; total = 3
@@ -26,14 +27,17 @@ def main():
     else:
         print(f'  [FAIL] chunk: {len(chunks) if isinstance(chunks,list) else chunks}')
 
-    # 3. embed 返回向量
-    try:
+    # 3. embed 返回向量（联网，只在 --live 时跑）
+    if not flag('--live'):
+        print('  [SKIP] embed 真调用（加 --live 才跑）'); ok += 1
+    else:
+      try:
         vecs = embed(["测试文本一", "测试文本二"])
         if isinstance(vecs, list) and len(vecs) == 2 and len(vecs[0]) > 100:
             print(f'  [PASS] embed 返回 2 个 {len(vecs[0])} 维向量'); ok += 1
         else:
             print(f'  [FAIL] embed 返回异常')
-    except Exception as e:
+      except Exception as e:
         print(f'  [FAIL] embed 异常（本地 bge-m3 没跑？）: {e}')
 
     print(f'\n{ok}/{total} 通过')

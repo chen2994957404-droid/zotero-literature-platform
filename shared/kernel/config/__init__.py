@@ -11,12 +11,12 @@
 
 用法：
     from shared.kernel.config import get_key
-    key = get_key('DEEPSEEK_KEY')            # 拿不到返回 ''
-    key = get_key('DEEPSEEK_KEY', required=True)   # 拿不到直接报错，避免静默失败
+    key = get_key('MINERU_TOKEN')            # 拿不到返回 ''
+    key = get_key('MINERU_TOKEN', required=True)   # 拿不到直接报错，避免静默失败
 
 .env 格式（该文件已在 .gitignore，不进版本库）：
-    DEEPSEEK_KEY=sk-xxx
-    MINERU_TOKEN=sk-xxx
+    MINERU_TOKEN=xxx
+    OPENALEX_KEY=xxx
 """
 import os
 
@@ -37,16 +37,14 @@ _cache = None
 KEYRING_SERVICE = 'literature-platform'
 
 # 哪些是「密钥」（存凭据库），哪些是普通配置（留在 .env，需要可读可移植）
-SECRET_KEYS = ('DEEPSEEK_KEY', 'MINERU_TOKEN', 'SILICONFLOW_KEY',
-               'SCIVERSE_KEY', 'OPENALEX_KEY', 'GEMINI_KEY', 'DASHSCOPE_KEY')
+SECRET_KEYS = ('MINERU_TOKEN', 'OPENALEX_KEY')
 
 
 def is_secret(name):
     """这个名字是不是密钥（该进凭据库、不许明文落盘）。
 
-    固定表之外，**以 _KEY / _TOKEN 结尾的一律当密钥** —— 2026-09-11 起用户可以在
-    面板里给中转站起自己的密钥名（如 ALIYUN_RELAY_KEY），固定表装不下。
-    规则比表稳：表要有人维护，后缀规则谁写谁遵守。
+    固定表之外，**以 _KEY / _TOKEN 结尾的一律当密钥** —— 规则比表稳：
+    表要有人维护，后缀规则谁写谁遵守。
     """
     n = str(name or '')
     return n in SECRET_KEYS or n.endswith('_KEY') or n.endswith('_TOKEN')
@@ -168,8 +166,7 @@ def all_keys():
     if _cache is None:
         _cache = _load_env_file()
     names = set(_cache.keys())
-    for n in ('DEEPSEEK_KEY', 'MINERU_TOKEN', 'SILICONFLOW_KEY',
-              'OPENALEX_KEY'):
+    for n in SECRET_KEYS:
         if os.environ.get(n):
             names.add(n)
     return sorted(names)
@@ -189,26 +186,10 @@ SITE_SETTINGS = [
      'dev=编程端（不许跑常驻服务、全库作业、花钱的批量）；'
      'prod=运行端（主力机，允许全部操作）；'
      'test=编程端测试档（允许跑，产物只在本机）'),
-    # ⚠ 额度紧跟角色之后，理由相同：它也是**安全项不是偏好项**。
-    #   角色管「这台机器能不能写」，额度管「今天还能花多少」——
-    #   2026-09-10 证明了只有前者是不够的：外部 agent 一次批量精读 10 篇，
-    #   全程合规、全程无人确认，余额从 2.48 掉到 1.04 元。
-    #   MCP 的 confirm 是 Claude Code 专有标记，换个客户端会被直接忽略，
-    #   所以闸必须在服务端。见 shared/kernel/budget.py。
-    ('DAILY_LLM_CALLS', '每天最多调用大模型多少次', '0',
-     '0 = 不限（只记账不拦）。超过之后当天所有花钱的调用都会被挡下并说明原因，'
-     '第二天自动清零。建议先看几天体检里的「大模型花销」再定这个数'),
-    ('DAILY_LLM_TOKENS', '每天最多产出多少 token', '0',
-     '0 = 不限。精读这类长文的成本主要在产出侧，所以卡产出比卡次数更准。'
-     '一篇带 SI 的精读大约一万到两万 token'),
-    ('DAILY_LLM_YUAN', '每天最多花多少元', '0',
-     '0 = 不限。按 DeepSeek 高峰价折算（宁高勿低，实际花得只会更少）；'
-     'Jev 有自己的月度额度，不算在里面。本地模型免费，不算'),
-    # 2026-09-27 用户定：证据库这块先停，只留「打标签 → 精读」。
-    #   开关管的是**后台自己干的**那几件（落地流水线、每日盯新刊 + 自动取件）；
+    # 2026-09-27 用户定：后台自动建库先停。开关只管**后台自己干的**落地流水线；
     #   工具本身（人或 AI 点一次做一次）不受影响。
     ('AUTO_BUILD', '后台自动建库', '0',
-     '1 = 开：新文献一落地就自动解析 / 拆章节 / 进检索库，每天凌晨盯新刊并自动下载达标的几篇。'
+     '1 = 开：新文献一落地就自动解析 / 拆章节 / 进检索库。'
      '0 = 关（默认）：后台什么都不自动做，等人或 AI 主动要时才做'),
     ('OLLAMA_HOST', 'Ollama 地址', 'http://localhost:11434',
      '一般不用改'),
@@ -217,16 +198,6 @@ SITE_SETTINGS = [
     ('UNPAYWALL_EMAIL', 'Unpaywall 邮箱（取开放获取全文用）', '',
      '填你的真实邮箱即可，不用注册。取全文前先问 Unpaywall 有没有合法的免费版本，'
      '有就直接下，不碰出版商、不占学校权限。留空 = 不问，只走浏览器'),
-    ('WECHAT_DIR', '公众号推送下载目录', '',
-     '下载工具存 md 的那个文件夹（形如 D:\\...\\下载\\高分子学人）。'
-     '「导入公众号精读」要从这里读推文'),
-    # 百炼有两种地址：老的通用域名（下面这个默认值，仍可用）和**每个人不一样**的
-    # 业务空间专属域名（形如 ws-xxxx.cn-beijing.maas.aliyuncs.com，官方推荐）。
-    # 后者带着用户自己的空间 ID，写死在源码里必然是错的 —— 所以它是本机设置。
-    ('DASHSCOPE_BASE', '阿里云百炼 接口地址', 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-     '百炼控制台「API Key」页里那条「OpenAI 兼容地址」，整条粘进来即可'
-     '（形如 https://ws-xxxx.cn-beijing.maas.aliyuncs.com/compatible-mode/v1）。'
-     '留空用通用地址。注意大陆版与国际版的 key 不通用'),
 ]
 
 
@@ -266,48 +237,12 @@ def site_missing():
     return [k for k in must if not get_site(k)]
 
 
-# ---------------------------------------------------------------------------
-# 模型设置：把散在各脚本里的模型名收敛到这里，控制面板才能统一切换
-# ---------------------------------------------------------------------------
-# 2026-09-20 用户定：**整个项目全部换成本地模型**，在本地模型的基础上做拆解优化。
-# 默认一律本机 Ollama 的 qwen3.5（9.7B，主力机 RTX 3060 12G 跑得动，有 vision）；云端只在面板里点名时用。
-# 老尺子「输出少上 pro、输出多上 flash」只在用户点名云端时还成立。
-# 本地扛不住的活不是换云端，是**改任务形状**（拆小、判断题、清单先行、脚本把关）—— 精读的分段生成是范本。
-LOCAL_DEFAULT = 'qwen3.5:latest'
-MODEL_SETTINGS = {
-    'DEEPREAD_MODEL':   ('精读',       LOCAL_DEFAULT),     # 金标 40 篇本地均分 90.6（2026-09-15）
-    'REVIEW_MODEL':     ('精读审稿',   LOCAL_DEFAULT),     # 「审≠写」暂时做不到；任务形状不同先顶着
-    'EXTRACT_MODEL':    ('结构化抽取', LOCAL_DEFAULT),     # ⚠ 2026-08-28 实测本地只抽到云端 1/4 的数字 —— 待拆解优化（chunk_pass 那条路）
-    'PROFILE_MODEL':    ('论文类型画像', 'qwen3.5:4b'),     # 合成 / 器件 / 机理 / 综述 四选一（2026-09-22）
-    'CARD_MODEL':       ('整篇卡片', 'qwen3.5:4b'),        # 材料体系 / 动态键家族 / 自修复 / 核心发现（2026-09-23，20 篇对照老整篇抽取 15 篇一致、3 篇补上老的空缺）
-    'UNITS_MODEL':      ('单元库抽取', 'qwen3.5:4b'),     # 数值事实字段级拆分抽取（fine_fact），10 篇实测 4B 准确率最好、71 s/篇（2026-09-21）
-    'ASK_MODEL':        ('问答',       LOCAL_DEFAULT),
-    'AUTOTAG_MODEL':    ('自动打标签', LOCAL_DEFAULT),
-    'DIRECTION_QUAD_MODEL': ('方向层摘要抽取', LOCAL_DEFAULT),
-    # 看图：踩坑 #15/#16「本地会编数据」是 7B 老视觉模型上的结论；qwen3.5 带 vision，要重测再定。
-    # 重测之前默认仍留云端 —— 编出来的曲线数据比没有更糟，这一条是唯一暂不切的。
-    'DIGITIZE_MODEL':   ('图表数字化', 'deepseek-v4-flash-vision-exp'),
-}
-
-
-def get_model(name):
-    """取某个环节该用的模型名。环境变量 → .env → 内置默认，三级兜底。
-
-    这样任何脚本都写 get_model('DEEPREAD_MODEL')，不再各自 hardcode，
-    控制面板改一处即全局生效（原来 .env 的值进不了 os.environ，
-    用 os.environ.get 读模型的脚本改了也不生效 —— 本函数消除该陷阱）。
-    """
-    if name not in MODEL_SETTINGS:
-        raise KeyError(f'未知的模型设置项 {name}，可选：{list(MODEL_SETTINGS)}')
-    return get_key(name, default=MODEL_SETTINGS[name][1])
-
-
 def set_keys(updates):
     """保存配置。返回实际写入的键名列表。
 
     **密钥进系统凭据库，普通配置进 .env** —— 两者要求不同：
       - 密钥要保密，且不需要人去读 → 凭据库（加密、不落明文）
-      - 模型/路径等要能被人看懂、跟着项目走 → .env（明文反而是优点）
+      - 路径等本机设置要能被人看懂、跟着项目走 → .env（明文反而是优点）
 
     值为 None 或 '' 的键会被跳过（避免面板留空时误清空已有配置）。
     **永远不写源码** —— 源码内不含明文密钥这条底线不能破。

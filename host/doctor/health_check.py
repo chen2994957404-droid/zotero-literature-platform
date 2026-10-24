@@ -190,7 +190,7 @@ def c_secret_storage():
     plain = [k for k in SECRET_KEYS if key_location(k) == '.env明文']
     # 含明文密钥的残留文件（备份、临时文件）
     import re
-    pat = re.compile(r'^(DEEPSEEK_KEY|MINERU_TOKEN|SILICONFLOW_KEY|OPENALEX_KEY)=(.{8,})$', re.M)
+    pat = re.compile(r'^(MINERU_TOKEN|OPENALEX_KEY)=(.{8,})$', re.M)
     leftovers = []
     for f in glob.glob('.env.bak*') + glob.glob('.env.tmp') + glob.glob('*.env'):
         try:
@@ -252,12 +252,12 @@ def c_hardcoded():
 
 def c_config():
     from shared.kernel.config import get_key
-    missing = [k for k in ('DEEPSEEK_KEY', 'MINERU_TOKEN') if not get_key(k)]
-    return (OK, '三个密钥都能读到') if not missing else (FAIL, f'缺少: {missing}')
+    missing = [k for k in ('MINERU_TOKEN',) if not get_key(k)]
+    return (OK, 'MineRU 密钥能读到') if not missing else (FAIL, f'缺少: {missing}')
 
 
 def c_keys_valid():
-    """三把密钥**真的还能用吗** —— 不是「读得到」，是「打过去对方认不认」。
+    """密钥**真的还能用吗** —— 不是「读得到」，是「打过去对方认不认」。
 
     2026-08-28 的真事：主力机的 DeepSeek 密钥早已失效，
     但心跳正常、体检全绿（那时只查存在性），**精读其实一次都跑不了**，
@@ -265,14 +265,13 @@ def c_keys_valid():
 
     > **「配置存在」不等于「配置有用」。** 安全网必须查后者，否则它只是让人安心。
 
-    两个校验都免费：DeepSeek 查余额、MineRU 拿一个不存在的任务 id 去查（401 vs 200 能区分认证问题）。
-    （Zotero 那把 2026-10-13 随 Zotero 移出平台不查了。）
+    校验免费：MineRU 拿一个不存在的任务 id 去查（401 vs 200 能区分认证问题）。
+    （Zotero 那把 2026-10-13 随 Zotero 移出平台不查了；DeepSeek 那把 2026-10-24 随大模型设置撤掉。）
     """
-    from shared.adapters.llm_client import check_key as _ds
     from shared.adapters.pdf_parse import check_token as _mineru
 
     rows, bad, unknown = [], [], []
-    for name, fn in (('DeepSeek', _ds), ('MineRU', _mineru)):
+    for name, fn in (('MineRU', _mineru),):
         ok, msg = fn()
         rows.append(f'{name} {msg}')
         if ok is False:
@@ -288,12 +287,21 @@ def c_keys_valid():
 
 
 def c_ollama():
+    """本机 Ollama 通不通、向量化要的模型装没装（没装 = 新文献进不了向量库，且不报错）。"""
+    from shared.kernel.config import get_site, get_key
+    host = (get_site('OLLAMA_HOST') or '').rstrip('/')
+    want = get_key('EMBED_MODEL', default='bge-m3')
     try:
-        r = json.loads(urllib.request.urlopen('http://localhost:11434/api/tags', timeout=6).read())
-        n = len(r.get('models', []))
-        return (OK, f'Ollama 通，{n} 个模型') if n else (WARN, 'Ollama 通但模型列表为空（OLLAMA_MODELS 路径问题）')
+        r = json.loads(urllib.request.urlopen(host + '/api/tags', timeout=6).read())
     except Exception:
-        return WARN, 'Ollama 未跑（问答/向量化会失败）'
+        return WARN, 'Ollama 未跑（向量化会失败）'
+    names = [m.get('name', '') for m in r.get('models', [])]
+    if not names:
+        return WARN, 'Ollama 通但模型列表为空（OLLAMA_MODELS 路径问题）'
+    # Ollama 里 `bge-m3` 与 `bge-m3:latest` 是同一个（不带标签默认 latest）
+    if want not in names and (want if ':' in want else want + ':latest') not in names:
+        return FAIL, f'Ollama 通，但没装向量化模型 {want}（有：{"、".join(names[:5])}）'
+    return OK, f'Ollama 通，向量化模型 {want} 在（共 {len(names)} 个模型）'
 
 
 # 慢自测（调大模型/网络）默认跳过，加 --full 才跑。
@@ -404,79 +412,6 @@ def c_data():
             return WARN, msg + ' —— 编程端没有金样本，纯逻辑改动无法做回归验证；'                                '建议从主力机拷 2~3 篇的 parsed/ 过来'
         return OK, msg + f'（编程端，金样本 {n_lib} 篇；权威数据在主力机）'
     return OK, msg
-
-
-def c_budget():
-    """今天花了多少大模型额度，以及有没有设上限。
-
-    **为什么要有这一项**：平台原本的花钱防线是 MCP 的 `confirm=True`，
-    而那是 Claude Code 专有标记，换个客户端（Antigravity）会被直接忽略 ——
-    2026-09-10 外部 agent 一次批量精读 10 篇，全程无人确认。
-    所以闸挪到了服务端（`shared/kernel/budget`），而这一项负责让它**可见**：
-    看不见的开销既没法优化，也没法让人放心。
-    """
-    from shared.kernel import budget
-    d = budget.today()
-    used = f"今天 {d['calls']} 次调用 / 产出 {d['completion']} token / 约 {d.get('yuan', 0):.2f} 元"
-    if d['models']:
-        top = sorted(d['models'].items(), key=lambda kv: -kv[1]['completion'])[:2]
-        used += '（' + '、'.join(f"{m}×{v['calls']}" for m, v in top) + '）'
-    if not d['limit_calls'] and not d['limit_tokens'] and not d.get('limit_yuan'):
-        return WARN, (used + '；**没设当日上限** —— 外部 agent 可以无人确认地花钱。'
-                      '去控制面板设 DAILY_LLM_YUAN（元）')
-    lim = []
-    if d['limit_calls']:
-        lim.append(f"次数 {d['calls']}/{d['limit_calls']}")
-    if d['limit_tokens']:
-        lim.append(f"产出 {d['completion']}/{d['limit_tokens']}")
-    if d.get('limit_yuan'):
-        lim.append(f"花费 {d.get('yuan', 0):.2f}/{d['limit_yuan']:g} 元")
-    return OK, used + '；上限 ' + '、'.join(lim)
-
-
-def c_routing():
-    """大模型的通道 / 用途配得对不对（2026-09-11，用户拍板的三段式）。
-
-    查三件事，都来自 `shared.kernel.config.routing.problems()`，面板显示的是同一份：
-      · 用途指定的通道存不存在（红）
-      · 通道要的密钥填没填、用途要的能力通道支不支持（黄）
-      · 用途是不是还在「按模型名猜通道」的兜底状态（黄）—— 能跑，但该去面板指定
-    **这一项是防「静默换家」的**：2026-09-14 起 deepseek-v4-pro 会被官方路由到 Flash，
-    不报错、只降级 —— 只有把通道和模型明说出来，这种变化才看得见。
-    """
-    from shared.kernel.config import routing
-    probs = list(routing.problems())
-    # 本地通道多一道：用途指定的模型本机 Ollama 到底有没有（2026-09-17 真撞上：路由指向本地，
-    # 模型名却是云端的 → Ollama 404 → 每次调用静默切到云端备用，日志里才看得见「本地精读」一行没在本地跑）。
-    # 这一查要联网（问本机 Ollama），所以放体检（本项只在联网档跑）不放 kernel 的 problems()。
-    from shared.adapters.llm_client import list_models
-    seen = {}
-    for pid, p in routing.purposes().items():
-        for ch_name, model in ((p['channel'], p['model']), (p['fallback'], p['fallback_model'] or p['model'])):
-            ch = routing.channels().get(ch_name)
-            if not ch or ch.get('kind') != 'ollama' or not model:
-                continue
-            if ch_name not in seen:
-                seen[ch_name] = list_models(ch_name)
-            ok, ids, msg = seen[ch_name]
-            # Ollama 里 `bge-m3` 与 `bge-m3:latest` 是同一个（不带标签默认 latest），别把它报成没装
-            want = model if ':' in model else model + ':latest'
-            if ok and want not in ids and model not in ids:
-                probs.append(('fail', f'用途「{p["label"]}」指向本地通道「{ch_name}」的模型 {model}，'
-                                      f'但本机 Ollama 没装它（有：{"、".join(ids[:5])}）—— 会静默切到备用'))
-    fails = [m for lvl, m in probs if lvl == 'fail']
-    warns = [m for lvl, m in probs if lvl == 'warn']
-    n = len(routing.purposes())
-    if fails:
-        return FAIL, f'{len(fails)} 处配错：' + '；'.join(fails[:2])
-    if warns:
-        guessed = sum(1 for m in warns if '没明确指定通道' in m)
-        other = [m for m in warns if '没明确指定通道' not in m]
-        msg = f'{n} 个用途；{guessed} 个还在按模型名猜通道（能跑，建议去面板指定）'
-        if other:
-            msg += '；' + '；'.join(other[:2])
-        return WARN, msg
-    return OK, f'{n} 个用途都明确指定了通道和模型'
 
 
 def c_progress():
@@ -649,8 +584,6 @@ if __name__ == '__main__':
         check('Ollama 服务', c_ollama)
         check('原子模块自测', c_modules)
         check('数据资产', c_data)
-        check('大模型花销', c_budget)
-        check('大模型通道', c_routing)
         check('后台服务', c_services)
         check('作业进展', c_progress)
 

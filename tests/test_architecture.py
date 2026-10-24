@@ -1027,7 +1027,8 @@ def test_引导脚本不许在模块顶层import项目包():
 # ⚠ 而且要记住：**弹窗那道闸不是硬的**。`confirm` 是 Claude Code 专有标记
 #   （`anthropic/requiresUserInteraction`），换个客户端（Antigravity）会被直接忽略
 #   —— 2026-09-10 实际发生过：外部 agent 批量精读 10 篇，全程无人确认。
-#   真正硬的是服务端的当日额度闸（`shared/kernel/budget.py`）。
+#   （原来的服务端当日额度闸 `shared/kernel/budget.py` 随大模型设置于 2026-10-24 撤掉 ——
+#   平台已不调付费大模型；以后再接，闸要一起回来。）
 #   **所以往这张表里加东西之前，先问「如果没有弹窗，这件事我还敢让它自己做吗」。**
 AGENT_TOOLS_APPROVED = {
     'getpdf_one': '取**一篇**的 PDF。不花钱、盘上有了会跳过；'

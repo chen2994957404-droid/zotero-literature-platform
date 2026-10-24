@@ -24,14 +24,11 @@ requires-python = ">=3.11"
 
 # 运行期依赖，与 requirements.txt 保持一致（刻意保持极少，见架构准则「少依赖」）
 dependencies = [
-    "chromadb==1.5.9",   # 向量库（问答检索）
+    "chromadb==1.5.9",   # 向量库（按意思检索）
     "python-docx==1.2.0", # 读 .docx 格式的 SI
     "PyMuPDF==1.27.2",   # 从 PDF 按坐标裁图
     "keyring==25.7.0",   # 密钥存进系统凭据库
     "pint==0.26.1",      # 单位解析与量纲（shared/adapters/units）
-    "pysbd==0.3.4",             # 句子切分（shared/adapters/sentences）
-    "json-repair==0.63.4",      # 本地模型吐的坏 JSON 修一修（shared/adapters/llm_client）
-    "gliner==0.2.29",    # 零样本 NER：样品 / 材料名（shared/adapters/ner）；会带上 torch(CPU)
     "fastapi==0.143.0",  # 文献库应用的后台（host/app/server.py）
     "uvicorn==0.52.4",   # 跑 fastapi 的服务器
 ]
