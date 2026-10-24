@@ -405,14 +405,6 @@ def review_report(key):
     return os.path.join(paper_dir(key), 'review.json')
 
 
-def reference(key):
-    """curated/<key>/reference.md —— **人写的**精读范文（高分子学人推送原文，纯文本 + 图链接）。
-
-    跟 `summary.html` 是两回事：那份是机器产的、给用户看的；这份是**标尺**，
-    给评测比「我们的精读离范文差多远」用，永远不当精读展示、不进向量库。
-    """
-    return os.path.join(paper_dir(key), 'reference.md')
-
 
 def curves(key):
     """★ curated/<key>/curves.json —— 从图上抠下来的曲线数值（tools.digitize 的产物）。
@@ -641,24 +633,7 @@ def unit_study_dir(tag):
     return os.path.join(STATE, 'unit_study', re.sub(r'[^A-Za-z0-9._-]+', '-', str(tag)))
 
 
-def review_calib_dir(tag):
-    """state/review_calib/<tag>/ —— 一轮审稿校准的产物（calib.json + report.md）。可重建。"""
-    return os.path.join(STATE, 'review_calib', re.sub(r'[^A-Za-z0-9._-]+', '-', str(tag)))
 
-
-def golden_eval_dir(tag, create=False):
-    """state/golden_eval/<tag>/ —— 一轮金标评测的产物（每篇一份精读 HTML + scores.json + report.md）。
-    可重建（再跑一轮就有），所以住 state 层；`tag` 是这一轮的名字（如 v3_local_qwen3.5）。"""
-    d = os.path.join(STATE, 'golden_eval', re.sub(r'[^A-Za-z0-9._-]+', '-', str(tag)))
-    if create:
-        os.makedirs(d, exist_ok=True)
-    return d
-
-
-def golden_index():
-    """state/golden_deepread.json —— 精读金标集的索引：哪些篇有人写的范文（`reference()`）
-    配上了英文原件。可重建（扫一遍 curated/ 就能恢复），所以住 state 层。"""
-    return os.path.join(STATE, 'golden_deepread.json')
 
 
 def last_search():

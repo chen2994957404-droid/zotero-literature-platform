@@ -44,7 +44,6 @@ FIELDS = ('doi', 'title', 'year', 'journal', 'authors', 'source', 'landed_at',
 SRC_FETCH = 'fetch'          # 借浏览器向出版商取的
 SRC_ZOTERO = 'zotero'        # 从用户 Zotero 的附件复制过来的
 SRC_LOCAL = 'local'          # 用户手上的文件直接给的
-SRC_WECHAT = 'wechat'        # 公众号精读导入
 
 
 def norm_doi(doi):

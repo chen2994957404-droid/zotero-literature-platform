@@ -19,10 +19,10 @@
 ```
 docs/  ← 跨工具的档案（另有 4 份日志直接躺在下面）
     explain/（8）、howto/（3）、reference/（19）、incidents/（2）  ← 为什么 / 怎么做 / 事实 / 坑
-host/  ← 平台自身：让平台活着的东西（没人 import 它）（10 块）
-    app、codegen、daily、deploy、doctor、ingest、mcp、panel、watcher、wechat_import
-launch/  ← 给人双击的入口（常用 5 个；不常用/ 里 6 个备用与开发用）
-    取全文用的浏览器.bat、导入公众号精读.bat、控制面板.bat、设置与密钥.bat、运行与日志.bat
+host/  ← 平台自身：让平台活着的东西（没人 import 它）（9 块）
+    app、codegen、daily、deploy、doctor、ingest、mcp、panel、watcher
+launch/  ← 给人双击的入口（常用 4 个；不常用/ 里 6 个备用与开发用）
+    取全文用的浏览器.bat、控制面板.bat、设置与密钥.bat、运行与日志.bat
     不常用/：更新平台.bat、比一比两个模型.bat、诊断报告.bat、连上文献平台（Antigravity用）.bat、重抽缺SI的文献.bat、重跑精读PRO.bat
 outputs/  ← 外部 agent 的产物 / 草稿，不进版本库
 scratch/  ← 外部 agent 的产物 / 草稿，不进版本库
@@ -31,8 +31,8 @@ shared/  ← 共用件：被 ≥2 个工具用到才允许住这里
         cli、config、proc_lock、prompts、subproc、budget.py、catalog.py、errors.py、heartbeat.py、jobs.py、log.py、mcp_prompt.py、paths.py、role.py、units_store.py
     domain/  ← 纯逻辑：不联网、不知道文件放在哪（6 块）
         figure_crop、glossary、libmatch、numcheck、schema、stopwords
-    adapters/  ← 外接口：唯一允许联网/用第三方库的一环（25 块）
-        ccdc、chemdb、cnki、crossref、embed、jcr、llm_client、ner、openalex、pdf_fetch、pdf_parse、polyinfo、pubchem、query_expand、sciverse、scopus、semanticscholar、sentences、snowball、tansoole、typesafe、units、unpaywall、vectordb、wechat_seed
+    adapters/  ← 外接口：唯一允许联网/用第三方库的一环（24 块）
+        ccdc、chemdb、cnki、crossref、embed、jcr、llm_client、ner、openalex、pdf_fetch、pdf_parse、polyinfo、pubchem、query_expand、sciverse、scopus、semanticscholar、sentences、snowball、tansoole、typesafe、units、unpaywall、vectordb
 tests/ （6 个脚本）
     test_architecture.py、test_budget.py、test_llm_routing.py、test_no_undefined_names.py、test_principles.py、test_types.py
 toolbox/ （0 个脚本）
@@ -44,7 +44,7 @@ tools/  ← 工具包：一个工具 = 一个自包含的包（12 块）
 （data/ 是数据目录（五层），3000+ 文件，**不要去 glob 它**）
 ```
 
-**可枚举的模块 48 个**（`tools/` 工具包 + `shared/` 共用件，每个都有 `__init__.py` 与 `selftest.py`） · **还没切进 `tools/` 的老文件夹 1 个**
+**可枚举的模块 47 个**（`tools/` 工具包 + `shared/` 共用件，每个都有 `__init__.py` 与 `selftest.py`） · **还没切进 `tools/` 的老文件夹 1 个**
 
 进度、健康状况、下一步做什么 → 见 `HANDOVER.md`
 

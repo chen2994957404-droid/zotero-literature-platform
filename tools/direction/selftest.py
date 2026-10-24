@@ -2,7 +2,7 @@
 """direction 自测：不联网，用假数据把 落库 → 聚类 → 报告 走一遍。
 用法: python tools/direction/selftest.py
 
-build() 要联网，所以自测不跑它 —— 它的两个组成部分（wechat_seed / openalex）
+build() 要联网，所以自测不跑它 —— 它依赖的 openalex
 各有自己的 selftest。这里测的是**编排本身**：schema、聚类落库、报告生成。
 测试会临时改写 shared.kernel.paths.DIRECTION 指向临时目录，**不碰真实数据**。
 """

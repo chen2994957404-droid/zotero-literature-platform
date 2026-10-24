@@ -25,25 +25,6 @@ from host.app import jobs
 log = get_logger('app_jobs')
 
 
-def adopt_reference(pid, log=print):
-    """这篇有人写的范文（公众号推文）而且还没有正文精读 → 推文当正文精读（2026-09-06 用户定的策略 A）。
-
-    精读那边看到状态库里 `main_summary` 已完成（producer=wechat），就只补 SI。返回 True 表示这次装上了。
-    （2026-10-13 从打标签精读监听 host.watcher.service 搬来：那条监听随 Zotero 一起删了。）
-    """
-    from host import wechat_import
-    ref = paths.reference(pid)
-    if not os.path.exists(ref) or os.path.exists(paths.summary(pid)):
-        return False
-    try:
-        article = wechat_import.article_from_reference(ref)
-        r = wechat_import.build_local(pid, article, log=log)
-        return not r.get('skipped')
-    except Exception as e:
-        log(f'  [范文没装上] {str(e)[:120]} —— 照常跑我们自己的精读')
-        return False
-
-
 def try_fetch_si(pid, pdf_path, log=print):
     """精读前补一次 SI：有 DOI、目录里没记「确认没有 SI」、取全文用的浏览器开着才去取。
 
@@ -72,8 +53,6 @@ def try_fetch_si(pid, pdf_path, log=print):
 def deepread_one(pid):
     """一篇精读 → (state, note)。"""
     from tools import deepread
-    if adopt_reference(pid, log=log):
-        log('  公众号范文装上当正文精读，只补 SI')
     local = paths.local_pdf(pid)
     pdf_path = local if os.path.exists(local) else None
     si_exists = bool(paths.find_local_si(pid))

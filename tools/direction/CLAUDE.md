@@ -10,8 +10,6 @@
 ## 流水线
 
 ```
-公众号 md 目录
-  → adapters.wechat_seed      提 DOI + 推送日期（正文提完即弃）
   → adapters.openalex         DOI 对齐 + 批量拉参考文献（免费无密钥）
   → SQLite（shared.kernel.paths.direction_db()）  works / edges / seeds / clusters
   → bibliometrics/            IDF 文献耦合 + Louvain + 时间趋势（本工具自带）
@@ -22,13 +20,13 @@
 落库之后 `cluster()` / `report()` 全是本地的，可以反复调参重跑。
 
 ```
-python -m tools.direction build <公众号md目录>   # 联网，十几分钟
+python -m tools.direction build --band X   # 联网，十几分钟
 python -m tools.direction cluster                # 本地
 python -m tools.direction report --out 地图.txt
 python -m tools.direction stats
 ```
 
-## 实测规模（835 篇公众号推送，2025-01 ~ 2026-08）
+## 实测规模（835 篇公众号推送，2025-01 ~ 2026-08；公众号来源 2026-10-23 已撤，这段留作历史）
 
 ```
 种子 754 篇（DOI 对齐率 98.2%）

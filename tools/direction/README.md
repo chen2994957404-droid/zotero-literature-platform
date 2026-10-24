@@ -22,7 +22,6 @@ python -m tools.direction stats   --band impact
 |---|---|
 | OpenAlex | 按 `band.json` 的检索式取（**主流程唯一的种子来源**）|
 | 窄带引文 | 按学科限制展开 |
-| 公众号 md | 可选，`wechat` 动作 |
 
 ## 方向层：摘要 → 「策略 → 性能 → 应用」（2026-09-07 加，**要花钱**）
 

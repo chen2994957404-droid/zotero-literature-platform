@@ -4,7 +4,6 @@
 用法（--band 必填，因为一条窄带一个库）:
     python -m tools.direction bands                        # 现有窄带
     python -m tools.direction seeds   --band impact         # 三路取种子（联网）
-    python -m tools.direction wechat  --band X --dir <目录>  # 从公众号 md 取种子
     python -m tools.direction build   --band impact         # 建图（联网，十几分钟）
     python -m tools.direction cluster --band impact         # 聚类（纯本地，可反复调）
     python -m tools.direction report  --band impact --out 地图.txt
@@ -66,14 +65,6 @@ def main():
         print('')
         print('下一步: python -m tools.direction build --band %s' % band)
         return 0 if r['total'] else 1
-
-    if action == 'wechat':
-        d = opt('--dir') or pos(1)
-        if not d:
-            print('用法: python -m tools.direction wechat --band X --dir <公众号md目录>')
-            return 2
-        dm.seeds_from_wechat(band, d, progress=print)
-        return 0
 
     if action == 'build':
         r = dm.build(band, min_df=int(opt('--min-df', 3)), progress=print)

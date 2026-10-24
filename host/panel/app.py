@@ -188,7 +188,7 @@ def collect_alerts():
 
 
 JOB_LABELS = {'watcher': '精读监听', 'ingest': '落地流水线', 'daily': '每日作业（盯新刊 + 升1级）',
-              'getpdf': '取全文', 'golden': '金标取件', 'journalwatch-backfill': '雷达回填'}
+              'getpdf': '取全文', 'journalwatch-backfill': '雷达回填'}
 
 
 def collect_progress():

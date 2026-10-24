@@ -53,7 +53,7 @@
 | `cluster(band)` / `report(band)` | 聚类 / 出人读的地图（**纯本地，可反复调参**）|
 | `stats(band)` | 这条窄带现在有多少料 |
 
-依赖：shared.adapters.wechat_seed / shared.adapters.openalex /
+依赖：shared.adapters.openalex /
 包内的 bibliometrics / shared.kernel。本工具**不联网**（联网都在 adapters 里）。
 """
 import collections
@@ -66,7 +66,7 @@ import time
 
 from shared.kernel import errors, paths
 from shared.kernel.log import get_logger
-from shared.adapters import openalex, wechat_seed
+from shared.adapters import openalex
 from tools.direction import bibliometrics as bib
 
 log = get_logger('direction')
@@ -102,6 +102,17 @@ CREATE INDEX IF NOT EXISTS idx_seed_source ON seed_pool(source);
 class DirectionMapError(errors.PlatformError):
     """方向地图流程失败。"""
 
+
+
+_HYPHENS = ('‑', '‐', '–')
+
+
+def _norm_doi(doi):
+    """规范化 DOI：去前缀、小写、去尾部标点、连字符归一。空的返回 ''。"""
+    d = (doi or '').strip().lower().replace('https://doi.org/', '')
+    for ch in _HYPHENS:
+        d = d.replace(ch, '-')
+    return d.rstrip('.').rstrip(')')
 
 def _conn(band):
     paths.direction_dir(band, create=True)
@@ -197,7 +208,7 @@ def seeds_from_openalex(band, spec=None, progress=None):
             for it in items:
                 wid = _short(it.get('openalex_id') or '')
                 if wid:
-                    got.append((wid, wechat_seed.normalize_doi(it.get('doi')),
+                    got.append((wid, _norm_doi(it.get('doi')),
                                 'openalex', text))
             with c:
                 n = _add_seeds(c, got)
@@ -234,31 +245,6 @@ def seeds_from_band(band, spec=None, progress=None):
     finally:
         c.close()
     say('  [已有窄带] %s 里匹配 %d 篇，新增 %d' % (src['band'], len(hits), n))
-    return n
-
-
-def seeds_from_wechat(band, seed_dir, progress=None):
-    """④（可选）直接从公众号 md 目录取。用于建 wechat_polymer 那类窄带。"""
-    say = progress or (lambda *a: None)
-    seeds = wechat_seed.scan(seed_dir)
-    st = wechat_seed.stats(seeds)
-    say('  [公众号] %d 篇 | 有 DOI %d（%.1f%%）| %s ~ %s'
-        % (st['total'], st['with_doi'], 100 * st['doi_rate'], st['earliest'], st['latest']))
-    dois = sorted(set(s['doi'] for s in seeds if s['doi']))
-    works = openalex.works_by_dois(dois, select='id,doi')
-    doi2wid = {wechat_seed.normalize_doi(w.get('doi')): k for k, w in works.items()}
-    c = _conn(band)
-    try:
-        with c:
-            n = _add_seeds(c, [(k, wechat_seed.normalize_doi(w.get('doi')),
-                                'wechat', os.path.basename(seed_dir))
-                               for k, w in works.items()])
-            c.executemany('INSERT OR REPLACE INTO wechat_files VALUES (?,?,?,?)',
-                          [(s['file'], s['doi'], s['pubdate'],
-                            doi2wid.get(s['doi'], '')) for s in seeds])
-    finally:
-        c.close()
-    say('  [公众号] 对齐 %d / %d 个 DOI，新增 %d' % (len(works), len(dois), n))
     return n
 
 
@@ -301,7 +287,7 @@ def ref_rows_for(refs_meta, seed_ids):
         if wid in seed_ids:
             overlap += 1
             continue
-        rows.append((wid, wechat_seed.normalize_doi(w.get('doi')), w.get('title') or '',
+        rows.append((wid, _norm_doi(w.get('doi')), w.get('title') or '',
                      w.get('publication_year'), _venue(w),
                      w.get('cited_by_count') or 0, '', 0, ''))
     return rows, overlap
@@ -329,7 +315,7 @@ def build(band, min_df=3, progress=None):
     for wid, w in works.items():
         refs = set(_short(r) for r in (w.get('referenced_works') or []))
         refsets[wid] = refs
-        rows.append((wid, wechat_seed.normalize_doi(w.get('doi')), w.get('title') or '',
+        rows.append((wid, _norm_doi(w.get('doi')), w.get('title') or '',
                      w.get('publication_year'), _venue(w), w.get('cited_by_count') or 0,
                      _topic(w), 1, wxdate.get(wid, '')))
         edge_rows.extend((wid, r) for r in refs)
@@ -463,7 +449,7 @@ def snowball_forward(band, limit_per_seed=200, max_seeds=None, progress=None):
         n_f = n_b = 0
         for w in citers:
             cid = _short(w.get('id'))
-            batch_w.append((cid, wechat_seed.normalize_doi(w.get('doi')),
+            batch_w.append((cid, _norm_doi(w.get('doi')),
                             w.get('title') or '', w.get('publication_year'),
                             _venue(w), w.get('cited_by_count') or 0, '', 0, ''))
             batch_e.append((cid, wid))

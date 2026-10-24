@@ -16,7 +16,6 @@
     review     综述
 
 用法：python -m tools.deepread.profile KEY1 KEY2 [--model qwen3.5:4b]        判几篇，打印
-      python -m tools.deepread.profile --范文 [--n 40]                         抽有范文的论文各判一次，列出来给人核
       python -m tools.deepread.profile KEY --落盘                              正式：写 profile.json
 """
 import os, sys
@@ -122,9 +121,6 @@ def main():
     from shared.adapters.llm_client import chat
     model = opt('--model') or 'qwen3.5:4b'
     keys = positionals()
-    if flag('--范文'):
-        n = int(opt('--n') or 40)
-        keys = [k for k in catalog.ids() if os.path.exists(paths.reference(k)) and os.path.isfile(paths.fulltext(k))][:n]
     if flag('--落盘'):
         for k in keys:
             classify_to_store(k, model)
