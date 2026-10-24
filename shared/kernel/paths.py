@@ -41,16 +41,15 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 #
 #   raw      解析器吐出来的东西 + 原始 PDF。重建 = 再花一次 MineRU 额度，
 #            而且得先有 PDF。**最贵的一层，也是唯一必须备份的一层。**
-#   curated  我们自己的流水线从 raw 造出来的：中文精读 HTML、元数据。
-#            重建 = 再花一次大模型的钱。
-#   serving  随时可重建：对比表、向量库、方向地图、**雷达库 radar.db**（0 级：盯着的刊
-#            每篇的题目/摘要/参考文献，从 Crossref 重拉即可）。删了跑一条命令就有。
-#            例外：journal_watch.json（盯哪些刊、分几档）是人定的，重建不了 —— 但它是配置不是数据。
-#   state    索引与进度，**不是真相**：state.db / papers.db / 上次检索结果 /
-#            journal_watch_seen.json（盯新刊见过哪些、回填到哪块）。
-#            例外是 evalset.json（用户一条条打的人工评价，重建不了）。
+#   curated  我们自己从 raw 造出来的：目录卡 meta.json、骨架 outline.json、整图 figures/。
+#            目录卡丢了要重新登记；骨架和整图零成本重算。
+#   serving  随时可重建：向量库、作者 / 摘要索引 oa_index.json、团队挂靠 team_links.json。
+#            删了跑一条命令就有。
+#   state    索引与进度，**不是真相**：state.db（处理记录）。
+#            例外是 teams.json（研究团队名单，人工查证）与 topics.db（专题）—— 重建不了。
 #   logs     运行日志与心跳。
-#   backup   快照（Zotero 标签、覆盖前的 structured）。
+#   backup   快照（Zotero 标签）。
+#   （2026-10-23/24 精读、抽取、雷达库、方向地图、评价集等整套删掉，这里只写现在还有的。）
 #
 # ⚠ **偏离 REBUILD.md 第四节的映射表一处，理由如下**（同 R3/R4/R5 的
 # 「规则优先于表」）：那张表把 `full.md` 归进 curated。但 `full.md` 是 MineRU
@@ -365,7 +364,7 @@ def state_db():
 def teams():
     """state/teams.json —— 研究团队名单（大导 / 小导 / 已独立，每条带依据，**不可重建**）。
 
-    跟 evalset 同类：人工查证 + 用户纠正得来的真相，必须进版本库（2026-10-11 用户定：
+    人工查证 + 用户纠正得来的真相，必须进版本库（2026-10-11 用户定：
     不做自动化流程，由 Claude 查证定名单、用户发现错的再改）。人看的版本在
     docs/reference/团队名单_2026-10-11.md。
     """

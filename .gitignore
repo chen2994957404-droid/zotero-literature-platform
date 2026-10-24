@@ -3,24 +3,15 @@
 # 数据是可再生的（重跑脚本能生成），且体积大、变动频繁，不适合进 Git。
 
 # --- 数据目录（R6 窗 2026-08-31：workflow_data/ → 五层 data/）---
-# 整个 data/ 默认不进版本库，只把**重建不了**的三样用 ! 放回来：
-#   evalset.json          用户一条条打的精读评价
+# 整个 data/ 默认不进版本库，只把**重建不了**的用 ! 放回来：
 #   teams.json            研究团队名单（人工查证 + 用户纠正，2026-10-11）
-#   */band.json           窄带定义（检索式 + 边界判据），丢了要重新想一遍
 #   zotero_tags_backup    改标签前的快照
+# （evalset.json 精读评价、direction/*/band.json 窄带定义随精读 / 方向地图于 2026-10-24 删掉，git 历史里有）
 # 判据见 shared/kernel/paths.py 顶部的五层说明。
 data/*
 !data/state/
 data/state/*
-!data/state/evalset.json
 !data/state/teams.json
-!data/serving/
-data/serving/*
-!data/serving/direction/
-data/serving/direction/*
-!data/serving/direction/*/
-data/serving/direction/*/*
-!data/serving/direction/*/band.json
 !data/backup/
 data/backup/*
 !data/backup/zotero_tags_backup.json
