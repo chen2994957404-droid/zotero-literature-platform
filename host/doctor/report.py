@@ -152,7 +152,7 @@ def collect():
     # ── 自启任务实况 ──
     out.append(_section('自启任务实况（运行端应有 2 个）', _run(
         ps("Get-ScheduledTask | Where-Object {$_.TaskName -in "
-           "@('ZoteroLiteratureWatcher','OllamaService')} "
+           "@('LiteraturePlatformWatchdog','OllamaService')} "
            "| Select-Object TaskName,State | Format-Table -AutoSize | Out-String"),
         timeout=120)))
 

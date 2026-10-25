@@ -20,7 +20,7 @@ description: 涉及跑花钱的批量作业、起常驻服务（`host/watcher/` 
 | Zotero | 2026-10-13 起移出平台，平台不再用它 | 同左 |
 | 项目路径 | `D:\dev\literature-platform` | `D:\02_AI\Projects\literature-platform` |
 | `data/`（五层） | 自产的几篇（金样本） | **权威副本** |
-| 自启任务 | **只有一个例外**：`LiteraturePlatformTunnel`（SSH 隧道：把 B 的 8778 MCP 与 8780 文献库应用接到本机，只往外连、不花钱不写库；`host/deploy/tunnel_task.py`）| 2 个：`ZoteroLiteratureWatcher`（名字是历史遗留，跑的是看门狗）/ `OllamaService` |
+| 自启任务 | **只有一个例外**：`LiteraturePlatformTunnel`（SSH 隧道：把 B 的 8778 MCP 与 8780 文献库应用接到本机，只往外连、不花钱不写库；`host/deploy/tunnel_task.py`）| 2 个：`LiteraturePlatformWatchdog`（看门狗）/ `OllamaService` |
 
 ## 二、谁干什么（有争议以此为准）
 

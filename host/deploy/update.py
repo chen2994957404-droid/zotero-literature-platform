@@ -58,7 +58,7 @@ def ps(script):
 PANEL_PORT = int(os.environ.get('PANEL_PORT', '8777'))
 
 # 更新后需要重启才能生效的计划任务（只在运行端有）
-RESTART_TASKS = ['ZoteroLiteratureWatcher']
+RESTART_TASKS = ['LiteraturePlatformWatchdog']
 
 # 计划任务应该跑哪个模块。**搬家之后这里必须跟着改，否则任务会静默停摆。**
 #
@@ -69,7 +69,7 @@ RESTART_TASKS = ['ZoteroLiteratureWatcher']
 # 而任何地方都不会报错**。这正是踩坑 #81「按名字找东西，搬家时静默失效」的最坏形态：
 # 这次失效的不是一个函数，是整条自动化线。
 TASK_MODULES = {
-    'ZoteroLiteratureWatcher': 'host.watcher.watchdog',   # 曾是 tools.deepread.watchdog；任务名是历史遗留，跑的就是看门狗
+    'LiteraturePlatformWatchdog': 'host.watcher.watchdog',   # 2026-10-24 前任务名叫 ZoteroLiteratureWatcher，跑的一直是看门狗
 }
 
 

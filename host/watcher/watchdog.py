@@ -43,7 +43,7 @@
 不受 AUTO_BUILD 管：它们只是「有人来要才干活」的服务，不自己去建库。
 浏览器直接跑那个 .bat（参数只有一份正本）；bat 末尾的 pause 在 stdin=NUL 下立即返回。
 
-用法: python -m host.watcher.watchdog    # 前台常驻；日常由任务计划 ZoteroLiteratureWatcher 自启
+用法: python -m host.watcher.watchdog    # 前台常驻；日常由任务计划 LiteraturePlatformWatchdog 自启
 """
 import os, sys, time
 

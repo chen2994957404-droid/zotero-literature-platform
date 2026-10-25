@@ -75,7 +75,7 @@ python host/doctor/health_check.py             # 完整档：另加配置、Olla
 ## watcher：看门狗（2026-10-13 起只剩它）
 
 ```
-计划任务 ZoteroLiteratureWatcher（名字是历史遗留）
+计划任务 LiteraturePlatformWatchdog
   └─ host.watcher.watchdog（每分钟看一眼，死了才重启，绝不打断正在干活的）
        ├─ host.ingest --loop     落地流水线（AUTO_BUILD=1 才拉）      常驻，锁 ingest_loop
        └─ 按端口守：8780 文献库应用 · 8778 MCP 服务 · 9333 取全文浏览器

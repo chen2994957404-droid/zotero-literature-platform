@@ -443,12 +443,12 @@ def c_services():
         # 一次问全：任务名 + 它的动作。动作要用来查「会不会弹控制台窗口」。
         out = powershell(
             "Get-ScheduledTask | Where-Object {$_.TaskName -in "
-            "@('ZoteroLiteratureWatcher','OllamaService')} "
+            "@('LiteraturePlatformWatchdog','OllamaService')} "
             "| ForEach-Object { $_.TaskName + '|' + ($_.Actions | "
             "Select-Object -First 1 -ExpandProperty Execute) }", timeout=30)
         rows = [r.strip() for r in out.splitlines() if r.strip() and '|' in r]
         tasks = {r.split('|', 1)[0]: r.split('|', 1)[1] for r in rows}
-        want = {'ZoteroLiteratureWatcher', 'OllamaService'}   # 前者是历史名字，跑的是看门狗
+        want = {'LiteraturePlatformWatchdog', 'OllamaService'}   # 前者 2026-10-24 前叫 ZoteroLiteratureWatcher
         miss = want - set(tasks)
         if miss:
             return WARN, f'缺任务: {miss}'

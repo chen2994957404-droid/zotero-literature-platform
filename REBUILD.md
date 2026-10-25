@@ -292,7 +292,7 @@ watcher/watchdog 作为该工具的常驻服务放 `tools/deepread/watcher.py`
 
 | 任务 | 改成 |
 |---|---|
-| `ZoteroLiteratureWatcher` | `python -m host.watcher.watchdog` |
+| `LiteraturePlatformWatchdog`（2026-10-24 前叫 `ZoteroLiteratureWatcher`）| `python -m host.watcher.watchdog` |
 | `LiteratureAutoSync` | `python -m host.autosync` |
 
 **不改的后果是静默停摆**：任务照常「成功」运行，只是那个模块不存在了，

@@ -12,7 +12,7 @@
 | `watchdog.py` | 看门狗：常驻进程真死了才重启，**绝不打断正在干活的**；按端口守 MCP 服务、取全文浏览器、文献库应用 | `python -m host.watcher.watchdog` |
 | `host.ingest --loop` | 落地流水线常驻（另一个包；AUTO_BUILD=1 才拉） | 看门狗拉 |
 
-日常由任务计划 `ZoteroLiteratureWatcher` 拉起**看门狗**（任务名是历史遗留，跑的就是看门狗）。
+日常由任务计划 `LiteraturePlatformWatchdog` 拉起**看门狗**（2026-10-24 前任务名叫 `ZoteroLiteratureWatcher`）。
 停任务停不掉它拉起的孙子进程（踩坑 #62），要用 `watchdog.kill_children()`。
 
 ## 两台机器

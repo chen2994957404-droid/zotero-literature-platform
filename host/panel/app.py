@@ -52,7 +52,7 @@ KEY_NAMES = [
 
 # 面板可重启的后台服务：任务计划名 → 显示名
 SERVICES = {
-    'ZoteroLiteratureWatcher': '看门狗（守文献库应用 / MCP 服务 / 取全文浏览器）',   # 任务名是历史遗留
+    'LiteraturePlatformWatchdog': '看门狗（守文献库应用 / MCP 服务 / 取全文浏览器）',
     'OllamaService':           '本地 Ollama（向量化）',
 }
 
@@ -379,7 +379,7 @@ def collect_jobs(recent=8):
 # 重启任务时要连这个进程一起停，否则新配置进不去（见 action_restart）。
 # 2026-09-17 起看门狗管三个进程：精读监听、落地流水线常驻、每日作业 —— 重启任务要把它们全停掉，
 # 锁名收在 host.watcher.watchdog.CHILD_LOCKS（部署脚本也用它），别在这里另抄一份
-_TASK_CHILDREN = {'ZoteroLiteratureWatcher': True}
+_TASK_CHILDREN = {'LiteraturePlatformWatchdog': True}
 
 def action_restart(task_name):
     """重启一个自启任务。

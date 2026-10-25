@@ -113,7 +113,7 @@ A 机默认不跑常驻服务、不跑花钱的批量作业（`ROLE=dev`）；A 
 
 ## 运维现状（不用管，已自动化）
 
-两个自启任务：`ZoteroLiteratureWatcher`（名字是历史遗留，跑的是**看门狗**：守文献库应用 8780、MCP 服务 8778、取全文浏览器 9333）、`OllamaService`。
+两个自启任务：`LiteraturePlatformWatchdog`（**看门狗**：守文献库应用 8780、MCP 服务 8778、取全文浏览器 9333）、`OllamaService`。
 **密钥存在系统凭据库**，硬盘上没有明文；统一走 `shared.kernel.config.get_key()`，
 加载顺序：环境变量 → 系统凭据库 → `.env`。用户在**控制面板**里填写与切换。
 
