@@ -1,6 +1,6 @@
 ---
 name: literature-platform
-description: The user's own literature platform (evidence library of ~1100 polymer / materials papers with parsed full text, SI, tables, figures, plus institutional full-text download, plus read-only SciFinder / Reaxys / PoLyInfo / CNKI (中国知网) / CCDC / JCR / Scopus look-ups through the user's logged-in browser). Use it FIRST whenever the task involves papers, literature, references, a DOI, full text, SI, or "what does the literature say" — 文献、论文、全文、SI、DOI、证据库、库里有没有、取全文、读原文、参考文献、SciFinder、Reaxys、专利、CAS、药品价格、试剂、供应商、探索平台、泰坦、现货、货期、买得到吗、替代品、price、supplier、PoLyInfo、聚合物性质、Tg、密度、知网、学位论文、硕博论文、中国专利、晶体结构、CCDC、CSD、影响因子、JCR、分区、Scopus、被引. Reach it with the `litcall` command on the SSH host zotero-b.
+description: The user's own literature platform (evidence library of ~1100 polymer / materials papers with parsed full text, SI, tables, figures, plus institutional full-text download, plus read-only SciFinder / Reaxys / PoLyInfo / CNKI (中国知网) / CCDC / JCR / Scopus look-ups through the user's logged-in browser). Use it FIRST whenever the task involves papers, literature, references, a DOI, full text, SI, or "what does the literature say", and bibliographic metadata for DOIs (title / authors / journal / volume / pages / abstract for a reference list — your sandbox can't reach Crossref, this can) — 书目信息、参考文献格式、文献、论文、全文、SI、DOI、证据库、库里有没有、取全文、读原文、参考文献、SciFinder、Reaxys、专利、CAS、药品价格、试剂、供应商、探索平台、泰坦、现货、货期、买得到吗、替代品、price、supplier、PoLyInfo、聚合物性质、Tg、密度、知网、学位论文、硕博论文、中国专利、晶体结构、CCDC、CSD、影响因子、JCR、分区、Scopus、被引. Reach it with the `litcall` command on the SSH host zotero-b.
 ---
 
 # Literature platform (via `litcall` on SSH host `zotero-b`)
@@ -8,7 +8,7 @@ description: The user's own literature platform (evidence library of ~1100 polym
 Run on the SSH host **zotero-b** (not locally):
 
 ```bash
-~/bin/litcall --version                    # litcall + server version (expect server 0.14.x)
+~/bin/litcall --version                    # litcall + server version (expect server 0.16.x)
 ~/bin/litcall --list                       # tools + args (one JSON per line)
 ~/bin/litcall <tool> '<json args>'         # prints JSON result; exit 1 on tool error
 ~/bin/litcall --batch < calls.jsonl        # many calls, one session: {"tool":..,"args":{..}} per line
@@ -17,6 +17,16 @@ Run on the SSH host **zotero-b** (not locally):
 Typical path: `paper_status` / `library_db_search` / `library_retrieve` → `library_outline` → `library_section`
 (→ `paper_files`, `figure_image`). Reference lists, data extraction and web search are yours to do (OpenAlex etc.). Not in the library → `paper_fulltext` with `allowFetch:true`,
 then poll `fulltext_status` with `wait_s`.
+
+**Bibliographic metadata (server 0.16): `doi_metadata`.** Your own sandbox has no internet, so Crossref is out of
+reach there; this asks Crossref from the user's machine — free, no quota. Up to 30 DOIs per call (looked up one at a
+time, ~1 s each, because Crossref's public pool allows one request at a time):
+`doi_metadata {"dois":["10.1002/adfm.201800560", ...], "abstract": false}` → `papers[]` with `title`, `authors`
+(`"Family Given"`), `journal`, `year`, `volume`, `issue`, `pages`, `article_number` (journals without page numbers —
+Wiley, Nature Communications — cite this instead), `publisher`, `type`, `published`, `issn`, `citations`, `abstract`
+(empty when the publisher didn't deposit one), and `library_id` when the paper is already in the library.
+`code`: `OK` / `NOT_FOUND` (not registered at Crossref — typo, or a DataCite DOI) / `NETWORK_ERROR` (`retryable`; the
+DOIs are also listed in `retryable` — call again). Use it for every reference list and to check DOIs before citing.
 
 **Topics for the user (server 0.15): `topic_add`, `topic_items`, `topic_list`, `topic_remove`.** When you work on a
 review or any task that gathers papers, put the papers you use into a named topic, e.g.
