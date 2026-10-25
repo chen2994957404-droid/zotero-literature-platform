@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.15.2'
+VERSION = '0.16.0'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -105,6 +105,7 @@ VERSION = '0.15.2'
 # v0.15.1（2026-10-15）：cnki_download 下到的直接收进证据库（按页面 / PDF 里的 DOI 落正本 + 登记标题作者刊名年份），
 #   回 library_id —— 原来只落在导出文件夹，专题里加不进去。没有 DOI 的仍只在文件夹（warnings 说明）。
 # v0.15.2（同日）：没有 DOI 的按知网文件名起 id（cnki_slgy202603021）照样收进证据库；修知网「被挡」误报（屏幕外拼图弹层的字）。
+# v0.16.0（2026-10-24 用户提）：doi_metadata —— 一批 DOI 的书目信息（Crossref）。Claude Science 的沙箱上不了网，问不了 Crossref。
 
 # 原样借用的（输出本来就合适）
 BORROW = ()     # 2026-10-04 用户定：只给它做不到的（取全文）。数值库它自己会抽，不借了；ping 自己挂
@@ -133,6 +134,7 @@ INSTRUCTIONS = """\
 材料学研究者（聚硼硅氧烷 / 动态键弹性体）的文献证据库，约 1100 篇，跑在他校园网里的主力机上。
 检索、读参考文献、抽数据你自己来；这里只给你做不到的：付费全文（学校订阅）取回并解析，以及他手上这些全文的查找、向量检索、按节读、看图。
 每个工具都返回 structuredContent（JSON）；itemKey 可以给证据库 id，也可以直接给 DOI。
+书目信息（标题、作者、刊、卷期页、摘要，写参考文献用）：`doi_metadata` 一次最多 30 个 DOI，主力机替你问 Crossref，免费、不限额。
 取全文：串行、每篇隔 20 秒、同时只跑一个作业（服务端强制，保护全校出口 IP），一篇约 1 分钟。
 PDF 到手几秒内先出 tier=text（本地抽字，可按节读、无表格结构）；MineRU 后台补成 tier=structured（含表格）。
 每篇结果带 code（OK / CAPTCHA_REQUIRED / NOT_SUBSCRIBED / NOT_FOUND / NO_PDF_LINK / NOT_PDF / PARSE_PENDING /
@@ -696,7 +698,7 @@ def precheck(dois, exists_fn=None):
     """库里没有的 DOI 先问 Crossref：查无此 DOI 的当场退回（NOT_FOUND，不占队列）。
 
     → (要交的, 退回的 [{doi, code, why}])。Crossref 连不上 / 别的错一律放行 —— 预检只拦「确定不存在」的，
-    拿不准就交给出版商那边判（宁可多跑一篇，不能误杀）。并发问（5 路），25 篇约几秒。
+    拿不准就交给出版商那边判（宁可多跑一篇，不能误杀）。串着问：Crossref 公共池同时只许 1 个请求（踩坑 #207），25 篇十来秒。
     """
     from shared.kernel import catalog
     lookup = exists_fn
@@ -715,9 +717,7 @@ def precheck(dois, exists_fn=None):
     todo = [d for d in dois if not catalog.find(d)]
     if not todo:
         return list(dois), []
-    from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=5) as ex:
-        exists = dict(zip(todo, ex.map(lookup, todo)))
+    exists = {d: lookup(d) for d in todo}
     keep = [d for d in dois if exists.get(d, True)]
     gone = [{'doi': d, 'code': 'NOT_FOUND', 'retryable': False,
              'why': 'Crossref 查无此 DOI（多半抄错了），没排进队列'} for d in dois if not exists.get(d, True)]
@@ -865,6 +865,76 @@ def _paper_status(a):
     return _out('%d 篇：structured %d、text %d、没有可读全文 %d' % (len(out), n('structured'), n('text'), n('none')),
                 {'papers': out})
 
+
+# ══════════════════════════════════════════════════════════════════════
+# 书目信息：一批 DOI → Crossref 的标题 / 作者 / 刊 / 卷期页 / 摘要（2026-10-24）
+# ══════════════════════════════════════════════════════════════════════
+
+MAX_META_DOIS = 30          # 串行一篇约 0.5–1 秒，30 篇不到半分钟，撞不上 MCP 那头约 60 秒的超时
+
+
+def _crossref_meta(doi):
+    """一个 DOI → 书目信息字典（DOI 不存在抛 DoiNotFound，对方抖动抛 CrossrefError）。"""
+    from shared.adapters import crossref
+    m = crossref.work(doi)
+    it, n = crossref.to_meta(m), crossref.normalize(m)
+    return {'title': n['title'], 'authors': it['authors'], 'journal': it['journal'], 'year': it['year'],
+            'volume': it['volume'], 'issue': it['issue'], 'pages': it['pages'],
+            'publisher': n['publisher'], 'type': n['type'], 'published': n['published'], 'issn': n['issn'],
+            'citations': n['citations'], 'abstract': n['abstract']}
+
+
+def bib_lookup(dois, fetch=None, find=None, abstract=True):
+    """一批 DOI → 每篇一行（code = OK / NOT_FOUND / NETWORK_ERROR）。**串行**，被限流 / 抖动时歇一下重试两次。
+
+    Claude Science 自己的沙箱上不了网，问不了 Crossref（2026-10-24 它报「本地沙箱离线，Crossref 元数据要另想办法」），
+    主力机替它问。Crossref 免费、不要密钥。为什么串行：2025-12 起不带邮箱的「公共池」**同时只许 1 个请求**
+    （单条每秒 5 次），并发 3 路实测第一下就 429（踩坑 #207）。
+    """
+    from shared.adapters import crossref
+    fetch = fetch or _crossref_meta
+    if find is None:
+        from shared.kernel import catalog
+        find = catalog.find
+
+    def one(doi):
+        row = {'doi': doi}
+        for attempt in range(3):
+            try:
+                row.update(fetch(doi), code='OK', retryable=False)
+                row.pop('why', None)
+                break
+            except crossref.DoiNotFound:
+                row.update(code='NOT_FOUND', retryable=False, why='Crossref 查无此 DOI（多半抄错了，或是 DataCite 等别家登记的）')
+                break
+            except Exception as e:
+                row.update(code='NETWORK_ERROR', retryable=True, why=f'{type(e).__name__}: {str(e)[:120]}')
+                if attempt < 2:
+                    time.sleep(2 * (attempt + 1))
+        if not abstract:
+            row.pop('abstract', None)
+        pid = find(doi)
+        if pid:
+            row['library_id'] = pid
+        return row
+    return [one(d) for d in dois]
+
+
+def _bib(a):
+    dois, bad = [], []
+    for d in a.get('dois') or []:
+        n = norm_doi(str(d))
+        (dois if n else bad).append(n or str(d))
+    dois = list(dict.fromkeys(dois))
+    if not dois:
+        raise ValueError('没有像样的 DOI：%s' % ', '.join(bad) if bad else '没给 DOI')
+    if len(dois) > MAX_META_DOIS:
+        raise ValueError(f'一次最多 {MAX_META_DOIS} 个 DOI（给了 {len(dois)}）；分批查')
+    rows = bib_lookup(dois, abstract=a.get('abstract', True))
+    rows += [{'doi': d, 'code': 'NOT_FOUND', 'retryable': False, 'why': '不像一个 DOI'} for d in bad]
+    ok = sum(1 for r in rows if r['code'] == 'OK')
+    return _out('%d/%d 个 DOI 查到书目信息' % (ok, len(rows)),
+                {'papers': rows, 'retryable': [r['doi'] for r in rows if r.get('retryable')]})
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -1049,13 +1119,13 @@ def enrich(items, match=None, find=None, tier=None, warnings=None):
         from concurrent.futures import ThreadPoolExecutor
 
         def _m(it):
-            for attempt in range(3):          # 2026-10-08：5 路并发被 Crossref 限流，42 条只配上 16 条
+            for attempt in range(3):          # 2026-10-08：5 路并发被 Crossref 限流，42 条只配上 16 条；按题名找是列表请求，公共池每秒 1 次、同时 1 个（踩坑 #207）
                 try:
                     return True, match(it)
                 except Exception:
                     time.sleep(1.5 * (attempt + 1))
             return False, None
-        with ThreadPoolExecutor(max_workers=2) as ex:
+        with ThreadPoolExecutor(max_workers=1) as ex:
             got_all = list(ex.map(_m, todo))
         for it, (ok, got) in zip(todo, got_all):
             if not ok or not (got and got.get('doi') and got['score'] >= DOI_MAYBE):
@@ -1763,6 +1833,12 @@ TOOLS = [
      '上次取全文的 route 与错误码。零成本，不取不解析。',
      {'dois': {'type': 'array', 'items': {'type': 'string'}},
       'itemKeys': {'type': 'array', 'items': {'type': 'string'}}}, [], _paper_status),
+    ('doi_metadata', '一批 DOI 的书目信息（主力机替你问 Crossref，免费、不扣任何额度）：每篇 title / authors（"姓 名"）/ '
+     'journal / year / volume / issue / pages / publisher / type / published（日期）/ issn / citations（Crossref 被引数）/ '
+     'abstract（出版商没交给 Crossref 的就是空）；证据库里有的另带 library_id。code = OK / NOT_FOUND（查无此 DOI）/ '
+     'NETWORK_ERROR（retryable，再交一次）。一次最多 30 个（串着问，约半分钟）；abstract=false 不回摘要（省上下文）。写参考文献列表就用它。',
+     {'dois': {'type': 'array', 'items': {'type': 'string'}, 'maxItems': MAX_META_DOIS},
+      'abstract': {'type': 'boolean', 'description': '要不要摘要，默认要'}}, ['dois'], _bib),
     ('chemdb_search', '在 SciFinder 或 Reaxys 里搜一次（借主力机上已登录的浏览器），回第 1 页的结构化列表。'
      '三种入口：关键词（query）、CAS 号（query="98-80-6"）、结构式（structure=SMILES + match=exact|substructure|similarity）。'
      'CAS 号或结构式 + kind=substances → 物质列表（cas_rn / formula / name / 被多少文献、反应用到）；'

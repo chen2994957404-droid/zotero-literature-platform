@@ -470,6 +470,23 @@ def main():
         keep, gone = S.precheck(['10.1/real', '10.1/fake'], exists_fn=lambda d: d.endswith('real'))
         check('DOI 预检：Crossref 查无此 DOI 的当场 NOT_FOUND，不占队列',
               keep == ['10.1/real'] and gone and gone[0]['doi'] == '10.1/fake' and gone[0]['code'] == 'NOT_FOUND')
+        from shared.adapters import crossref as _cr
+
+        def _fake_meta(d):
+            if d.endswith('gone'):
+                raise _cr.DoiNotFound('x')
+            if d.endswith('flaky'):
+                raise _cr.CrossrefError('HTTP 503')
+            return {'title': 'T', 'authors': ['Wang X.'], 'abstract': 'A'}
+        S.time.sleep, _sleep = (lambda s: None), S.time.sleep
+        try:
+            rows = S.bib_lookup(['10.1/ok', '10.1/gone', '10.1/flaky'], fetch=_fake_meta,
+                                find=lambda d: 'doi_x' if d == '10.1/ok' else None, abstract=False)
+        finally:
+            S.time.sleep = _sleep
+        check('书目信息：OK 带库内 id、查无此 DOI 不重试、对方抖动标可重试、abstract=false 不回摘要',
+              [r['code'] for r in rows] == ['OK', 'NOT_FOUND', 'NETWORK_ERROR'] and rows[0]['library_id'] == 'doi_x'
+              and 'abstract' not in rows[0] and rows[2]['retryable'] and not rows[1]['retryable'], str(rows)[:200])
         check('图号归一：Fig. 3b / Figure 3 对得上', S._fig_key('Fig. 3b') == S._fig_key('Figure 3') == 'figure 3')
 
         # v0.3.1（同日，它的实测报告）

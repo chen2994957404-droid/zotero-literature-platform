@@ -33,7 +33,9 @@ vs `CrossrefError`（对方抖动，可重试）。调用方据此决定批量�
 ## 谁在用
 
 - `tools/getpdf` —— 收一篇时取元数据填目录卡
-- `host/mcp/science.py` —— 取全文前的预检（查无此 DOI 的当场退回）、按题名补 DOI
+- `host/mcp/science.py` —— 取全文前的预检（查无此 DOI 的当场退回）、按题名补 DOI、`doi_metadata`（给 Claude Science 一批 DOI 的书目信息）
+
+⚠ 2025-12 起不带邮箱的公共池**同时只许 1 个请求**（单条每秒 5 次、列表每秒 1 次）—— 别并发（踩坑 #207）
 
 ## 改完必须做
 
