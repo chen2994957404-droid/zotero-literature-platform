@@ -50,7 +50,7 @@ from host.mcp.stdio import MCPStdioServer
 
 ENDPOINT = '/science'
 NAME = 'literature-science'
-VERSION = '0.16.0'
+VERSION = '0.16.1'
 # v0.3（2026-10-04，桌面 literature_platform_spec_for_agent.md 的 P0 + 部分 P1/P2）：
 #   解析分两层（PDF 到手几秒出快速文本层，MineRU 后台补表格）· 结果带 code/retryable/stage/tier/route ·
 #   撞人机验证同家暂缓、别家照跑、主力机桌面弹提醒、fulltext_retry 续跑 · 任何返回超 50 KB 落文件只回路径 ·
@@ -880,6 +880,7 @@ def _crossref_meta(doi):
     it, n = crossref.to_meta(m), crossref.normalize(m)
     return {'title': n['title'], 'authors': it['authors'], 'journal': it['journal'], 'year': it['year'],
             'volume': it['volume'], 'issue': it['issue'], 'pages': it['pages'],
+            'article_number': m.get('article-number', ''),     # Wiley / Nature Commun. 等没有页码，引用写文章号
             'publisher': n['publisher'], 'type': n['type'], 'published': n['published'], 'issn': n['issn'],
             'citations': n['citations'], 'abstract': n['abstract']}
 
@@ -1834,7 +1835,7 @@ TOOLS = [
      {'dois': {'type': 'array', 'items': {'type': 'string'}},
       'itemKeys': {'type': 'array', 'items': {'type': 'string'}}}, [], _paper_status),
     ('doi_metadata', '一批 DOI 的书目信息（主力机替你问 Crossref，免费、不扣任何额度）：每篇 title / authors（"姓 名"）/ '
-     'journal / year / volume / issue / pages / publisher / type / published（日期）/ issn / citations（Crossref 被引数）/ '
+     'journal / year / volume / issue / pages / article_number（没有页码的刊用它）/ publisher / type / published（日期）/ issn / citations（Crossref 被引数）/ '
      'abstract（出版商没交给 Crossref 的就是空）；证据库里有的另带 library_id。code = OK / NOT_FOUND（查无此 DOI）/ '
      'NETWORK_ERROR（retryable，再交一次）。一次最多 30 个（串着问，约半分钟）；abstract=false 不回摘要（省上下文）。写参考文献列表就用它。',
      {'dois': {'type': 'array', 'items': {'type': 'string'}, 'maxItems': MAX_META_DOIS},
