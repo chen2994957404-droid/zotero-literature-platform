@@ -39,3 +39,24 @@ def test_Word版SI的地址可以带docx结尾(tmp_path, monkeypatch):
     assert C.get('/files/ABCD1234/si.docx').status_code == 200
     p.write_bytes(b'%PDF-1.7 fake')                                    # 名字是 docx、里面是 PDF（#181）
     assert C.get('/files/ABCD1234/si').headers['content-type'] == 'application/pdf'
+
+
+def test_导入_认DOI_库里有的不取_有作业在跑就挡(monkeypatch):
+    from host.mcp import science
+    from tools import getpdf
+    assert C.post('/api/import', json={'text': '聚硼硅氧烷'}).status_code == 400          # 没有 DOI
+    sent = []
+    monkeypatch.setattr(getpdf, 'in_library', lambda d: 'doi_10.1-have' if d == '10.1021/have' else '')
+    monkeypatch.setattr(getpdf, 'probe', lambda: {'ok': True})
+    monkeypatch.setattr(science, 'running_job', lambda: '')
+    monkeypatch.setattr(science, '_fulltext', lambda a: sent.extend(a['dois']) or
+                        {'text': 'ok', 'structured': {'submitted': a['dois'], 'rejected': [], 'eta_s': 60}})
+    r = C.post('/api/import', json={'text': 'https://doi.org/10.1021/HAVE\n[2] x. 10.1002/new).'}).json()
+    assert sent == ['10.1002/new'] and [h['doi'] for h in r['have']] == ['10.1021/have']
+    monkeypatch.setattr(science, 'running_job', lambda: '上一个取全文作业还在跑（1/3 篇）')
+    assert C.post('/api/import', json={'dois': ['10.1039/x']}).status_code == 409
+
+
+def test_导入_别的网站借浏览器发过来要挡():
+    r = C.post('/api/import', json={'text': '10.1/x'}, headers={'Origin': 'https://evil.example'})
+    assert r.status_code == 403

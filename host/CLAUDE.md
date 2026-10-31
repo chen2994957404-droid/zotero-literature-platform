@@ -19,7 +19,7 @@
 | `doctor/` | 一键体检 + 诊断报告 + 产物缺口 | 双击 `launch/不常用/诊断报告.bat` |
 | `deploy/` | 拉新代码 + 装包 + 重启服务；编程机隧道任务 | 双击 `launch/不常用/更新平台.bat` |
 | `watcher/` | **看门狗**：守常驻进程（落地流水线，AUTO_BUILD=1 才拉）与端口服务（8780 文献库应用 / 8778 MCP / 9333 取全文浏览器） | 不用管 |
-| `app/` | **文献库应用**（FastAPI + Vue）：检索、团队、专题 | 桌面「文献库」快捷方式 |
+| `app/` | **文献库应用**（FastAPI + Vue）：检索、团队、专题、导入（贴 DOI 去取全文）| 桌面「文献库」快捷方式 |
 | `ingest/` | **落地流水线**（自己的常驻进程 `--loop`）：有正本没解析的 → MineRU 解析 → 骨架 → 向量化（不花大模型钱） | 文献一落地就自动做；`python -m host.ingest` 手动清积压 |
 | `mcp/` | MCP 协议层：读各 `tools/*/tool.toml` 聚合暴露面；`science.py` 是给 Claude Science 的 `/science` 接口 | 在 Claude / Claude Science 里直接用工具 |
 | `codegen/` | 所有生成器：`HANDOVER.md` · `.claude/` · `docs/incidents/` | 不直接碰 |

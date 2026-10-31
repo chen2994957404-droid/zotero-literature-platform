@@ -17,6 +17,18 @@
 同控制面板：检索、文献卡片在 `tools.library.dbsearch`，团队在 `tools.library.teams`。
 后台只做「把它们开成 HTTP 接口 + 托管前台页面」。要加功能，先在工具层做，再开接口。
 
+## 导入（2026-10-31 加，应用里唯一会写库的地方）
+
+用户：「现在没有直接导入文献的功能」→ 定只做「贴 DOI 去取」（拖 PDF 进来以后再说）。
+
+- 前台 `ImportPanel.vue`：贴一段文字（DOI / doi.org 链接 / 参考文献都行）→ `POST /api/import`；
+  进度轮询 `GET /api/import/status`；没取到且可重试的，「重试」按钮再交一次。
+- 后台**不另写取全文逻辑**：认 DOI 是 `getpdf.extract_dois`，库里已有正文的（`getpdf.in_library`）不再取，
+  其余交给 `host.mcp.science._fulltext` —— 和 Claude Science 的 `paper_fulltext` **同一条队列、同一套闸**
+  （一次 ≤25 篇、同时只一个作业、每篇隔 20 秒、撞验证码停、提交前问 Crossref 退回无效 DOI），取到后自动解析。
+  所以「最近一批」可能是 Claude Science 交的，也显示在导入页上。
+- 只新增，不删不覆盖。会动东西的请求另查 `Origin`（挡别的网站借浏览器偷发 POST）。
+
 ## 跑在哪、怎么打开
 
 - 跑在**主力机**（数据在那边），看门狗按端口 8780 守着（`host/watcher/watchdog.py` 的 `port_services`），掉了一分钟内拉起。

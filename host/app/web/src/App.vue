@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { api } from './api.js'
 import PaperDetail from './components/PaperDetail.vue'
+import ImportPanel from './components/ImportPanel.vue'
 
 const f = reactive({ q: '', corr: '', author: '', team: '', topic: '', year_from: '', year_to: '', journal: '', has: [], abstract: false })
 const HAS = [['pdf', '有正文'], ['si', '有 SI']]
@@ -14,6 +15,13 @@ const total = ref(null)
 const loading = ref(false)
 const error = ref('')
 const picked = ref('')
+const view = ref('search')   // search | import
+
+// 导入页里点一篇 → 回检索页看它的卡片
+function openPaper(id) {
+  picked.value = id
+  view.value = 'search'
+}
 
 async function run() {
   loading.value = true
@@ -58,14 +66,16 @@ onMounted(async () => {
 <template>
   <header class="top">
     <div class="brand">文献库</div>
-    <form class="searchbar" @submit.prevent="run">
+    <form class="searchbar" @submit.prevent="run(); view = 'search'">
       <input v-model="f.q" placeholder="DOI、标题里的词、作者名、期刊名……（多个词都要命中）" autofocus />
       <label class="chk"><input type="checkbox" v-model="f.abstract" @change="run" />连摘要一起搜</label>
       <button class="primary" type="submit">检索</button>
     </form>
+    <button :class="{ on: view === 'import' }" @click="view = view === 'import' ? 'search' : 'import'">{{ view === 'import' ? '回到检索' : '导入文献' }}</button>
   </header>
 
-  <div class="layout">
+  <ImportPanel v-if="view === 'import'" @open="openPaper" />
+  <div v-show="view === 'search'" class="layout">
     <aside class="filters">
       <label>专题
         <select v-model="f.topic" @change="run">
@@ -147,6 +157,7 @@ onMounted(async () => {
 .chk { flex-direction: row !important; align-items: center; gap: 6px !important; color: var(--text) !important; font-size: 14px !important; white-space: nowrap; }
 button { white-space: nowrap; padding: 7px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); cursor: pointer; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.on { border-color: var(--accent); color: var(--accent); }
 .results { overflow: auto; padding: 8px 16px; border-right: 1px solid var(--line); }
 .results ul { list-style: none; margin: 0; padding: 0; }
 .results li { padding: 10px 12px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }

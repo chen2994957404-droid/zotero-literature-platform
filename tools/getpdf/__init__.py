@@ -13,10 +13,12 @@
 宁可慢，不可惹。想快的人得自己显式改，改的时候就会看见这段话。
 
 对外接口：
+  - extract_dois(text)            → 一段随手粘贴的文字里的 DOI（归一、去重）
   - probe()                       → 浏览器在不在 → dict
   - fetch_many(dois, ...)         → 逐篇取，返回每篇的结果 dict 列表
   - safe_name(doi)                → DOI → 能当文件名的样子
   - resolve_id(doi)               → 这篇在证据库里的 id（已有就用那个，没有按 DOI 生成）
+  - in_library(doi)               → 正文已在证据库里 → id，否则 ''（零网络）
   - land(doi, with_si)            → **收进证据库**：正文 + SI 落成本地正本，登记元数据
 
 2026-10-13 起 Zotero 移出平台：原来的「推到 Zotero」（`stash` / `--to-zotero` / `attach_*` / `doi_index`）
@@ -24,6 +26,7 @@
 """
 import io
 import os
+import re
 import time
 
 from shared.adapters import pdf_fetch, pdf_parse
@@ -43,6 +46,30 @@ def safe_name(doi):
     for ch in (doi or '').strip():
         out.append(ch if (ch.isalnum() or ch in '.-_') else '_')
     return ''.join(out) or 'unknown'
+
+
+# 一段随手粘贴的文字里的 DOI：参考文献、doi.org 链接、出版商网址（/doi/10.xxx）、一行一个都行
+_DOI_IN_TEXT = re.compile(r'10\.\d{4,9}/[^\s"\'<>，。；、）]+')
+
+
+def extract_dois(text):
+    """一段文字 → 里面的 DOI（归一、去重、保持原顺序）。
+
+    2026-10-31 文献库应用加「导入」：人会把参考文献、网址、DOI 混着贴进来，挑出 DOI 是这里的事。
+    句末标点和配对不上的右括号不算 DOI 的一部分（`(… 10.1021/acs.x).` 要拿到 `10.1021/acs.x`）。
+    """
+    out = []
+    for m in _DOI_IN_TEXT.finditer(text or ''):
+        d = m.group(0).rstrip('.,;:')
+        while d.endswith((')', ']')) and d.count(d[-1]) > d.count('(' if d[-1] == ')' else '['):
+            d = d[:-1].rstrip('.,;:')
+        for tail in ('/pdf', '/full', '/abstract', '/epdf', '/suppl_file'):   # 出版商网址后面跟的页面类型
+            if d.lower().endswith(tail):
+                d = d[:-len(tail)]
+        d = catalog.norm_doi(d)
+        if pdf_fetch.is_doi(d) and d not in out:
+            out.append(d)
+    return out
 
 
 def probe():
@@ -209,6 +236,12 @@ def resolve_id(doi):
     没有 → 按 DOI 生成（`paths.paper_id_from_doi`）。"""
     d = catalog.norm_doi(doi)
     return catalog.find(d) or paths.paper_id_from_doi(d)
+
+
+def in_library(doi):
+    """这篇的正文在不在证据库里 → id 或 ''。只看本地，零网络。"""
+    pid = catalog.find(catalog.norm_doi(doi))
+    return pid if pid and os.path.exists(paths.local_pdf(pid)) else ''
 
 
 def _copy(src, dst):

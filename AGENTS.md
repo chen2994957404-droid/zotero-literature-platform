@@ -94,7 +94,7 @@ A 机默认不跑常驻服务、不跑花钱的批量作业（`ROLE=dev`）；A 
 | 「库里有没有 XX 这篇」「手上有哪些文献」| `python -m tools.library 库 XX`（零网络、秒回；结果标出每篇有正文 / SI / 已解析没有）|
 | 「按 DOI / 标题词 / 通讯作者 / 团队 / 年份 / 期刊找」| `python -m tools.library 检索 …`（他自己用的是文献库应用里的检索页，同一套）|
 | 「某个研究团队有哪些文章」| `python -m tools.library 团队 XX`（名单在 `data/state/teams.json`，人工查证）|
-| 「把这几篇（DOI）收进来」| `python -m tools.getpdf DOI …`（借真实浏览器取正文 + SI，落地后自动解析 → 骨架 → 向量化）|
+| 「把这几篇（DOI）收进来」| `python -m tools.getpdf DOI …`（借真实浏览器取正文 + SI，落地后自动解析 → 骨架 → 向量化）；他自己可以在文献库应用的「导入文献」页贴 DOI，走同一条队列 |
 | 「读某篇 / 讲了什么」「全世界有没有人做过」「比数值、读曲线」| 交给 **Claude Science**（它连 `/science` 接口：`library_*` 读库、`paper_fulltext` 取全文、各网页库）|
 
 ## 现成数据资产

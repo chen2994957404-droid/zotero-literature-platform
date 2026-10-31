@@ -19,4 +19,12 @@ export const api = {
     return get('/api/search?' + p)
   },
   file: (id, kind) => `/files/${encodeURIComponent(id)}/${kind}`,
+  importDois: (body) => post('/api/import', body),
+  importStatus: () => get('/api/import/status'),
+}
+
+async function post(url, body) {
+  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText)
+  return r.json()
 }
