@@ -13,7 +13,6 @@
   - same_geometry(a, b)          → 两个 PDF 页面几何是否一致
                                     已解析过（out_dir 有 layout.json）则直接复用，省 MineRU。
   - parse_docx(path, out_dir)    → out_dir（只有 full.md：文字 + 表格，python-docx 读，不花额度）
-  - docx_to_html(path)           → HTML 片段（图、表、上下标都在，mammoth 转），给人在浏览器里看
   - parse_document(path, out_dir) → 按扩展名分派到上面两个。**精读 / 取全文 / 落地流水线
                                     三处都只调这一个**（2026-09-13 收拢，此前三处各写一遍）。
   - parse_pdf_text(pdf_path, out_dir) → 快速文本层：PyMuPDF 本地抽字，几秒出 full.md（无表格结构、无图），
@@ -255,34 +254,6 @@ def parse_docx(path, out_dir, reuse=True):
     with io.open(md, 'w', encoding='utf-8') as fh:
         fh.write('\n\n'.join(parts))
     return out_dir
-
-
-def docx_to_html(path):
-    """.docx → HTML 片段（图片内嵌、表格、上下标都保留），给人在浏览器里看。不联网、不落盘。
-
-    2026-10-31 加：文献库应用点「SI 原件」，Word 版浏览器打不开、直接变下载（用户报）。
-    用 mammoth（docx → 语义 HTML 的成熟库），不自己拼 —— 化学式的上下标、表格合并格它都处理了。
-    """
-    try:
-        import mammoth
-    except ImportError:
-        raise PDFParseError('需要 mammoth：pip install mammoth')
-    import base64
-
-    def img(image):
-        # Wiley 的 Word SI 里图多是 TIFF，浏览器不认、显示成破图标 → 用 PyMuPDF 转 PNG；转不了照原样给
-        with image.open() as fh:
-            data, ctype = fh.read(), image.content_type
-        if ctype in ('image/tiff', 'image/bmp'):
-            try:
-                import fitz
-                data, ctype = fitz.Pixmap(data).tobytes('png'), 'image/png'
-            except Exception:
-                pass
-        return {'src': f'data:{ctype};base64,' + base64.b64encode(data).decode('ascii')}
-
-    with io.open(path, 'rb') as fh:
-        return mammoth.convert_to_html(fh, convert_image=mammoth.images.img_element(img)).value
 
 
 def is_text_parsed(out_dir):

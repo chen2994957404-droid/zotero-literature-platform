@@ -24,6 +24,7 @@ import re
 import time
 import unicodedata
 
+from shared.adapters import pdf_parse
 from shared.kernel import catalog, paths
 
 HAS = {'正文': 'pdf', 'pdf': 'pdf', 'si': 'si', 'SI': 'si', '解析': 'fulltext', 'fulltext': 'fulltext'}
@@ -253,8 +254,10 @@ def detail(pid):
     index, roster, links = _data()
     e = index.get(r['id'], {})
     lk = links.get(r['id']) or {}
-    files = {'pdf': os.path.isfile(paths.local_pdf(r['id'])),
-             'si': bool(paths.find_local_si(r['id']))}
+    si = paths.find_local_si(r['id'])
+    files = {'pdf': os.path.isfile(paths.local_pdf(r['id'])), 'si': bool(si),
+             # Word 版 SI 浏览器打不开、只会下载 → 前台改用 Word 直接打开（按文件头判，名字常常骗人）
+             'si_word': bool(si) and pdf_parse.real_ext(si) == '.docx'}
     return {'id': r['id'], 'title': ' '.join((r.get('title') or '').split()), 'doi': r.get('doi') or '',
             'year': r.get('year') or e.get('year'), 'journal': r.get('journal') or e.get('venue') or '',
             'authors': e.get('authors') or [], 'abstract': e.get('abstract') or '',

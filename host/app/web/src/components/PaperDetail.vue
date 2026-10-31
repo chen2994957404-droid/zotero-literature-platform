@@ -30,8 +30,10 @@ const links = computed(() => {
   if (!d.value) return []
   const f = d.value.files
   const out = []
-  if (f.pdf) out.push(['pdf', '正文 PDF'])
-  if (f.si) out.push(['si', 'SI 原件'])
+  if (f.pdf) out.push(['pdf', '正文 PDF', api.file(d.value.id, 'pdf')])
+  // Word 版 SI 浏览器打不开、只会下载 → 用 ms-word: 链接直接交给 Word（地址要以 .docx 结尾 Word 才认）
+  if (f.si_word) out.push(['si', 'SI 原件（Word）', 'ms-word:ofv|u|' + location.origin + api.file(d.value.id, 'si.docx')])
+  else if (f.si) out.push(['si', 'SI 原件', api.file(d.value.id, 'si')])
   return out
 })
 </script>
@@ -49,7 +51,7 @@ const links = computed(() => {
       </p>
 
       <div class="actions">
-        <a v-for="[k, n] in links" :key="k" class="btn" :href="api.file(d.id, k)" target="_blank" rel="noopener">{{ n }}</a>
+        <a v-for="[k, n, href] in links" :key="k" class="btn" :href="href" :target="href.startsWith('ms-word:') ? null : '_blank'" rel="noopener">{{ n }}</a>
         <span v-if="!links.length" class="muted small">本地还没有正文</span>
       </div>
 

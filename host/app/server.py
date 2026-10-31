@@ -18,9 +18,7 @@ except Exception:
     pass
 
 from fastapi import FastAPI, HTTPException, Request
-import html
-
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from shared.adapters import pdf_parse
@@ -105,18 +103,10 @@ def team_list():
 _FILES = {'pdf': paths.local_pdf, 'si': paths.find_local_si}
 
 
-_DOCX_PAGE = '''<!doctype html><html lang="zh"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>SI · {pid}</title>
-<style>body{{max-width:900px;margin:0 auto;padding:16px 20px;font:15px/1.6 system-ui,sans-serif;color:#222}}
-.bar{{position:sticky;top:0;background:#fff;padding:8px 0;border-bottom:1px solid #ddd;margin-bottom:12px;font-size:13px;color:#666}}
-img{{max-width:100%;height:auto}} table{{border-collapse:collapse;margin:10px 0}}
-td,th{{border:1px solid #bbb;padding:3px 6px;vertical-align:top}}</style></head><body>
-<div class="bar">Word 版 SI，已转成网页显示（排版可能和 Word 里略有不同）· <a href="?raw=1">下载 Word 原件</a></div>
-{body}</body></html>'''
-
-
 @app.get('/files/{pid}/{kind}')
-def files(pid: str, kind: str, raw: bool = False):
+def files(pid: str, kind: str):
+    # Word 版 SI 由前台用 ms-word: 链接交给 Word 打开，Word 要看到 .docx 结尾才认（否则报「未能识别命令」）
+    kind = kind.removesuffix('.docx')
     if kind not in _FILES:
         raise HTTPException(404, '没有这种文件')
     try:
@@ -125,16 +115,9 @@ def files(pid: str, kind: str, raw: bool = False):
         raise HTTPException(404, 'id 不合法')
     if not p or not os.path.isfile(p):
         raise HTTPException(404, '这篇没有这个文件')
-    # Word 浏览器显示不了、只会变下载 → 当场转成网页；?raw=1 才给原件（按文件头判，名字常常骗人）
-    if not raw and pdf_parse.real_ext(p) == '.docx':
-        try:
-            body = pdf_parse.docx_to_html(p)
-        except Exception as e:
-            raise HTTPException(500, f'Word 转网页失败：{e}（可加 ?raw=1 下载原件）')
-        return HTMLResponse(_DOCX_PAGE.format(pid=html.escape(pid), body=body))
-    if raw:     # 下载的文件名带上 id，不然一堆 si.docx 分不清
-        return FileResponse(p, filename=f'{pid}_{os.path.basename(p)}', content_disposition_type='attachment')
-    return FileResponse(p, content_disposition_type='inline')
+    # 名字叫 si.docx、里面其实是 PDF 的（#181）按 PDF 给，浏览器才会直接显示而不是下载
+    pdf = pdf_parse.real_ext(p) == '.pdf'
+    return FileResponse(p, media_type='application/pdf' if pdf else None, content_disposition_type='inline')
 
 
 if os.path.isdir(WEB_DIST):
