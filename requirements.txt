@@ -3,6 +3,7 @@
 
 chromadb==1.5.9
 python-docx==1.2.0
+mammoth==1.13.0
 PyMuPDF==1.27.2
 keyring==25.7.0
 fastapi==0.143.0
@@ -12,6 +13,7 @@ playwright==1.62.0
 # 说明：
 # - chromadb   : 向量库（按意思检索）
 # - python-docx: 读 .docx 格式的 SI（Elsevier 常用）
+# - mammoth    : Word 版 SI 转成网页，在文献库应用里直接看（host/app）
 # - PyMuPDF    : 从 PDF 按版面裁整图（host/mcp/figure_crop）
 # - keyring    : 密钥存进系统凭据库
 # - fastapi / uvicorn : 文献库应用的后台（host/app）
