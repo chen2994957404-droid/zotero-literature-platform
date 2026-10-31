@@ -99,3 +99,8 @@ workflow_data/_last_search.json
 # --- 文献库应用前台（host/app/web）：依赖与打包产物不进版本库，打包在编程机做、传到主力机 ---
 host/app/web/node_modules/
 host/app/web/dist/
+
+# --- DSH（DeepSeek Harness）的项目级配置（2026-10-26）---
+# .dsh/skills/ 里是指向 .claude/skills/* 的**目录软链**（每台机器各建一次；软链存的是绝对路径，
+# 换机器/换盘符要重建）。它是「同一份生成物的第二个入口」，不是第二份内容，所以不进版本库。
+.dsh/

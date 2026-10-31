@@ -79,6 +79,18 @@ args = ["<项目根>\\host\\mcp\\server.py"]
 若某客户端握手报协议版本不兼容：改 `stdio.py` 顶部 `PROTOCOL_VERSION` 一行。
 多客户端可同时连接（各起独立进程）。
 
+DSH（DeepSeek Harness，2026-10-26 实测）—— 走 HTTP 这条腿：
+在 DSH 自己的 profile 补丁 `cordis.patch.yml` 里加一条
+`transport: streamable-http` · `url: http://127.0.0.1:8778/mcp`，
+工具就以 `mcp__<serverName>__<工具名>` 出现在模型手里；**热加载，不用重启**。
+这份配置住在 DSH 自己的目录（`%USERPROFILE%\.dsh\profiles\<档>\`），**不在本仓库**。
+stdio 那条腿（`python host/mcp/server.py`）DSH 也认，但公钥 SSH 会话里读不到 Windows 凭据库
+（理由见 `http_transport.py` 开头），要密钥的工具会报「没有密钥」——所以推荐 HTTP。
+
+DSH 的技能目录认 `<项目根>/.dsh/skills`，不认 `.claude/skills`；
+本仓库用**目录软链**把六份说明书接过去（`.dsh/` 不进版本库，见 `.gitignore`）。
+接过去的是同一份生成物，改源后跑 `host/codegen/skills.py`，两边一起变，不会出现第二份。
+
 ## 写操作留给谁
 
 MCP 面**不做写操作**（2026-10-13 起 Zotero 移出平台，原来那些「写 Zotero」的入口都删了）。
