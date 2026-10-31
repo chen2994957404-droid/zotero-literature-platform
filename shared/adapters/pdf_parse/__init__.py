@@ -267,8 +267,22 @@ def docx_to_html(path):
         import mammoth
     except ImportError:
         raise PDFParseError('需要 mammoth：pip install mammoth')
+    import base64
+
+    def img(image):
+        # Wiley 的 Word SI 里图多是 TIFF，浏览器不认、显示成破图标 → 用 PyMuPDF 转 PNG；转不了照原样给
+        with image.open() as fh:
+            data, ctype = fh.read(), image.content_type
+        if ctype in ('image/tiff', 'image/bmp'):
+            try:
+                import fitz
+                data, ctype = fitz.Pixmap(data).tobytes('png'), 'image/png'
+            except Exception:
+                pass
+        return {'src': f'data:{ctype};base64,' + base64.b64encode(data).decode('ascii')}
+
     with io.open(path, 'rb') as fh:
-        return mammoth.convert_to_html(fh).value
+        return mammoth.convert_to_html(fh, convert_image=mammoth.images.img_element(img)).value
 
 
 def is_text_parsed(out_dir):

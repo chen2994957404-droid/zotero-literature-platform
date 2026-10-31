@@ -90,6 +90,29 @@ def main():
         except ImportError:
             print('  [SKIP] 没装 PyMuPDF'); ok += 2
 
+    # 6. Word 转网页（2026-10-31）：TIFF 图浏览器不认，要转成 PNG 内嵌
+    total += 1
+    try:
+        import io, struct, docx
+        from shared.adapters.pdf_parse import docx_to_html
+        w = h = 4
+        pix = bytes([200, 30, 30]) * (w * h)        # 手拼一张最小的未压缩 RGB TIFF
+        tags = [(256, 3, w), (257, 3, h), (258, 3, 8), (259, 3, 1), (262, 3, 2), (273, 4, 8),
+                (277, 3, 3), (278, 3, h), (279, 4, len(pix))]
+        ent = b''.join(struct.pack('<HHII', t, ty, 1, v) if ty == 4 else struct.pack('<HHIHH', t, ty, 1, v, 0)
+                       for t, ty, v in tags)
+        tif = b'II*\x00' + struct.pack('<I', 8 + len(pix)) + pix + struct.pack('<H', len(tags)) + ent + b'\0' * 4
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, 'si.docx')
+            doc = docx.Document(); doc.add_paragraph('Figure S1'); doc.add_picture(io.BytesIO(tif)); doc.save(p)
+            html = docx_to_html(p)
+        if 'Figure S1' in html and 'data:image/png' in html and 'image/tiff' not in html:
+            print('  [PASS] Word 转网页：文字在、TIFF 图转成了 PNG'); ok += 1
+        else:
+            print('  [FAIL] Word 转网页：文字丢了或 TIFF 没转')
+    except ImportError as e:
+        print(f'  [SKIP] 缺库 {e.name}'); ok += 1
+
     print(f'\n{ok}/{total} 通过')
     sys.exit(0 if ok == total else 1)
 
