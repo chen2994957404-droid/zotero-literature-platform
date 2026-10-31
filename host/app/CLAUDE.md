@@ -27,6 +27,7 @@
   其余交给 `host.mcp.science._fulltext` —— 和 Claude Science 的 `paper_fulltext` **同一条队列、同一套闸**
   （一次 ≤25 篇、同时只一个作业、每篇隔 20 秒、撞验证码停、提交前问 Crossref 退回无效 DOI），取到后自动解析。
   所以「最近一批」可能是 Claude Science 交的，也显示在导入页上。
+- 取完自动补作者 + 摘要、重挂研究团队（`host/mcp/fulltext_job.py` 收尾时做，只查新的那几篇），卡片上不会再是「没有作者数据」。
 - 只新增，不删不覆盖。会动东西的请求另查 `Origin`（挡别的网站借浏览器偷发 POST）。
 
 ## 跑在哪、怎么打开

@@ -757,7 +757,7 @@ def _fulltext(a):
             {'total': len(dois), 'finished': 0, 'done': False, 'elapsed': 0, 'results': []}))
     except OSError:
         pass
-    subproc.spawn([sys.executable, '-m', 'tools.getpdf'] + dois
+    subproc.spawn([sys.executable, '-m', 'host.mcp.fulltext_job'] + dois
                   + ['--fulltext', '--limit', str(len(dois))], cwd=paths.ROOT)
     eta = len(dois) * 60
     return _out('已提交 %d 篇，后台串行，预计约 %d 分钟%s' % (

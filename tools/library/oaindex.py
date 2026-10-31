@@ -14,6 +14,7 @@ OpenAlex 一次批量取回（免费额度约 25 次查询），之后检索、�
 | 函数 | 干什么 |
 |---|---|
 | `build(on_progress=None)` | 全库取一遍、写索引（联网）|
+| `add(pids)` | 只补这几篇（新收进库的），一次批量查询（联网）；取全文作业收尾时调 |
 | `load()` | 读索引；没有就返回 None |
 | `slim(work)` | OpenAlex work → 上面那条（纯函数，测试用）|
 """
@@ -69,6 +70,39 @@ def build(on_progress=None):
     os.makedirs(os.path.dirname(p), exist_ok=True)
     json.dump(out, io.open(p, 'w', encoding='utf-8'), ensure_ascii=False)
     return out
+
+
+def add(pids):
+    """只补这几篇（新收进库的）→ 补上了几篇。索引里已有的跳过；OpenAlex 一次批量查询（≤50 篇一次）。
+
+    2026-10-31 文献库应用加「导入」后：新收的文献卡片上没有作者和摘要，要等整库 `build` 一遍
+    （约 25 次查询）才有。取全文作业收尾时调它，只查新的那几篇。
+    """
+    from shared.adapters import openalex
+    index = load() or {'说明': '每篇的作者 + 摘要（OpenAlex，tools.library.oaindex 生成，可重建）', 'papers': {}}
+    pid_by_doi = {}
+    for pid in pids:
+        d = catalog.norm_doi(catalog.read_meta(pid).get('doi'))
+        if d and pid not in index['papers']:
+            pid_by_doi[d] = pid
+    if not pid_by_doi:
+        return 0
+    n = 0
+    for w in openalex.works_by_dois(list(pid_by_doi), select=SELECT, allow_partial=True).values():
+        s = slim(w)
+        pid = pid_by_doi.get(s['doi'])
+        if pid:
+            index['papers'][pid] = s
+            n += 1
+    if n:
+        index['updated_at'] = datetime.now().isoformat(timespec='seconds')
+        index['n_found'] = len(index['papers'])
+        p = paths.oa_index()
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        tmp = p + '.tmp'
+        json.dump(index, io.open(tmp, 'w', encoding='utf-8'), ensure_ascii=False)
+        os.replace(tmp, p)          # 文献库应用随时在读，别让它读到写了一半的
+    return n
 
 
 def load():
